@@ -16,11 +16,11 @@ class BotPool {
 
   start() {
     const devMode = import.meta.url.endsWith('.ts');
-    const file = new URL(devMode ? './bot-worker.ts' : './bot-worker.js', import.meta.url);
+    const file = new URL(devMode ? './bot-worker-dev.mjs' : './bot-worker.js', import.meta.url);
     const count = Math.max(1, Math.min(4, cpus().length - 1));
     try {
       for (let i = 0; i < count; i++) {
-        const w = new Worker(file, devMode ? { execArgv: ['--import', 'tsx'] } : {});
+        const w = new Worker(file);
         w.on('message', (r: BotReply) => {
           const p = this.pending.get(r.id);
           if (!p) return;

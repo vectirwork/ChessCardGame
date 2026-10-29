@@ -160,7 +160,7 @@ export interface GameSummary {
   black: string | null;
   whiteRating: number | null;
   blackRating: number | null;
-  winner: Color | null;
+  winner: Color | 'draw' | null;
   reason: string | null;
   timeControl: string;
   createdAt: string;

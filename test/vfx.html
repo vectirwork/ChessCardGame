@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Banc d'essai des effets</title>
+    <script>
+      // Animation pilotée image par image par le script de capture
+      window.__t = 0;
+      const queue = [];
+      window.requestAnimationFrame = cb => (queue.push(cb), queue.length);
+      window.cancelAnimationFrame = () => {};
+      performance.now = () => window.__t;
+      window.__step = ms => {
+        window.__t += ms;
+        queue.splice(0).forEach(cb => cb(window.__t));
+      };
+    </script>
+  </head>
+  <body style="margin:0">
+    <div id="root"></div>
+    <script type="module" src="./vfx-harness.tsx"></script>
+  </body>
+</html>

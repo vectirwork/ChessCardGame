@@ -13,7 +13,8 @@
     "start": "node dist/server/index.js",
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run",
-    "migrate": "node dist/server/index.js --migrate-only"
+    "migrate": "node dist/server/index.js --migrate-only",
+    "test:integration": "node test/integration.mjs"
   },
   "dependencies": {
     "compression": "^1.8.1",

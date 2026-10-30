@@ -8,15 +8,17 @@ import {
   GameState, Result, canStillMate, createGame, dealHands, playCard, playMove, timeWarpOn,
 } from '../shared/game';
 import type {
-  ClientToServer, GameEvent, GameMode, GameStatus, GameView, SeatView, ServerToClient,
+  ClientToServer, GameEvent, GameMode, GameStatus, GameView, JoinReply, SeatView, ServerToClient,
 } from '../shared/protocol';
 import { EMOTES, QUICK_CONTROLS, TIME_CONTROLS, tcFromId } from '../shared/protocol';
-import { Identity, identityFromCookies } from './auth';
+import rateLimit from 'express-rate-limit';
+import type pg from 'pg';
+import { Identity, identityFromCookies, userById } from './auth';
 import { BOT_PROFILES, BotLevel } from './bot';
 import { botPool } from './bot-pool';
 import { one, q, tx } from './db';
 import { gameId, randomToken } from './security';
-import { toSummary } from './account';
+import { toSummary } from './summary';
 
 type IO = Server<ClientToServer, ServerToClient>;
 type Sock = Socket<ClientToServer, ServerToClient, Record<string, never>, { identity: Identity }>;
@@ -59,6 +61,9 @@ interface RoomData {
   ratingDiff: Record<Color, number> | null;
   firstMoveDeadline: number | null;
   createdAt: number;
+  /** Les deux joueurs ont joué leur premier coup (ne redevient jamais faux, même après un Retour arrière). */
+  started?: boolean;
+  lastActivity?: number;
 }
 
 class Room {
@@ -68,11 +73,17 @@ class Room {
   abortTimer: NodeJS.Timeout | null = null;
   saveTimer: NodeJS.Timeout | null = null;
   botBusy = false;
+  rematchPending = false;
   endedAt = 0;
   constructor(public d: RoomData) {}
 }
 
 const FIRST_MOVE_MS = 45_000;
+/** Partie contre l'IA abandonnée par le joueur humain. */
+const BOT_IDLE_MS = 30 * 60_000;
+/** Partie sans pendule sans aucune action. */
+const UNTIMED_IDLE_MS = 3 * 86400_000;
+const MAX_OPEN_ROOMS = 8;
 const CLAIM_AFTER_MS = 60_000;
 /** Temps laissé à l'animation d'une carte de l'IA avant qu'elle ne joue son coup. */
 const BOT_CARD_PAUSE_MS = 2300;
@@ -94,23 +105,24 @@ function scheduleSave(room: Room) {
   }, 250);
 }
 
-async function saveRoom(room: Room) {
+async function saveRoom(room: Room, client?: pg.PoolClient) {
   const d = room.d;
   const r = d.state.result;
-  await q(
-    `INSERT INTO games (id, mode, rated, status, white_user_id, black_user_id, white_name, black_name, white_rating, black_rating,
+  // Un compte supprimé pendant la partie ne doit pas bloquer la sauvegarde (clé étrangère)
+  const sql = `INSERT INTO games (id, mode, rated, status, white_user_id, black_user_id, white_name, black_name, white_rating, black_rating,
        white_diff, black_diff, time_control, winner, reason, plies, data, updated_at, ended_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17, now(), $18)
-     ON CONFLICT (id) DO UPDATE SET status = $4, white_user_id = $5, black_user_id = $6, white_name = $7, black_name = $8,
+     VALUES ($1,$2,$3,$4,(SELECT id FROM users WHERE id = $5::uuid),(SELECT id FROM users WHERE id = $6::uuid),$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17, now(), $18)
+     ON CONFLICT (id) DO UPDATE SET status = $4, white_user_id = EXCLUDED.white_user_id, black_user_id = EXCLUDED.black_user_id, white_name = $7, black_name = $8,
        white_rating = $9, black_rating = $10, white_diff = $11, black_diff = $12, winner = $14, reason = $15, plies = $16,
-       data = $17, updated_at = now(), ended_at = $18`,
-    [
+       data = $17, updated_at = now(), ended_at = $18`;
+  const params = [
       d.id, d.mode, d.rated, d.status, d.seats.w?.userId ?? null, d.seats.b?.userId ?? null,
       d.seats.w?.name ?? null, d.seats.b?.name ?? null, d.seats.w?.rating ?? null, d.seats.b?.rating ?? null,
       d.ratingDiff?.w ?? null, d.ratingDiff?.b ?? null, d.tc, r ? r.winner ?? 'draw' : null, r?.reason ?? null,
       d.state.ply, JSON.stringify(d), d.status === 'ended' ? new Date(room.endedAt || now()) : null,
-    ],
-  );
+  ];
+  if (client) await client.query(sql, params);
+  else await q(sql, params);
 }
 
 async function loadRoom(id: string): Promise<Room | null> {
@@ -131,6 +143,11 @@ async function loadRoom(id: string): Promise<Room | null> {
 /** Reprise après redémarrage : la pendule ne décompte pas le temps où le serveur était arrêté. */
 function resumeRoom(room: Room) {
   if (room.d.clock?.running) room.d.clock.since = now();
+  if (room.d.started === undefined) room.d.started = room.d.state.ply >= 2;
+  room.d.lastActivity ??= now();
+  if (room.d.status === 'active') {
+    for (const c of ['w', 'b'] as Color[]) if (room.d.seats[c] && room.d.seats[c]!.kind !== 'bot') room.away[c] = now();
+  }
   if (room.d.firstMoveDeadline) room.d.firstMoveDeadline = now() + FIRST_MOVE_MS;
   armTimers(room);
   maybeBot(room);
@@ -188,6 +205,8 @@ function viewFor(room: Room, you: Color | null): GameView {
     away: room.away,
     claimAfterMs: CLAIM_AFTER_MS,
     createdAt: d.createdAt,
+    mirror: d.mirror,
+    started: !!d.started,
   };
 }
 
@@ -236,7 +255,7 @@ function startClock(room: Room) {
   const ck = room.d.clock;
   if (!ck) return;
   const s = room.d.state;
-  ck.running = room.d.status === 'active' && !s.result && s.ply >= 2 ? s.pos.turn : null;
+  ck.running = room.d.status === 'active' && !s.result && room.d.started ? s.pos.turn : null;
   ck.since = now();
 }
 
@@ -254,7 +273,7 @@ function armTimers(room: Room) {
   if (room.d.firstMoveDeadline) {
     const ms = Math.max(0, room.d.firstMoveDeadline - now());
     room.abortTimer = setTimeout(() => {
-      if (room.d.status === 'active' && room.d.state.ply < 2) endGame(room, { winner: null, reason: 'aborted' });
+      if (room.d.status === 'active' && !room.d.started) endGame(room, { winner: null, reason: 'aborted' });
     }, ms);
   }
 }
@@ -277,14 +296,15 @@ function checkFlag(room: Room): boolean {
 function updateFirstMoveDeadline(room: Room) {
   const s = room.d.state;
   const turnSeat = room.d.seats[s.pos.turn];
-  room.d.firstMoveDeadline = room.d.status === 'active' && s.ply < 2 && turnSeat?.kind !== 'bot' ? now() + FIRST_MOVE_MS : null;
+  room.d.firstMoveDeadline = room.d.status === 'active' && !room.d.started && turnSeat?.kind !== 'bot' ? now() + FIRST_MOVE_MS : null;
 }
 
 // ---------------------------------------------------------------------------------------------
 // Création et fin de partie
 
 async function seatFor(identity: Identity, guestName?: string): Promise<Seat> {
-  const u = identity.user;
+  // L'identité du socket date de sa connexion : on relit le classement à jour
+  const u = identity.user ? (await userById(identity.user.id)) ?? identity.user : null;
   if (u) {
     return {
       kind: 'user', key: keyOf(identity), userId: u.id, name: u.username, username: u.username, rating: u.rating,
@@ -326,6 +346,8 @@ function newRoom(opts: { mode: GameMode; rated: boolean; tc: string; mirror: boo
     ratingDiff: null,
     firstMoveDeadline: null,
     createdAt: now(),
+    started: false,
+    lastActivity: now(),
   });
   rooms.set(id, room);
   if (room.d.status === 'active') begin(room);
@@ -372,19 +394,26 @@ function endGame(room: Room, result?: Result) {
 async function persistResult(room: Room) {
   const d = room.d;
   const r = d.state.result!;
-  if (d.rated && d.ratingDiff && r.reason !== 'aborted') {
-    await tx(async c => {
-      for (const color of ['w', 'b'] as Color[]) {
-        const seat = d.seats[color]!;
-        const outcome = r.winner === null ? 'draws' : r.winner === color ? 'wins' : 'losses';
-        await c.query(
-          `UPDATE users SET rating = greatest(100, rating + $1), games_played = games_played + 1, ${outcome} = ${outcome} + 1 WHERE id = $2`,
-          [d.ratingDiff![color], seat.userId],
-        );
-      }
-    });
+  if (room.saveTimer) {
+    clearTimeout(room.saveTimer);
+    room.saveTimer = null;
   }
-  await saveRoom(room);
+  await tx(async c => {
+    await saveRoom(room, c);
+    if (!d.rated || !d.ratingDiff || r.reason === 'aborted') return;
+    // Garde-fou : même après un redémarrage, le classement n'est appliqué qu'une fois par partie
+    const first = await c.query(`UPDATE games SET ratings_applied = true WHERE id = $1 AND NOT ratings_applied RETURNING id`, [d.id]);
+    if (!first.rowCount) return;
+    for (const color of ['w', 'b'] as Color[]) {
+      const seat = d.seats[color]!;
+      if (!seat.userId) continue;
+      const outcome = r.winner === null ? 'draws' : r.winner === color ? 'wins' : 'losses';
+      await c.query(
+        `UPDATE users SET rating = greatest(100, rating + $1), games_played = games_played + 1, ${outcome} = ${outcome} + 1 WHERE id = $2`,
+        [d.ratingDiff![color], seat.userId],
+      );
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -441,6 +470,8 @@ function applyMove(room: Room, color: Color, from: number, to: number, promo?: P
   stopClock(room, color, true);
   d.state = r.state;
   d.drawOffer = null;
+  d.lastActivity = now();
+  if (d.state.ply >= 2) d.started = true;
   updateFirstMoveDeadline(room);
   startClock(room);
   armTimers(room);
@@ -460,6 +491,7 @@ function applyCard(room: Room, color: Color, index: number, targets: number[]): 
   const turnChanges = r.state.pos.turn !== color;
   if (turnChanges) stopClock(room, color, false);
   d.state = r.state;
+  d.lastActivity = now();
   if (turnChanges) {
     updateFirstMoveDeadline(room);
     startClock(room);
@@ -471,26 +503,32 @@ function applyCard(room: Room, color: Color, index: number, targets: number[]): 
   return { ok: true };
 }
 
-async function createRematch(room: Room): Promise<Room> {
+async function createRematch(room: Room): Promise<void> {
   const d = room.d;
-  const swap = (s: Seat | null): Seat | null => s && { ...s };
-  // Les classements ont pu bouger : on relit les joueurs
-  for (const c of ['w', 'b'] as Color[]) {
-    const s = d.seats[c];
-    if (s?.userId) {
+  if (room.rematchPending || d.rematch.next) return;
+  room.rematchPending = true;
+  // Copies des sièges (la partie terminée garde ses classements d'origine), relues en base
+  const fresh = async (s: Seat | null): Promise<Seat | null> => {
+    if (!s) return null;
+    const copy = { ...s };
+    if (s.userId) {
       const u = await one<{ rating: number; games_played: number; equipped_skin: string }>(
         'SELECT rating, games_played, equipped_skin FROM users WHERE id = $1', [s.userId]);
-      if (u) Object.assign(s, { rating: u.rating, gamesPlayed: u.games_played, skin: u.equipped_skin });
+      if (u) Object.assign(copy, { rating: u.rating, gamesPlayed: u.games_played, skin: u.equipped_skin });
     }
+    return copy;
+  };
+  let seats: Record<Color, Seat | null>;
+  try {
+    seats = { w: await fresh(d.seats.b), b: await fresh(d.seats.w) };
+  } catch (e) {
+    room.rematchPending = false;
+    throw e;
   }
-  const next = newRoom({
-    mode: d.mode, rated: d.rated, tc: d.tc, mirror: d.mirror, creator: d.creator,
-    seats: { w: swap(d.seats.b), b: swap(d.seats.w) },
-  });
+  const next = newRoom({ mode: d.mode, rated: d.rated, tc: d.tc, mirror: d.mirror, creator: d.creator, seats });
   d.rematch.next = next.d.id;
   for (const s of room.sockets) s.emit('game:redirect', { from: d.id, to: next.d.id });
   broadcast(room, { type: 'sync' });
-  return next;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -525,7 +563,7 @@ async function joinQueue(sock: Sock, tc: string): Promise<Ack> {
   leaveQueues(key);
   const list = queues.get(tc) ?? [];
   // Adversaire le plus proche en classement, avec une tolérance qui s'élargit avec l'attente
-  const me = identity.user.rating;
+  const me = (await userById(identity.user.id))?.rating ?? identity.user.rating;
   const candidates = list
     .filter(e => e.key !== key)
     .filter(e => Math.abs(e.rating - me) <= 250 + ((now() - e.since) / 1000) * 25)
@@ -604,11 +642,11 @@ export function attachSockets(server: IO) {
     const withRoom = async (id: string, ack: (r: Ack) => void, fn: (room: Room, color: Color) => Ack | Promise<Ack>) => {
       if (typeof ack !== 'function') return;
       if (!allow()) return ack({ ok: false, error: 'Trop de requêtes.' });
-      const room = await loadRoom(String(id));
-      if (!room) return ack({ ok: false, error: 'Partie introuvable.' });
-      const color = colorOf(room, identity);
-      if (!color) return ack({ ok: false, error: 'Tu ne joues pas dans cette partie.' });
       try {
+        const room = await loadRoom(String(id));
+        if (!room) return ack({ ok: false, error: 'Partie introuvable.' });
+        const color = colorOf(room, identity);
+        if (!color) return ack({ ok: false, error: 'Tu ne joues pas dans cette partie.' });
         ack(await fn(room, color));
       } catch (e) {
         console.error(e);
@@ -619,6 +657,15 @@ export function attachSockets(server: IO) {
     sock.on('game:join', async (p, ack) => {
       if (typeof ack !== 'function') return;
       if (!allow()) return ack({ ok: false, error: 'Trop de requêtes.' });
+      try {
+        await joinGame(p, ack);
+      } catch (e) {
+        console.error('Rejoindre une partie :', e);
+        ack({ ok: false, error: 'Erreur serveur, réessaie.' });
+      }
+    });
+
+    const joinGame = async (p: { id: string; name?: string; sit?: boolean }, ack: (r: JoinReply) => void) => {
       const room = await loadRoom(String(p?.id ?? ''));
       if (!room) return ack({ ok: false, error: 'Cette partie n’existe pas ou a expiré.' });
       room.sockets.add(sock);
@@ -642,7 +689,7 @@ export function attachSockets(server: IO) {
       }
       updatePresence(room);
       ack({ ok: true, view: viewFor(room, color) });
-    });
+    };
 
     sock.on('game:leave', p => {
       const room = rooms.get(String(p?.id ?? ''));
@@ -676,7 +723,7 @@ export function attachSockets(server: IO) {
     sock.on('game:abort', (p, ack) =>
       withRoom(p?.id, ack, room => {
         if (room.d.status === 'ended') return { ok: false, error: 'Partie terminée.' };
-        if (room.d.status === 'active' && room.d.state.ply >= 2) return { ok: false, error: 'Trop tard pour annuler, tu peux abandonner.' };
+        if (room.d.status === 'active' && room.d.started) return { ok: false, error: 'Trop tard pour annuler, tu peux abandonner.' };
         endGame(room, { winner: null, reason: 'aborted' });
         return { ok: true };
       }));
@@ -729,7 +776,7 @@ export function attachSockets(server: IO) {
       }));
 
     sock.on('game:emote', p => {
-      if (!allow() || !(p?.key in EMOTES)) return;
+      if (!allow() || typeof p?.key !== 'string' || !Object.hasOwn(EMOTES, p.key)) return;
       const room = rooms.get(String(p.id));
       if (!room) return;
       const color = colorOf(room, identity);
@@ -740,7 +787,12 @@ export function attachSockets(server: IO) {
     sock.on('queue:join', async (p, ack) => {
       if (typeof ack !== 'function') return;
       if (!allow()) return ack({ ok: false, error: 'Trop de requêtes.' });
-      ack(await joinQueue(sock, String(p?.tc ?? '')));
+      try {
+        ack(await joinQueue(sock, String(p?.tc ?? '')));
+      } catch (e) {
+        console.error('File classée :', e);
+        ack({ ok: false, error: 'Erreur serveur, réessaie.' });
+      }
     });
 
     sock.on('queue:leave', () => {
@@ -753,18 +805,45 @@ export function attachSockets(server: IO) {
         room.sockets.delete(sock);
         updatePresence(room);
       }
-      const others = await io.in(`id:${myKey}`).fetchSockets();
-      if (!others.length) leaveQueues(myKey);
+      try {
+        const others = await io.in(`id:${myKey}`).fetchSockets();
+        if (!others.length) leaveQueues(myKey);
+      } catch {
+        leaveQueues(myKey);
+      }
     });
   });
 
   // Ménage : parties terminées sans spectateur, invitations jamais acceptées
   setInterval(() => {
     for (const [id, room] of rooms) {
-      if (room.d.status === 'ended' && !room.sockets.size && now() - room.endedAt > 10 * 60_000) rooms.delete(id);
-      if (room.d.status === 'waiting' && now() - room.d.createdAt > 3 * 86400_000) endGame(room, { winner: null, reason: 'aborted' });
+      const d = room.d;
+      if (d.status === 'ended' && !room.sockets.size && now() - room.endedAt > 10 * 60_000) rooms.delete(id);
+      if (d.status === 'waiting' && now() - d.createdAt > 3 * 86400_000) endGame(room, { winner: null, reason: 'aborted' });
+      if (d.status !== 'active') continue;
+      const humans = (['w', 'b'] as Color[]).filter(c => d.seats[c] && d.seats[c]!.kind !== 'bot');
+      const allAway = humans.every(c => room.away[c] !== null);
+      const awayFor = Math.min(...humans.map(c => now() - (room.away[c] ?? now())));
+      // Contre l'IA, le joueur parti depuis 30 min : partie annulée
+      if (d.mode === 'bot' && allAway && awayFor > BOT_IDLE_MS) endGame(room, { winner: null, reason: 'aborted' });
+      // Sans pendule, aucune action depuis 3 jours : partie annulée
+      else if (!d.clock && now() - (d.lastActivity ?? d.createdAt) > UNTIMED_IDLE_MS) endGame(room, { winner: null, reason: 'aborted' });
     }
   }, 60_000).unref();
+}
+
+/** Compte supprimé : ses parties en cours se terminent et ses sièges deviennent anonymes. */
+export async function detachUser(userId: string) {
+  for (const room of rooms.values()) {
+    for (const c of ['w', 'b'] as Color[]) {
+      const seat = room.d.seats[c];
+      if (seat?.userId !== userId) continue;
+      if (room.d.status === 'active') endGame(room, { winner: opposite(c), reason: 'abandon' });
+      else if (room.d.status === 'waiting') endGame(room, { winner: null, reason: 'aborted' });
+      room.d.seats[c] = { ...seat, kind: 'guest', userId: null, username: null, name: 'Compte supprimé' };
+      scheduleSave(room);
+    }
+  }
 }
 
 /** Sauvegarde immédiate de toutes les parties en cours (arrêt du serveur). */
@@ -791,7 +870,15 @@ export function activeRoomCount() {
 
 export const gamesRouter = Router();
 
-gamesRouter.post('/', async (req, res) => {
+const createLimiter = rateLimit({
+  windowMs: 10 * 60_000,
+  limit: 40,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Trop de parties créées, patiente quelques minutes.' },
+});
+
+gamesRouter.post('/', createLimiter, async (req, res) => {
   const parsed = z
     .object({
       mode: z.enum(['invite', 'bot']),
@@ -805,6 +892,10 @@ gamesRouter.post('/', async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Requête invalide.' });
   const o = parsed.data;
   const identity = req.identity;
+  const open = [...rooms.values()].filter(r => r.d.status !== 'ended' && r.d.creator === keyOf(identity)).length;
+  if (open >= MAX_OPEN_ROOMS) {
+    return res.status(429).json({ error: 'Tu as déjà trop de parties ouvertes : termine-en ou annule-en une.' });
+  }
   let name: string | undefined;
   if (!identity.user) {
     const n = guestNameSchema.safeParse(o.name ?? '');

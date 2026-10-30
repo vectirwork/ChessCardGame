@@ -68,6 +68,10 @@ export interface GameView {
   away: Record<Color, number | null>;
   claimAfterMs: number;
   createdAt: number;
+  /** Les deux joueurs ont la même main. */
+  mirror: boolean;
+  /** Chaque joueur a joué son premier coup : la partie ne peut plus être annulée. */
+  started: boolean;
 }
 
 export type GameEvent =

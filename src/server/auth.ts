@@ -121,8 +121,14 @@ export function requireUser(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+/** Administrateur : marqué en base, ou e-mail listé dans ADMIN_EMAILS ET vérifié (sinon n'importe qui pourrait le revendiquer). */
+export function isAdmin(u: UserRow | null): boolean {
+  if (!u) return false;
+  return u.is_admin || (u.email_verified && config.adminEmails.includes(u.email.toLowerCase()));
+}
+
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  if (!req.identity.user?.is_admin) return res.status(403).json({ error: 'Accès réservé.' });
+  if (!isAdmin(req.identity.user)) return res.status(403).json({ error: 'Accès réservé.' });
   next();
 }
 
@@ -140,7 +146,7 @@ export function toMe(u: UserRow): MeUser {
     equippedSkin: u.equipped_skin,
     equippedBoard: u.equipped_board,
     items: [...new Set([...FREE_ITEMS, ...u.items])],
-    isAdmin: u.is_admin,
+    isAdmin: isAdmin(u),
     createdAt: u.created_at.toISOString(),
   };
 }
@@ -219,12 +225,11 @@ authRouter.post('/register', authLimiter, async (req, res) => {
     return res.status(409).json({ error: 'Ce pseudo est déjà pris.' });
   }
   const hash = await hashPassword(password);
-  const isAdmin = config.adminEmails.includes(email.toLowerCase());
   let user: { id: string } | null;
   try {
     user = await one<{ id: string }>(
-      'INSERT INTO users (email, username, password_hash, is_admin) VALUES ($1, $2, $3, $4) RETURNING id',
-      [email, username, hash, isAdmin],
+      'INSERT INTO users (email, username, password_hash) VALUES ($1, $2, $3) RETURNING id',
+      [email, username, hash],
     );
   } catch {
     return res.status(409).json({ error: 'Pseudo ou e-mail déjà utilisé.' });
@@ -249,10 +254,6 @@ authRouter.post('/login', authLimiter, async (req, res) => {
   if (!row || !ok) return res.status(401).json({ error: 'E-mail, pseudo ou mot de passe incorrect.' });
   await createSession(req, res, row.id);
   const user = await userById(row.id);
-  if (user && !user.is_admin && config.adminEmails.includes(user.email.toLowerCase())) {
-    await q('UPDATE users SET is_admin = true WHERE id = $1', [user.id]);
-    user.is_admin = true;
-  }
   res.json({ user: toMe(user!) });
 });
 

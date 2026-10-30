@@ -2,12 +2,13 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { itemById } from '../shared/catalog';
-import type { GameSummary } from '../shared/protocol';
 import {
   clearSessionCookie, createEmailToken, createSession, emailSchema, passwordSchema, requireUser, toMe, userById,
   usernameSchema, zodError,
 } from './auth';
 import { one, q } from './db';
+import { detachUser } from './games';
+import { toSummary } from './summary';
 import { sendVerification } from './mail';
 import { hashPassword, verifyPassword } from './security';
 
@@ -47,7 +48,7 @@ accountRouter.post('/email', async (req, res) => {
   }
   const taken = await one('SELECT 1 FROM users WHERE lower(email) = lower($1) AND id <> $2', [parsed.data.email, u.id]);
   if (taken) return res.status(409).json({ error: 'Cette adresse est déjà utilisée.' });
-  await q('UPDATE users SET email = $1, email_verified = false WHERE id = $2', [parsed.data.email, u.id]);
+  await q('UPDATE users SET email = $1, email_verified = false, is_admin = false WHERE id = $2', [parsed.data.email, u.id]);
   const token = await createEmailToken(u.id, 'verify');
   void sendVerification(parsed.data.email, u.username, token);
   res.json({ user: toMe((await userById(u.id))!) });
@@ -103,6 +104,7 @@ accountRouter.delete('/', async (req, res) => {
   if (!(await verifyPassword(parsed.data.password, u.password_hash))) {
     return res.status(400).json({ error: 'Mot de passe incorrect.' });
   }
+  await detachUser(u.id);
   await q(`UPDATE games SET white_name = 'Compte supprimé' WHERE white_user_id = $1`, [u.id]);
   await q(`UPDATE games SET black_name = 'Compte supprimé' WHERE black_user_id = $1`, [u.id]);
   await q('UPDATE purchases SET email = NULL WHERE user_id = $1', [u.id]);
@@ -115,23 +117,6 @@ accountRouter.delete('/', async (req, res) => {
 
 export const communityRouter = Router();
 
-export function toSummary(r: any): GameSummary {
-  return {
-    id: r.id,
-    mode: r.mode,
-    rated: r.rated,
-    status: r.status,
-    white: r.white_name,
-    black: r.black_name,
-    whiteRating: r.white_rating,
-    blackRating: r.black_rating,
-    winner: r.winner,
-    reason: r.reason,
-    timeControl: r.time_control,
-    createdAt: r.created_at.toISOString(),
-    plies: r.plies,
-  };
-}
 
 communityRouter.get('/users/:username', async (req, res) => {
   const u = await one(

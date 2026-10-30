@@ -128,6 +128,9 @@ async function main() {
   process.on('SIGINT', shutdown);
 }
 
+// Une erreur oubliée ne doit jamais arrêter toutes les parties en cours
+process.on('unhandledRejection', e => console.error('Promesse rejetée non gérée :', e));
+
 main().catch(e => {
   console.error(e);
   process.exit(1);

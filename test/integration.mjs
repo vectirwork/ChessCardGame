@@ -97,6 +97,7 @@ const targetsFor = {
   time_warp: [], gravity: [], rewind: [], ice_wall: [sq('e3')], freeze: [sq('b8')], shield: [sq('g1')], lightning: [sq('a7')],
   knight_leap: [sq('f1')], phase: [sq('d1')], swap: [sq('b1'), sq('g1')], revive: [],
 };
+await new Promise(res => setTimeout(res, 1100)); // la pendule des Blancs tourne
 for (let i = 0; i < hand.length && !played; i++) {
   const card = hand[i].card;
   if (card === 'revive' || card === 'rewind') continue;
@@ -106,6 +107,7 @@ for (let i = 0; i < hand.length && !played; i++) {
     const u = await bob.waitFor(x => x.event.type === 'card');
     assert.equal(u.event.info.card, card);
     assert.equal(u.view.state.hands.w[i].card, card, 'une carte jouée est révélée');
+    assert.ok(u.view.clock.w <= 300_000 - 1000, `la pendule tient compte du temps écoulé (${u.view.clock.w})`);
     a = await alice.emit('game:card', { id: gameId, index: (i + 1) % 3, targets: [] });
     assert.equal(a.ok, false, 'une seule carte par tour');
   }
@@ -157,7 +159,25 @@ if (r.status === 200 && r.data.url.startsWith('/boutique/demo/')) {
   step(`boutique : mode ${r.data?.url ?? r.status} (test démo ignoré)`);
 }
 
-// 8. Compte : profil public, export, suppression
+// 8. Sécurité : émote piégée ignorée, droits d'administrateur réservés aux e-mails vérifiés
+const seen = [];
+await bob.emit('game:join', { id: rd.to });
+bob.socket.on('game:emote', e => seen.push(e));
+alice.socket.emit('game:emote', { id: rd.to, key: '__proto__' });
+alice.socket.emit('game:emote', { id: rd.to, key: 'gg' });
+await new Promise(res => setTimeout(res, 400));
+assert.deepEqual(seen.map(e => e.key), ['gg'], 'seules les émotes connues sont relayées');
+const mallory = new Client();
+r = await mallory.api('/auth/register', { email: 'admin@spellmate.test', username: `mallory_${stamp}`, password: 'motdepasse123', acceptTerms: true });
+if (r.status === 200) {
+  assert.equal(r.data.user.isAdmin, false, "un e-mail d'administrateur non vérifié ne donne aucun droit");
+  r = await mallory.api('/admin/overview');
+  assert.equal(r.status, 403);
+  await mallory.api('/account', { password: 'motdepasse123' }, 'DELETE');
+}
+step('émote piégée ignorée, administration réservée aux e-mails vérifiés');
+
+// 9. Compte : profil public, export, suppression
 r = await alice.api(`/users/alice_${stamp}`);
 assert.equal(r.status, 200);
 r = await alice.api('/account/export');

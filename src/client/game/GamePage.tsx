@@ -175,7 +175,7 @@ export default function GamePage() {
       if (p.from === id) navigate(`/partie/${p.to}`);
     };
     const onEmote = (p: { gameId: string; color: Color; key: string }) => {
-      if (p.gameId !== id) return;
+      if (p.gameId !== id || !Object.hasOwn(EMOTES, p.key)) return;
       setEmotes(e => ({ ...e, [p.color]: EMOTES[p.key] }));
       playSound('notify');
       setTimeout(() => setEmotes(e => ({ ...e, [p.color]: null })), 2800);
@@ -406,6 +406,7 @@ export default function GamePage() {
                 <span className="badge cyan">{tcLabel}</span>
                 <span className="badge">{view.mode === 'bot' ? 'Contre l’IA' : view.mode === 'quick' ? 'Classée' : 'Entre amis'}</span>
                 {view.rated && <span className="badge gold">Elo</span>}
+                {view.mirror && <span className="badge" title="Les deux joueurs ont les mêmes cartes">Miroir</span>}
               </div>
               <div className="row" style={{ gap: 4 }}>
                 <button className="btn btn-ghost btn-sm" title="Retourner l'échiquier" onClick={() => setFlipped(f => !f)}>⇅</button>
@@ -438,7 +439,7 @@ export default function GamePage() {
 
             {you && view.status === 'active' && (
               <div className="actions">
-                {state.ply < 2 ? (
+                {!view.started ? (
                   <button className="btn btn-sm" onClick={() => send('game:abort', {})}>Annuler la partie</button>
                 ) : (
                   <button className="btn btn-sm" disabled={view.drawOffer === you || view.mode === 'bot'} onClick={() => send('game:draw', { action: 'offer' }).then(ok => ok && toast('Proposition de nulle envoyée.'))}>
@@ -470,6 +471,7 @@ export default function GamePage() {
 
       {needName && view.status === 'waiting' && (
         <JoinModal
+          mirror={view.mirror}
           host={view.seats.w?.name ?? view.seats.b?.name ?? 'un joueur'}
           loggedIn={!!me}
           onJoin={name => {
@@ -574,7 +576,7 @@ function WaitingOverlay({ id, view, onCancel }: { id: string; view: GameView; on
   );
 }
 
-function JoinModal({ host, loggedIn, onJoin }: { host: string; loggedIn: boolean; onJoin: (name: string) => void }) {
+function JoinModal({ host, loggedIn, mirror, onJoin }: { host: string; loggedIn: boolean; mirror: boolean; onJoin: (name: string) => void }) {
   const [name, setName] = useState(getGuestName());
   const [busy, setBusy] = useState(false);
   const valid = /^[\p{L}\p{N} _.-]{2,20}$/u.test(name.trim());
@@ -584,6 +586,7 @@ function JoinModal({ host, loggedIn, onJoin }: { host: string; loggedIn: boolean
         <div className="eyebrow">Invitation</div>
         <h2 style={{ marginTop: 8 }}>{host} te défie !</h2>
         <p className="muted">Échecs classiques, plus trois cartes de pouvoir chacun. Choisis un pseudo pour rejoindre la partie.</p>
+        {mirror && <p className="badge cyan" style={{ height: 'auto', padding: '4px 10px', marginBottom: 14 }}>Mode miroir : vous aurez tous les deux les mêmes cartes</p>}
       </div>
       {!loggedIn && (
         <form

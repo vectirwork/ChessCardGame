@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run",
     "migrate": "node dist/server/index.js --migrate-only",
-    "test:integration": "node test/integration.mjs"
+    "test:integration": "node test/integration.mjs",
+    "test:ranked": "node test/ranked.mjs"
   },
   "dependencies": {
     "compression": "^1.8.1",

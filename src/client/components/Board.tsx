@@ -62,6 +62,8 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
   // Pièces affichées, avec fondu de sortie pour les pièces capturées
   const [shown, setShown] = useState<Shown[]>(() => pos.board.flatMap((p, sq) => (p ? [{ p, sq, state: 'idle' as const }] : [])));
   const prevIds = useRef<Set<number>>(new Set(pos.board.filter(Boolean).map(p => p!.id)));
+  const shownRef = useRef(shown);
+  shownRef.current = shown;
   useEffect(() => {
     const now: Shown[] = [];
     const ids = new Set<number>();
@@ -78,8 +80,6 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
       return () => clearTimeout(t);
     }
   }, [pos]);
-  const shownRef = useRef(shown);
-  shownRef.current = shown;
 
   useEffect(() => {
     setSelected(null);

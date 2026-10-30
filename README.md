@@ -99,10 +99,21 @@ Prérequis : Node.js 22 et PostgreSQL 16 (ou `docker compose up -d db` en exposa
 ```bash
 npm install
 npm run dev        # http://localhost:3000, paiements en mode démo
-npm test           # moteur d'échecs (perft), cartes
+npm test           # moteur d'échecs (perft), règles des cartes
 npm run typecheck
 npm run build && NODE_ENV=production SECRET_KEY=... npm start
 ```
+
+Tests contre un serveur lancé :
+
+```bash
+npm run test:integration          # comptes, invitation sans compte, coups, cartes, revanche, IA, boutique, RGPD
+node test/ranked.mjs              # file classée et Elo
+node test/stripe-webhook.mjs http://localhost:3100 whsec_test   # serveur lancé avec PAYMENTS_MODE=stripe
+```
+
+En développement, `http://localhost:3000/test/vfx.html?card=lightning&targets=d5` est un banc d'essai des effets
+(`window.cast('ice_wall', ['e4'], 'skin:inferno')` dans la console).
 
 Par défaut la base attendue est `postgres://spellmate:spellmate@localhost:5432/spellmate` (variable `DATABASE_URL`).
 

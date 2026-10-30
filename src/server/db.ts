@@ -122,6 +122,10 @@ const MIGRATIONS: string[] = [
   CREATE INDEX purchases_user_idx ON purchases (user_id, created_at DESC);
   CREATE INDEX purchases_payment_idx ON purchases (payment_ref);
   `,
+  `
+  ALTER TABLE games ADD COLUMN ratings_applied boolean NOT NULL DEFAULT false;
+  UPDATE games SET ratings_applied = true WHERE status = 'ended';
+  `,
 ];
 
 export async function migrate(): Promise<void> {

@@ -1,0 +1,18 @@
+{
+  "url": "http://localhost:3000/boutique",
+  "outDir": "/home/user/ChessCardGame/concepts/site-pages",
+  "viewport": { "width": 1440, "height": 900 },
+  "steps": [
+    { "wait": 800 },
+    { "shot": "bureau-boutique-01-vitrine" },
+    { "wait": 9000 },
+    { "shot": "bureau-boutique-02-sort" },
+    { "click": ".bz-swatch:nth-child(6)", "settle": 400 },
+    { "click": ".bz-lantern:nth-child(6)", "settle": 7000 },
+    { "shot": "bureau-boutique-03-sakura-jade" },
+    { "scrollToSelector": "#grimoires", "settle": 1200 },
+    { "shot": "bureau-boutique-04-grimoires" },
+    { "click": ".bz-pack .btn-gold", "settle": 1500 },
+    { "eval": "location.pathname + location.search" }
+  ]
+}

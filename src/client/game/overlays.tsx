@@ -232,7 +232,7 @@ export function rematchLabel(view: GameView): string | null {
   return 'Revanche';
 }
 
-export function EndCard({ view, onClose, onRematch, loggedIn, footer }: { view: GameView; onClose: () => void; onRematch: () => void; loggedIn: boolean; footer?: ReactNode }) {
+export function EndCard({ view, onClose, onRematch, loggedIn, footer, screen }: { view: GameView; onClose: () => void; onRematch: () => void; loggedIn: boolean; footer?: ReactNode; /** Plein écran (mobile) plutôt que sur l'échiquier. */ screen?: boolean }) {
   const r = view.state.result!;
   const you = view.you;
   const win = !!you && r.winner === you;
@@ -242,7 +242,7 @@ export function EndCard({ view, onClose, onRematch, loggedIn, footer }: { view: 
   const rematch = rematchLabel(view);
   const moves = Math.ceil(view.state.ply / 2);
   return (
-    <div className="gp-veil is-end">
+    <div className={`gp-veil is-end ${screen ? 'is-screen' : ''}`}>
       <div className={`gp-card gp-end ${aborted ? 'is-aborted' : win ? 'is-win' : draw ? 'is-draw' : you ? 'is-loss' : ''}`} role="dialog" aria-label="Fin de partie">
         <div className="gp-end-mark" aria-hidden="true">
           {aborted ? '✕' : draw ? '½' : win ? '♛' : '♚'}

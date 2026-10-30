@@ -118,8 +118,8 @@ const MODS_PLIES = 32;
 
 /**
  * Règles vues par la recherche : modificateurs coup par coup depuis la racine (`mods[k]` régit le k-ième
- * demi-coup, `mods[k + 1]` juge la sécurité du roi après ce coup), et « la magie cède » (Climats).
- * Sans cela, l'IA croirait qu'une Chevauchée ou une Trêve dure toute sa recherche, ou qu'un Climat annoncé
+ * demi-coup, `mods[k + 1]` juge la sécurité du roi après ce coup), et « la magie cède » (Pouvoirs).
+ * Sans cela, l'IA croirait qu'une Trêve ou une Faille dure toute sa recherche, ou qu'un Climat annoncé
  * n'arrivera jamais.
  */
 interface SearchRules {
@@ -382,18 +382,15 @@ export function chooseBotCard(s: GameState, level: BotLevel): { index: number; t
 }
 
 /**
- * Petites corrections de jugement que la recherche, à faible profondeur, ne voit pas.
- * - Un Climat annoncé remplacera le nôtre s'il est actif : la recherche le voit, mais on évite de gaspiller
- *   une carte pour chasser son propre Climat.
- * - Le Déjà-vu ne sert qu'à réparer : il faut un vrai gain (la recherche le mesure), on exige un peu plus.
+ * Petite correction de jugement que la recherche, à faible profondeur, ne voit pas : un Climat annoncé
+ * remplacera le nôtre s'il est actif ; la recherche le voit, mais on évite de gaspiller une carte pour chasser
+ * son propre Climat.
  */
 function cardBias(before: GameState, me: Color, card: CardId): number {
-  let bias = 0;
   if (CARDS[card].family === 'climat' && before.effects.some(e => !e.pending && e.caster === me && CARDS[e.card].family === 'climat')) {
-    bias -= 60;
+    return -60;
   }
-  if (card === 'deja_vu') bias -= 40;
-  return bias;
+  return 0;
 }
 
 /** Cibles candidates d'une carte, les plus prometteuses d'abord (une par résultat distinct). */
@@ -408,7 +405,6 @@ function candidateTargets(s: GameState, me: Color, index: number): number[][] {
       const ranks = new Set<number>();
       return first.filter(t => !ranks.has(t >> 3) && ranks.add(t >> 3)).map(t => [t]);
     }
-    if (card === 'portals') return first.filter(t => t < 63 - t || !first.includes(63 - t)).map(t => [t]);
     if (card === 'ice_wall') return rankWallSquares(s, me, first).map(t => [t]);
     return first.map(t => [t]);
   }

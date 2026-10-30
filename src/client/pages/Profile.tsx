@@ -12,7 +12,17 @@ import { useApp } from '../store';
 import { PageHead, PlacePage, useTitle } from './PageScene';
 
 interface ProfileData {
-  profile: { username: string; rating: number; gamesPlayed: number; wins: number; losses: number; draws: number; skin: string; memberSince: string; rank: number | null };
+  profile: {
+    username: string;
+    rating: number;
+    gamesPlayed: number;
+    wins: number;
+    losses: number;
+    draws: number;
+    skin: string;
+    memberSince: string;
+    rank: number | null;
+  };
   games: GameSummary[];
 }
 
@@ -25,14 +35,28 @@ export default function Profile() {
   useEffect(() => {
     setData(null);
     setError(null);
-    api<ProfileData>(`/users/${encodeURIComponent(username)}`).then(setData).catch(e => setError(errMsg(e)));
+    api<ProfileData>(`/users/${encodeURIComponent(username)}`)
+      .then(setData)
+      .catch(e => setError(errMsg(e)));
   }, [username]);
   if (error)
     return (
       <PlacePage place="observatoire" className="prof" narrow>
-        <PageHead place="L’Observatoire" aside="Profil" title={<>Joueur <em>introuvable.</em></>} lede={error} center>
+        <PageHead
+          place="L’Observatoire"
+          aside="Profil"
+          title={
+            <>
+              Joueur <em>introuvable.</em>
+            </>
+          }
+          lede={error}
+          center
+        >
           <div className="row" style={{ justifyContent: 'center', marginTop: 8 }}>
-            <Link to="/classement" className="btn">Voir le classement</Link>
+            <Link to="/classement" className="btn">
+              Voir le classement
+            </Link>
           </div>
         </PageHead>
       </PlacePage>
@@ -57,7 +81,12 @@ export default function Profile() {
             lede={
               <>
                 Membre depuis {new Date(p.memberSince).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
-                {skin && <> · skin <b className="prof-skin">{skin.name}</b></>}
+                {skin && (
+                  <>
+                    {' '}
+                    · skin <b className="prof-skin">{skin.name}</b>
+                  </>
+                )}
                 {isMe && (
                   <>
                     {' '}
@@ -75,11 +104,26 @@ export default function Profile() {
       </div>
 
       <div className="stat-row">
-        <div className="stat"><b>{p.gamesPlayed}</b><span>parties classées</span></div>
-        <div className="stat"><b className="win">{p.wins}</b><span>victoires</span></div>
-        <div className="stat"><b className="loss">{p.losses}</b><span>défaites</span></div>
-        <div className="stat"><b>{p.draws}</b><span>nulles</span></div>
-        <div className="stat"><b className="gold">{winRate} %</b><span>de victoires</span></div>
+        <div className="stat">
+          <b>{p.gamesPlayed}</b>
+          <span>parties classées</span>
+        </div>
+        <div className="stat">
+          <b className="win">{p.wins}</b>
+          <span>victoires</span>
+        </div>
+        <div className="stat">
+          <b className="loss">{p.losses}</b>
+          <span>défaites</span>
+        </div>
+        <div className="stat">
+          <b>{p.draws}</b>
+          <span>nulles</span>
+        </div>
+        <div className="stat">
+          <b className="gold">{winRate} %</b>
+          <span>de victoires</span>
+        </div>
       </div>
       {p.gamesPlayed > 0 && (
         <div className="prof-bar" role="img" aria-label={`${p.wins} victoires, ${p.draws} nulles, ${p.losses} défaites`}>
@@ -106,7 +150,9 @@ export function GamesTable({ games, me }: { games: GameSummary[]; me: string }) 
             <th>Cadence</th>
             <th>Coups</th>
             <th>Date</th>
-            <th><span className="sr-only">Revoir</span></th>
+            <th>
+              <span className="sr-only">Revoir</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -118,19 +164,34 @@ export function GamesTable({ games, me }: { games: GameSummary[]; me: string }) 
               <tr key={g.id}>
                 <td>
                   <span className="gt-players">
-                    <span className="gt-p"><i className="gt-dot w" aria-label="Blancs" />{g.white}</span>
-                    <span className="gt-p"><i className="gt-dot b" aria-label="Noirs" />{g.black}</span>
+                    <span className="gt-p">
+                      <i className="gt-dot w" aria-label="Blancs" />
+                      {g.white}
+                    </span>
+                    <span className="gt-p">
+                      <i className="gt-dot b" aria-label="Noirs" />
+                      {g.black}
+                    </span>
                   </span>
                 </td>
                 <td>
-                  <span className={`badge ${res === 'win' ? 'green' : res === 'loss' ? 'red' : ''}`}>{res === 'win' ? 'Victoire' : res === 'loss' ? 'Défaite' : 'Nulle'}</span>{' '}
-                  <span className="faint" style={{ fontSize: 12.5 }}>{RESULT_TEXT[g.reason as ResultReason] ?? ''}</span>
+                  <span className={`badge ${res === 'win' ? 'green' : res === 'loss' ? 'red' : ''}`}>
+                    {res === 'win' ? 'Victoire' : res === 'loss' ? 'Défaite' : 'Nulle'}
+                  </span>{' '}
+                  <span className="faint" style={{ fontSize: 12.5 }}>
+                    {RESULT_TEXT[g.reason as ResultReason] ?? ''}
+                  </span>
                 </td>
-                <td>{TIME_CONTROLS.find(t => t.id === g.timeControl)?.label ?? g.timeControl}{g.rated ? ' · classée' : ''}</td>
+                <td>
+                  {TIME_CONTROLS.find(t => t.id === g.timeControl)?.label ?? g.timeControl}
+                  {g.rated ? ' · classée' : ''}
+                </td>
                 <td>{Math.ceil(g.plies / 2)}</td>
                 <td className="faint">{new Date(g.createdAt).toLocaleDateString('fr-FR')}</td>
                 <td className="gt-act">
-                  <Link to={`/analyse/${g.id}`} className="btn btn-sm">Revoir</Link>
+                  <Link to={`/analyse/${g.id}`} className="btn btn-sm">
+                    Revoir
+                  </Link>
                 </td>
               </tr>
             );
@@ -140,4 +201,3 @@ export function GamesTable({ games, me }: { games: GameSummary[]; me: string }) 
     </div>
   );
 }
-

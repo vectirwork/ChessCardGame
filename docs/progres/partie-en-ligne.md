@@ -7,9 +7,22 @@ src/client/pages/Play.tsx, src/client/styles/game.css. Captures : concepts/site-
 ## Fait
 - Lecture du plan, de GamePage/parts/Play, de la coque (GameShell, EffectChips, layout, castSafely). tsc de départ :
   seule erreur concepts/galerie/data.ts (pas à nous).
+- Écrits (tsc OK) : game/parts.tsx (pendules, pièces prises, coups, EffectsPanel avec Présages, libellés mode /
+  catalogue / cadence), game/overlays.tsx (CastBanner, WaitingCard, JoinSheet, DrawOffer, AwayNotice,
+  FirstMoveCountdown, EndCard), game/GamePage.tsx (GameShell + backdrop, html.is-immersive + gp-on, --gp-side,
+  rail des coups, bloc « vous », castSafely, scène 3D différée), styles/game.css (réécrit : gp-*, pl-*),
+  pages/Play.tsx (4 portes : IA, ami, amicale, classée ; catalogue ; parties en cours ; préchargement de GamePage).
+- 1re passe de captures (duel.cjs) : tout le parcours fonctionne, aucune erreur console. Corrigé ensuite :
+  avatar écrasé par les règles `.gs-opp-id span` de la coque (spécificité), bloc « vous » qui débordait à droite,
+  fin de partie mobile sous le HUD (le .gs-stage fixe crée un contexte d'empilement → EndCard plein écran rendue
+  hors de la coque sur mobile), statut trop long à 720 px (ligne catalogue retirée → kicker avec infobulle ;
+  retourner/son en icônes dans le bloc « vous » sur ordinateur ; barre de défilement fine), liste des coups
+  (un sort sur sa propre ligne), pastilles d'effets (point plein / pointillé pour un Présage), effets masqués en
+  fin de partie, consigne masquée sur mobile au tour adverse.
+- Pendant ma session, le flux A/C modifie les cartes (src/shared, tests) : erreurs tsc chez eux, aucune dans mes
+  fichiers.
 ## En cours
-- Écriture : game/parts.tsx (pendules, coups, effets/Présages, blocs joueurs), game/overlays.tsx (attente,
-  invitation, fin, sort), game/GamePage.tsx (GameShell + backdrop, html.is-immersive), game.css (classes gp-*, pl-*).
+- 2e passe de captures (duel.cjs) + scénario jouer.cjs (page Jouer, file amicale, badge « Partie amicale »).
 ## Reste à faire
 - Refonte GamePage avec GameShell ; Présages + catalogue ; Play.tsx ; captures ; integration.mjs ; tsc ; npm test.
 ## Décisions

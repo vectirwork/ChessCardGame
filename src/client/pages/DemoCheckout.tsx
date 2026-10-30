@@ -18,15 +18,27 @@ export default function DemoCheckout() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    api<{ productId: string; amountCents: number; status: string }>(`/shop/demo/${id}`).then(setP).catch(e => setError(errMsg(e)));
+    api<{ productId: string; amountCents: number; status: string }>(`/shop/demo/${id}`)
+      .then(setP)
+      .catch(e => setError(errMsg(e)));
   }, [id]);
   if (error)
     return (
       <PlacePage place="bazar" className="co-page" narrow>
-        <PageHead place="La caisse du Bazar" title={<>Paiement <em>introuvable.</em></>} center />
+        <PageHead
+          place="La caisse du Bazar"
+          title={
+            <>
+              Paiement <em>introuvable.</em>
+            </>
+          }
+          center
+        />
         <div className="co-card panel panel-pad">
           <p className="form-error">{error}</p>
-          <Link to="/boutique" className="btn btn-block">Retour à la boutique</Link>
+          <Link to="/boutique" className="btn btn-block">
+            Retour à la boutique
+          </Link>
         </div>
       </PlacePage>
     );

@@ -1,13 +1,15 @@
-// Catalogue Climats (concepts/CARTES-GLOBALES.md) : Présage, Rituel, « la magie cède », et les 12 cartes.
+// Catalogue Pouvoirs (identifiant 'climats' ; concepts/CARTES-GLOBALES.md et décision du fondateur du
+// 30 octobre dans docs/PLAN-ODYSSEE.md) : Présage, Rituel, « la magie cède », mains visibles, et les 8 cartes.
 // Les positions citées par les relectures du document servent de tests de non-régression (section 4.6).
 import { describe, expect, it } from 'vitest';
-import { CARDS, CardId, cardsOf } from '../src/shared/cards';
+import { CARDS, CATALOGS, CardId, cardsOf, offeredCatalog } from '../src/shared/cards';
 import {
-  Color, F_BLAST, F_PORTAL, F_PROMO, F_RELAXED, inCheck, legalMoves, opposite, sqIndex as q, sqName,
+  Color, F_BLAST, F_CASTLE_K, F_RELAXED, inCheck, legalMoves, sqIndex as q, sqName,
 } from '../src/shared/chess';
 import {
   Effect, GameState, canStillMate, cardOptions, cardPlayable, checkKind, clockRate, createGame, createGameFromFen,
-  evaluateEnd, incrementSuspended, legalMovesOf, modsFromEffects, playCard, playMove, sideInCheck, viewState,
+  evaluateEnd, incrementSuspended, legalMovesOf, modsFromEffects, playCard, playMove, positionKey, sideInCheck,
+  viewState,
 } from '../src/shared/game';
 
 const game = (fen: string, w: CardId[] = [], b: CardId[] = [], timed = true) => createGameFromFen(fen, { w, b }, timed, 'climats');
@@ -35,6 +37,9 @@ function withEffect(s: GameState, cardId: CardId, extra: Partial<Effect> = {}, c
   const e: Effect = { id: 900 + s.effects.length, card: cardId, caster, countsOn: caster, remaining: coups, total: coups, skin: '', global: true, ...extra };
   return { ...s, effects: [...s.effects, e] };
 }
+/** Mur de glace permanent déjà posé. */
+const wall = (s: GameState, square: string, caster: Color = 'b') =>
+  withEffect(s, 'ice_wall', { square: q(square), permanent: true, remaining: 0, total: 0 }, caster);
 const live = (s: GameState) => s.effects.filter(e => !e.pending).map(e => e.card);
 const pawnMoves = (s: GameState) => legalMovesOf(s).filter(m => s.pos.board[m.from]?.t === 'p');
 
@@ -86,35 +91,17 @@ describe('Présage', () => {
     expect(cardPlayable(s, 'b', 1)).toBe(true);
   });
 
-  it('la réponse au Présage doit mettre le roi à l’abri du monde qui arrive (échec à l’arrivée)', () => {
-    let s = game('4k3/8/8/1n6/8/8/8/3QK3 w - - 0 1', ['cavalcade']);
-    s = card(s, 0);
-    const r = playMove(s, q('d1'), q('d6'));
-    if (!r.ok) throw new Error(r.error);
-    s = r.state;
-    // La dame d6 sautera en e8 quand la Chevauchée arrivera, après la réponse noire.
-    expect(r.info.check).toBe(true);
-    expect(r.info.checkKind).toBe('arrival');
-    expect(s.log[s.log.length - 1]).toMatchObject({ san: 'Qd6+' });
-    expect(sideInCheck(s)).toBe(true);
-    expect(checkKind(s)).toBe('arrival');
-    expect(all(s)).toEqual(['b5d6']); // seule la prise de la dame pare
-  });
-
-  it('R4a : la Chevauchée est refusée si une pièce longue est à un saut du roi adverse', () => {
-    const s = game('4k3/8/3Q4/8/8/8/8/4K3 w - - 0 1', ['cavalcade']);
-    expect(refused(s, 0)).toBe('À son arrivée, cette carte mettrait le roi adverse en échec.');
-  });
-
-  it('un Présage est public et les Portails s’annoncent aussi', () => {
-    let s = createGame({ w: ['portals'], b: [] }, false, 'climats');
-    s = card(s, 0, 'c3');
-    expect(s.effects[0]).toMatchObject({ card: 'portals', squares: [q('c3'), q('f6')], pending: true });
-    expect(modsFromEffects(s.effects).portals).toBeNull();
-    s = mv(s, 'b1', 'a3');
-    s = mv(s, 'e7', 'e6');
-    expect(modsFromEffects(s.effects).portals).toEqual([q('c3'), q('f6')]);
-    expect(viewState(s, 'b', false).effects[0].card).toBe('portals');
+  it('aucun Climat ne change les attaques : son arrivée ne met jamais un roi en échec', () => {
+    // Dame blanche d6 face au roi e8 masquée par le fou e7 : chaque Climat arrive, aucun échec n'apparaît.
+    for (const id of ['truce', 'blood_moon', 'ice_age', 'blast'] as CardId[]) {
+      let s = game('4k3/4b3/3Q4/8/8/8/P7/4K3 w - - 0 1', [id]);
+      s = card(s, 0);
+      s = mv(s, 'a2', 'a3');
+      expect(sideInCheck(s), id).toBe(false);
+      s = mv(s, 'e8', 'f8');
+      expect(live(s), id).toEqual([id]);
+      expect(sideInCheck(s, 'b'), id).toBe(false);
+    }
   });
 });
 
@@ -122,7 +109,7 @@ describe('Durées', () => {
   it('Trêve et Lune de sang durent 3 coups, les autres Climats un nombre pair', () => {
     expect(CARDS.truce.coups).toBe(3);
     expect(CARDS.blood_moon.coups).toBe(3);
-    for (const id of ['hourglass', 'ice_age', 'coronation', 'blast', 'cavalcade'] as CardId[]) expect(CARDS[id].coups! % 2).toBe(0);
+    for (const id of ['hourglass', 'ice_age', 'blast'] as CardId[]) expect(CARDS[id].coups! % 2).toBe(0);
   });
 
   it("sous la Trêve, l'adversaire reprend les captures le premier", () => {
@@ -164,24 +151,28 @@ describe('La magie cède (R6)', () => {
   });
 
   it('un mat aidé par un Mur reste un mat', () => {
-    let s = game('6k1/5pp1/8/8/8/8/8/4R1K1 w - - 0 1', ['ice_wall']);
-    s = card(s, 0, 'h7');
-    s = mv(s, 'e1', 'e8');
-    expect(s.result).toEqual({ winner: 'w', reason: 'checkmate' });
+    // Rh4 entre ses pions g4 et g5 : sans Mur, Th1+ Rg3 ; avec le Mur en g3, Th1 est mat.
+    const s = game('8/8/8/6p1/6pk/8/4K3/R7 w - - 0 1', ['ice_wall']);
+    expect(mv(s, 'a1', 'h1').result).toBeNull();
+    const n = mv(card(s, 0, 'g3'), 'a1', 'h1');
+    expect(n.result).toEqual({ winner: 'w', reason: 'checkmate' });
   });
 
   it('R4b : le lanceur ne peut pas se bloquer lui-même (sauf s’il l’était déjà)', () => {
-    const s = game('6r1/8/8/8/8/8/8/k6K w - - 0 1', ['ice_wall']);
-    expect(refused(s, 0, 'h2')).toBe('Cette carte te laisserait sans aucun coup.');
-    expect(cardOptions(s, 'w', 0).map(sqName)).not.toContain('h2');
-    // Déjà bloqué par un Mur adverse : il peut jouer une carte (et jouera ensuite Rh2, la magie cède)
-    const t = withEffect(game('6r1/8/8/8/8/8/8/k6K w - - 0 1', ['ice_wall']), 'ice_wall', { square: q('h2'), remaining: 3 });
-    expect(all(t)).toEqual(['h1h2']);
+    // Rh3 : g2, g3, g4 tenues par la tour g8, h2 par le cavalier f1 ; seul Rh4 est jouable.
+    const fen = '6r1/8/8/8/8/7K/8/k4n2 w - - 0 1';
+    const s = game(fen, ['ice_wall']);
+    expect(all(s)).toEqual(['h3h4']);
+    expect(refused(s, 0, 'h4')).toBe('Cette carte te laisserait sans aucun coup.');
+    expect(cardOptions(s, 'w', 0).map(sqName)).not.toContain('h4');
+    // Déjà bloqué par un Mur adverse : il peut jouer une carte (et jouera ensuite Rh4, la magie cède)
+    const t = wall(game(fen, ['ice_wall']), 'h4');
+    expect(all(t)).toEqual(['h3h4']);
     const n = card(t, 0, 'a5');
-    const r = playMove(n, q('h1'), q('h2'));
+    const r = playMove(n, q('h3'), q('h4'));
     expect(r.ok && r.info.move.flags & F_RELAXED).toBeTruthy();
-    // Le Mur de la case où le roi s'est arrêté a fondu
-    if (r.ok) expect(r.state.effects.filter(e => e.square === q('h2'))).toEqual([]);
+    // Le Mur (permanent) de la case où le roi s'est arrêté disparaît ; l'autre reste.
+    if (r.ok) expect(r.state.effects.map(e => sqName(e.square!))).toEqual(['a5']);
   });
 
   it('la Faille reçoit un pont sous une pièce qui s’y arrête par la magie', () => {
@@ -220,18 +211,8 @@ describe('Lune de sang', () => {
     s = mv(s, 'd5', 'f7');
     expect(s.log[s.log.length - 1]).toMatchObject({ san: 'Bxf7+' });
   });
-
-  it('avec Déjà-vu : la pièce interdite est retirée avant l’obligation, les coups calmes reviennent', () => {
-    let s = moon(game('6k1/p7/8/3p4/8/2N5/7P/6K1 w - - 0 1', ['deja_vu']));
-    expect(all(s)).toEqual(['c3d5']);
-    s = mv(s, 'c3', 'd5');
-    s = mv(s, 'a7', 'a6');
-    s = card(s, 0);
-    expect(live(s)).toEqual(['blood_moon']);
-    expect(names(s, 'c3')).toEqual([]);
-    expect(all(s)).toEqual(['g1f1', 'g1f2', 'g1g2', 'g1h1', 'h2h3', 'h2h4']);
-  });
 });
+
 
 describe('Faille', () => {
   it('rangées 4 et 5 seulement ; depuis la position initiale, 12 et 20 coups', () => {

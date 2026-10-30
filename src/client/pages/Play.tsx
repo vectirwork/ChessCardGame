@@ -183,16 +183,16 @@ export default function Play() {
   return (
     <div className="pl container">
       <div className="pl-sky" aria-hidden="true" />
-      <header className="pl-head">
-        <p className="kicker">Jouer · le Seuil</p>
-        <h1 className="title-xl">
-          Choisissez votre <em>adversaire</em>.
-        </h1>
-        <p className="lede">Les échecs, plus trois cartes de pouvoir chacun. Une IA, un ami, ou le premier joueur venu : la partie s’ouvre en plein écran.</p>
-      </header>
-
       <div className="pl-grid">
-        <div>
+        <div className="pl-left">
+          <header className="pl-head">
+            <p className="kicker">Jouer · le Seuil</p>
+            <h1 className="title-xl">
+              Choisissez votre <em>adversaire</em>.
+            </h1>
+            <p className="lede">Les échecs, plus trois cartes de pouvoir chacun. Une IA, un ami, ou le premier joueur venu : la partie s’ouvre en plein écran.</p>
+          </header>
+
           <ul className="pl-doors" aria-label="Type de partie">
             {DOORS.map(d => (
               <li key={d.mode}>

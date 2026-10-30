@@ -49,7 +49,10 @@ export default function Shop() {
   const [visible, setVisible] = useState(true);
   const stageRef = useRef<HTMLDivElement>(null);
   const catalog = useMemo(() => liveCatalog(), []);
-  const previewCards = useMemo(() => PREVIEW_ORDER.filter(id => (CARD_IDS as string[]).includes(id) && CARDS[id as CardId].catalog === catalog) as CardId[], [catalog]);
+  const previewCards = useMemo(
+    () => PREVIEW_ORDER.filter(id => (CARD_IDS as string[]).includes(id) && CARDS[id as CardId].catalog === catalog) as CardId[],
+    [catalog],
+  );
   const [round, setRound] = useState(0);
   const [equipping, setEquipping] = useState<string | null>(null);
 
@@ -173,118 +176,121 @@ export default function Shop() {
             <Seal />
           </div>
 
-          <div className="bz-shelf">
-            <div className="bz-shelf-head">
-              <span>Skins d’animation</span>
-              <small>Allumez une lanterne : l’échiquier lance un sort avec ce skin</small>
-            </div>
-            <div className="bz-lanterns" role="group" aria-label="Skins d’animation">
-              {SKINS.map((s, i) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  className={`bz-lantern ${skinPick === s.id ? 'on' : ''}`}
-                  style={{ '--p': s.skin!.primary, '--s': s.skin!.secondary, '--a': s.skin!.accent, '--i': i } as CSSProperties}
-                  onClick={() => pickSkin(s.id)}
-                  aria-pressed={skinPick === s.id}
-                  aria-label={`${s.name}, ${stateLabel(s.id)}`}
-                >
-                  <span className="bz-lantern-cord" />
-                  <span className="bz-lantern-body">
-                    <span className="bz-lantern-orb" />
-                  </span>
-                  <span className="bz-lantern-name">{s.name}</span>
-                  <span className="bz-lantern-price">{stateLabel(s.id)}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="bz-shelf">
-            <div className="bz-shelf-head">
-              <span>Plateaux</span>
-              <small>
-                {itemById(boardPick)?.name} · {stateLabel(boardPick)}
-              </small>
-            </div>
-            <div className="bz-stall">
-              <div className="bz-swatches" role="group" aria-label="Plateaux">
-                {BOARDS.map(b => (
+          <div className="bz-shelves">
+            <div className="bz-shelf">
+              <div className="bz-shelf-head">
+                <span>Skins d’animation</span>
+                <small>Allumez une lanterne : l’échiquier lance un sort avec ce skin</small>
+              </div>
+              <div className="bz-lanterns" role="group" aria-label="Skins d’animation">
+                {SKINS.map((s, i) => (
                   <button
-                    key={b.id}
+                    key={s.id}
                     type="button"
-                    className={`bz-swatch ${boardPick === b.id ? 'on' : ''}`}
-                    style={{ '--l': b.board!.light, '--d': b.board!.dark, '--f': b.board!.frame } as CSSProperties}
-                    onClick={() => pickBoard(b.id)}
-                    aria-pressed={boardPick === b.id}
-                    aria-label={`${b.name}, ${stateLabel(b.id)}`}
-                    title={b.name}
+                    className={`bz-lantern ${skinPick === s.id ? 'on' : ''}`}
+                    style={{ '--p': s.skin!.primary, '--s': s.skin!.secondary, '--a': s.skin!.accent, '--i': i } as CSSProperties}
+                    onClick={() => pickSkin(s.id)}
+                    aria-pressed={skinPick === s.id}
+                    aria-label={`${s.name}, ${stateLabel(s.id)}`}
                   >
-                    <span className="bz-swatch-tile">
-                      <span className="bz-swatch-grid" />
+                    <span className="bz-lantern-cord" />
+                    <span className="bz-lantern-body">
+                      <span className="bz-lantern-orb" />
                     </span>
+                    <span className="bz-lantern-name">{s.name}</span>
+                    <span className="bz-lantern-price">{stateLabel(s.id)}</span>
                   </button>
                 ))}
               </div>
-              <span className="bz-stall-shelf" />
+            </div>
+
+            <div className="bz-shelf">
+              <div className="bz-shelf-head">
+                <span>Plateaux</span>
+                <small>
+                  {itemById(boardPick)?.name} · {stateLabel(boardPick)}
+                </small>
+              </div>
+              <div className="bz-stall">
+                <div className="bz-swatches" role="group" aria-label="Plateaux">
+                  {BOARDS.map(b => (
+                    <button
+                      key={b.id}
+                      type="button"
+                      className={`bz-swatch ${boardPick === b.id ? 'on' : ''}`}
+                      style={{ '--l': b.board!.light, '--d': b.board!.dark, '--f': b.board!.frame } as CSSProperties}
+                      onClick={() => pickBoard(b.id)}
+                      aria-pressed={boardPick === b.id}
+                      aria-label={`${b.name}, ${stateLabel(b.id)}`}
+                      title={b.name}
+                    >
+                      <span className="bz-swatch-tile">
+                        <span className="bz-swatch-grid" />
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <span className="bz-stall-shelf" />
+              </div>
             </div>
           </div>
-
-          {fiche()}
         </div>
 
         <div className="bz-stage">
-          <div className="bz-stage-glow" style={{ '--p': skin.primary, '--s': skin.secondary } as CSSProperties} />
-          <div className="bz-board" ref={stageRef}>
-            {live ? (
-              <StageBoard
-                act={{ key: `bz:${skinPick}:${round}`, cards: previewCards, skin: skinPick, every: 2 }}
-                catalog={catalog}
-                theme={boardPick}
-                resetSignal={0}
-                paused={!visible}
-                tilt={0}
-                still={reduced}
-                playSignal={playSignal}
-                onCast={card => setCasting(card)}
-              />
-            ) : (
-              <StillBoard theme={boardPick} />
-            )}
-            {!casting && <Sigil key={skinPick} skinId={skinPick} />}
+          <div className="bz-view">
+            <div className="bz-stage-glow" style={{ '--p': skin.primary, '--s': skin.secondary } as CSSProperties} />
+            <div className="bz-board" ref={stageRef}>
+              {live ? (
+                <StageBoard
+                  act={{ key: `bz:${skinPick}:${round}`, cards: previewCards, skin: skinPick, every: 2 }}
+                  catalog={catalog}
+                  theme={boardPick}
+                  resetSignal={0}
+                  paused={!visible}
+                  tilt={0}
+                  still={reduced}
+                  playSignal={playSignal}
+                  onCast={card => setCasting(card)}
+                />
+              ) : (
+                <StillBoard theme={boardPick} />
+              )}
+              {!casting && <Sigil key={skinPick} skinId={skinPick} />}
+            </div>
+            <div className="bz-caption" aria-live="polite">
+              {live && casting ? (
+                <>
+                  <span className="bz-dot" style={{ '--p': skin.primary } as CSSProperties} />
+                  <span className="bz-cap-k">Sort en cours</span>
+                  <b>{CARDS[casting]?.name}</b>
+                  <span className="bz-cap-skin">skin {itemById(skinPick)?.name}</span>
+                  {reduced && (
+                    <button type="button" className="bz-cap-again" onClick={() => setPlaySignal(n => n + 1)}>
+                      Rejouer
+                    </button>
+                  )}
+                </>
+              ) : live && !reduced ? (
+                <>
+                  <span className="bz-dot idle" />
+                  <span>Le sort se prépare…</span>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="bz-cap-play"
+                  onClick={() => {
+                    setLive(true);
+                    setPlaySignal(n => n + 1);
+                  }}
+                >
+                  <span className="bz-dot" style={{ '--p': skin.primary } as CSSProperties} />
+                  Voir un sort avec <b>{itemById(skinPick)?.name}</b>
+                </button>
+              )}
+            </div>
           </div>
-          <div className="bz-caption" aria-live="polite">
-            {live && casting ? (
-              <>
-                <span className="bz-dot" style={{ '--p': skin.primary } as CSSProperties} />
-                <span className="bz-cap-k">Sort en cours</span>
-                <b>{CARDS[casting]?.name}</b>
-                <span className="bz-cap-skin">skin {itemById(skinPick)?.name}</span>
-                {reduced && (
-                  <button type="button" className="bz-cap-again" onClick={() => setPlaySignal(n => n + 1)}>
-                    Rejouer
-                  </button>
-                )}
-              </>
-            ) : live && !reduced ? (
-              <>
-                <span className="bz-dot idle" />
-                <span>Le sort se prépare…</span>
-              </>
-            ) : (
-              <button
-                type="button"
-                className="bz-cap-play"
-                onClick={() => {
-                  setLive(true);
-                  setPlaySignal(n => n + 1);
-                }}
-              >
-                <span className="bz-dot" style={{ '--p': skin.primary } as CSSProperties} />
-                Voir un sort avec <b>{itemById(skinPick)?.name}</b>
-              </button>
-            )}
-          </div>
+          {fiche()}
         </div>
       </section>
 
@@ -366,7 +372,8 @@ export default function Shop() {
 
       {me && (
         <p className="bz-collection-line">
-          <StarMark size={12} /> Votre collection : {ownedCount} sur {premiumCount} objets premium · <Link to="/compte?onglet=collection">Gérer ma collection</Link>
+          <StarMark size={12} /> Votre collection : {ownedCount} sur {premiumCount} objets premium ·{' '}
+          <Link to="/compte?onglet=collection">Gérer ma collection</Link>
         </p>
       )}
 
@@ -388,7 +395,10 @@ export default function Shop() {
     const has = owned(item.id);
     const on = equipped(item.id);
     const packs = packsWith(item.id);
-    const style = item.kind === 'skin' ? { '--p': item.skin!.primary, '--s': item.skin!.secondary, '--a': item.skin!.accent } : { '--p': boardStyle(item.id).light, '--s': boardStyle(item.id).dark, '--a': '#fff' };
+    const style =
+      item.kind === 'skin'
+        ? { '--p': item.skin!.primary, '--s': item.skin!.secondary, '--a': item.skin!.accent }
+        : { '--p': boardStyle(item.id).light, '--s': boardStyle(item.id).dark, '--a': '#fff' };
     let action;
     if (me && has && on) action = <span className="bz-state on">Équipé</span>;
     else if (me && has)
@@ -450,7 +460,11 @@ function StillBoard({ theme }: { theme: string }) {
 function Sigil({ skinId }: { skinId: string }) {
   const s = itemById(skinId)!.skin!;
   return (
-    <span className={`bz-sigil p-${s.particle} f-${s.flourish}`} style={{ '--p': s.primary, '--s': s.secondary, '--a': s.accent } as CSSProperties} aria-hidden="true">
+    <span
+      className={`bz-sigil p-${s.particle} f-${s.flourish}`}
+      style={{ '--p': s.primary, '--s': s.secondary, '--a': s.accent } as CSSProperties}
+      aria-hidden="true"
+    >
       <span className="bz-sigil-ring" />
       <span className="bz-sigil-ring r2" />
       <span className="bz-sigil-core" />
@@ -485,7 +499,10 @@ export function Swatch({ item, small }: { item: Item; small?: boolean }) {
   if (item.kind === 'board') {
     const b = boardStyle(item.id);
     return (
-      <span className={`swatch-board tex-${b.texture} ${small ? 'small' : ''}`} style={{ '--light': b.light, '--dark': b.dark, '--frame': b.frame } as CSSProperties}>
+      <span
+        className={`swatch-board tex-${b.texture} ${small ? 'small' : ''}`}
+        style={{ '--light': b.light, '--dark': b.dark, '--frame': b.frame } as CSSProperties}
+      >
         {Array.from({ length: 16 }, (_, i) => (
           <i key={i} className={(Math.floor(i / 4) + i) % 2 ? 'd' : 'l'} />
         ))}
@@ -558,8 +575,8 @@ function CheckoutModal({ product, demo, onClose }: { product: Product; demo: boo
         <label className="check bz-co-waiver">
           <input ref={firstRef} type="checkbox" checked={waiver} onChange={e => setWaiver(e.target.checked)} />
           <span>
-            Je demande l’accès immédiat à ce contenu numérique et je reconnais perdre mon droit de rétractation une fois l’achat livré (article L221-28 du Code de
-            la consommation). J’accepte les{' '}
+            Je demande l’accès immédiat à ce contenu numérique et je reconnais perdre mon droit de rétractation une fois l’achat livré (article L221-28 du Code
+            de la consommation). J’accepte les{' '}
             <Link to="/cgv" target="_blank">
               conditions générales de vente
             </Link>
@@ -576,7 +593,10 @@ function CheckoutModal({ product, demo, onClose }: { product: Product; demo: boo
           </svg>
         </button>
         <p className="bz-co-secure">
-          <LockIcon /> {demo ? 'Mode démonstration : une page de paiement simulée remplace Stripe.' : 'Vous allez être redirigé vers la page de paiement sécurisée de Stripe.'}
+          <LockIcon />{' '}
+          {demo
+            ? 'Mode démonstration : une page de paiement simulée remplace Stripe.'
+            : 'Vous allez être redirigé vers la page de paiement sécurisée de Stripe.'}
         </p>
         <button type="button" className="btn btn-ghost btn-block" onClick={onClose} disabled={busy}>
           Continuer mes achats

@@ -71,7 +71,9 @@ function Stars({ seed, n, warm = 0.2 }: { seed: number; n: number; warm?: number
       tw: i % 5 === 0,
     }));
   }, [seed, n, warm]);
-  const dot = (s: (typeof stars)[number], i: number) => <circle key={i} cx={s.x.toFixed(1)} cy={s.y.toFixed(1)} r={s.rad.toFixed(2)} fill={s.c} opacity={s.o.toFixed(2)} />;
+  const dot = (s: (typeof stars)[number], i: number) => (
+    <circle key={i} cx={s.x.toFixed(1)} cy={s.y.toFixed(1)} r={s.rad.toFixed(2)} fill={s.c} opacity={s.o.toFixed(2)} />
+  );
   return (
     <>
       <svg className="pg-svg" viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="xMidYMin slice">
@@ -87,11 +89,11 @@ function Stars({ seed, n, warm = 0.2 }: { seed: number; n: number; warm?: number
 /** Bazar : îles à coupoles, guirlande de lanternes et lanternes qui montent. */
 function BazarDecor() {
   const lamps = useMemo(() => {
-    const s = { x1: -40, y1: 120, x2: 1640, y2: 90, sag: 150 };
+    const s = { x1: 700, y1: 64, x2: 1660, y2: 30, sag: 70 };
     const mx = (s.x1 + s.x2) / 2;
     const my = (s.y1 + s.y2) / 2 + s.sag;
-    return Array.from({ length: 15 }, (_, k) => {
-      const t = (k + 0.5) / 15;
+    return Array.from({ length: 9 }, (_, k) => {
+      const t = (k + 0.5) / 9;
       return {
         x: (1 - t) * (1 - t) * s.x1 + 2 * (1 - t) * t * mx + t * t * s.x2,
         y: (1 - t) * (1 - t) * s.y1 + 2 * (1 - t) * t * my + t * t * s.y2,

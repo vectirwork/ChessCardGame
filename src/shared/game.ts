@@ -4,18 +4,21 @@
 // et dans l'IA (src/shared/bot.ts).
 //
 // Deux catalogues de cartes (voir cards.ts) :
-// - Duel : chaque effet se décompte sur les coups d'un seul camp (`countsOn`) ;
-// - Climats (concepts/CARTES-GLOBALES.md) : les effets se décomptent sur les coups des deux camps (`global`),
-//   les Climats et les Portails s'annoncent un tour à l'avance (Présage), la Grande Marée remplace le coup
-//   (Rituel), et « la magie cède » : un joueur que les effets privent de tout coup, sans être en échec, joue
-//   comme s'ils n'existaient pas pour ses pièces (R6).
+// - Pouvoirs (identifiant 'climats', concepts/CARTES-GLOBALES.md et décision du fondateur du 30 octobre dans
+//   docs/PLAN-ODYSSEE.md) : 8 pouvoirs qui touchent les deux camps, mains visibles. Les effets se décomptent sur
+//   les coups des deux camps (`global`) ou durent toute la partie (`permanent` : Mur de glace) ; les Climats
+//   s'annoncent un tour à l'avance (Présage), la Grande Marée remplace le coup (Rituel), et « la magie cède » :
+//   un joueur que les effets privent de tout coup, sans être en échec, joue comme s'ils n'existaient pas pour
+//   ses pièces (R6) ;
+// - Duel (parties créées avant, plus proposé) : chaque effet se décompte sur les coups d'un seul camp
+//   (`countsOn`).
 
 import {
   Color, F_PROMO, F_RELAXED, Move, Mods, NO_MODS, Piece, PieceType, Position, applyMustCapture, clonePosition,
-  emptyMods, fileOf, fromFen, hasLegalMove, inCheck, initialPosition, isCapture, isLightSquare, isSlider, kingSquare,
-  legalMoves, makeMove, opposite, rankOf, sqName, toSan,
+  emptyMods, fromFen, hasLegalMove, inCheck, initialPosition, isCapture, isLightSquare, isSlider, legalMoves,
+  makeMove, opposite, rankOf, sqIndex, sqName, toSan,
 } from './chess';
-import { CARDS, CardId, Catalog, RARITY_WEIGHT, cardsOf } from './cards';
+import { CARDS, CardId, Catalog, RARITY_WEIGHT, cardsOf, isCardId } from './cards';
 
 export interface Effect {
   id: number;
@@ -23,32 +26,35 @@ export interface Effect {
   caster: Color;
   /**
    * Duel : couleur dont les coups font baisser le compteur.
-   * Climats (`global`) : le lanceur, à titre indicatif ; le compteur baisse après chaque coup des deux camps.
+   * Pouvoirs (`global`) : le lanceur, à titre indicatif ; le compteur baisse après chaque coup des deux camps.
    */
   countsOn: Color;
-  /** Coups restants : ceux de `countsOn` (Duel), ou des deux camps à partir de l'arrivée (Climats). */
+  /**
+   * Coups restants : ceux de `countsOn` (Duel), ou des deux camps à partir de l'arrivée (Pouvoirs).
+   * 0 pour un effet permanent, qui ne se décompte pas.
+   */
   remaining: number;
   total: number;
   square?: number;
   pieceId?: number;
   /** Skin d'animation du lanceur, pour que les deux joueurs voient le même effet. */
   skin: string;
-  /** Climats : le compteur baisse après chaque coup, des deux camps. */
+  /** Pouvoirs : le compteur baisse après chaque coup, des deux camps. */
   global?: boolean;
+  /** Pouvoirs : l'effet dure jusqu'à la fin de la partie (Mur de glace). */
+  permanent?: boolean;
   /** Présage : effet annoncé, pas encore actif (il le devient au début du tour suivant du lanceur). Public. */
   pending?: boolean;
   /** Présage : coups avant l'arrivée (2 au lancement, 1 après le coup du lanceur). */
   delay?: number;
-  /** Cases concernées quand il y en a plusieurs (Faille : cases du gouffre ; Portails : la paire). */
+  /** Cases concernées quand il y en a plusieurs (Faille : cases du gouffre). */
   squares?: number[];
 }
 
+/** Carte d'une main. Les mains sont publiques : les deux joueurs et les spectateurs voient tout. */
 export interface HandCard {
-  /** null : carte adverse encore cachée (vue client). */
-  card: CardId | null;
+  card: CardId;
   used: boolean;
-  /** Carte rendue par un Déjà-vu : elle a déjà été vue, elle reste visible de l'adversaire. */
-  revealed?: boolean;
 }
 
 export type ResultReason =
@@ -69,17 +75,18 @@ export interface Result {
 }
 
 export type LogEntry =
+  /** `undone` : coup annulé par un Retour arrière (Duel), ou effacé par un Déjà-vu (anciennes parties). */
   | { k: 'move'; c: Color; san: string; from: number; to: number; promo?: PieceType; undone?: boolean }
-  /** Carte jouée ; `undone` : effacée par un Déjà-vu (une carte de l'adversaire lui est alors rendue). */
+  /**
+   * Carte jouée. `undone` n'existe que dans le journal des parties jouées avec le Déjà-vu (carte retirée) : une
+   * carte effacée avec le tour.
+   */
   | { k: 'card'; c: Color; card: CardId; targets: number[]; undone?: boolean };
 
-/**
- * Coup ou pièce interdits.
- * Duel (Retour arrière) : le coup exact. Climats (Déjà-vu) : `to` absent, toute la pièce de `from` est interdite.
- */
+/** Coup interdit pour ce tour (Duel : le coup annulé par un Retour arrière ne peut pas être rejoué). */
 export interface MoveRef {
   from: number;
-  to?: number;
+  to: number;
   promo?: PieceType;
 }
 
@@ -91,13 +98,8 @@ export interface Snapshot {
   ply: number;
   keysLen: number;
   forbidden: MoveRef | null;
-  /**
-   * Drapeaux « carte utilisée » des deux mains à cet instant (Déjà-vu). Jamais les cartes elles-mêmes :
-   * les instantanés sont envoyés aux deux joueurs. Absent dans les parties antérieures.
-   */
-  used?: Record<Color, boolean[]>;
-  /** Coup joué depuis cette position et index de son entrée dans le journal (Rituel : from = to = -1). */
-  next: MoveRef & { to: number; log: number };
+  /** Coup joué depuis cette position et index de son entrée dans le journal. */
+  next: MoveRef & { log: number };
 }
 
 export interface GameState {
@@ -114,9 +116,9 @@ export interface GameState {
   ply: number;
   log: LogEntry[];
   keys: string[];
-  /** Les deux dernières positions avant un coup, pour Retour arrière et Déjà-vu. */
+  /** Duel : les deux dernières positions avant un coup, pour le Retour arrière (vide dans les autres catalogues). */
   snaps: Snapshot[];
-  /** Coup (Retour arrière) ou pièce (Déjà-vu) interdits pour ce tour. */
+  /** Duel : coup interdit pour ce tour (Retour arrière). */
   forbidden: MoveRef | null;
   timed: boolean;
   /** Catalogue de cartes de la partie (absent dans les parties antérieures : 'duel'). */
@@ -129,7 +131,7 @@ export const CARDS_PER_PLAYER = 3;
 /** Catalogue effectif d'une partie (les parties enregistrées avant les catalogues sont des parties Duel). */
 export const catalogOf = (s: GameState): Catalog => s.catalog ?? 'duel';
 
-/** « La magie cède » (R6) : règle du catalogue Climats. */
+/** « La magie cède » (R6) : règle du catalogue Pouvoirs. */
 export const magicYields = (s: GameState): boolean => catalogOf(s) === 'climats';
 
 const isClimate = (card: CardId) => CARDS[card].family === 'climat';
@@ -142,7 +144,7 @@ export interface DealOptions {
   vsBot?: boolean;
 }
 
-/** Une main du catalogue Climats est valide avec au plus 1 Légendaire et au plus 2 Climats (R9). */
+/** Une main du catalogue Pouvoirs est valide avec au plus 1 Légendaire et au plus 2 Climats (R9). */
 function validClimatsHand(hand: CardId[]): boolean {
   let legendary = 0;
   let climates = 0;
@@ -155,9 +157,11 @@ function validClimatsHand(hand: CardId[]): boolean {
 
 /**
  * Distribue les mains.
- * - Duel : tirage uniforme, sans remise.
- * - Climats : tirage pondéré par rareté (Commune 4, Rare 3, Épique 2, Légendaire 1), sans remise, recommencé
- *   si la main a plus d'une Légendaire ou plus de deux Climats (R9).
+ * - Pouvoirs : tirage pondéré par rareté (Commune 4, Rare 3, Épique 2, Légendaire 1), sans remise, recommencé
+ *   si la main a plus d'une Légendaire ou plus de deux Climats (R9). Avec 8 cartes (5 Climats, 1 Légendaire),
+ *   seule la contrainte des Climats compte ; sans le Sablier fou (contre l'IA, sans pendule), il en reste 7,
+ *   dont 3 qui ne sont pas des Climats : une main valide existe toujours.
+ * - Duel (anciennes parties, tests) : tirage uniforme, sans remise.
  * Les cartes `timedOnly` sont exclues sans pendule, les cartes `humanOnly` contre l'IA. En mode miroir, les deux
  * joueurs reçoivent la même main.
  */
@@ -231,7 +235,7 @@ export function createGame(hands: Record<Color, CardId[]>, timed: boolean, catal
 
 /**
  * Partie à partir d'une position FEN (tests, tutoriel, problèmes).
- * Sans catalogue précisé : Climats si une main contient une carte qui n'est pas du Duel, sinon Duel.
+ * Sans catalogue précisé : Pouvoirs si une main contient une carte qui n'est pas du Duel, sinon Duel.
  */
 export function createGameFromFen(fen: string, hands: Record<Color, CardId[]>, timed = true, catalog?: Catalog): GameState {
   const cat = catalog ?? ([...hands.w, ...hands.b].some(id => !CARDS[id].catalogs.includes('duel')) ? 'climats' : 'duel');
@@ -257,14 +261,11 @@ export function cloneState(s: GameState): GameState {
 }
 
 /**
- * État tel qu'un joueur (ou un spectateur, `you` = null) a le droit de le voir : les cartes adverses non jouées
- * sont masquées, sauf en fin de partie (`reveal`). Les instantanés ne contiennent jamais de carte, et un Présage
- * (effet annoncé) est public.
+ * État envoyé aux joueurs et aux spectateurs. Tout est public (mains des deux camps, cartes jouées ou non,
+ * Présages annoncés) ; seules les clés de répétition, inutiles au client, sont retirées.
  */
-export function viewState(s: GameState, you: Color | null, reveal: boolean): GameState {
-  const hide = (c: Color) =>
-    s.hands[c].map(h => (reveal || h.used || h.revealed || c === you ? h : { card: null, used: false }));
-  return { ...s, hands: { w: hide('w'), b: hide('b') }, keys: [] };
+export function viewState(s: GameState): GameState {
+  return { ...s, keys: [] };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -283,15 +284,12 @@ export function modsFromEffects(effects: Effect[]): Mods {
       case 'gravity': mods.range[e.countsOn] = 3; break;
       case 'knight_leap': mods.leap.add(e.pieceId!); break;
       case 'phase': mods.phase.add(e.pieceId!); break;
-      // Climats
+      // Pouvoirs
       case 'rift': for (const q of e.squares ?? []) mods.blocked[q] = true; break;
-      case 'portals': if (e.squares?.length === 2) mods.portals = [e.squares[0], e.squares[1]]; break;
       case 'ice_age': mods.pawnsFrozen = true; break;
-      case 'cavalcade': mods.leapAll = true; break;
       case 'truce': mods.truce = true; break;
       case 'blood_moon': mods.mustCapture = true; break;
       case 'blast': mods.blast = true; break;
-      case 'coronation': mods.crown = true; break;
     }
   }
   return mods;
@@ -308,8 +306,9 @@ function arrive(e: Effect): Effect {
 /**
  * Décompte les effets après un coup de `mover` et retire ceux qui expirent.
  * - Duel : seuls les effets dont `countsOn` est `mover` baissent.
- * - Climats (`global`) : tous baissent ; un Présage perd 1 de `delay` et arrive à 0 (sans être décompté ce
- *   coup-là) ; un Climat qui arrive remplace le Climat actif, qui s'arrête sans finir son compte.
+ * - Pouvoirs (`global`) : tous baissent, sauf un effet permanent ; un Présage perd 1 de `delay` et arrive à 0
+ *   (sans être décompté ce coup-là) ; un Climat qui arrive remplace le Climat actif, qui s'arrête sans finir
+ *   son compte.
  */
 export function tickEffects(effects: Effect[], mover: Color): Effect[] {
   const climateArrives = effects.some(e => e.pending && (e.delay ?? 1) <= 1 && isClimate(e.card));
@@ -321,7 +320,8 @@ export function tickEffects(effects: Effect[], mover: Color): Effect[] {
       continue;
     }
     if (climateArrives && isClimate(e.card)) continue;
-    if (e.global || e.countsOn === mover) {
+    if (e.permanent) out.push(e);
+    else if (e.global || e.countsOn === mover) {
       if (e.remaining > 1) out.push({ ...e, remaining: e.remaining - 1 });
     } else {
       out.push(e);
@@ -341,7 +341,7 @@ function dropOrphanEffects(effects: Effect[], pos: Position): Effect[] {
 /**
  * Modificateurs vus depuis la position de `s`, coup par coup : `[0]` pour le coup du camp au trait, `[1]` pour
  * la réponse, etc. (effets décomptés, arrivées et expirations comprises). Sert à l'IA, dont la recherche
- * doit savoir qu'une Chevauchée expire ou qu'un Climat annoncé arrive.
+ * doit savoir qu'une Trêve expire ou qu'un Climat annoncé arrive.
  */
 export function modsSequence(s: GameState, plies: number): Mods[] {
   const out: Mods[] = [];
@@ -379,12 +379,12 @@ export function incrementSuspended(s: GameState): boolean {
   return hourglassOn(s);
 }
 
-/** Cases qui portent un Terrain (Mur, Faille, Portails, annoncés compris) : un seul Terrain par case. */
+/** Cases qui portent un Terrain (Mur, Faille) : un seul Terrain par case. */
 function terrainSquares(effects: Effect[]): Set<number> {
   const out = new Set<number>();
   for (const e of effects) {
     if (e.card === 'ice_wall' && e.square !== undefined) out.add(e.square);
-    if (e.card === 'rift' || e.card === 'portals') for (const q of e.squares ?? []) out.add(q);
+    if (e.card === 'rift') for (const q of e.squares ?? []) out.add(q);
   }
   return out;
 }
@@ -397,12 +397,10 @@ const nowMods = (s: GameState) => modsFromEffects(s.effects);
 const afterMods = (s: GameState) => modsFromEffects(tickEffects(s.effects, s.pos.turn));
 
 function isForbidden(m: Move, f: MoveRef): boolean {
-  if (m.from !== f.from) return false;
-  if (f.to === undefined) return true; // Déjà-vu : toute la pièce
-  return m.to === f.to && (m.promo ?? null) === (f.promo ?? null);
+  return m.from === f.from && m.to === f.to && (m.promo ?? null) === (f.promo ?? null);
 }
 
-/** Étapes 1 à 3 : coups sous les effets, pièce interdite retirée, puis capture obligatoire (un seul filtre). */
+/** Étapes 1 à 3 : coups sous les effets, coup interdit retiré (Duel), puis capture obligatoire (un seul filtre). */
 function strictMoves(s: GameState, now: Mods, after: Mods): Move[] {
   let moves = legalMoves(s.pos, now, after);
   const f = s.forbidden;
@@ -422,7 +420,7 @@ function relaxedMoves(s: GameState, after: Mods): Move[] {
 
 /**
  * Coups légaux du camp au trait, une seule chaîne pour tout le monde (client, serveur, IA à la racine) :
- * effets → pièce interdite → capture obligatoire → « la magie cède » si la liste est vide (Climats).
+ * effets → coup interdit (Duel) → capture obligatoire → « la magie cède » si la liste est vide (Pouvoirs).
  */
 export function legalMovesOf(s: GameState): Move[] {
   if (s.result) return [];
@@ -458,29 +456,26 @@ export function sideInCheck(s: GameState, c: Color = s.pos.turn): boolean {
 }
 
 /**
- * Nature de l'échec du camp au trait, pour l'affichage (R5) :
- * 'now' (échec ordinaire), 'arrival' (à l'arrivée d'un effet annoncé), 'melt' (à la fonte d'un Mur),
- * 'close' (à la fermeture d'une Faille) ; null sans échec.
+ * Nature de l'échec du camp au trait, pour l'affichage (R5) : 'now' (échec ordinaire), 'close' (à la fermeture
+ * d'une Faille), 'melt' (à la fonte d'un Mur : Duel, et Murs posés avant qu'il ne devienne permanent), 'expire'
+ * (fin d'un autre effet : Cryogénie ou Gravité du Duel) ; null sans échec. Aucun Présage ne change les attaques :
+ * une arrivée ne donne jamais échec.
  */
-export type CheckKind = 'now' | 'arrival' | 'melt' | 'close';
+export type CheckKind = 'now' | 'melt' | 'close' | 'expire';
 export function checkKind(s: GameState): CheckKind | null {
   const c = s.pos.turn;
   if (!inCheck(s.pos, c, afterMods(s))) return null;
   if (inCheck(s.pos, c, nowMods(s))) return 'now';
-  // La cause : chaque changement à venir est essayé seul, à partir des effets actuels (un Mur sans rapport qui
-  // fond pendant l'arrivée d'une Chevauchée ne fait pas de cet échec un échec « à la fonte »).
+  // La cause : chaque fin d'effet est essayée seule, à partir des effets actuels.
   const next = tickEffects(s.effects, c);
-  const checkWith = (effects: Effect[]) => inCheck(s.pos, c, modsFromEffects(effects));
-  const arrivals = s.effects.filter(e => e.pending && next.some(x => x.id === e.id && !x.pending)).map(e => e.id);
   const ended = (card: CardId) => s.effects.filter(e => !e.pending && e.card === card && !next.some(x => x.id === e.id)).map(e => e.id);
-  const without = (ids: number[]) => s.effects.filter(e => !ids.includes(e.id));
-  const melted = ended('ice_wall');
+  const checkWithout = (ids: number[]) => ids.length > 0 && inCheck(s.pos, c, modsFromEffects(s.effects.filter(e => !ids.includes(e.id))));
   const closed = ended('rift');
-  if (arrivals.length && checkWith(arrivals.reduce(withArrival, s.effects))) return 'arrival';
-  if (melted.length && checkWith(without(melted))) return 'melt';
-  if (closed.length && checkWith(without(closed))) return 'close';
-  // Échec qui naît de plusieurs changements combinés : ordre de priorité fixe.
-  return arrivals.length ? 'arrival' : melted.length ? 'melt' : closed.length ? 'close' : 'arrival';
+  const melted = ended('ice_wall');
+  if (checkWithout(closed)) return 'close';
+  if (checkWithout(melted)) return 'melt';
+  // Échec qui naît de plusieurs fins combinées : ordre de priorité fixe.
+  return closed.length ? 'close' : melted.length ? 'melt' : 'expire';
 }
 
 export interface MoveInfo {
@@ -489,7 +484,7 @@ export interface MoveInfo {
   pieceId: number;
   capturedId: number | null;
   check: boolean;
-  /** Échec « à l'arrivée », « à la fonte »… du camp qui va jouer (R5). */
+  /** Échec « à la fermeture », « à la fonte »… du camp qui va jouer (R5). */
   checkKind?: CheckKind | null;
   /** Déflagration : identifiants des pièces détruites par l'explosion (la pièce qui capture comprise). */
   blasted?: number[];
@@ -500,7 +495,7 @@ export interface MoveInfo {
 
 export type Outcome<I> = { ok: true; state: GameState; info: I } | { ok: false; error: string };
 
-/** Instantané de `s` avant le coup `next` (Retour arrière, Déjà-vu) ; on n'en garde que deux. */
+/** Duel : instantané de `s` avant le coup `next` (Retour arrière) ; on n'en garde que deux. */
 function pushSnapshot(n: GameState, s: GameState, next: Snapshot['next']) {
   n.snaps = [...s.snaps, {
     pos: clonePosition(s.pos),
@@ -510,7 +505,6 @@ function pushSnapshot(n: GameState, s: GameState, next: Snapshot['next']) {
     ply: s.ply,
     keysLen: s.keys.length,
     forbidden: s.forbidden,
-    used: { w: s.hands.w.map(h => h.used), b: s.hands.b.map(h => h.used) },
     next,
   }].slice(-2);
 }
@@ -553,7 +547,7 @@ export function playMove(s: GameState, from: number, to: number, promo?: PieceTy
   const now = nowMods(s);
   const san = toSan(s.pos, m, legal);
   const n = cloneState(s);
-  pushSnapshot(n, s, { from: m.from, to: m.to, promo: m.promo, log: s.log.length });
+  if (catalogOf(s) === 'duel') pushSnapshot(n, s, { from: m.from, to: m.to, promo: m.promo, log: s.log.length });
   const u = makeMove(n.pos, m);
   if (u.captured) n.captured[u.captured.c].push(u.captured.t);
   for (const x of u.blasted ?? []) n.captured[x.piece.c].push(x.piece.t);
@@ -593,10 +587,7 @@ export interface CardInfo {
   effectId?: number;
   /** Rituel : la carte a tenu lieu de coup, le trait passe à l'adversaire. */
   ritual?: boolean;
-  /**
-   * Déplacements à animer : pions de la Grande Marée (de → vers), ou coups effacés par le Déjà-vu, à rejouer
-   * à l'envers (la réponse adverse d'abord : de la case d'arrivée vers la case de départ).
-   */
+  /** Déplacements à animer : pions de la Grande Marée (de → vers). */
   moves?: { from: number; to: number }[];
   /** Rituel : effets arrivés et expirés à la fin du tour. */
   arrived?: number[];
@@ -609,7 +600,7 @@ function cardPrecheck(s: GameState, color: Color, index: number): string | null 
   if (s.pos.turn !== color) return "Ce n'est pas ton tour.";
   if (s.cardPlayed) return 'Une seule carte par tour.';
   const h = s.hands[color][index];
-  if (!h || !h.card) return 'Carte inconnue.';
+  if (!h) return 'Carte inconnue.';
   if (h.used) return 'Carte déjà utilisée.';
   return null;
 }
@@ -617,15 +608,6 @@ function cardPrecheck(s: GameState, color: Color, index: number): string | null 
 function bestRevivable(captured: PieceType[]): PieceType | null {
   for (const t of ['r', 'b', 'n'] as PieceType[]) if (captured.includes(t)) return t;
   return null;
-}
-
-/** La case `i` touche-t-elle un roi (ou en est-elle un) ? */
-function nearKing(pos: Position, i: number): boolean {
-  for (const c of ['w', 'b'] as Color[]) {
-    const k = kingSquare(pos, c);
-    if (k >= 0 && Math.abs(fileOf(k) - fileOf(i)) <= 1 && Math.abs(rankOf(k) - rankOf(i)) <= 1) return true;
-  }
-  return false;
 }
 
 /** Faille : cases vides (et sans Terrain) de la rangée, qui formeront le gouffre. */
@@ -672,8 +654,10 @@ function rawCandidates(s: GameState, color: Color, card: CardId, partial: number
   };
   switch (card) {
     case 'ice_wall': {
+      // Pouvoirs : une case vide des rangées 3 à 6 ; Duel (anciennes parties) : n'importe quelle case vide.
       const terrain = terrainSquares(s.effects);
-      each((p, i) => !p && !mods.blocked[i] && !terrain.has(i));
+      const anyRank = catalogOf(s) === 'duel';
+      each((p, i) => !p && !mods.blocked[i] && !terrain.has(i) && (anyRank || (rankOf(i) >= 2 && rankOf(i) <= 5)));
       break;
     }
     case 'rift': {
@@ -681,17 +665,6 @@ function rawCandidates(s: GameState, color: Color, card: CardId, partial: number
       if (s.effects.some(e => e.card === 'rift')) break;
       for (const rank of [3, 4]) if (riftSquares(s, rank).length) for (let f = 0; f < 8; f++) out.push(rank * 8 + f);
       out.sort((x, y) => x - y);
-      break;
-    }
-    case 'portals': {
-      // Une seule paire ; deux cases symétriques vides, sans Terrain, loin des rois, entre la 3e et la 6e rangée.
-      if (s.effects.some(e => e.card === 'portals')) break;
-      const terrain = terrainSquares(s.effects);
-      each((p, i) => {
-        const j = 63 - i;
-        return rankOf(i) >= 2 && rankOf(i) <= 5 && !p && !b[j] && !terrain.has(i) && !terrain.has(j) &&
-          !nearKing(s.pos, i) && !nearKing(s.pos, j);
-      });
       break;
     }
     case 'freeze':
@@ -752,13 +725,16 @@ function applyCardRaw(s: GameState, color: Color, index: number, targets: number
   n.cardPlayed = true;
   const info: CardInfo = { card, caster: color, targets, pieces: [], skin };
   const addEffect = (extra: Partial<Effect>) => {
-    // Le Mur de glace compte « 3 coups adverses » en Duel et « 6 coups » en Climats : c'est la même durée.
-    const global = def.coups !== undefined && (def.turns === undefined || catalogOf(s) === 'climats');
-    const turns = (global ? def.coups : def.turns) ?? 1;
+    // Pouvoirs : effet des deux camps (décompté sur leurs coups, ou permanent). Duel : `turns` coups d'un camp
+    // (le Mur de glace d'une ancienne partie Duel garde ses 3 coups adverses).
+    const global = catalogOf(s) === 'climats' && (def.coups !== undefined || !!def.permanent);
+    const permanent = global && !!def.permanent;
+    const turns = permanent ? 0 : (global ? def.coups : def.turns) ?? 1;
     const e: Effect = {
       id: n.nextEffectId++, card, caster: color, countsOn: global ? color : def.countsOnOpponent ? them : color,
       remaining: turns, total: turns, skin,
       ...(global ? { global: true } : {}),
+      ...(permanent ? { permanent: true } : {}),
       ...(def.presage ? { pending: true, delay: 2 } : {}),
       ...extra,
     };
@@ -772,9 +748,7 @@ function applyCardRaw(s: GameState, color: Color, index: number, targets: number
     case 'truce':
     case 'blood_moon':
     case 'ice_age':
-    case 'coronation':
     case 'blast':
-    case 'cavalcade':
       // Un seul Climat annoncé à la fois (R1) ; il remplacera le Climat actif à son arrivée.
       if (s.effects.some(e => e.pending && isClimate(e.card))) return 'Un Climat est déjà annoncé.';
       addEffect({});
@@ -785,9 +759,6 @@ function applyCardRaw(s: GameState, color: Color, index: number, targets: number
       break;
     case 'rift':
       addEffect({ squares: riftSquares(s, rankOf(targets[0])) });
-      break;
-    case 'portals':
-      addEffect({ squares: [targets[0], 63 - targets[0]] });
       break;
     // ----- Événements -----
     case 'tide': {
@@ -807,29 +778,6 @@ function applyCardRaw(s: GameState, color: Color, index: number, targets: number
       n.pos.halfmove = 0;
       if (color === 'b') n.pos.fullmove++;
       n.pos.turn = them;
-      break;
-    }
-    case 'deja_vu': {
-      // Le monde recule d'un tour : le coup du lanceur (A) et la réponse adverse (B) sont effacés.
-      const A = s.snaps[s.snaps.length - 2];
-      const B = s.snaps[s.snaps.length - 1];
-      if (!A || !B || A.pos.turn !== color || B.pos.turn !== them) return 'Il faut un coup de toi, puis une réponse adverse.';
-      n.pos = clonePosition(A.pos);
-      n.effects = A.effects;
-      n.captured = { w: A.captured.w.slice(), b: A.captured.b.slice() };
-      n.ply = A.ply;
-      n.keys = s.keys.slice(0, A.keysLen);
-      n.snaps = s.snaps.slice(0, -2);
-      // Le lanceur ne peut pas rejouer la même pièce (aucune après un Rituel effacé).
-      n.forbidden = A.next.from >= 0 ? { from: A.next.from } : null;
-      // Les cartes jouées par l'adversaire pendant le tour effacé lui reviennent, face visible.
-      const usedThen = A.used?.[them];
-      if (usedThen) {
-        n.hands[them] = n.hands[them].map((h, i) => (h.used && !usedThen[i] ? { card: h.card, used: false, revealed: true } : h));
-      }
-      // Journal : les deux coups et les cartes jouées entre eux sont effacés (les cartes du lanceur restent dépensées).
-      for (let i = A.next.log; i < n.log.length; i++) n.log[i] = { ...n.log[i], undone: true };
-      info.moves = [B.next, A.next].filter(x => x.from >= 0).map(x => ({ from: x.to, to: x.from }));
       break;
     }
     // ----- Duel -----
@@ -896,8 +844,7 @@ function applyCardRaw(s: GameState, color: Color, index: number, targets: number
   }
   n.log.push({ k: 'card', c: color, card, targets: info.targets });
   if (def.ritual) {
-    // Le Rituel termine le tour comme un coup (instantané pour le Déjà-vu, décompte des effets, trait adverse).
-    pushSnapshot(n, s, { from: -1, to: -1, log: n.log.length - 1 });
+    // Le Rituel termine le tour comme un coup (décompte des effets, trait adverse, fin de partie).
     const fx = finishTurn(n, color);
     info.arrived = fx.arrived;
     info.expired = fx.expired;
@@ -905,18 +852,9 @@ function applyCardRaw(s: GameState, color: Color, index: number, targets: number
   return { state: n, info };
 }
 
-/** Effets de `n` comme si l'effet `id` (annoncé) était déjà arrivé, en remplaçant le Climat actif s'il en est un. */
-function withArrival(effects: Effect[], id: number): Effect[] {
-  const e = effects.find(x => x.id === id);
-  if (!e) return effects;
-  return effects
-    .filter(x => x.id === id || !(isClimate(e.card) && isClimate(x.card) && !x.pending))
-    .map(x => (x.id === id ? arrive(x) : x));
-}
-
 /**
- * Sonde des garde-fous d'un Présage : la position de `n`, trait à `turn`, avec les effets `effects` (pas de pièce
- * interdite : elle ne vaut que pour le tour en cours).
+ * Sonde d'un garde-fou de Présage : la position de `n`, trait à `turn`, avec les effets `effects`, sans coup
+ * interdit ni carte jouée.
  */
 function probeState(n: GameState, turn: Color, effects: Effect[]): GameState {
   const pos = clonePosition(n.pos);
@@ -928,25 +866,19 @@ function probeState(n: GameState, turn: Color, effects: Effect[]): GameState {
 }
 
 /**
- * Présage (Climats, Portails) : les garde-fous R4 jugés aussi dans le monde qui arrive, en supposant que les
- * coups d'ici l'arrivée ne changent rien (comme R4a pour l'échec) :
- * - pas de pat par magie : à sa réponse, l'adversaire doit déjà mettre son roi à l'abri du monde qui arrive
- *   (R4d) ; si l'effet lui retire alors tous ses coups, « la magie cède » comprise, la carte est refusée
- *   (seule la Chevauchée, qui ajoute des attaques, peut le faire) ;
- * - R4b : à l'arrivée, le lanceur garde un coup légal sous les effets, sauf s'il était déjà bloqué avant la
- *   carte (sans cela, un camp réduit aux coups de pion annoncerait l'Ère glaciaire pour pousser ensuite ses
- *   pions par « la magie cède » pendant que ceux de l'adversaire sont gelés).
- * Chaque sonde compare le même monde avec et sans le nouvel effet : seul l'effet de la carte est jugé.
+ * Présage (Climats) : R4b jugée aussi à l'arrivée, en supposant que les coups d'ici là ne changent rien. Au tour
+ * suivant du lanceur, l'effet arrivé, il garde un coup légal sous les effets, sauf s'il était déjà bloqué avant
+ * la carte. Sans cela, un camp réduit aux coups de pion annoncerait l'Ère glaciaire pour pousser ensuite ses
+ * pions par « la magie cède » pendant que ceux de l'adversaire sont gelés (de même pour la Trêve quand il n'a
+ * que des prises). La sonde compare le même monde avec et sans le nouvel effet : seul l'effet de la carte est
+ * jugé.
+ * Les autres garde-fous n'ont pas besoin d'être jugés à l'arrivée : aucun Climat ne change les attaques, donc
+ * une arrivée ne met jamais un roi en échec (R4a) ni l'adversaire sans aucun coup (« la magie cède » lui rend
+ * toujours ses coups ordinaires).
  */
 function presageRefusal(s: GameState, n: GameState, color: Color, id: number): string | null {
   const them = opposite(color);
   const others = n.effects.filter(e => e.id !== id);
-  // Réponse adverse au Présage (le lanceur « passe ») : l'effet arrivera après ce coup.
-  const reply = (effects: Effect[]) => probeState(n, them, tickEffects(effects, color));
-  if (hasLegal(reply(others)) && !hasLegal(reply(n.effects))) {
-    return 'À son arrivée, cette carte laisserait l’adversaire sans aucun coup.';
-  }
-  // Tour suivant du lanceur (les deux camps « passent ») : l'effet est arrivé.
   const arrival = (effects: Effect[]) => probeState(n, color, tickEffects(tickEffects(effects, color), them));
   if (hasStrictLegal(s) && hasStrictLegal(arrival(others)) && !hasStrictLegal(arrival(n.effects))) {
     return 'À son arrivée, cette carte te laisserait sans aucun coup.';
@@ -956,10 +888,10 @@ function presageRefusal(s: GameState, n: GameState, color: Color, id: number): s
 
 /**
  * Garde-fous après une carte (R4) :
- * a) elle ne met jamais le roi adverse en échec (Présage : comme si l'effet était arrivé) ;
+ * a) elle ne met jamais le roi adverse en échec ;
  * b) le lanceur garde un coup légal sous les effets (« la magie cède » ne compte pas, sauf s'il était déjà
- *    bloqué) ; un Rituel est un coup : il ne peut pas laisser le roi du lanceur en échec ;
- * Présage : pas de pat par magie de l'adversaire, et R4b à l'arrivée (`presageRefusal`).
+ *    bloqué ; Présage : aussi à l'arrivée, `presageRefusal`) ; un Rituel est un coup : il ne peut pas laisser
+ *    le roi du lanceur en échec.
  */
 function validateAfterCard(s: GameState, n: GameState, color: Color, card: CardId, info: CardInfo): string | null {
   if (card === 'rewind') {
@@ -971,12 +903,7 @@ function validateAfterCard(s: GameState, n: GameState, color: Color, card: CardI
     if (inCheck(n.pos, them, nowMods(n)) || sideInCheck(n)) return 'Une carte ne peut pas mettre le roi adverse en échec.';
     return null;
   }
-  const mods = nowMods(n);
-  if (inCheck(n.pos, them, mods)) return 'Une carte ne peut pas mettre le roi adverse en échec.';
-  if (CARDS[card].presage && info.effectId !== undefined &&
-      inCheck(n.pos, them, modsFromEffects(withArrival(n.effects, info.effectId)))) {
-    return 'À son arrivée, cette carte mettrait le roi adverse en échec.';
-  }
+  if (inCheck(n.pos, them, nowMods(n))) return 'Une carte ne peut pas mettre le roi adverse en échec.';
   if (!hasLegal(n)) return 'Après cette carte, tu n’aurais plus aucun coup légal.';
   if (magicYields(n) && !hasStrictLegal(n) && hasStrictLegal(s)) return 'Cette carte te laisserait sans aucun coup.';
   if (CARDS[card].presage && info.effectId !== undefined && magicYields(n)) return presageRefusal(s, n, color, info.effectId);
@@ -1049,19 +976,61 @@ export function positionKey(s: GameState): string {
 }
 
 /**
- * Une carte ou un effet permet-il à `c` de mater avec ses seules pièces mineures ? Vérifié par force brute sur
- * Roi et pièce mineure contre Roi (scripts de vérification de la phase 3, docs/progres/cartes-moteur.md) :
- * - Résurrection en main, avec une pièce à ressusciter ;
- * - Mur de glace en main, ou déjà posé (par l'un ou l'autre camp) : il bouche une case de fuite (Mur g8, puis
- *   Fd4# ou Cf7# contre Rh8).
- * Aucune autre carte ne suffit : la Faille (rangées 4 et 5) ne ferme jamais toutes les fuites, et la
- * Chevauchée dure 2 coups : la réponse du camp maté est jugée après son expiration, sans les sauts.
+ * Paires de Murs de glace (rangées 3 à 6) avec lesquelles une seule pièce mineure peut mater : Roi et Fou, ou
+ * Roi et Cavalier, contre Roi. Vérifié par force brute (journal docs/progres/cartes-refonte.md) : aucun mat avec
+ * un seul Mur ; ces 16 paires, au bord de l'échiquier, suffisent au fou comme au cavalier (Murs a3 et a5, Rc4,
+ * Fc6# contre Ra4). Une Faille (4e ou 5e rangée) peut tenir lieu de l'une des deux cases, jamais des deux ;
+ * seule, elle ne suffit jamais.
+ */
+const WALL_MATE_PAIRS: [number, number][] = (
+  [['a3', 'b4'], ['a3', 'a5'], ['b3', 'a4'], ['g3', 'h4'], ['h3', 'g4'], ['h3', 'h5'], ['a4', 'b5'], ['a4', 'a6'],
+    ['b4', 'a5'], ['g4', 'h5'], ['h4', 'g5'], ['h4', 'h6'], ['a5', 'b6'], ['b5', 'a6'], ['g5', 'h6'], ['h5', 'g6']] as const
+).map(([x, y]) => [sqIndex(x), sqIndex(y)]);
+
+/** Cartes `card` encore en main, des deux camps (un mat aidé compte : chacun peut poser des Terrains). */
+const unusedCards = (s: GameState, card: CardId) =>
+  s.hands.w.filter(h => !h.used && h.card === card).length + s.hands.b.filter(h => !h.used && h.card === card).length;
+
+/**
+ * Pouvoirs : les Murs posés et les Terrains encore en main (des deux camps) peuvent-ils former une paire de
+ * `WALL_MATE_PAIRS` ?
+ */
+function terrainMate(s: GameState): boolean {
+  const walls = new Set<number>();
+  const rift = new Set<number>();
+  for (const e of s.effects) {
+    if (e.card === 'ice_wall' && e.square !== undefined) walls.add(e.square);
+    if (e.card === 'rift') for (const q of e.squares ?? []) rift.add(q);
+  }
+  const wallCards = unusedCards(s, 'ice_wall');
+  const riftCard = unusedCards(s, 'rift') > 0;
+  return WALL_MATE_PAIRS.some(pair => {
+    let need = 0;
+    let riftUsed = false;
+    for (const q of pair) {
+      if (walls.has(q)) continue;
+      if (!riftUsed && (rift.has(q) || (riftCard && (rankOf(q) === 3 || rankOf(q) === 4)))) {
+        riftUsed = true;
+        continue;
+      }
+      need++;
+    }
+    return need <= wallCards;
+  });
+}
+
+/**
+ * Une carte ou un effet permet-il à `c` de mater avec une seule pièce mineure ?
+ * - Pouvoirs : deux Murs bien placés (posés ou encore en main, `terrainMate`).
+ * - Duel (anciennes parties) : Résurrection en main avec une pièce à ressusciter, ou Mur de glace (3 coups,
+ *   n'importe quelle case) en main ou posé : Mur g8, puis Fd4# ou Cf7# contre Rh8.
  */
 function cardMateHelp(s: GameState, c: Color): boolean {
+  const minor = s.pos.board.some(p => !!p && p.c === c && (p.t === 'b' || p.t === 'n'));
+  if (catalogOf(s) !== 'duel') return minor && terrainMate(s);
   const inHand = (card: CardId) => s.hands[c].some(h => !h.used && h.card === card);
   if (inHand('revive') && s.captured[c].some(t => t !== 'q')) return true;
-  if (!inHand('ice_wall') && !s.effects.some(e => e.card === 'ice_wall')) return false;
-  return s.pos.board.some(p => !!p && p.c === c && (p.t === 'b' || p.t === 'n'));
+  return minor && (inHand('ice_wall') || s.effects.some(e => e.card === 'ice_wall'));
 }
 
 function insufficientMaterial(s: GameState): boolean {
@@ -1074,7 +1043,11 @@ function insufficientMaterial(s: GameState): boolean {
     minors.push({ t: p.t, light: isLightSquare(i) });
   }
   if (minors.length <= 1) return true;
-  return minors.every(m => m.t === 'b' && m.light === minors[0].light);
+  if (!minors.every(m => m.t === 'b' && m.light === minors[0].light)) return false;
+  // Fous de même couleur des deux camps : avec un Terrain, les pièces du camp maté peuvent boucher des fuites.
+  // Par prudence, la nulle attend qu'aucun Terrain ne puisse plus servir (la règle des 50 coups reste).
+  return !(magicYields(s) && (s.effects.some(e => e.card === 'ice_wall' || e.card === 'rift') ||
+    unusedCards(s, 'ice_wall') + unusedCards(s, 'rift') > 0));
 }
 
 /**
@@ -1122,12 +1095,17 @@ export const RESULT_TEXT: Record<ResultReason, string> = {
   aborted: 'Partie annulée',
 };
 
+/**
+ * Libellé d'une carte jouée, pour le journal. Les journaux des parties jouées avant le retrait de quatre cartes
+ * (Couronnement, Chevauchée, Portails, Déjà-vu) peuvent nommer une carte qui n'existe plus : son identifiant est
+ * alors affiché tel quel.
+ */
 export function describeCardPlay(card: CardId, targets: number[]): string {
+  if (!isCardId(card)) return String(card);
   const name = CARDS[card].name;
   if (card === 'swap') return `${name} ${sqName(targets[0])}⇄${sqName(targets[1])}`;
   if (card === 'rewind') return `${name} (${sqName(targets[0])}-${sqName(targets[1])})`;
   if (card === 'rift') return `${name}, rangée ${rankOf(targets[0]) + 1}`;
-  if (card === 'portals') return `${name} ${sqName(targets[0])} ⇄ ${sqName(63 - targets[0])}`;
   if (targets.length === 1) return `${name} ${sqName(targets[0])}`;
   return name;
 }

@@ -12,7 +12,7 @@ import type {
   ClientToServer, GameEvent, GameMode, GameStatus, GameView, JoinReply, SeatView, ServerToClient,
 } from '../shared/protocol';
 import { EMOTES, QUICK_CONTROLS, TIME_CONTROLS, tcFromId } from '../shared/protocol';
-import { CATALOGS, Catalog, isCardId } from '../shared/cards';
+import { Catalog, isCardId, offeredCatalog } from '../shared/cards';
 import rateLimit from 'express-rate-limit';
 import { Identity, identityFromCookies, userById } from './auth';
 import { BOT_PROFILES, BotLevel } from '../shared/bot';
@@ -20,8 +20,6 @@ import { botPool } from './bot-pool';
 import { DbClient, one, q, tx } from './db';
 import { gameId, randomToken } from './security';
 import { toSummary } from './summary';
-
-const CATALOG_IDS = CATALOGS.map(c => c.id);
 
 type IO = Server<ClientToServer, ServerToClient>;
 type Sock = Socket<ClientToServer, ServerToClient, Record<string, never>, { identity: Identity }>;
@@ -48,15 +46,6 @@ export interface Clock {
   since: number;
 }
 
-/** Temps du camp au trait au début de son tour (pour rendre le temps d'un coup effacé par un Déjà-vu). */
-export interface TurnMark {
-  ply: number;
-  color: Color;
-  ms: number;
-  /** Incrément reçu à la fin de ce tour (ms) : un Déjà-vu le reprend au lanceur avec son coup effacé. */
-  inc?: number;
-}
-
 export interface RoomData {
   id: string;
   mode: GameMode;
@@ -64,7 +53,7 @@ export interface RoomData {
   status: GameStatus;
   tc: string;
   mirror: boolean;
-  /** Catalogue de cartes ('climats', 'duel', 'aucune'). */
+  /** Catalogue de cartes : 'climats' (Pouvoirs) ou 'aucune' ; 'duel' pour les parties créées avant. */
   catalog?: Catalog;
   creator: string;
   seats: Record<Color, Seat | null>;
@@ -78,8 +67,6 @@ export interface RoomData {
   /** Les deux joueurs ont joué leur premier coup (ne redevient jamais faux, même après un Retour arrière). */
   started?: boolean;
   lastActivity?: number;
-  /** Pendule au début des derniers tours (Déjà-vu). */
-  turnMarks?: TurnMark[];
   /**
    * Heure de la dernière sauvegarde : après un arrêt brutal, le temps écoulé jusqu'à elle depuis le début du
    * tour est décompté à la reprise (après un arrêt normal, la pendule est figée juste avant).
@@ -108,7 +95,7 @@ const MAX_OPEN_ROOMS = 8;
 const CLAIM_AFTER_MS = 60_000;
 /** Temps laissé à l'animation d'une carte de l'IA avant qu'elle ne joue son coup. */
 const BOT_CARD_PAUSE_MS = 2300;
-/** Climats (R10) : les cinématiques (lancement, arrivée d'un Présage, Rituel) ne coûtent pas de temps. */
+/** Pouvoirs (R10) : les cinématiques (lancement, arrivée d'un Présage, Rituel) ne coûtent pas de temps. */
 export const CINEMATIC_MS = 1200;
 
 const rooms = new Map<string, Room>();
@@ -164,12 +151,20 @@ async function loadRoom(id: string): Promise<Room | null> {
   return room;
 }
 
+/**
+ * Une partie en cours qui garde une carte retirée du jeu (Couronnement, Chevauchée, Portails, Déjà-vu : décision
+ * du 30 octobre), en main ou en effet, ne peut plus être arbitrée.
+ */
+function hasRetiredCard(s: GameState): boolean {
+  return [...s.hands.w, ...s.hands.b].some(h => !isCardId(h.card)) || s.effects.some(e => !isCardId(e.card));
+}
+
 /** Reprise après redémarrage : la pendule ne décompte pas le temps où le serveur était arrêté. */
 function resumeRoom(room: Room) {
-  // Les états enregistrés sans catalogue sont des parties Duel (catalogOf). Une carte inconnue (retirée du jeu
-  // depuis) rend la partie injouable : elle est annulée, sans effet sur le classement.
-  const hands = room.d.state.hands;
-  if ([...hands.w, ...hands.b].some(h => h.card !== null && !isCardId(h.card))) {
+  // Les états enregistrés sans catalogue sont des parties Duel (catalogOf), toujours jouables. Une partie qui
+  // garde une carte retirée est annulée, sans effet sur le classement (une partie terminée reste lisible telle
+  // quelle : elle n'est jamais rejouée par le moteur).
+  if (hasRetiredCard(room.d.state)) {
     endGame(room, { winner: null, reason: 'aborted' });
     return;
   }
@@ -207,8 +202,8 @@ function seatView(room: Room, c: Color): SeatView | null {
 
 function viewFor(room: Room, you: Color | null): GameView {
   const d = room.d;
-  // Mains adverses masquées (sauf cartes jouées ou rendues par un Déjà-vu) ; les Présages sont publics.
-  const state: GameState = viewState(d.state, you, d.status === 'ended');
+  // Tout est public : les mains des deux camps, cartes jouées ou non, et les Présages annoncés.
+  const state: GameState = viewState(d.state);
   const ck = d.clock;
   return {
     id: d.id,
@@ -274,33 +269,21 @@ function remaining(d: RoomData, c: Color): number {
   return t;
 }
 
-/**
- * Arrête la pendule du joueur `mover` (avec incrément éventuel) ; à appeler AVANT de changer l'état.
- * Renvoie l'incrément accordé (ms).
- */
-function stopClock(d: RoomData, mover: Color, increment: boolean): number {
+/** Arrête la pendule du joueur `mover` (avec incrément éventuel) ; à appeler AVANT de changer l'état. */
+function stopClock(d: RoomData, mover: Color, increment: boolean) {
   const ck = d.clock;
-  if (!ck || ck.running !== mover) return 0;
-  const inc = increment ? ck.increment * 1000 : 0;
-  ck[mover] = Math.max(0, remaining(d, mover)) + inc;
+  if (!ck || ck.running !== mover) return;
+  ck[mover] = Math.max(0, remaining(d, mover)) + (increment ? ck.increment * 1000 : 0);
   ck.running = null;
-  return inc;
 }
 
-/** Note l'incrément reçu à la fin du tour `ply` de `color` (Déjà-vu). */
-function noteIncrement(d: RoomData, ply: number, color: Color, inc: number) {
-  const mark = d.turnMarks?.find(m => m.ply === ply && m.color === color);
-  if (mark) mark.inc = inc;
-}
-
-/** Relance la pendule du camp au trait, une fois que chacun a joué son premier coup ; note le début du tour. */
+/** Relance la pendule du camp au trait, une fois que chacun a joué son premier coup. */
 function startClock(d: RoomData) {
   const ck = d.clock;
   if (!ck) return;
   const s = d.state;
   ck.running = d.status === 'active' && !s.result && d.started ? s.pos.turn : null;
   ck.since = now();
-  d.turnMarks = [...(d.turnMarks ?? []).filter(m => m.ply < s.ply), { ply: s.ply, color: s.pos.turn, ms: ck[s.pos.turn] }].slice(-4);
 }
 
 /**
@@ -328,7 +311,7 @@ export function resumeClock(d: RoomData) {
   ck.since = now();
 }
 
-/** Climats (R10) : crédite au camp au trait la durée d'une cinématique, si sa pendule tourne. */
+/** Pouvoirs (R10) : crédite au camp au trait la durée d'une cinématique, si sa pendule tourne. */
 function creditCinematic(d: RoomData, c: Color) {
   const ck = d.clock;
   if (!ck || ck.running !== c || catalogOf(d.state) !== 'climats') return;
@@ -340,48 +323,33 @@ function creditCinematic(d: RoomData, c: Color) {
  * démarrage de la partie, crédit de cinématique si un Présage arrive.
  */
 export function commitMove(d: RoomData, color: Color, state: GameState, info: MoveInfo) {
-  const ply = d.state.ply;
-  const inc = stopClock(d, color, !incrementSuspended(d.state));
+  stopClock(d, color, !incrementSuspended(d.state));
   d.state = state;
   d.drawOffer = null;
   d.lastActivity = now();
   if (d.state.ply >= 2) d.started = true;
   startClock(d);
-  noteIncrement(d, ply, color, inc);
   if (info.arrived?.length) creditCinematic(d, d.state.pos.turn);
 }
 
 /**
- * Pendule et état après une carte. Renvoie vrai si le trait a changé (Rituel, Retour arrière).
+ * Pendule et état après une carte. Renvoie vrai si le trait a changé (Rituel, Retour arrière du Duel).
  * - Rituel : c'est un coup (incrément, démarrage de la partie) ; l'adversaire est crédité de la cinématique.
- * - Déjà-vu : l'adversaire retrouve le temps qu'il avait au début du coup effacé ; le lanceur, non (le temps
- *   passé reste perdu, et l'incrément reçu pour le coup effacé lui est repris : un coup qui n'existe plus ne
- *   rapporte rien).
  * - Autre carte : le lanceur, toujours au trait, est crédité de la cinématique de lancement.
  */
 export function commitCard(d: RoomData, color: Color, state: GameState, info: CardInfo): boolean {
-  const before = d.state;
   const turnChanges = state.pos.turn !== color;
-  // La vitesse de la pendule dépend de l'état (un Déjà-vu peut restaurer ou retirer un Sablier fou).
+  // La vitesse de la pendule dépend de l'état : le temps écoulé est figé avant de le changer.
   settleClock(d);
-  const inc = turnChanges ? stopClock(d, color, !!info.ritual && !incrementSuspended(before)) : 0;
+  if (turnChanges) stopClock(d, color, !!info.ritual && !incrementSuspended(d.state));
   d.state = state;
   d.lastActivity = now();
-  if (info.card === 'deja_vu' && d.clock) {
-    const them = opposite(color);
-    const mark = d.turnMarks?.find(m => m.ply === state.ply + 1 && m.color === them);
-    if (mark) d.clock[them] = mark.ms;
-    const own = d.turnMarks?.find(m => m.ply === state.ply && m.color === color);
-    if (own?.inc) d.clock[color] = Math.max(0, d.clock[color] - own.inc);
-    d.turnMarks = d.turnMarks?.filter(m => m.ply <= state.ply);
-  }
   if (turnChanges) {
     if (info.ritual) {
       d.drawOffer = null;
       if (d.state.ply >= 2) d.started = true;
     }
     startClock(d);
-    if (info.ritual) noteIncrement(d, before.ply, color, inc);
     creditCinematic(d, d.state.pos.turn);
   } else {
     creditCinematic(d, color);
@@ -646,7 +614,9 @@ async function createRematch(room: Room): Promise<void> {
     room.rematchPending = false;
     throw e;
   }
-  const next = newRoom({ mode: d.mode, rated: d.rated, tc: d.tc, mirror: d.mirror, catalog: d.catalog ?? d.state.catalog ?? 'duel', creator: d.creator, seats });
+  // Revanche d'une ancienne partie Duel : le Duel n'est plus proposé, elle se joue avec les Pouvoirs.
+  const catalog = offeredCatalog(d.catalog ?? d.state.catalog);
+  const next = newRoom({ mode: d.mode, rated: d.rated, tc: d.tc, mirror: d.mirror, catalog, creator: d.creator, seats });
   d.rematch.next = next.d.id;
   for (const s of room.sockets) s.emit('game:redirect', { from: d.id, to: next.d.id });
   broadcast(room, { type: 'sync' });
@@ -921,8 +891,8 @@ export function attachSockets(server: IO) {
       if (typeof ack !== 'function') return;
       if (!allow()) return ack({ ok: false, error: 'Trop de requêtes.' });
       try {
-        const catalog = CATALOG_IDS.includes(p?.catalog as Catalog) ? (p.catalog as Catalog) : 'climats';
-        ack(await joinQueue(sock, String(p?.tc ?? ''), p?.rated !== false, p?.name, catalog));
+        // Pouvoirs ou Sans cartes ; le Duel (ancien client) et les valeurs inconnues sont ramenés aux Pouvoirs.
+        ack(await joinQueue(sock, String(p?.tc ?? ''), p?.rated !== false, p?.name, offeredCatalog(p?.catalog)));
       } catch (e) {
         console.error('File classée :', e);
         ack({ ok: false, error: 'Erreur serveur, réessaie.' });
@@ -1024,7 +994,12 @@ gamesRouter.post('/', createLimiter, async (req, res) => {
       color: z.enum(['w', 'b', 'random']).default('random'),
       level: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
       mirror: z.boolean().default(false),
-      catalog: z.enum(['climats', 'duel', 'aucune']).default('climats'),
+      // Le Duel n'est plus proposé : une demande Duel (ancien client) est ramenée aux Pouvoirs ; une valeur
+      // inconnue est refusée.
+      catalog: z
+        .enum(['climats', 'duel', 'aucune'], { message: 'Catalogue de cartes inconnu.' })
+        .default('climats')
+        .transform(offeredCatalog),
       name: z.string().optional(),
     })
     .safeParse(req.body);

@@ -6,7 +6,14 @@ import { PageLoader } from '../components/Layout';
 import { useApp } from '../store';
 import { PageHead, PlacePage, StarMark, useTitle } from './PageScene';
 
-interface Row { username: string; rating: number; games_played: number; wins: number; losses: number; draws: number }
+interface Row {
+  username: string;
+  rating: number;
+  games_played: number;
+  wins: number;
+  losses: number;
+  draws: number;
+}
 
 const PLACE_LABEL = ['Premier', 'Deuxième', 'Troisième'];
 
@@ -15,7 +22,9 @@ export default function Leaderboard() {
   const [rows, setRows] = useState<Row[] | null>(null);
   const { me } = useApp();
   useEffect(() => {
-    api<{ players: Row[] }>('/leaderboard').then(r => setRows(r.players)).catch(() => setRows([]));
+    api<{ players: Row[] }>('/leaderboard')
+      .then(r => setRows(r.players))
+      .catch(() => setRows([]));
   }, []);
   const podium = rows?.slice(0, 3) ?? [];
   const myRank = rows && me ? rows.findIndex(r => r.username === me.username) : -1;
@@ -60,9 +69,15 @@ export default function Leaderboard() {
           <ol className="lb-podium" aria-label="Podium">
             {podium.map((r, i) => (
               <li key={r.username} className={`lb-step s${i + 1} ${me?.username === r.username ? 'me' : ''}`}>
-                <span className="lb-medal" aria-hidden="true">{['I', 'II', 'III'][i]}</span>
-                <span className="avatar lg" aria-hidden="true">{r.username[0]?.toUpperCase()}</span>
-                <Link to={`/joueur/${r.username}`} className="lb-name">{r.username}</Link>
+                <span className="lb-medal" aria-hidden="true">
+                  {['I', 'II', 'III'][i]}
+                </span>
+                <span className="avatar lg" aria-hidden="true">
+                  {r.username[0]?.toUpperCase()}
+                </span>
+                <Link to={`/joueur/${r.username}`} className="lb-name">
+                  {r.username}
+                </Link>
                 <b className="lb-rating">{r.rating}</b>
                 <span className="lb-sub">
                   {PLACE_LABEL[i]} · {r.games_played} parties

@@ -56,7 +56,7 @@
   min-width: 0;
 }
 .gs.gp .gs-opp-id b,
-.gs.gp .gs-opp-id span {
+.gs.gp .gs-opp-id > div > span {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -64,13 +64,35 @@
 }
 .gs.gp.is-spectator .gs-fan,
 .gs.gp.no-hand .gs-fan-label,
-.gs.gp.no-cards .gs-opp-hand-m {
+.gs.gp .gs-opp-hand-m,
+.gs.gp .gs-opponent > .gs-backs {
+  display: none;
+}
+/* Le panneau de statut défile quand il déborde : une fine barre le signale */
+.gs.gp .gs-status {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(243, 201, 105, 0.28) transparent;
+}
+.gs.gp .gs-status::-webkit-scrollbar {
+  display: block;
+  width: 4px;
+}
+.gs.gp .gs-status::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: rgba(243, 201, 105, 0.28);
+}
+/* Spectateur : pas d'éventail, le statut prend la hauteur */
+.gs.gp.is-spectator:not(.is-mobile) .gs-status {
+  max-height: calc(100vh - clamp(96px, 19vh, 180px) - 48px);
+}
+/* Mobile, au tour de l'adversaire : le titre suffit */
+.gs.gp.is-mobile.their-turn .gs-hint {
   display: none;
 }
 /* Mobile : un bandeau « vous + pendule » se glisse sous l'échiquier, le statut descend d'autant */
 .gs.gp.is-mobile .gs-status {
-  top: calc(var(--gs-top) + var(--gs-g) + 60px);
-  max-height: calc(100vh - var(--gs-top) - var(--gs-g) - 60px - 150px);
+  top: calc(var(--gs-top) + var(--gs-g) + 56px);
+  max-height: calc(100vh - var(--gs-top) - var(--gs-g) - 56px - 146px);
 }
 .gs.gp.is-mobile .gs-opponent {
   display: flex;
@@ -174,7 +196,7 @@
 }
 
 /* --- Joueurs --- */
-.gp-avatar {
+:is(.gs-opp-id, .gp-self-id) .gp-avatar {
   position: relative;
   flex: none;
   display: grid;
@@ -187,11 +209,11 @@
   font-size: 20px;
   line-height: 1;
 }
-.gp-avatar.w {
+:is(.gs-opp-id, .gp-self-id) .gp-avatar.w {
   background: radial-gradient(circle at 35% 30%, #fffaf0, #d6cfbd 72%);
   color: #1a1408;
 }
-.gp-avatar.b {
+:is(.gs-opp-id, .gp-self-id) .gp-avatar.b {
   background: radial-gradient(circle at 35% 30%, #3a3554, #0c0b18 72%);
   color: var(--gold-hi);
 }
@@ -208,8 +230,8 @@
 .gp-presence.on {
   background: var(--success);
 }
-.gs.is-mobile .gp-avatar,
-.gp-self.is-mobile .gp-avatar {
+.gs.is-mobile .gs-opp-id .gp-avatar,
+.gp-self.is-mobile .gp-self-id .gp-avatar {
   width: 30px;
   height: 30px;
   font-size: 15px;
@@ -241,6 +263,7 @@
   right: 34px;
   z-index: 15;
   display: grid;
+  grid-template-columns: minmax(0, auto);
   justify-items: end;
   gap: 12px;
   max-width: var(--gp-side, 220px);
@@ -258,6 +281,7 @@
   flex-direction: row-reverse;
   align-items: center;
   gap: 12px;
+  min-width: 0;
   max-width: 100%;
   text-align: right;
 }
@@ -287,7 +311,7 @@
   font-weight: 400;
   color: var(--gold);
 }
-.gp-self-id span {
+.gp-self-id > div > span {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -295,12 +319,31 @@
   font-size: 12px;
   color: var(--faint);
 }
-.gp-self-hand {
+/* Mains en petites cartes (faces visibles ou dos) */
+.gp-hand-row {
   display: flex;
+  justify-content: flex-end;
   gap: 6px;
 }
-.gp-self-hand .spell-card {
+.gp-hand-row .spell-card {
   --w: 38px;
+}
+.gp-hand-card {
+  display: block;
+}
+.gp-opp-hand-m {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  font-family: var(--caps);
+  font-size: 10.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--soft);
+}
+.gp-opp-hand-m .gp-hand-row .spell-card {
+  --w: 28px;
 }
 .gp-self.is-mobile {
   left: 14px;
@@ -327,7 +370,7 @@
 .gp-self.is-mobile .gp-self-id b {
   font-size: 16px;
 }
-.gp-self.is-mobile .gp-self-id span {
+.gp-self.is-mobile .gp-self-id > div > span {
   font-size: 10.5px;
 }
 .gp-self.is-mobile .gp-captured {
@@ -338,6 +381,34 @@
 .gp-self.is-mobile .gp-cap {
   width: 14px;
   height: 14px;
+}
+
+/* Outils du joueur (ordinateur) : retourner l'échiquier, son, messages */
+.gp-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.gp-tool {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--hair);
+  background: rgba(10, 10, 26, 0.6);
+  color: var(--soft);
+  transition: color 0.3s, border-color 0.3s;
+}
+.gp-tool svg {
+  width: 18px;
+  height: 18px;
+}
+.gp-tool:hover,
+.gp-tool[aria-pressed='true'] {
+  color: var(--gold-hi);
+  border-color: var(--line);
 }
 
 /* Messages (émotes) */
@@ -464,9 +535,9 @@
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
-.gp-mv-row {
+.gp-mv-line {
   display: grid;
-  grid-template-columns: 26px minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr);
   gap: 6px;
   padding: 4px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
@@ -474,29 +545,32 @@
 .gp-mv-n {
   color: var(--faint);
 }
-.gp-mv-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
 .gp-mv {
+  min-width: 0;
   color: var(--dim);
 }
-.gp-mv-row:last-child .gp-mv-cell:has(.gp-mv) .gp-mv:last-child {
+.gp-mv-line.is-last .gp-mv:not(:empty):last-of-type,
+.gp-mv-line.is-last .gp-mv:not(:empty):has(+ .gp-mv:empty) {
   color: var(--gold-hi);
 }
-.gp-mv.is-undone {
+.gp-mv.is-undone,
+.gp-mv-line.is-undone .gp-mv-card {
   color: var(--faint);
   text-decoration: line-through;
 }
+.gp-mv-line.is-card {
+  border-bottom-color: transparent;
+  padding: 2px 0 3px;
+}
 .gp-mv-card {
+  grid-column: 2 / -1;
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 7px;
+  min-width: 0;
   font-family: var(--serif);
   font-style: italic;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.15;
   color: hsl(var(--h) 85% 82%);
 }
@@ -505,9 +579,15 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  transform: translateY(-1px);
+  transform: translateY(-2px);
   background: hsl(var(--h) 85% 66%);
   box-shadow: 0 0 8px hsl(var(--h) 90% 60% / 0.8);
+}
+.gp-mv-card small {
+  font-family: var(--sans);
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--faint);
 }
 .gp-moves-empty {
   margin: 0;
@@ -534,28 +614,23 @@
 }
 .gp-effects li {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 11px;
+  gap: 10px;
 }
 .gp-effect-mark {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
+  justify-self: center;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
-  border: 1px solid hsl(var(--h) 80% 70% / 0.5);
-  background: hsl(var(--h) 70% 30% / 0.35);
-  color: hsl(var(--h) 90% 80%);
-  box-shadow: 0 0 16px -4px hsl(var(--h) 90% 60% / 0.7);
-}
-.gp-effect-mark svg {
-  width: 16px;
-  height: 16px;
+  background: hsl(var(--h) 85% 68%);
+  box-shadow: 0 0 12px hsl(var(--h) 90% 60% / 0.85);
 }
 .gp-effects li.is-pending .gp-effect-mark {
-  border-style: dashed;
+  width: 11px;
+  height: 11px;
   background: transparent;
+  border: 1px dashed hsl(var(--h) 85% 72%);
   box-shadow: none;
 }
 .gp-effect-txt b {
@@ -601,16 +676,8 @@
   gap: 6px 14px;
 }
 .gs.is-mobile .gp-effects li {
-  grid-template-columns: 20px auto;
+  grid-template-columns: 10px auto;
   gap: 7px;
-}
-.gs.is-mobile .gp-effect-mark {
-  width: 20px;
-  height: 20px;
-}
-.gs.is-mobile .gp-effect-mark svg {
-  width: 12px;
-  height: 12px;
 }
 .gs.is-mobile .gp-effect-txt b {
   font-size: 14px;
@@ -944,13 +1011,26 @@
 .gs.is-mobile .gp-veil {
   padding: 10px;
 }
-.gs.is-mobile .gp-veil.is-end {
+.gp-veil.is-screen {
   position: fixed;
   inset: 0;
   z-index: 60;
   padding: 16px;
   border-radius: 0;
-  background: rgba(2, 3, 10, 0.7);
+  background: rgba(2, 3, 10, 0.72);
+}
+.gp-veil.is-screen .gp-card {
+  padding: 24px 22px 22px;
+  border-radius: 20px;
+}
+.gp-veil.is-screen .gp-end-mark {
+  width: 52px;
+  height: 52px;
+  margin-bottom: 12px;
+  font-size: 26px;
+}
+.gp-veil.is-screen .gp-card-title {
+  font-size: 32px;
 }
 
 @keyframes gp-fade {
@@ -989,12 +1069,12 @@
     radial-gradient(30% 40% at 70% 22%, rgba(243, 201, 105, 0.1), transparent 70%);
 }
 .pl-head {
-  max-width: 760px;
-  margin-bottom: clamp(30px, 5vh, 52px);
+  max-width: 640px;
+  margin-bottom: clamp(26px, 4.5vh, 46px);
 }
 .pl-head .title-xl {
   margin-top: 18px;
-  font-size: clamp(44px, 5.4vw, 84px);
+  font-size: clamp(44px, 4.8vw, 78px);
 }
 .pl-head .lede {
   margin: 20px 0 0;
@@ -1005,6 +1085,7 @@
   gap: clamp(24px, 4vw, 64px);
   align-items: start;
 }
+
 
 /* Portes (modes de jeu) */
 .pl-doors {
@@ -1067,6 +1148,7 @@
   line-height: 1.1;
 }
 .pl-door-t .badge {
+  font-family: var(--sans);
   transform: translateY(-4px);
 }
 .pl-door-d {

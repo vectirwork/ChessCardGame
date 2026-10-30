@@ -7,12 +7,12 @@ import { Color, PieceType, VALUE, sanToFrench } from '../../shared/chess';
 import { CARDS, CATALOGS } from '../../shared/cards';
 import type { Catalog } from '../../shared/cards';
 import { BOT_PROFILES } from '../../shared/bot';
-import type { Effect, GameState, LogEntry } from '../../shared/game';
+import type { Effect, GameState, HandCard, LogEntry } from '../../shared/game';
 import { describeCardPlay } from '../../shared/game';
 import type { ClockView, GameView, SeatView } from '../../shared/protocol';
 import { TIME_CONTROLS } from '../../shared/protocol';
-import { CardEmblem } from '../components/CardArt';
 import { pieceUrl } from '../components/pieces';
+import { CardBack, SpellCard } from '../components/SpellCard';
 import { OracleEye } from '../odyssee/shell';
 import { playSound } from '../sound';
 
@@ -61,7 +61,7 @@ export function levelName(seat: SeatView | null): string {
 export function seatSub(seat: SeatView | null, color: Color, diff?: number | null): ReactNode {
   if (!seat) return 'Invitation envoyée';
   const parts: ReactNode[] = [];
-  if (seat.kind === 'bot') parts.push(`IA · niveau ${levelName(seat)}`);
+  if (seat.kind === 'bot') parts.push('IA');
   else if (seat.kind === 'guest') parts.push('Invité');
   if (seat.rating != null && seat.kind !== 'bot') parts.push(`${seat.rating} Elo`);
   parts.push(colorName(color));
@@ -182,8 +182,57 @@ export function EmoteBubble({ text }: { text: string | null }) {
   );
 }
 
+/** Main d'un joueur en petites cartes : face visible quand la carte est connue (mains visibles), dos sinon. */
+export function HandRow({ hand, label, className = '' }: { hand: HandCard[]; label: string; className?: string }) {
+  if (!hand.length) return null;
+  return (
+    <div className={`gp-hand-row ${className}`} aria-label={label}>
+      {hand.map((h, i) => {
+        const def = h.card ? CARDS[h.card] : undefined;
+        if (!def) return <CardBack key={i} size="mini" used={h.used} />;
+        return (
+          <span key={i} className="gp-hand-card" title={`${def.name}${h.used ? ' (utilisée)' : ''} : ${def.description}`}>
+            <SpellCard id={h.card!} size="mini" used={h.used} tilt={false} />
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------------------------
-// Coups joués (sorts compris)
+// Coups joués (sorts compris) : une ligne par coup complet, un sort sur sa propre ligne, à sa place dans la partie
+
+type MoveLine =
+  | { k: 'pair'; n: number; w?: Extract<LogEntry, { k: 'move' }>; b?: Extract<LogEntry, { k: 'move' }> }
+  | { k: 'card'; e: Extract<LogEntry, { k: 'card' }> };
+
+export function moveLines(log: LogEntry[]): MoveLine[] {
+  const out: MoveLine[] = [];
+  let n = 1;
+  let cur: Extract<MoveLine, { k: 'pair' }> | null = null;
+  for (const e of log) {
+    if (e.k === 'card') {
+      out.push({ k: 'card', e });
+      cur = null;
+      continue;
+    }
+    if (e.c === 'w') {
+      cur = { k: 'pair', n, w: e };
+      out.push(cur);
+    } else if (cur && cur.w && !cur.b) {
+      cur.b = e;
+    } else {
+      cur = { k: 'pair', n, b: e };
+      out.push(cur);
+    }
+    if (e.c === 'b' && !e.undone) {
+      n++;
+      cur = null;
+    }
+  }
+  return out;
+}
 
 export function MoveList({ log, className = '' }: { log: LogEntry[]; className?: string }) {
   const ref = useRef<HTMLOListElement>(null);
@@ -191,51 +240,35 @@ export function MoveList({ log, className = '' }: { log: LogEntry[]; className?:
     const el = ref.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }, [log.length]);
-  const rows: { n: number; w: LogEntry[]; b: LogEntry[] }[] = [];
-  let n = 1;
-  let cur: { n: number; w: LogEntry[]; b: LogEntry[] } | null = null;
-  for (const e of log) {
-    if (!cur) {
-      cur = { n, w: [], b: [] };
-      rows.push(cur);
-    }
-    cur[e.c].push(e);
-    if (e.k === 'move' && e.c === 'b' && !e.undone) {
-      n++;
-      cur = null;
-    }
-  }
   if (!log.length) return <p className={`gp-moves-empty ${className}`}>Les coups et les sorts s'inscriront ici.</p>;
+  const lines = moveLines(log);
   return (
     <ol className={`gp-moves ${className}`} ref={ref} aria-label="Coups joués">
-      {rows.map(r => (
-        <li className="gp-mv-row" key={r.n + ':' + r.w.length + ':' + r.b.length}>
-          <span className="gp-mv-n">{r.n}.</span>
-          <span className="gp-mv-cell">
-            {r.w.map((e, i) => (
-              <Entry key={i} e={e} />
-            ))}
-          </span>
-          <span className="gp-mv-cell">
-            {r.b.map((e, i) => (
-              <Entry key={i} e={e} />
-            ))}
-          </span>
-        </li>
-      ))}
+      {lines.map((l, i) => {
+        const last = i === lines.length - 1;
+        if (l.k === 'card') {
+          const def = CARDS[l.e.card];
+          if (!def) return null;
+          return (
+            <li key={i} className={`gp-mv-line is-card ${l.e.undone ? 'is-undone' : ''}`} style={{ '--h': def.hue } as CSSProperties} title={describeCardPlay(l.e.card, l.e.targets)}>
+              <span className="gp-mv-n" aria-hidden="true" />
+              <span className="gp-mv-card">
+                <i aria-hidden="true" />
+                {def.name}
+                <small>{colorName(l.e.c)}</small>
+              </span>
+            </li>
+          );
+        }
+        return (
+          <li key={i} className={`gp-mv-line ${last ? 'is-last' : ''}`}>
+            <span className="gp-mv-n">{l.w ? `${l.n}.` : `${l.n}…`}</span>
+            <span className={`gp-mv ${l.w?.undone ? 'is-undone' : ''}`}>{l.w ? sanToFrench(l.w.san) : ''}</span>
+            <span className={`gp-mv ${l.b?.undone ? 'is-undone' : ''}`}>{l.b ? sanToFrench(l.b.san) : ''}</span>
+          </li>
+        );
+      })}
     </ol>
-  );
-}
-
-function Entry({ e }: { e: LogEntry }) {
-  if (e.k === 'move') return <span className={`gp-mv ${e.undone ? 'is-undone' : ''}`}>{sanToFrench(e.san)}</span>;
-  const def = CARDS[e.card];
-  if (!def) return null;
-  return (
-    <span className="gp-mv-card" style={{ '--h': def.hue } as CSSProperties} title={describeCardPlay(e.card, e.targets)}>
-      <i aria-hidden="true" />
-      {def.name}
-    </span>
   );
 }
 
@@ -276,9 +309,7 @@ export function EffectsPanel({ effects, you, title = 'Sorts en cours' }: { effec
               style={{ '--h': def.hue } as CSSProperties}
               title={def.description}
             >
-              <span className="gp-effect-mark" aria-hidden="true">
-                <CardEmblem id={e.card} />
-              </span>
+              <span className="gp-effect-mark" aria-hidden="true" />
               <span className="gp-effect-txt">
                 <b>{def.name}</b>
                 <small>{effectLine(e, you)}</small>

@@ -12,13 +12,12 @@ import { Color, PieceType, opposite } from '../../shared/chess';
 import { CARDS } from '../../shared/cards';
 import type { Catalog } from '../../shared/cards';
 import { skinStyle } from '../../shared/catalog';
-import type { CardInfo, GameState } from '../../shared/game';
+import type { CardInfo, GameState, HandCard } from '../../shared/game';
 import { RESULT_TEXT, cardOptions, cardPlayable, catalogOf, legalMovesOf, playMove, sideInCheck } from '../../shared/game';
 import type { Ack, GameUpdate, GameView, JoinReply } from '../../shared/protocol';
 import { EMOTES } from '../../shared/protocol';
 import { Board, BoardHandle, checkSquare } from '../components/Board';
 import { Modal, Spinner } from '../components/Layout';
-import { CardBack, SpellCard } from '../components/SpellCard';
 import { castSafely } from '../odyssee/castSafely';
 import { GameShell, gameLayout } from '../odyssee/shell';
 import type { ShellAction, ShellPrompt } from '../odyssee/shell';
@@ -29,11 +28,17 @@ import { useVfx } from '../vfx/useVfx';
 import { AwayNotice, CastBanner, DrawOffer, EndCard, FirstMoveCountdown, JoinSheet, WaitingCard, rematchLabel, resultTitle } from './overlays';
 import type { Casting } from './overlays';
 import {
-  Avatar, Captured, Clock, EffectsPanel, EmoteBubble, MoveList, SeatName, catalogDescription, catalogLabel, colorName,
+  Avatar, Captured, Clock, EffectsPanel, EmoteBubble, HandRow, MoveList, SeatName, catalogDescription, catalogLabel, colorName,
   modeLabel, seatSub, tcLabel,
 } from './parts';
 
 type Queued = GameUpdate & { at: number };
+
+/**
+ * Carte inconnue du client (catalogue modifié entre-temps, client et serveur pas encore à la même version) : retirée de
+ * l'affichage sans décaler les index (la coque ne dessine pas une carte vide), jamais d'erreur de rendu.
+ */
+const known = (hand: HandCard[]): HandCard[] => hand.map(h => (h.card && !CARDS[h.card] ? { ...h, card: null as unknown as HandCard['card'] } : h));
 type IdleWin = Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
 
 /** Géométrie du mode immersif (la même que celle de la coque), suivie au redimensionnement. */
@@ -93,11 +98,13 @@ export default function GamePage() {
   useImmersive(!error);
 
   // Largeur libre à droite de l'échiquier : les blocs des joueurs (adversaire en haut, vous en bas) n'y débordent pas
-  const side = Math.max(120, layout.vw - (layout.x + layout.G / 2) - 44);
+  const side = Math.max(120, layout.vw - (layout.x + layout.G / 2) - 58);
   useEffect(() => {
     const html = document.documentElement;
     html.style.setProperty('--gp-side', `${side}px`);
-    return () => html.style.removeProperty('--gp-side');
+    return () => {
+      html.style.removeProperty('--gp-side');
+    };
   }, [side]);
 
   const you = view?.you ?? null;
@@ -284,8 +291,19 @@ export default function GamePage() {
     return null;
   }, [state]);
   const check = state && !state.result ? checkSquare(state.pos, sideInCheck(state) ? state.pos.turn : null) : null;
-  const myHand = useMemo(() => (you && state ? state.hands[you] : []), [you, state]);
-  const playable = useMemo(() => myHand.map((_, i) => (myTurn && state && you ? cardPlayable(state, you, i) : false)), [myHand, myTurn, state, you]);
+  const myHand = useMemo(() => (you && state ? known(state.hands[you]) : []), [you, state]);
+  const playable = useMemo(
+    () =>
+      myHand.map((h, i) => {
+        if (!myTurn || !state || !you || !h.card) return false;
+        try {
+          return cardPlayable(state, you, i);
+        } catch {
+          return false;
+        }
+      }),
+    [myHand, myTurn, state, you],
+  );
   const selectedDef = selCard !== null && myHand[selCard]?.card ? CARDS[myHand[selCard].card!] : null;
   const options = useMemo(() => {
     if (selCard === null || !state || !you || !selectedDef || selectedDef.targets === 0) return null;
@@ -364,6 +382,11 @@ export default function GamePage() {
     if (idx > 0) navigate(-1);
     else navigate('/');
   }, [navigate]);
+
+  const toggleSound = () => {
+    setSoundEnabled(!sound);
+    setSound(!sound);
+  };
 
   const sendEmote = (key: string) => {
     getSocket().emit('game:emote', { id, key });
@@ -453,7 +476,7 @@ export default function GamePage() {
     hint = (
       <>
         Vous regardez cette partie en direct.
-        <small>Les mains restent cachées jusqu'au lancement des sorts.</small>
+        {hasCards && (state.hands.w.some(h => !h.card) || state.hands.b.some(h => !h.card)) && <small>Les mains restent cachées jusqu'au lancement des sorts.</small>}
       </>
     );
   } else if (myTurn) {
@@ -474,7 +497,7 @@ export default function GamePage() {
     hint = (
       <>
         {turnSeat?.kind === 'bot' ? "L'IA calcule son coup." : 'Votre adversaire réfléchit.'}
-        {hasCards && <small>Ses cartes restent cachées jusqu'à ce qu'il les lance.</small>}
+        {hasCards && you && state.hands[opposite(you)].some(h => !h.card) && <small>Ses cartes restent cachées jusqu'à ce qu'il les lance.</small>}
       </>
     );
   }
@@ -528,14 +551,8 @@ export default function GamePage() {
     { label: 'Annuler la partie', confirm: "Confirmer l'annulation", onClick: () => void send('game:abort', {}), hidden: !you || view.status !== 'active' || view.started },
     { label: 'Abandonner', confirm: "Confirmer l'abandon", onClick: () => void send('game:resign', {}), hidden: !you || view.status !== 'active' },
     { label: 'Coups joués', onClick: () => setMovesOpen(true), hidden: showRail || view.status === 'waiting' },
-    { label: "Retourner l'échiquier", onClick: () => setFlipped(f => !f) },
-    {
-      label: sound ? 'Couper le son' : 'Activer le son',
-      onClick: () => {
-        setSoundEnabled(!sound);
-        setSound(!sound);
-      },
-    },
+    { label: "Retourner l'échiquier", onClick: () => setFlipped(f => !f), hidden: !layout.mobile },
+    { label: sound ? 'Couper le son' : 'Activer le son', onClick: () => toggleSound(), hidden: !layout.mobile },
   ];
 
   const info = (
@@ -546,14 +563,14 @@ export default function GamePage() {
       {view.drawOffer === you && you && view.status === 'active' && <p className="gp-note">Nulle proposée : en attente de la réponse.</p>}
       {oppAway && view.status === 'active' && <AwayNotice since={oppAway} claimAfter={view.claimAfterMs} onClaim={() => void send('game:claim', {})} />}
       {ended && view.rematch.next === null && you && view.rematch[opposite(you)] && !view.rematch[you] && <p className="gp-note">Votre adversaire propose une revanche.</p>}
-      <EffectsPanel effects={state.effects} you={you} />
+      {!ended && <EffectsPanel effects={state.effects} you={you} />}
+      {hasCards && layout.mobile && view.status !== 'waiting' && (
+        <div className="gp-opp-hand-m">
+          <span>Main de {oppSeat?.name ?? colorName(top)}</span>
+          <HandRow hand={state.hands[top]} label={`Cartes de ${oppSeat?.name ?? colorName(top)}`} />
+        </div>
+      )}
     </>
-  );
-
-  const statusExtra = (
-    <p className="gp-catalog" title={catalogDescription(catalog)}>
-      <span className="gp-label">Cartes</span> {hasCards ? `${catalogLabel(catalog)} · ${catalogDescription(catalog)}` : 'Aucune : échecs classiques.'}
-    </p>
   );
 
   const seatOf = (c: Color) => view.seats[c];
@@ -585,11 +602,7 @@ export default function GamePage() {
       style={layout.mobile ? { top: boardBottom + 14 } : { bottom: selfBottom }}
       aria-label={`${colorName(bottom)} : ${selfSeat?.name ?? 'en attente'}`}
     >
-      {spectator && hasCards && !layout.mobile && (
-        <div className="gp-self-hand" aria-label={`Cartes des ${colorName(bottom)}`}>
-          {state.hands[bottom].map((h, i) => (h.card && h.used ? <SpellCard key={i} id={h.card} size="mini" used tilt={false} /> : <CardBack key={i} size="mini" used={h.used} />))}
-        </div>
-      )}
+      {spectator && hasCards && !layout.mobile && <HandRow hand={state.hands[bottom]} label={`Cartes de ${selfSeat?.name ?? colorName(bottom)}`} className="gp-self-hand" />}
       <div className="gp-self-clock">
         <Captured state={state} color={bottom} />
         <Clock clock={view.clock} color={bottom} receivedAt={receivedAt} active={isActive(bottom)} compact={layout.mobile} />
@@ -603,10 +616,34 @@ export default function GamePage() {
           </b>
           <span>{seatSub(selfSeat, bottom, view.ratingDiff?.[bottom] ?? null)}</span>
         </div>
-        {you === bottom && emoteMenu}
+        {!layout.mobile && (
+          <div className="gp-tools">
+            <button type="button" className="gp-tool" onClick={() => setFlipped(f => !f)} aria-label="Retourner l'échiquier" title="Retourner l'échiquier">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M8 4v15M8 4 4.5 7.5M8 4l3.5 3.5M16 20V5m0 15-3.5-3.5M16 20l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <button type="button" className="gp-tool" onClick={toggleSound} aria-pressed={!sound} aria-label={sound ? 'Couper le son' : 'Activer le son'} title={sound ? 'Couper le son' : 'Activer le son'}>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+                {sound ? (
+                  <path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                ) : (
+                  <path d="M15.5 9.5l5 5m0-5-5 5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                )}
+              </svg>
+            </button>
+            {you === bottom && emoteMenu}
+          </div>
+        )}
+        {layout.mobile && you === bottom && emoteMenu}
       </div>
       <EmoteBubble text={emotes[bottom]} />
     </div>
+  );
+
+  const endCard = ended && (
+    <EndCard view={view} onClose={() => setShowEnd(false)} onRematch={() => void send('game:rematch', {})} loggedIn={!!me} screen={layout.mobile} />
   );
 
   const board = (
@@ -630,7 +667,7 @@ export default function GamePage() {
       />
       {casting && <CastBanner key={casting.key} c={casting} />}
       {iAmCreatorWaiting && <WaitingCard id={id} view={view} catalog={catalog} onCancel={() => void send('game:abort', {})} />}
-      {showEnd && ended && <EndCard view={view} onClose={() => setShowEnd(false)} onRematch={() => void send('game:rematch', {})} loggedIn={!!me} />}
+      {showEnd && ended && !layout.mobile && endCard}
     </div>
   );
 
@@ -641,30 +678,37 @@ export default function GamePage() {
       <GameShell
         active
         backdrop
-        className={`gp ${spectator ? 'is-spectator' : ''} ${!hasCards ? 'no-cards' : ''} ${!hasCards || spectator ? 'no-hand' : ''} ${showRail ? 'has-rail' : ''}`}
+        className={`gp ${!spectator && view.status === 'active' && !myTurn && !ended ? 'their-turn' : ''} ${spectator ? 'is-spectator' : ''} ${!hasCards ? 'no-cards' : ''} ${!hasCards || spectator ? 'no-hand' : ''} ${showRail ? 'has-rail' : ''}`}
         board={board}
         onBack={leave}
         backLabel="Retour"
         badge={badge}
-        kicker={view.status === 'waiting' ? `Partie en ligne · ${hasCards ? `cartes ${catalogLabel(catalog)}` : 'sans cartes'}` : `Coup ${moveNo} · ${hasCards ? `cartes ${catalogLabel(catalog)}` : 'sans cartes'}`}
+        kicker={
+          <span title={catalogDescription(catalog)}>
+            {view.status === 'waiting' ? 'Partie en ligne' : `Coup ${moveNo}`} · {hasCards ? `cartes ${catalogLabel(catalog)}` : 'sans cartes'}
+          </span>
+        }
         title={title}
         hint={hint}
         result={result}
         prompt={prompt}
         actions={actions}
         info={info}
-        statusExtra={statusExtra}
         opponent={{
           name: oppSeat?.name ?? 'En attente…',
           sub: seatSub(oppSeat, top, view.ratingDiff?.[top] ?? null),
-          hand: hasCards ? state.hands[top] : [],
+          // Main dessinée ici (faces visibles quand le serveur les montre) plutôt que par la coque (dos seulement)
+          hand: [],
           avatar: <Avatar seat={oppSeat} color={top} />,
           extra: (
-            <div className={`gp-opp-extra ${isActive(top) ? 'is-turn' : ''}`}>
-              <Captured state={state} color={top} />
-              <Clock clock={view.clock} color={top} receivedAt={receivedAt} active={isActive(top)} compact={layout.mobile} />
-              <EmoteBubble text={emotes[top]} />
-            </div>
+            <>
+              <div className={`gp-opp-extra ${isActive(top) ? 'is-turn' : ''}`}>
+                <Captured state={state} color={top} />
+                <Clock clock={view.clock} color={top} receivedAt={receivedAt} active={isActive(top)} compact={layout.mobile} />
+                <EmoteBubble text={emotes[top]} />
+              </div>
+              {hasCards && !layout.mobile && <HandRow hand={state.hands[top]} label={`Cartes de ${oppSeat?.name ?? colorName(top)}`} />}
+            </>
           ),
         }}
         hand={hasCards && you ? myHand : []}
@@ -686,6 +730,7 @@ export default function GamePage() {
           <MoveList log={state.log} />
         </aside>
       )}
+      {showEnd && ended && layout.mobile && endCard}
       {movesOpen && (
         <Modal onClose={() => setMovesOpen(false)}>
           <div className="gp-sheet">

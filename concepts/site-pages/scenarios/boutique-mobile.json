@@ -1,0 +1,15 @@
+{
+  "url": "http://localhost:3000/boutique",
+  "outDir": "/home/user/ChessCardGame/concepts/site-pages",
+  "viewport": { "width": 390, "height": 844 },
+  "steps": [
+    { "wait": 800 },
+    { "shot": "mobile-boutique-01-haut" },
+    { "scrollTo": 420, "settle": 9000 },
+    { "shot": "mobile-boutique-02-sort" },
+    { "click": ".bz-lantern:nth-child(5)", "settle": 300 },
+    { "scrollTo": 900, "settle": 800 },
+    { "shot": "mobile-boutique-03-etageres" },
+    { "shot": "mobile-boutique-04-page", "fullPage": true }
+  ]
+}

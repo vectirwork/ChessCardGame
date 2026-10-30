@@ -59,6 +59,7 @@ export interface GameView {
   seats: Record<Color, SeatView | null>;
   /** Couleur du spectateur, null s'il ne joue pas. */
   you: Color | null;
+  /** État complet, public : les mains des deux camps sont visibles de tous (joueurs et spectateurs). */
   state: GameState;
   clock: ClockView | null;
   drawOffer: Color | null;
@@ -128,7 +129,11 @@ export interface ClientToServer {
   'game:claim': (p: { id: string }, ack: (r: Ack) => void) => void;
   'game:rematch': (p: { id: string }, ack: (r: Ack) => void) => void;
   'game:emote': (p: { id: string; key: string }) => void;
-  /** rated : partie classée (comptes) ; sinon file amicale ouverte aux invités (name = pseudo). */
+  /**
+   * rated : partie classée (comptes) ; sinon file amicale ouverte aux invités (name = pseudo).
+   * catalog : 'climats' (Pouvoirs, par défaut) ou 'aucune' ; toute autre valeur, 'duel' compris, est ramenée
+   * à 'climats'.
+   */
   'queue:join': (p: { tc: string; rated?: boolean; name?: string; catalog?: string }, ack: (r: Ack) => void) => void;
   'queue:leave': () => void;
 }

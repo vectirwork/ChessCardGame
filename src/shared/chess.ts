@@ -1,7 +1,7 @@
 // Moteur d'échecs de Spellmate.
 // Règles complètes (roque, prise en passant, promotion) et modificateurs de cartes :
 // - Duel : cases bloquées, pièces gelées ou protégées, portée réduite, saut et passe-muraille ;
-// - Climats : pions gelés, sauts des pièces longues, Trêve, explosions, promotion en 7e rangée, portails.
+// - Pouvoirs (catalogue 'climats') : cases bloquées (Mur, Faille), pions gelés, Trêve, explosions.
 // Sans modificateur (NO_MODS), ce sont les échecs classiques : les tests perft le garantissent.
 // Cases : index = rangée * 8 + colonne, a1 = 0, h1 = 7, a8 = 56, h8 = 63.
 
@@ -35,8 +35,6 @@ export const F_LEAP = 64;
 export const F_PHASE = 128;
 /** Déflagration : la capture explose (la pièce qui capture saute avec sa victime et ses voisines). */
 export const F_BLAST = 256;
-/** Passage par un portail : la pièce s'arrête sur `via` et ressort sur `to`. */
-export const F_PORTAL = 512;
 /** « La magie cède » : coup joué comme si les effets n'existaient pas pour les pièces du joueur. */
 export const F_RELAXED = 1024;
 
@@ -45,8 +43,6 @@ export interface Move {
   to: number;
   flags: number;
   promo?: PieceType;
-  /** Portail d'entrée d'un passage (F_PORTAL) ; `to` est la sortie. */
-  via?: number;
 }
 
 /** Modificateurs actifs, calculés à partir des effets de cartes. */
@@ -63,20 +59,14 @@ export interface Mods {
   leap: Set<number>;
   /** Duel : pièces qui traversent leurs alliées (Passe-muraille). */
   phase: Set<number>;
-  /** Portails ouverts (une seule paire). */
-  portals: [number, number] | null;
   /** Ère glaciaire : aucun pion ne bouge (les cases qu'ils attaquent restent interdites au roi). */
   pawnsFrozen: boolean;
-  /** Chevauchée : tours, fous et dames sautent aussi comme un cavalier. */
-  leapAll: boolean;
   /** Trêve : aucune capture, sauf pour sortir d'un échec. */
   truce: boolean;
   /** Lune de sang : capture obligatoire (filtre appliqué par legalMovesOf et par l'IA, pas ici). */
   mustCapture: boolean;
   /** Déflagration : les captures qui ne sont pas des coups de roi explosent. */
   blast: boolean;
-  /** Couronnement : promotion dès la 7e rangée. */
-  crown: boolean;
 }
 
 /** Jeu de modificateurs vide (nouvel objet, modifiable). */
@@ -88,13 +78,10 @@ export function emptyMods(): Mods {
     range: { w: 7, b: 7 },
     leap: new Set(),
     phase: new Set(),
-    portals: null,
     pawnsFrozen: false,
-    leapAll: false,
     truce: false,
     mustCapture: false,
     blast: false,
-    crown: false,
   };
 }
 
@@ -167,12 +154,12 @@ export function isAttacked(pos: Position, target: number, by: Color, mods: Mods)
       if (p && p.c === by && p.t === 'p' && !mods.frozen.has(p.id)) return true;
     }
   }
-  // Cavaliers (et pièces longues sous la Chevauchée)
+  // Cavaliers
   for (const [df, dr] of KNIGHT) {
     const f = tf + df, r = tr + dr;
     if (!onBoard(f, r)) continue;
     const p = b[sq(f, r)];
-    if (p && p.c === by && (p.t === 'n' || (mods.leapAll && isSlider(p.t))) && !mods.frozen.has(p.id)) return true;
+    if (p && p.c === by && p.t === 'n' && !mods.frozen.has(p.id)) return true;
   }
   // Roi
   for (const [df, dr] of KING) {
@@ -217,9 +204,6 @@ function pushPawnMove(out: Move[], from: number, to: number, flags: number, prom
   }
 }
 
-/** Rangée relative (0 = première rangée du camp, 6 = sa 7e rangée). */
-const relRank = (r: number, c: Color) => (c === 'w' ? r : 7 - r);
-
 /**
  * Coups pseudo-légaux du camp au trait (sans vérifier que le roi reste à l'abri).
  * `mods` régit le déplacement ; `modsAfter` (effets au prochain coup adverse) sert au roque :
@@ -242,8 +226,7 @@ export function pseudoMoves(pos: Position, mods: Mods, modsAfter: Mods = mods): 
         const last = us === 'w' ? 7 : 0;
         const r1 = fr + dir;
         if (r1 < 0 || r1 > 7) break;
-        // Couronnement : promotion dès la 7e rangée (jamais par prise en passant, qui arrive en 6e).
-        const promote = r1 === last || (mods.crown && relRank(r1, us) === 6);
+        const promote = r1 === last;
         const one = sq(ff, r1);
         if (!b[one] && !mods.blocked[one]) {
           pushPawnMove(out, from, one, 0, promote);
@@ -270,23 +253,17 @@ export function pseudoMoves(pos: Position, mods: Mods, modsAfter: Mods = mods): 
         }
         break;
       }
-      case 'n': {
-        const start = out.length;
+      case 'n':
         jumpMoves(pos, mods, from, KNIGHT, out, 0);
-        if (mods.portals) portalMoves(pos, mods.portals, from, out, start);
         break;
-      }
       case 'k':
         jumpMoves(pos, mods, from, KING, out, 0);
         castleMoves(pos, mods, modsAfter, from, out);
         break;
-      default: {
-        const start = out.length;
+      default:
         if (mods.phase.has(p.id)) phaseMoves(pos, mods, from, out);
         else slideMoves(pos, mods, from, out);
-        if (mods.leap.has(p.id) || mods.leapAll) jumpMoves(pos, mods, from, KNIGHT, out, F_LEAP);
-        if (mods.portals) portalMoves(pos, mods.portals, from, out, start);
-      }
+        if (mods.leap.has(p.id)) jumpMoves(pos, mods, from, KNIGHT, out, F_LEAP);
     }
   }
   return out;
@@ -329,25 +306,6 @@ function slideMoves(pos: Position, mods: Mods, from: number, out: Move[]) {
   }
 }
 
-/**
- * Portails : une pièce (cavalier, fou, tour, dame) qui peut s'arrêter sur un portail peut aussi ressortir par
- * l'autre, si les deux sont libres. Les coups de la pièce sont dans `out` à partir de `start` ; on ajoute les
- * passages, sauf quand la sortie est déjà atteignable directement (le résultat serait le même coup).
- */
-function portalMoves(pos: Position, portals: [number, number], from: number, out: Move[], start: number) {
-  const [a, c] = portals;
-  if (pos.board[a] || pos.board[c]) return; // un portail occupé ferme la paire
-  const end = out.length;
-  const reach = (x: number) => {
-    for (let i = start; i < end; i++) if (out[i].to === x) return out[i];
-    return null;
-  };
-  for (const [entry, exit] of [[a, c], [c, a]] as const) {
-    const m = reach(entry);
-    if (m && !reach(exit)) out.push({ from, to: exit, via: entry, flags: (m.flags & ~F_CAPTURE) | F_PORTAL });
-  }
-}
-
 /** Passe-muraille : la pièce traverse ses propres pièces ; une pièce adverse ou un mur de glace l'arrête. */
 function phaseMoves(pos: Position, mods: Mods, from: number, out: Move[]) {
   const p = pos.board[from]!;
@@ -380,7 +338,7 @@ function castleMoves(pos: Position, mods: Mods, modsAfter: Mods, from: number, o
   const kBit = us === 'w' ? 1 : 4;
   const qBit = us === 'w' ? 2 : 8;
   if (!(pos.castling & (kBit | qBit))) return;
-  // Attaques vues avec les effets du prochain coup adverse (R5) : un mur qui fond, une Chevauchée qui arrive.
+  // Attaques vues avec les effets du prochain coup adverse (R5) : un Mur (Duel) qui fond, une Faille qui se ferme.
   const attacked = (s: number) => isAttacked(pos, s, them, modsAfter);
   if (attacked(home)) return;
   const b = pos.board;
@@ -533,7 +491,7 @@ const SAN_LETTER: Record<PieceType, string> = { p: '', n: 'N', b: 'B', r: 'R', q
 
 /**
  * Notation algébrique (lettres anglaises) ; `legal` sert à lever les ambiguïtés.
- * Spellmate ajoute `*` pour une capture qui explose (Déflagration) et `entrée→sortie` pour un passage de portail.
+ * Spellmate ajoute `*` pour une capture qui explose (Déflagration).
  */
 export function toSan(pos: Position, m: Move, legal: Move[]): string {
   if (m.flags & F_CASTLE_K) return 'O-O';
@@ -548,7 +506,7 @@ export function toSan(pos: Position, m: Move, legal: Move[]): string {
     return s + blast;
   }
   s += SAN_LETTER[p.t];
-  const rivals = legal.filter(o => o.to === m.to && o.via === m.via && o.from !== m.from && pos.board[o.from]?.t === p.t);
+  const rivals = legal.filter(o => o.to === m.to && o.from !== m.from && pos.board[o.from]?.t === p.t);
   if (rivals.length) {
     const sameFile = rivals.some(o => fileOf(o.from) === fileOf(m.from));
     const sameRank = rivals.some(o => rankOf(o.from) === rankOf(m.from));
@@ -557,7 +515,6 @@ export function toSan(pos: Position, m: Move, legal: Move[]): string {
     else s += sqName(m.from);
   }
   if (m.flags & F_CAPTURE) s += 'x';
-  if (m.via !== undefined) s += sqName(m.via) + '→';
   s += sqName(m.to);
   return s + blast;
 }

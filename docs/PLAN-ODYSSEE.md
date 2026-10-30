@@ -84,3 +84,30 @@ vos fichiers ou notez-le dans vos limites : l'orchestrateur l'intégrera.
   WebGL est rendu en logiciel ici : la 3D est lente, jugez la composition.
 - Textes de l'interface en français, ton premium et sobre. Accessibilité : contrastes, focus visibles, `alt`,
   `prefers-reduced-motion`.
+
+## Décision du fondateur (30 octobre, 16 h 30) : cartes visibles, pouvoirs pour tout le monde, jeu resserré
+
+> « je pense que c'est mieux si on peut voir les cartes de l'adversaire justement et il faut que les pouvoirs
+> affectent tout le monde pour rester équilibré. Par exemple les pions sont immobilisés pendant les 3 prochains coups
+> (pour tout le monde) ou alors cette case devient inutilisable jusqu'à la fin de la partie, mais à chaque fois ça
+> influence tout le monde, tu vois ? Et peut-être que 12 c'est beaucoup, tu peux réduire si tu veux. »
+
+Cette décision **remplace** les points correspondants plus haut et dans `concepts/CARTES-GLOBALES.md` :
+
+1. **Mains visibles** : les deux joueurs (et les spectateurs) voient en permanence les trois cartes de chacun,
+   utilisées ou non. Plus aucune carte cachée : `viewState` ne masque plus rien ; l'interface montre la main adverse
+   face visible (en plus petit), avec les cartes déjà jouées grisées.
+2. **Chaque pouvoir touche les deux camps.** Le jeu passe de 12 à **8 cartes** :
+   - Climats (Présage : annoncés, ils arrivent au début du prochain tour du lanceur) : **Sablier fou**, **Trêve**,
+     **Lune de sang**, **Ère glaciaire**, **Déflagration** (règles inchangées) ;
+   - Terrains : **Mur de glace**, désormais **permanent** (une case vide des rangées 3 à 6 devient infranchissable
+     pour les deux camps **jusqu'à la fin de la partie** ; un cavalier peut sauter par-dessus ; « la magie cède »
+     s'applique), et **Faille** (inchangée) ;
+   - Événement : **Grande Marée** (Rituel, inchangée).
+   - Retirées : Couronnement, Chevauchée, Portails, Déjà-vu.
+   Les règles transverses restent (Présage, Rituel, « la magie cède », un sort par tour, tirage pondéré avec au plus
+   1 Légendaire et 2 Climats par main, Sablier fou ni contre l'IA ni sans pendule).
+3. **Catalogues proposés** : « Pouvoirs » (identifiant `climats`, par défaut) et « Sans cartes » (`aucune`).
+   Le catalogue `duel` (sorts qui visent l'adversaire) n'est plus proposé nulle part (ni interface, ni création de
+   partie, ni file d'attente) ; le moteur le garde seulement pour relire ou reprendre d'anciennes parties.
+   Les problèmes, leçons, démonstrations et aperçus de la boutique utilisent les 8 cartes.

@@ -1,30 +1,61 @@
-// Page de partie : plateau, cartes, pendules, sorts animés, invitations, fin de partie.
+// Page de partie en ligne (/partie/:id), au style Odyssée.
+//
+// La coque immersive de l'accueil (odyssee/shell : GameShell) entoure l'échiquier, à la même place que sur
+// l'accueil : passer d'une partie de l'accueil (file amicale) à une partie en ligne se fait sans rupture.
+// Fonctions : pendules exactes, coups optimistes, cartes et ciblage, file d'animation des sorts (garde-fou
+// castSafely), salle d'attente et lien d'invitation, pseudo des invités, spectateurs, nulle, abandon, annulation,
+// réclamation de victoire, revanche, émotes, fin de partie, Présages annoncés et catalogue de la partie.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Color, PieceType, opposite } from '../../shared/chess';
-import { CARDS, CardId } from '../../shared/cards';
+import { CARDS } from '../../shared/cards';
+import type { Catalog } from '../../shared/cards';
 import { skinStyle } from '../../shared/catalog';
 import type { CardInfo, GameState } from '../../shared/game';
-import {
-  RESULT_TEXT, cardOptions, cardPlayable, legalMovesOf, playMove, sideInCheck,
-} from '../../shared/game';
+import { RESULT_TEXT, cardOptions, cardPlayable, catalogOf, legalMovesOf, playMove, sideInCheck } from '../../shared/game';
 import type { Ack, GameUpdate, GameView, JoinReply } from '../../shared/protocol';
-import { EMOTES, TIME_CONTROLS } from '../../shared/protocol';
+import { EMOTES } from '../../shared/protocol';
 import { Board, BoardHandle, checkSquare } from '../components/Board';
-import { Modal, PageLoader, Spinner } from '../components/Layout';
-import { SpellCard } from '../components/SpellCard';
-import { getSocket, emitAck } from '../socket';
+import { Modal, Spinner } from '../components/Layout';
+import { CardBack, SpellCard } from '../components/SpellCard';
+import { castSafely } from '../odyssee/castSafely';
+import { GameShell, gameLayout } from '../odyssee/shell';
+import type { ShellAction, ShellPrompt } from '../odyssee/shell';
+import { emitAck, getSocket } from '../socket';
 import { playCardSound, playSound, setSoundEnabled, soundEnabled } from '../sound';
 import { getGuestName, setGuestName, useApp } from '../store';
 import { useVfx } from '../vfx/useVfx';
-import { EffectsList, MoveList, PlayerBar } from './parts';
+import { AwayNotice, CastBanner, DrawOffer, EndCard, FirstMoveCountdown, JoinSheet, WaitingCard, rematchLabel, resultTitle } from './overlays';
+import type { Casting } from './overlays';
+import {
+  Avatar, Captured, Clock, EffectsPanel, EmoteBubble, MoveList, SeatName, catalogDescription, catalogLabel, colorName,
+  modeLabel, seatSub, tcLabel,
+} from './parts';
 
-interface Casting {
-  card: CardId;
-  by: string;
-  mine: boolean;
-  key: number;
+type Queued = GameUpdate & { at: number };
+type IdleWin = Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
+
+/** Géométrie du mode immersif (la même que celle de la coque), suivie au redimensionnement. */
+function useStageLayout() {
+  const read = () => ({ vw: window.innerWidth, vh: window.innerHeight, ...gameLayout(window.innerWidth, window.innerHeight) });
+  const [l, setL] = useState(read);
+  useEffect(() => {
+    const on = () => setL(read());
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, []);
+  return l;
+}
+
+/** Plein écran immersif : en-tête du site masqué, pas de défilement (html.is-immersive, styles/global.css). */
+function useImmersive(on: boolean) {
+  useEffect(() => {
+    if (!on) return;
+    const html = document.documentElement;
+    html.classList.add('is-immersive', 'gp-on');
+    return () => html.classList.remove('is-immersive', 'gp-on');
+  }, [on]);
 }
 
 export default function GamePage() {
@@ -43,20 +74,37 @@ export default function GamePage() {
   const [animating, setAnimating] = useState(false);
   const [emotes, setEmotes] = useState<Record<Color, string | null>>({ w: null, b: null });
   const [showEnd, setShowEnd] = useState(false);
-  const [confirmResign, setConfirmResign] = useState(false);
   const [sound, setSound] = useState(soundEnabled());
-  const [tab, setTab] = useState<'moves' | 'cards'>('moves');
+  const [movesOpen, setMovesOpen] = useState(false);
+  const [emoteOpen, setEmoteOpen] = useState(false);
+  const [announce, setAnnounce] = useState<{ text: string; key: number } | null>(null);
+  const [warm, setWarm] = useState(false);
+  const layout = useStageLayout();
   const boardRef = useRef<BoardHandle>(null);
   const [wrapEl, setWrapEl] = useState<HTMLDivElement | null>(null);
   const serverView = useRef<GameView | null>(null);
-  const queue = useRef<(GameUpdate & { at: number })[]>([]);
+  const queue = useRef<Queued[]>([]);
   const busy = useRef(false);
   const viewRef = useRef<GameView | null>(null);
   viewRef.current = view;
+  const flippedRef = useRef(flipped);
+  flippedRef.current = flipped;
+
+  useImmersive(!error);
+
+  // Largeur libre à droite de l'échiquier : les blocs des joueurs (adversaire en haut, vous en bas) n'y débordent pas
+  const side = Math.max(120, layout.vw - (layout.x + layout.G / 2) - 44);
+  useEffect(() => {
+    const html = document.documentElement;
+    html.style.setProperty('--gp-side', `${side}px`);
+    return () => html.style.removeProperty('--gp-side');
+  }, [side]);
 
   const you = view?.you ?? null;
   const orientation: Color = flipped ? opposite(you ?? 'w') : you ?? 'w';
-  const vfx = useVfx(wrapEl, orientation);
+  // Scène 3D des sorts : créée au repos après l'arrivée (ou à la première carte choisie), jamais pendant le premier
+  // affichage. Un sort reçu avant qu'elle soit prête s'applique sans animation.
+  const vfx = useVfx(warm ? wrapEl : null, orientation);
   const vfxRef = useRef(vfx);
   vfxRef.current = vfx;
 
@@ -64,13 +112,28 @@ export default function GamePage() {
     setWrapEl(boardRef.current?.wrap ?? null);
   }, [view !== null]);
 
+  const viewStatus = view?.status;
+  useEffect(() => {
+    if (warm || !viewStatus || viewStatus === 'waiting') return;
+    const w = window as IdleWin;
+    let idle = 0;
+    const t = window.setTimeout(() => {
+      if (w.requestIdleCallback) idle = w.requestIdleCallback(() => setWarm(true), { timeout: 2000 });
+      else setWarm(true);
+    }, 900);
+    return () => {
+      window.clearTimeout(t);
+      if (idle) w.cancelIdleCallback?.(idle);
+    };
+  }, [warm, viewStatus]);
+
   const applyView = useCallback((v: GameView, at = Date.now()) => {
     setView(v);
     setReceivedAt(at);
     vfxRef.current?.stage.syncMarkers(v.state.effects, v.state.pos);
   }, []);
 
-  // Orientation et objets persistants
+  // Orientation et objets persistants (marqueurs des sorts)
   useEffect(() => {
     const v = viewRef.current;
     if (vfx && v) {
@@ -78,6 +141,37 @@ export default function GamePage() {
       vfx.stage.syncMarkers(v.state.effects, v.state.pos);
     }
   }, [vfx, orientation]);
+
+  // ----- Sort reçu : animation, puis état (l'horodatage de réception garde les pendules exactes) -----
+  const playCardEvent = useCallback(
+    async (u: Queued, info: CardInfo, prev: GameView | null) => {
+      const seat = u.view.seats[info.caster];
+      const mine = u.view.you === info.caster;
+      const by = seat?.name ?? (info.caster === 'w' ? 'Les Blancs' : 'Les Noirs');
+      setCasting({ card: info.card, by, mine, key: Date.now() });
+      if (!mine && CARDS[info.card]) setAnnounce({ text: `${by} lance ${CARDS[info.card].name}`, key: Date.now() });
+      setAnimating(true);
+      playCardSound(info.card);
+      const victim = opposite(info.caster);
+      const bottom = (prev?.you ?? 'w') === victim ? !flippedRef.current : flippedRef.current;
+      const v = vfxRef.current;
+      if (v) {
+        await castSafely(v, info, skinStyle(info.skin), {
+          impact: () => applyView(u.view, u.at),
+          hide: ids => setHidden(new Set(ids)),
+          show: () => setHidden(new Set()),
+          victimAtBottom: bottom,
+        });
+      } else {
+        await new Promise(r => setTimeout(r, 650));
+        applyView(u.view, u.at);
+      }
+      setHidden(new Set());
+      setTimeout(() => setCasting(c => (c && Date.now() - c.key > 1500 ? null : c)), 1600);
+      setAnimating(false);
+    },
+    [applyView],
+  );
 
   // ----- File des mises à jour : les sorts sont joués avant d'appliquer l'état -----
   const process = useCallback(async () => {
@@ -94,7 +188,12 @@ export default function GamePage() {
           await playCardEvent(u, ev.info, prev);
         } else {
           applyView(u.view, u.at);
-          if (ev.type === 'card') playCardSound(ev.info.card);
+          if (ev.type === 'card') {
+            playCardSound(ev.info.card);
+            if (u.view.you !== ev.info.caster && CARDS[ev.info.card]) {
+              setAnnounce({ text: `${u.view.seats[ev.info.caster]?.name ?? 'Votre adversaire'} lance ${CARDS[ev.info.card].name}`, key: Date.now() });
+            }
+          }
           if (ev.type === 'move') {
             const mine = prev?.you === ev.color;
             const alreadyShown = mine && prev && prev.state.ply === u.view.state.ply;
@@ -110,55 +209,30 @@ export default function GamePage() {
     } finally {
       busy.current = false;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applyView]);
-
-  const playCardEvent = async (u: GameUpdate & { at: number }, info: CardInfo, prev: GameView | null) => {
-    const seat = u.view.seats[info.caster];
-    const mine = u.view.you === info.caster;
-    setCasting({ card: info.card, by: seat?.name ?? '', mine, key: Date.now() });
-    setAnimating(true);
-    playCardSound(info.card);
-    const stage = vfxRef.current?.stage;
-    const victim = opposite(info.caster);
-    const bottom = (prev?.you ?? 'w') === victim ? !flippedRef.current : flippedRef.current;
-    if (stage && vfxRef.current) {
-      await vfxRef.current.m.playCast(stage, info, skinStyle(info.skin), {
-        impact: () => applyView(u.view, u.at),
-        hide: ids => setHidden(new Set(ids)),
-        show: () => setHidden(new Set()),
-        victimAtBottom: bottom,
-      });
-    } else {
-      await new Promise(r => setTimeout(r, 600));
-      applyView(u.view, u.at);
-    }
-    setHidden(new Set());
-    setTimeout(() => setCasting(c => (c && Date.now() - c.key > 1500 ? null : c)), 1600);
-    setAnimating(false);
-  };
-  const flippedRef = useRef(flipped);
-  flippedRef.current = flipped;
+  }, [applyView, playCardEvent]);
 
   // ----- Connexion à la partie -----
-  const join = useCallback(async (name?: string) => {
-    try {
-      const r = await emitAck<JoinReply>('game:join', { id, name: name ?? (getGuestName() || undefined) });
-      if (!r.ok) {
-        setError(r.error ?? 'Partie introuvable.');
-        return;
+  const join = useCallback(
+    async (name?: string) => {
+      try {
+        const r = await emitAck<JoinReply>('game:join', { id, name: name ?? (getGuestName() || undefined) });
+        if (!r.ok) {
+          setError(r.error ?? 'Partie introuvable.');
+          return;
+        }
+        setNeedName(!!r.needName);
+        if (r.view) {
+          serverView.current = r.view;
+          queue.current = [];
+          applyView(r.view);
+          if (r.view.status === 'ended') setShowEnd(false);
+        }
+      } catch (e) {
+        setError((e as Error).message);
       }
-      setNeedName(!!r.needName);
-      if (r.view) {
-        serverView.current = r.view;
-        queue.current = [];
-        applyView(r.view);
-        if (r.view.status === 'ended') setShowEnd(false);
-      }
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }, [id, applyView]);
+    },
+    [id, applyView],
+  );
 
   useEffect(() => {
     const s = getSocket();
@@ -166,13 +240,15 @@ export default function GamePage() {
     setError(null);
     setShowEnd(false);
     setSelCard(null);
+    setFlipped(false);
     const onUpdate = (u: GameUpdate) => {
       if (u.view.id !== id) return;
       queue.current.push({ ...u, at: Date.now() });
       void process();
     };
     const onRedirect = (p: { from: string; to: string }) => {
-      if (p.from === id) navigate(`/partie/${p.to}`);
+      // Revanche : la nouvelle partie remplace l'ancienne dans l'historique (le retour ne ramène pas à la précédente)
+      if (p.from === id) navigate(`/partie/${p.to}`, { replace: true });
     };
     const onEmote = (p: { gameId: string; color: Color; key: string }) => {
       if (p.gameId !== id || !Object.hasOwn(EMOTES, p.key)) return;
@@ -208,11 +284,8 @@ export default function GamePage() {
     return null;
   }, [state]);
   const check = state && !state.result ? checkSquare(state.pos, sideInCheck(state) ? state.pos.turn : null) : null;
-  const myHand = you && state ? state.hands[you] : [];
-  const playable = useMemo(
-    () => myHand.map((_, i) => (myTurn && state && you ? cardPlayable(state, you, i) : false)),
-    [myHand, myTurn, state, you],
-  );
+  const myHand = useMemo(() => (you && state ? state.hands[you] : []), [you, state]);
+  const playable = useMemo(() => myHand.map((_, i) => (myTurn && state && you ? cardPlayable(state, you, i) : false)), [myHand, myTurn, state, you]);
   const selectedDef = selCard !== null && myHand[selCard]?.card ? CARDS[myHand[selCard].card!] : null;
   const options = useMemo(() => {
     if (selCard === null || !state || !you || !selectedDef || selectedDef.targets === 0) return null;
@@ -256,9 +329,13 @@ export default function GamePage() {
     void send('game:move', { from, to, promo });
   };
 
-  const castCard = (index: number, targets: number[]) => {
+  const cancelCard = () => {
     setSelCard(null);
     setPartial([]);
+  };
+
+  const castCard = (index: number, targets: number[]) => {
+    cancelCard();
     void send('game:card', { index, targets });
   };
 
@@ -272,9 +349,9 @@ export default function GamePage() {
 
   const pickCard = (i: number) => {
     if (!playable[i]) return;
+    setWarm(true);
     if (selCard === i) {
-      setSelCard(null);
-      setPartial([]);
+      cancelCard();
       return;
     }
     playSound('select');
@@ -282,385 +359,364 @@ export default function GamePage() {
     setPartial([]);
   };
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setSelCard(null);
-        setPartial([]);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  const leave = useCallback(() => {
+    const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+    if (idx > 0) navigate(-1);
+    else navigate('/');
+  }, [navigate]);
+
+  const sendEmote = (key: string) => {
+    getSocket().emit('game:emote', { id, key });
+    setEmoteOpen(false);
+  };
 
   // ----- Rendu -----
   if (error) {
     return (
-      <div className="container page center">
-        <h1 className="page-title">Partie introuvable</h1>
-        <p className="muted">{error}</p>
-        <Link to="/jouer" className="btn btn-primary">Lancer une nouvelle partie</Link>
+      <div className="gp-lost">
+        <div className="gp-card">
+          <p className="gp-kick">Partie en ligne</p>
+          <h1 className="gp-card-title">
+            Partie <em>introuvable</em>.
+          </h1>
+          <p className="gp-card-text">{error}</p>
+          <div className="gp-card-actions">
+            <Link to="/jouer" className="btn-gold sm">
+              Lancer une nouvelle partie
+            </Link>
+            <Link to="/" className="btn-line">
+              Retour à l'accueil
+            </Link>
+          </div>
+        </div>
       </div>
     );
   }
-  if (!view || !state) return <PageLoader />;
+  if (!view || !state) {
+    return (
+      <div className="gp-loading" role="status">
+        <div className="gs-backdrop" aria-hidden="true">
+          <div className="gs-backdrop-glow" />
+          <div className="gs-backdrop-stars" />
+        </div>
+        <div className="gp-loading-board" style={{ left: layout.x - layout.G / 2, top: layout.y - layout.G / 2, width: layout.G, height: layout.G }}>
+          <Spinner />
+          <span>Connexion à la partie…</span>
+        </div>
+      </div>
+    );
+  }
 
+  const catalog: Catalog = catalogOf(state);
   const top: Color = opposite(orientation);
   const bottom: Color = orientation;
-  const tcLabel = TIME_CONTROLS.find(t => t.tc && view.clock && t.tc.initial === view.clock.initial && t.tc.increment === view.clock.increment)?.label ?? (view.clock ? '' : 'Sans limite');
+  const spectator = !you;
   const iAmCreatorWaiting = view.status === 'waiting' && you !== null;
   const oppAway = you ? view.away[opposite(you)] : null;
-  const endInfo = state.result;
-  const turnColor = state.pos.turn;
+  const ended = view.status === 'ended' && !!state.result;
+  const turn = state.pos.turn;
+  const moveNo = Math.floor(state.ply / 2) + 1;
+  const vsHuman = view.mode !== 'bot';
+  const turnSeat = view.seats[turn];
+  const isActive = (c: Color) => view.status === 'active' && turn === c && !state.result;
+  const hasCards = catalog !== 'aucune';
 
-  const castBar = selectedDef && (
-    <div className="cast-bar" style={{ '--h': selectedDef.hue } as CSSProperties}>
-      <div>
-        <b>{selectedDef.name}</b>
-        <span className="muted">{selectedDef.targets === 0 ? selectedDef.description : selectedDef.prompts[partial.length]}</span>
-      </div>
-      <div className="row" style={{ gap: 8 }}>
-        {selectedDef.targets === 0 && (
-          <button className="btn btn-primary btn-sm" onClick={() => castCard(selCard!, [])}>✦ Lancer le sort</button>
-        )}
-        <button className="btn btn-ghost btn-sm" onClick={() => { setSelCard(null); setPartial([]); }}>Annuler</button>
-      </div>
+  // Colonne droite (ordinateur) : liste des coups si la place le permet, sinon action « Coups joués »
+  const boardBottom = layout.y + layout.G / 2;
+  const railLeft = layout.x + layout.G / 2 + 28;
+  const railTop = hasCards ? 238 : 178;
+  const selfBottom = Math.max(28, layout.vh - boardBottom);
+  const railBottom = selfBottom + 132;
+  const showRail = !layout.mobile && layout.vw - 30 - railLeft >= 132 && layout.vh - railTop - railBottom >= 120;
+
+  // ----- Statut -----
+  let title: string;
+  if (view.status === 'waiting') title = you ? 'En attente de votre adversaire.' : 'Une invitation vous attend.';
+  else if (ended) title = resultTitle(view);
+  else if (animating && casting) title = 'Le sort se déploie…';
+  else if (spectator) title = `Trait aux ${colorName(turn)}.`;
+  else if (myTurn) title = check !== null ? 'Échec au roi.' : 'À vous de jouer.';
+  else title = turnSeat?.kind === 'bot' ? `${turnSeat.name} réfléchit…` : `Au tour de ${turnSeat?.name ?? 'votre adversaire'}.`;
+
+  const firstMove = !view.started && view.firstMoveDeadline && view.status === 'active' && myTurn ? <FirstMoveCountdown deadline={view.firstMoveDeadline} /> : null;
+  let hint: ReactNode = null;
+  if (view.status === 'waiting') {
+    hint = you ? (
+      <>
+        La partie commence dès que votre adversaire ouvre le lien.
+        <small>Gardez cette page ouverte : vous jouez dès son arrivée.</small>
+      </>
+    ) : (
+      <>Choisissez un pseudo pour prendre place.</>
+    );
+  } else if (spectator) {
+    hint = (
+      <>
+        Vous regardez cette partie en direct.
+        <small>Les mains restent cachées jusqu'au lancement des sorts.</small>
+      </>
+    );
+  } else if (myTurn) {
+    const line = mustPlayCard
+      ? 'Aucun coup légal : seule une carte peut vous sauver.'
+      : state.cardPlayed
+        ? 'Sort lancé : jouez maintenant votre coup.'
+        : hasCards && playable.some(Boolean)
+          ? 'Lancez une carte avant votre coup, ou jouez directement.'
+          : 'Jouez votre coup.';
+    hint = (
+      <>
+        {line}
+        {firstMove ?? (hasCards && <small>Une seule carte par tour, toujours avant le coup.</small>)}
+      </>
+    );
+  } else if (view.status === 'active') {
+    hint = (
+      <>
+        {turnSeat?.kind === 'bot' ? "L'IA calcule son coup." : 'Votre adversaire réfléchit.'}
+        {hasCards && <small>Ses cartes restent cachées jusqu'à ce qu'il les lance.</small>}
+      </>
+    );
+  }
+
+  const prompt: ShellPrompt | null = selectedDef
+    ? {
+        name: selectedDef.name,
+        hue: selectedDef.hue,
+        text: selectedDef.targets ? selectedDef.prompts[partial.length] ?? '' : selectedDef.description,
+        onCast: selectedDef.targets === 0 ? () => castCard(selCard!, []) : undefined,
+        onCancel: cancelCard,
+      }
+    : null;
+
+  const rematch = rematchLabel(view);
+  const diff = you && view.ratingDiff ? view.ratingDiff[you] : null;
+  const result = ended
+    ? {
+        text: (
+          <p>
+            {RESULT_TEXT[state.result!.reason] ?? 'Partie terminée'}.
+            {diff !== null && <span className={`gp-diff ${diff >= 0 ? 'up' : 'down'}`}>{` ${diff >= 0 ? '+' : ''}${diff} Elo`}</span>}
+          </p>
+        ),
+        actions: (
+          <>
+            {rematch && (
+              <button type="button" className="btn-gold sm" onClick={() => void send('game:rematch', {})} disabled={!!you && view.rematch[you]}>
+                {rematch}
+              </button>
+            )}
+            {!showEnd && (
+              <button type="button" className="btn-line" onClick={() => setShowEnd(true)}>
+                Bilan
+              </button>
+            )}
+            <Link to="/jouer" className="btn-line">
+              Nouvelle partie
+            </Link>
+          </>
+        ),
+      }
+    : null;
+
+  const actions: ShellAction[] = [
+    {
+      label: 'Proposer la nulle',
+      onClick: () => void send('game:draw', { action: 'offer' }).then(ok => ok && toast('Proposition de nulle envoyée.')),
+      hidden: !you || view.status !== 'active' || !view.started || !vsHuman || view.drawOffer === you,
+    },
+    { label: 'Annuler la partie', confirm: "Confirmer l'annulation", onClick: () => void send('game:abort', {}), hidden: !you || view.status !== 'active' || view.started },
+    { label: 'Abandonner', confirm: "Confirmer l'abandon", onClick: () => void send('game:resign', {}), hidden: !you || view.status !== 'active' },
+    { label: 'Coups joués', onClick: () => setMovesOpen(true), hidden: showRail || view.status === 'waiting' },
+    { label: "Retourner l'échiquier", onClick: () => setFlipped(f => !f) },
+    {
+      label: sound ? 'Couper le son' : 'Activer le son',
+      onClick: () => {
+        setSoundEnabled(!sound);
+        setSound(!sound);
+      },
+    },
+  ];
+
+  const info = (
+    <>
+      {view.drawOffer && you && view.drawOffer !== you && view.status === 'active' && (
+        <DrawOffer onAccept={() => void send('game:draw', { action: 'accept' })} onDecline={() => void send('game:draw', { action: 'decline' })} />
+      )}
+      {view.drawOffer === you && you && view.status === 'active' && <p className="gp-note">Nulle proposée : en attente de la réponse.</p>}
+      {oppAway && view.status === 'active' && <AwayNotice since={oppAway} claimAfter={view.claimAfterMs} onClaim={() => void send('game:claim', {})} />}
+      {ended && view.rematch.next === null && you && view.rematch[opposite(you)] && !view.rematch[you] && <p className="gp-note">Votre adversaire propose une revanche.</p>}
+      <EffectsPanel effects={state.effects} you={you} />
+    </>
+  );
+
+  const statusExtra = (
+    <p className="gp-catalog" title={catalogDescription(catalog)}>
+      <span className="gp-label">Cartes</span> {hasCards ? `${catalogLabel(catalog)} · ${catalogDescription(catalog)}` : 'Aucune : échecs classiques.'}
+    </p>
+  );
+
+  const seatOf = (c: Color) => view.seats[c];
+  const oppSeat = seatOf(top);
+  const selfSeat = seatOf(bottom);
+
+  const emoteMenu = you && vsHuman && view.status !== 'waiting' && (
+    <div className="gp-emotes">
+      <button type="button" className="gp-emote-btn" aria-expanded={emoteOpen} aria-label="Envoyer un message" title="Envoyer un message" onClick={() => setEmoteOpen(o => !o)}>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 5.5h16v10H9.5L5.5 19v-3.5H4z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {emoteOpen && (
+        <div className="gp-emote-menu" role="menu">
+          {Object.entries(EMOTES).map(([k, label]) => (
+            <button key={k} type="button" role="menuitem" onClick={() => sendEmote(k)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 
-  const barFor = (c: Color) => (
-    <PlayerBar
-      seat={view.seats[c]}
-      color={c}
-      state={state}
-      clock={view.clock}
-      receivedAt={receivedAt}
-      active={view.status === 'active' && turnColor === c && !state.result}
-      hand={state.hands[c]}
-      showHand={c !== you}
-      emote={emotes[c]}
-      away={view.away[c]}
-      ratingDiff={view.ratingDiff?.[c] ?? null}
-    />
+  const selfBlock = (
+    <div
+      className={`gp-self ${layout.mobile ? 'is-mobile' : ''} ${isActive(bottom) ? 'is-turn' : ''}`}
+      style={layout.mobile ? { top: boardBottom + 14 } : { bottom: selfBottom }}
+      aria-label={`${colorName(bottom)} : ${selfSeat?.name ?? 'en attente'}`}
+    >
+      {spectator && hasCards && !layout.mobile && (
+        <div className="gp-self-hand" aria-label={`Cartes des ${colorName(bottom)}`}>
+          {state.hands[bottom].map((h, i) => (h.card && h.used ? <SpellCard key={i} id={h.card} size="mini" used tilt={false} /> : <CardBack key={i} size="mini" used={h.used} />))}
+        </div>
+      )}
+      <div className="gp-self-clock">
+        <Captured state={state} color={bottom} />
+        <Clock clock={view.clock} color={bottom} receivedAt={receivedAt} active={isActive(bottom)} compact={layout.mobile} />
+      </div>
+      <div className="gp-self-id">
+        <Avatar seat={selfSeat} color={bottom} />
+        <div>
+          <b>
+            <SeatName seat={selfSeat} />
+            {you === bottom && <span className="gp-you"> · vous</span>}
+          </b>
+          <span>{seatSub(selfSeat, bottom, view.ratingDiff?.[bottom] ?? null)}</span>
+        </div>
+        {you === bottom && emoteMenu}
+      </div>
+      <EmoteBubble text={emotes[bottom]} />
+    </div>
   );
 
+  const board = (
+    <div className={`gp-board ${view.status === 'waiting' ? 'is-waiting' : ''}`}>
+      <Board
+        ref={boardRef}
+        pos={state.pos}
+        orientation={orientation}
+        theme={me?.equippedBoard}
+        legal={legal}
+        onMove={onMove}
+        lastMove={lastMove}
+        check={check}
+        effects={state.effects}
+        targets={options}
+        targetHue={selectedDef?.hue}
+        chosen={partial}
+        onTarget={onTarget}
+        hidden={hidden}
+        locked={!myTurn || animating}
+      />
+      {casting && <CastBanner key={casting.key} c={casting} />}
+      {iAmCreatorWaiting && <WaitingCard id={id} view={view} catalog={catalog} onCancel={() => void send('game:abort', {})} />}
+      {showEnd && ended && <EndCard view={view} onClose={() => setShowEnd(false)} onRematch={() => void send('game:rematch', {})} loggedIn={!!me} />}
+    </div>
+  );
+
+  const badge = `${modeLabel(view)} · ${tcLabel(view.clock)}${view.mirror && hasCards ? ' · miroir' : ''}`;
+
   return (
-    <div className="game-page">
-      <div className="game-grid">
-        <aside className="game-side left">
-          {you && (
-            <div className="hand-panel panel">
-              <div className="hand-title">
-                <span className="eyebrow">Tes cartes</span>
-                <span className="faint" style={{ fontSize: 12 }}>1 carte par tour, avant ton coup</span>
-              </div>
-              {castBar}
-              <Hand hand={myHand} playable={playable} selected={selCard} onPick={pickCard} />
+    <>
+      <GameShell
+        active
+        backdrop
+        className={`gp ${spectator ? 'is-spectator' : ''} ${!hasCards ? 'no-cards' : ''} ${!hasCards || spectator ? 'no-hand' : ''} ${showRail ? 'has-rail' : ''}`}
+        board={board}
+        onBack={leave}
+        backLabel="Retour"
+        badge={badge}
+        kicker={view.status === 'waiting' ? `Partie en ligne · ${hasCards ? `cartes ${catalogLabel(catalog)}` : 'sans cartes'}` : `Coup ${moveNo} · ${hasCards ? `cartes ${catalogLabel(catalog)}` : 'sans cartes'}`}
+        title={title}
+        hint={hint}
+        result={result}
+        prompt={prompt}
+        actions={actions}
+        info={info}
+        statusExtra={statusExtra}
+        opponent={{
+          name: oppSeat?.name ?? 'En attente…',
+          sub: seatSub(oppSeat, top, view.ratingDiff?.[top] ?? null),
+          hand: hasCards ? state.hands[top] : [],
+          avatar: <Avatar seat={oppSeat} color={top} />,
+          extra: (
+            <div className={`gp-opp-extra ${isActive(top) ? 'is-turn' : ''}`}>
+              <Captured state={state} color={top} />
+              <Clock clock={view.clock} color={top} receivedAt={receivedAt} active={isActive(top)} compact={layout.mobile} />
+              <EmoteBubble text={emotes[top]} />
             </div>
-          )}
-          <div className="panel effects-panel">
-            <div className="eyebrow" style={{ marginBottom: 10 }}>Sorts actifs</div>
-            {state.effects.length ? <EffectsList effects={state.effects} you={you} /> : <div className="faint" style={{ fontSize: 13 }}>Aucun sort en cours.</div>}
-          </div>
+          ),
+        }}
+        hand={hasCards && you ? myHand : []}
+        playable={playable}
+        selected={selCard}
+        onPickCard={pickCard}
+        handLabel={state.cardPlayed && myTurn ? 'Sort lancé · jouez votre coup' : 'Votre main · un sort par tour'}
+        toast={announce}
+        onEscape={() => {
+          if (selCard !== null) cancelCard();
+          else if (emoteOpen) setEmoteOpen(false);
+          else if (showEnd) setShowEnd(false);
+        }}
+      />
+      {selfBlock}
+      {showRail && (
+        <aside className="gp-rail" style={{ left: railLeft, top: railTop, bottom: railBottom } as CSSProperties} aria-label="Coups joués">
+          <p className="gp-label">Coups</p>
+          <MoveList log={state.log} />
         </aside>
-
-        <section className="game-center">
-          {barFor(top)}
-          <div className="board-holder">
-            <Board
-              ref={boardRef}
-              pos={state.pos}
-              orientation={orientation}
-              theme={me?.equippedBoard}
-              legal={legal}
-              onMove={onMove}
-              lastMove={lastMove}
-              check={check}
-              effects={state.effects}
-              targets={options}
-              targetHue={selectedDef?.hue}
-              chosen={partial}
-              onTarget={onTarget}
-              hidden={hidden}
-              locked={!myTurn || animating}
-            />
-            {casting && <CastBanner key={casting.key} c={casting} />}
-            {iAmCreatorWaiting && <WaitingOverlay id={id} view={view} onCancel={() => send('game:abort', {})} />}
+      )}
+      {movesOpen && (
+        <Modal onClose={() => setMovesOpen(false)}>
+          <div className="gp-sheet">
+            <p className="gp-kick">Coup {moveNo}</p>
+            <h2 className="gp-card-title">Coups joués</h2>
+            <MoveList log={state.log} className="is-sheet" />
+            <div className="gp-card-actions">
+              <button type="button" className="btn-line" onClick={() => setMovesOpen(false)}>
+                Fermer
+              </button>
+            </div>
           </div>
-          {barFor(bottom)}
-          {mustPlayCard && !selectedDef && (
-            <div className="notice" style={{ marginTop: 10 }}>⚠️ Aucun coup légal : seule une carte peut te sauver !</div>
-          )}
-          {you && (
-            <div className="hand-mobile">
-              <Hand hand={myHand} playable={playable} selected={selCard} onPick={pickCard} compact />
-              {castBar}
-            </div>
-          )}
-        </section>
-
-        <aside className="game-side right">
-          <div className="panel info-panel">
-            <div className="row" style={{ justifyContent: 'space-between' }}>
-              <div className="row" style={{ gap: 8 }}>
-                <span className="badge cyan">{tcLabel}</span>
-                <span className="badge">{view.mode === 'bot' ? 'Contre l’IA' : view.mode === 'quick' ? 'Classée' : 'Entre amis'}</span>
-                {view.rated && <span className="badge gold">Elo</span>}
-                {view.mirror && <span className="badge" title="Les deux joueurs ont les mêmes cartes">Miroir</span>}
-              </div>
-              <div className="row" style={{ gap: 4 }}>
-                <button className="btn btn-ghost btn-sm" title="Retourner l'échiquier" onClick={() => setFlipped(f => !f)}>⇅</button>
-                <button className="btn btn-ghost btn-sm" title={sound ? 'Couper le son' : 'Activer le son'} onClick={() => { setSoundEnabled(!sound); setSound(!sound); }}>
-                  {sound ? '🔊' : '🔈'}
-                </button>
-              </div>
-            </div>
-            <div className="status-line">
-              {view.status === 'waiting' && 'En attente d’un adversaire…'}
-              {view.status === 'active' && !state.result && (myTurn ? (selectedDef ? (selectedDef.targets ? 'Choisis la cible de ton sort' : 'Lance ton sort ou annule') : 'À toi de jouer') : you ? `Au tour de ${view.seats[turnColor]?.name ?? 'l’adversaire'}` : `Trait aux ${turnColor === 'w' ? 'Blancs' : 'Noirs'}`)}
-              {endInfo && <ResultLine view={view} />}
-            </div>
-            <div className="tabs small">
-              <button className={tab === 'moves' ? 'on' : ''} onClick={() => setTab('moves')}>Coups</button>
-              <button className={tab === 'cards' ? 'on' : ''} onClick={() => setTab('cards')}>Sorts actifs {state.effects.length ? `(${state.effects.length})` : ''}</button>
-            </div>
-            {tab === 'moves' ? <MoveList log={state.log} /> : <div className="moves"><EffectsList effects={state.effects} you={you} />{!state.effects.length && <div className="moves-empty">Aucun sort en cours.</div>}</div>}
-
-            {view.drawOffer && you && view.drawOffer !== you && view.status === 'active' && (
-              <div className="offer">
-                <span>🤝 Ton adversaire propose la nulle</span>
-                <div className="row">
-                  <button className="btn btn-primary btn-sm" onClick={() => send('game:draw', { action: 'accept' })}>Accepter</button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => send('game:draw', { action: 'decline' })}>Refuser</button>
-                </div>
-              </div>
-            )}
-            {oppAway && view.status === 'active' && <AwayNotice since={oppAway} claimAfter={view.claimAfterMs} onClaim={() => send('game:claim', {})} />}
-
-            {you && view.status === 'active' && (
-              <div className="actions">
-                {!view.started ? (
-                  <button className="btn btn-sm" onClick={() => send('game:abort', {})}>Annuler la partie</button>
-                ) : (
-                  <button className="btn btn-sm" disabled={view.drawOffer === you || view.mode === 'bot'} onClick={() => send('game:draw', { action: 'offer' }).then(ok => ok && toast('Proposition de nulle envoyée.'))}>
-                    {view.drawOffer === you ? 'Nulle proposée' : '½ Proposer nulle'}
-                  </button>
-                )}
-                <button className="btn btn-danger btn-sm" onClick={() => setConfirmResign(true)}>⚑ Abandonner</button>
-              </div>
-            )}
-            {view.status === 'ended' && you && (
-              <div className="actions">
-                <button className="btn btn-primary btn-sm" onClick={() => send('game:rematch', {})} disabled={view.rematch[you]}>
-                  {view.rematch[you] ? 'Revanche proposée…' : view.rematch[opposite(you)] ? 'Accepter la revanche' : '↻ Revanche'}
-                </button>
-                <Link to="/jouer" className="btn btn-sm">Nouvelle partie</Link>
-              </div>
-            )}
-            {you && view.mode !== 'bot' && view.status !== 'waiting' && (
-              <div className="emotes">
-                {Object.entries(EMOTES).map(([k, label]) => (
-                  <button key={k} className="btn btn-ghost btn-sm" onClick={() => getSocket().emit('game:emote', { id, key: k })}>{label}</button>
-                ))}
-              </div>
-            )}
-            {!you && view.status !== 'waiting' && <div className="faint" style={{ fontSize: 13, marginTop: 12 }}>👁 Tu regardes cette partie en spectateur.</div>}
-          </div>
-        </aside>
-      </div>
-
+        </Modal>
+      )}
       {needName && view.status === 'waiting' && (
-        <JoinModal
+        <JoinSheet
           mirror={view.mirror}
-          host={view.seats.w?.name ?? view.seats.b?.name ?? 'un joueur'}
+          catalog={catalog}
+          view={view}
+          host={view.seats.w?.name ?? view.seats.b?.name ?? 'Un joueur'}
           loggedIn={!!me}
           onJoin={name => {
+            if (me) {
+              void join();
+              return;
+            }
             setGuestName(name);
             void join(name);
           }}
         />
       )}
-      {confirmResign && (
-        <Modal onClose={() => setConfirmResign(false)}>
-          <h2>Abandonner ?</h2>
-          <p className="muted">La partie sera perdue{view.rated ? ' et ton classement mis à jour' : ''}.</p>
-          <div className="row" style={{ justifyContent: 'flex-end' }}>
-            <button className="btn btn-ghost" onClick={() => setConfirmResign(false)}>Continuer à jouer</button>
-            <button className="btn btn-danger" onClick={() => { setConfirmResign(false); void send('game:resign', {}); }}>Abandonner</button>
-          </div>
-        </Modal>
-      )}
-      {showEnd && endInfo && view.status === 'ended' && (
-        <EndModal view={view} onClose={() => setShowEnd(false)} onRematch={() => send('game:rematch', {})} loggedIn={!!me} />
-      )}
-    </div>
-  );
-}
-
-function Hand({ hand, playable, selected, onPick, compact }: { hand: GameState['hands']['w']; playable: boolean[]; selected: number | null; onPick: (i: number) => void; compact?: boolean }) {
-  return (
-    <div className={`hand ${compact ? 'compact' : ''}`}>
-      {hand.map((h, i) => (
-        <div key={i} className="hand-slot">
-          {h.card && (
-            <SpellCard
-              id={h.card}
-              size="hand"
-              used={h.used}
-              selected={selected === i}
-              disabled={!h.used && !playable[i]}
-              onClick={h.used ? undefined : () => onPick(i)}
-            />
-          )}
-          {h.card && !compact && (
-            <div className="hand-desc">
-              <b>{CARDS[h.card].duration}</b> · {CARDS[h.card].description}
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function CastBanner({ c }: { c: Casting }) {
-  const def = CARDS[c.card];
-  return (
-    <div className="cast-banner" style={{ '--h': def.hue } as CSSProperties}>
-      <SpellCard id={c.card} size="full" tilt={false} />
-      <div className="cast-caption">
-        <span>{c.mine ? 'Tu lances' : `${c.by} lance`}</span>
-        <b>{def.name}</b>
-      </div>
-    </div>
-  );
-}
-
-function WaitingOverlay({ id, view, onCancel }: { id: string; view: GameView; onCancel: () => void }) {
-  const url = `${window.location.origin}/partie/${id}`;
-  const { toast } = useApp();
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(url);
-      toast('Lien copié ! Envoie-le à ton adversaire.', 'success');
-    } catch {
-      toast('Copie impossible : sélectionne le lien à la main.', 'error');
-    }
-  };
-  const share = async () => {
-    try {
-      await navigator.share({ title: 'Partie de Spellmate', text: 'Je te défie aux échecs… avec des pouvoirs !', url });
-    } catch {
-      // partage annulé
-    }
-  };
-  return (
-    <div className="waiting-overlay">
-      <div className="panel panel-pad waiting-card">
-        <div className="pulse-ring"><span>♞</span></div>
-        <h2 className="display">Invite ton adversaire</h2>
-        <p className="muted">Envoie ce lien : ton ami pourra jouer tout de suite, même sans compte.</p>
-        <div className="link-box">
-          <input className="input" readOnly value={url} onFocus={e => e.currentTarget.select()} aria-label="Lien d'invitation" />
-          <button className="btn btn-primary" onClick={copy}>Copier</button>
-        </div>
-        <div className="row" style={{ justifyContent: 'center', marginTop: 14 }}>
-          {'share' in navigator && <button className="btn btn-sm" onClick={share}>Partager…</button>}
-          <button className="btn btn-ghost btn-sm" onClick={onCancel}>Annuler l’invitation</button>
-        </div>
-        <p className="faint" style={{ fontSize: 12.5, marginTop: 16, marginBottom: 0 }}>
-          Tu joues les {view.seats.w ? 'Blancs' : 'Noirs'} · {view.clock ? `${view.clock.initial / 60} min + ${view.clock.increment} s` : 'sans limite de temps'}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function JoinModal({ host, loggedIn, mirror, onJoin }: { host: string; loggedIn: boolean; mirror: boolean; onJoin: (name: string) => void }) {
-  const [name, setName] = useState(getGuestName());
-  const [busy, setBusy] = useState(false);
-  const valid = /^[\p{L}\p{N} _.-]{2,20}$/u.test(name.trim());
-  return (
-    <Modal>
-      <div className="center">
-        <div className="eyebrow">Invitation</div>
-        <h2 style={{ marginTop: 8 }}>{host} te défie !</h2>
-        <p className="muted">Échecs classiques, plus trois cartes de pouvoir chacun. Choisis un pseudo pour rejoindre la partie.</p>
-        {mirror && <p className="badge cyan" style={{ height: 'auto', padding: '4px 10px', marginBottom: 14 }}>Mode miroir : vous aurez tous les deux les mêmes cartes</p>}
-      </div>
-      {!loggedIn && (
-        <form
-          className="stack"
-          onSubmit={e => {
-            e.preventDefault();
-            if (!valid) return;
-            setBusy(true);
-            onJoin(name.trim());
-          }}
-        >
-          <div className="field">
-            <label htmlFor="guest-name">Ton pseudo</label>
-            <input id="guest-name" className="input" autoFocus maxLength={20} value={name} onChange={e => setName(e.target.value)} placeholder="Ex. : Magnus du 93" />
-          </div>
-          <button className="btn btn-primary btn-lg btn-block" disabled={!valid || busy}>{busy ? <Spinner /> : 'Rejoindre la partie'}</button>
-          <p className="faint center" style={{ fontSize: 13, margin: 0 }}>
-            Tu as un compte ? <Link to={`/connexion?retour=${encodeURIComponent(location.pathname)}`}>Connecte-toi</Link> pour que la partie compte dans ton historique.
-          </p>
-        </form>
-      )}
-    </Modal>
-  );
-}
-
-function AwayNotice({ since, claimAfter, onClaim }: { since: number; claimAfter: number; onClaim: () => void }) {
-  const [, force] = useState(0);
-  useEffect(() => {
-    const i = setInterval(() => force(x => x + 1), 1000);
-    return () => clearInterval(i);
-  }, []);
-  const left = Math.max(0, Math.ceil((since + claimAfter - Date.now()) / 1000));
-  return (
-    <div className="offer">
-      <span>📡 Ton adversaire s’est déconnecté.</span>
-      {left > 0 ? <span className="faint">Victoire réclamable dans {left} s</span> : <button className="btn btn-primary btn-sm" onClick={onClaim}>Réclamer la victoire</button>}
-    </div>
-  );
-}
-
-function ResultLine({ view }: { view: GameView }) {
-  const r = view.state.result!;
-  const who = r.winner === null ? 'Nulle' : r.winner === view.you ? 'Victoire' : view.you ? 'Défaite' : r.winner === 'w' ? 'Les Blancs gagnent' : 'Les Noirs gagnent';
-  return <span><b>{r.reason === 'aborted' ? 'Partie annulée' : who}</b> · {RESULT_TEXT[r.reason]}</span>;
-}
-
-function EndModal({ view, onClose, onRematch, loggedIn }: { view: GameView; onClose: () => void; onRematch: () => void; loggedIn: boolean }) {
-  const r = view.state.result!;
-  const you = view.you;
-  const win = you && r.winner === you;
-  const draw = r.winner === null;
-  const title = r.reason === 'aborted' ? 'Partie annulée' : draw ? 'Partie nulle' : you ? (win ? 'Victoire !' : 'Défaite') : r.winner === 'w' ? 'Victoire des Blancs' : 'Victoire des Noirs';
-  const diff = you && view.ratingDiff ? view.ratingDiff[you] : null;
-  return (
-    <Modal onClose={onClose}>
-      <div className={`end-modal ${win ? 'win' : draw ? 'draw' : 'loss'}`}>
-        <div className="end-emblem">{win ? '♛' : draw ? '½' : r.reason === 'aborted' ? '✕' : '♚'}</div>
-        <h2 className="display">{title}</h2>
-        <p className="muted">{RESULT_TEXT[r.reason]}</p>
-        {diff !== null && <div className={`end-diff ${diff >= 0 ? 'up' : 'down'}`}>{diff >= 0 ? '+' : ''}{diff} Elo</div>}
-        <div className="row" style={{ justifyContent: 'center', marginTop: 18, flexWrap: 'wrap' }}>
-          {you && r.reason !== 'aborted' && <button className="btn btn-primary" onClick={onRematch}>↻ Revanche</button>}
-          <Link to="/jouer" className="btn">Nouvelle partie</Link>
-          <button className="btn btn-ghost" onClick={onClose}>Voir l’échiquier</button>
-        </div>
-        {!loggedIn && you && (
-          <div className="notice" style={{ marginTop: 20, textAlign: 'left' }}>
-            <span>✨</span>
-            <span>
-              <Link to="/inscription">Crée un compte gratuit</Link> pour garder ton historique, jouer en classé et débloquer des skins.
-            </span>
-          </div>
-        )}
-      </div>
-    </Modal>
+    </>
   );
 }

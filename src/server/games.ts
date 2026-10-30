@@ -53,6 +53,8 @@ export interface TurnMark {
   ply: number;
   color: Color;
   ms: number;
+  /** Incrément reçu à la fin de ce tour (ms) : un Déjà-vu le reprend au lanceur avec son coup effacé. */
+  inc?: number;
 }
 
 export interface RoomData {
@@ -78,6 +80,11 @@ export interface RoomData {
   lastActivity?: number;
   /** Pendule au début des derniers tours (Déjà-vu). */
   turnMarks?: TurnMark[];
+  /**
+   * Heure de la dernière sauvegarde : après un arrêt brutal, le temps écoulé jusqu'à elle depuis le début du
+   * tour est décompté à la reprise (après un arrêt normal, la pendule est figée juste avant).
+   */
+  savedAt?: number;
 }
 
 class Room {
@@ -124,6 +131,7 @@ function scheduleSave(room: Room) {
 async function saveRoom(room: Room, client?: DbClient) {
   const d = room.d;
   const r = d.state.result;
+  d.savedAt = now();
   // Un compte supprimé pendant la partie ne doit pas bloquer la sauvegarde (clé étrangère)
   const sql = `INSERT INTO games (id, mode, rated, status, white_user_id, black_user_id, white_name, black_name, white_rating, black_rating,
        white_diff, black_diff, time_control, winner, reason, plies, data, updated_at, ended_at)
@@ -165,7 +173,7 @@ function resumeRoom(room: Room) {
     endGame(room, { winner: null, reason: 'aborted' });
     return;
   }
-  if (room.d.clock?.running) room.d.clock.since = now();
+  resumeClock(room.d);
   if (room.d.started === undefined) room.d.started = room.d.state.ply >= 2;
   room.d.lastActivity ??= now();
   if (room.d.status === 'active') {
@@ -266,12 +274,23 @@ function remaining(d: RoomData, c: Color): number {
   return t;
 }
 
-/** Arrête la pendule du joueur `mover` (avec incrément éventuel) ; à appeler AVANT de changer l'état. */
-function stopClock(d: RoomData, mover: Color, increment: boolean) {
+/**
+ * Arrête la pendule du joueur `mover` (avec incrément éventuel) ; à appeler AVANT de changer l'état.
+ * Renvoie l'incrément accordé (ms).
+ */
+function stopClock(d: RoomData, mover: Color, increment: boolean): number {
   const ck = d.clock;
-  if (!ck || ck.running !== mover) return;
-  ck[mover] = Math.max(0, remaining(d, mover)) + (increment ? ck.increment * 1000 : 0);
+  if (!ck || ck.running !== mover) return 0;
+  const inc = increment ? ck.increment * 1000 : 0;
+  ck[mover] = Math.max(0, remaining(d, mover)) + inc;
   ck.running = null;
+  return inc;
+}
+
+/** Note l'incrément reçu à la fin du tour `ply` de `color` (Déjà-vu). */
+function noteIncrement(d: RoomData, ply: number, color: Color, inc: number) {
+  const mark = d.turnMarks?.find(m => m.ply === ply && m.color === color);
+  if (mark) mark.inc = inc;
 }
 
 /** Relance la pendule du camp au trait, une fois que chacun a joué son premier coup ; note le début du tour. */
@@ -284,11 +303,28 @@ function startClock(d: RoomData) {
   d.turnMarks = [...(d.turnMarks ?? []).filter(m => m.ply < s.ply), { ply: s.ply, color: s.pos.turn, ms: ck[s.pos.turn] }].slice(-4);
 }
 
-/** Fige le temps écoulé de la pendule en marche (avant un changement d'état qui peut changer sa vitesse). */
-function settleClock(d: RoomData) {
+/**
+ * Fige le temps écoulé de la pendule en marche : avant un changement d'état qui peut changer sa vitesse, et
+ * avant la sauvegarde d'arrêt du serveur (le temps réfléchi avant l'arrêt reste décompté).
+ */
+export function settleClock(d: RoomData) {
   const ck = d.clock;
   if (!ck?.running) return;
   ck[ck.running] = Math.max(0, remaining(d, ck.running));
+  ck.since = now();
+}
+
+/**
+ * Reprise après redémarrage : le temps où le serveur était arrêté n'est pas décompté, mais le temps écoulé avant
+ * l'arrêt l'est. Arrêt normal : la pendule a été figée juste avant la sauvegarde. Arrêt brutal : on décompte au
+ * moins le temps écoulé jusqu'à la dernière sauvegarde (la suite est perdue).
+ */
+export function resumeClock(d: RoomData) {
+  const ck = d.clock;
+  if (!ck?.running) return;
+  if (d.savedAt !== undefined && d.savedAt > ck.since) {
+    ck[ck.running] = Math.max(0, ck[ck.running] - (d.savedAt - ck.since) * rate(d, ck.running));
+  }
   ck.since = now();
 }
 
@@ -304,19 +340,23 @@ function creditCinematic(d: RoomData, c: Color) {
  * démarrage de la partie, crédit de cinématique si un Présage arrive.
  */
 export function commitMove(d: RoomData, color: Color, state: GameState, info: MoveInfo) {
-  stopClock(d, color, !incrementSuspended(d.state));
+  const ply = d.state.ply;
+  const inc = stopClock(d, color, !incrementSuspended(d.state));
   d.state = state;
   d.drawOffer = null;
   d.lastActivity = now();
   if (d.state.ply >= 2) d.started = true;
   startClock(d);
+  noteIncrement(d, ply, color, inc);
   if (info.arrived?.length) creditCinematic(d, d.state.pos.turn);
 }
 
 /**
  * Pendule et état après une carte. Renvoie vrai si le trait a changé (Rituel, Retour arrière).
  * - Rituel : c'est un coup (incrément, démarrage de la partie) ; l'adversaire est crédité de la cinématique.
- * - Déjà-vu : l'adversaire retrouve le temps qu'il avait au début du coup effacé ; le lanceur, non.
+ * - Déjà-vu : l'adversaire retrouve le temps qu'il avait au début du coup effacé ; le lanceur, non (le temps
+ *   passé reste perdu, et l'incrément reçu pour le coup effacé lui est repris : un coup qui n'existe plus ne
+ *   rapporte rien).
  * - Autre carte : le lanceur, toujours au trait, est crédité de la cinématique de lancement.
  */
 export function commitCard(d: RoomData, color: Color, state: GameState, info: CardInfo): boolean {
@@ -324,13 +364,15 @@ export function commitCard(d: RoomData, color: Color, state: GameState, info: Ca
   const turnChanges = state.pos.turn !== color;
   // La vitesse de la pendule dépend de l'état (un Déjà-vu peut restaurer ou retirer un Sablier fou).
   settleClock(d);
-  if (turnChanges) stopClock(d, color, !!info.ritual && !incrementSuspended(before));
+  const inc = turnChanges ? stopClock(d, color, !!info.ritual && !incrementSuspended(before)) : 0;
   d.state = state;
   d.lastActivity = now();
   if (info.card === 'deja_vu' && d.clock) {
     const them = opposite(color);
     const mark = d.turnMarks?.find(m => m.ply === state.ply + 1 && m.color === them);
     if (mark) d.clock[them] = mark.ms;
+    const own = d.turnMarks?.find(m => m.ply === state.ply && m.color === color);
+    if (own?.inc) d.clock[color] = Math.max(0, d.clock[color] - own.inc);
     d.turnMarks = d.turnMarks?.filter(m => m.ply <= state.ply);
   }
   if (turnChanges) {
@@ -339,6 +381,7 @@ export function commitCard(d: RoomData, color: Color, state: GameState, info: Ca
       if (d.state.ply >= 2) d.started = true;
     }
     startClock(d);
+    if (info.ritual) noteIncrement(d, before.ply, color, inc);
     creditCinematic(d, d.state.pos.turn);
   } else {
     creditCinematic(d, color);
@@ -937,11 +980,15 @@ export async function detachUser(userId: string) {
   }
 }
 
-/** Sauvegarde immédiate de toutes les parties en cours (arrêt du serveur). */
+/**
+ * Sauvegarde immédiate de toutes les parties en cours (arrêt du serveur). La pendule en marche est figée : le
+ * temps réfléchi avant l'arrêt reste décompté, seul le temps d'arrêt ne l'est pas (`resumeClock`).
+ */
 export async function flushRooms() {
   await Promise.all([...rooms.values()].filter(r => r.d.status !== 'ended' || r.saveTimer).map(r => {
     if (r.saveTimer) clearTimeout(r.saveTimer);
     r.saveTimer = null;
+    if (r.d.status === 'active') settleClock(r.d);
     return saveRoom(r).catch(e => console.error('Sauvegarde :', e));
   }));
 }

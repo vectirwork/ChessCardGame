@@ -1,9 +1,10 @@
 // Pages légales. Les informations de l'éditeur viennent de la configuration du serveur (variables LEGAL_*).
 // Ces textes sont des modèles : ils doivent être relus par un professionnel du droit avant l'ouverture.
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import { api } from '../api';
 import { PageLoader } from '../components/Layout';
+import { PageHead, PlacePage, useTitle } from './PageScene';
 
 interface LegalInfo {
   company: string;
@@ -19,7 +20,16 @@ interface LegalInfo {
 
 type Page = 'cgu' | 'cgv' | 'privacy' | 'mentions';
 
+const DOCS: { page: Page; to: string; title: string; short: string }[] = [
+  { page: 'mentions', to: '/mentions-legales', title: 'Mentions légales', short: 'Mentions légales' },
+  { page: 'cgu', to: '/cgu', title: 'Conditions générales d’utilisation', short: 'Conditions d’utilisation' },
+  { page: 'cgv', to: '/cgv', title: 'Conditions générales de vente', short: 'Conditions de vente' },
+  { page: 'privacy', to: '/confidentialite', title: 'Politique de confidentialité', short: 'Confidentialité' },
+];
+
 export default function Legal({ page }: { page: Page }) {
+  const doc = DOCS.find(d => d.page === page)!;
+  useTitle(doc.short);
   const [l, setL] = useState<LegalInfo | null>(null);
   useEffect(() => {
     api<LegalInfo>('/legal').then(setL).catch(() => undefined);
@@ -27,10 +37,22 @@ export default function Legal({ page }: { page: Page }) {
   if (!l) return <PageLoader />;
   const updated = '29 octobre 2026';
   return (
-    <div className="container page narrow prose">
+    <PlacePage place="archives" className="lg">
+      <PageHead place="Les Archives" aside="Informations légales" title={doc.title} />
+      <div className="lg-grid">
+        <nav className="lg-nav" aria-label="Documents légaux">
+          {DOCS.map(d => (
+            <NavLink key={d.page} to={d.to} className={({ isActive }) => (isActive ? 'on' : '')}>
+              {d.short}
+            </NavLink>
+          ))}
+          <p className="lg-contact">
+            Une question ? <a href={`mailto:${l.contact}`}>{l.contact}</a>
+          </p>
+        </nav>
+        <article className="prose lg-doc">
       {page === 'mentions' && (
         <>
-          <h1 className="page-title">Mentions légales</h1>
           <h2>Éditeur du site</h2>
           <p>
             {l.appName} ({l.url}) est édité par {l.company}, {l.address}.<br />
@@ -52,7 +74,6 @@ export default function Legal({ page }: { page: Page }) {
 
       {page === 'cgu' && (
         <>
-          <h1 className="page-title">Conditions générales d’utilisation</h1>
           <p className="faint">Dernière mise à jour : {updated}</p>
           <h2>1. Objet</h2>
           <p>Les présentes conditions encadrent l’utilisation du service {l.appName}, jeu d’échecs en ligne enrichi de cartes de pouvoir, édité par {l.company}.</p>
@@ -86,7 +107,6 @@ export default function Legal({ page }: { page: Page }) {
 
       {page === 'cgv' && (
         <>
-          <h1 className="page-title">Conditions générales de vente</h1>
           <p className="faint">Dernière mise à jour : {updated}</p>
           <h2>1. Vendeur</h2>
           <p>{l.company}, {l.address}, SIREN {l.siren}. Contact : <a href={`mailto:${l.contact}`}>{l.contact}</a>.</p>
@@ -126,7 +146,6 @@ export default function Legal({ page }: { page: Page }) {
 
       {page === 'privacy' && (
         <>
-          <h1 className="page-title">Politique de confidentialité</h1>
           <p className="faint">Dernière mise à jour : {updated}</p>
           <h2>Responsable du traitement</h2>
           <p>{l.company}, {l.address}. Contact : <a href={`mailto:${l.contact}`}>{l.contact}</a>.</p>
@@ -159,6 +178,8 @@ export default function Legal({ page }: { page: Page }) {
           </p>
         </>
       )}
-    </div>
+        </article>
+      </div>
+    </PlacePage>
   );
 }

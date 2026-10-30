@@ -63,5 +63,18 @@ Problèmes à traiter (rapports verif-climats-regles.md et verif-climats-serveur
 1. Pat par magie (Chevauchée annoncée) ; 2. R4b contournée par Présage ; 3. matériel insuffisant avec Mur en main ;
 4. checkKind 'melt' au lieu de 'arrival' ; 5. pendule au redémarrage ; 6. Marée sous la Lune ;
 7. Déjà-vu : incrément du coup effacé gardé ; 8. IA : Portails jamais joués.
+### Fait (phase 3)
+- game.ts : checkKind attribue la cause (arrivée seule, puis fonte seule, puis fermeture seule, sinon priorité fixe) ;
+  Grande Marée refusée sous la Lune si une capture est jouable (« La Lune de sang impose une capture. ») ;
+  presageRefusal (dans validateAfterCard) : pat de l'adversaire à sa réponse (lanceur qui « passe ») et R4b à
+  l'arrivée (les deux « passent »), chaque fois avec/sans le nouvel effet ; cardMateHelp : Mur (main ou posé),
+  Chevauchée (main/annoncée/active) avec un fou, Résurrection -> pas de nulle par matériel, canStillMate vrai.
+  Force brute (scratchpad/fix/mataid.ts) : Faille 0 mat avec une pièce mineure, Chevauchée + fou 396 mats.
+- games.ts : stopClock renvoie l'incrément, TurnMark.inc ; Déjà-vu reprend l'incrément du coup effacé au lanceur ;
+  flushRooms fige la pendule (settleClock exportée) ; saveRoom note savedAt ; resumeClock décompte
+  (savedAt - since) x vitesse après un arrêt brutal.
+- server-clock.test.ts : 10 tests verts (attentes Déjà-vu corrigées : -2 s d'incrément ; 15+10 ; Rituel effacé ;
+  redémarrage normal ; arrêt brutal sous Sablier). Banc : marque du tour 0 ajoutée (begin() la crée en vrai).
+- Les 4 tests ÉCART de climats-adverse.test.ts passent.
 ### En cours
-- lecture du code et du document de règles.
+- tests de règles (nouveaux cas dans climats.test.ts), puis IA Portails, puis npm test complet, puis serveur.

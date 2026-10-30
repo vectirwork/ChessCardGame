@@ -5,8 +5,10 @@ import { ITEMS, formatPrice, productById } from '../../shared/catalog';
 import { api, errMsg } from '../api';
 import { PageLoader } from '../components/Layout';
 import { useApp } from '../store';
+import { PageHead, PlacePage, useTitle } from './PageScene';
 
 export default function Admin() {
+  useTitle('Administration');
   const { me, ready, toast } = useApp();
   const [data, setData] = useState<any>(null);
   const [users, setUsers] = useState<any[]>([]);
@@ -37,8 +39,8 @@ export default function Admin() {
     }
   };
   return (
-    <div className="container page">
-      <h1 className="page-title">Administration</h1>
+    <PlacePage place="atelier" className="adm">
+      <PageHead place="La Salle des comptes" aside="Administration" title={<>Tableau de <em>bord.</em></>} lede="Ventes, inscriptions et joueurs. Les montants sont TTC ; les achats de démonstration sont marqués comme tels." />
       <div className="kpis">
         {[
           ['Chiffre d’affaires', formatPrice(c.revenue)],
@@ -50,16 +52,16 @@ export default function Admin() {
           ['Actifs (24 h)', c.active_24h],
           ['Parties en cours', `${data.live.active} · ${data.live.waiting} en attente`],
         ].map(([l, v]) => (
-          <div key={l as string} className="kpi panel"><span>{l}</span><b>{v}</b></div>
+          <div key={l as string} className="kpi"><span>{l}</span><b>{v}</b></div>
         ))}
       </div>
       <div className="grid-2" style={{ marginTop: 22 }}>
         <div className="panel panel-pad">
-          <h3>Revenus, 30 jours</h3>
+          <h3 className="adm-h">Revenus, 30 jours</h3>
           <div className="bars">{data.daily.map((d: any) => <i key={d.day} title={`${d.day} : ${formatPrice(d.revenue)}`} style={{ height: `${(d.revenue / maxRev) * 100}%` }} />)}</div>
         </div>
         <div className="panel panel-pad">
-          <h3>Inscriptions, 30 jours</h3>
+          <h3 className="adm-h">Inscriptions, 30 jours</h3>
           <div className="bars cyan">{data.daily.map((d: any) => <i key={d.day} title={`${d.day} : ${d.signups}`} style={{ height: `${(d.signups / maxSign) * 100}%` }} />)}</div>
         </div>
       </div>
@@ -78,8 +80,8 @@ export default function Admin() {
           </table>
         </div>
       </div>
-      <h2 className="section-title" style={{ fontSize: 24, marginTop: 34 }}>Joueurs</h2>
-      <input className="input" placeholder="Rechercher par pseudo ou e-mail…" value={q} onChange={e => setQ(e.target.value)} style={{ maxWidth: 420, marginBottom: 14 }} />
+      <h2 className="section-title adm-t">Joueurs</h2>
+      <input className="input adm-search" type="search" aria-label="Rechercher un joueur" placeholder="Rechercher par pseudo ou e-mail…" value={q} onChange={e => setQ(e.target.value)} />
       <div className="panel table-wrap">
         <table className="table">
           <thead><tr><th>Pseudo</th><th>E-mail</th><th>Elo</th><th>Inscrit</th><th>Objets</th><th>Offrir</th></tr></thead>
@@ -92,7 +94,7 @@ export default function Admin() {
                 <td className="faint">{new Date(u.created_at).toLocaleDateString('fr-FR')}</td>
                 <td style={{ fontSize: 12.5 }}>{u.items.length ? u.items.map((i: string) => <button key={i} className="badge" style={{ cursor: 'pointer', margin: 2 }} title="Retirer" onClick={() => grant(u.id, i, true)}>{i} ✕</button>) : <span className="faint">—</span>}</td>
                 <td>
-                  <select className="input" style={{ height: 34, fontSize: 13 }} value="" onChange={e => e.target.value && grant(u.id, e.target.value, false)}>
+                  <select className="input adm-select" aria-label={`Offrir un objet à ${u.username}`} value="" onChange={e => e.target.value && grant(u.id, e.target.value, false)}>
                     <option value="">Choisir…</option>
                     {ITEMS.filter(i => !i.free && !u.items.includes(i.id)).map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
                   </select>
@@ -102,6 +104,6 @@ export default function Admin() {
           </tbody>
         </table>
       </div>
-    </div>
+    </PlacePage>
   );
 }

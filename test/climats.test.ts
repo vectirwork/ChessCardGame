@@ -6,8 +6,8 @@ import {
   Color, F_BLAST, F_PORTAL, F_PROMO, F_RELAXED, inCheck, legalMoves, opposite, sqIndex as q, sqName,
 } from '../src/shared/chess';
 import {
-  Effect, GameState, cardOptions, cardPlayable, checkKind, clockRate, createGame, createGameFromFen, evaluateEnd,
-  incrementSuspended, legalMovesOf, modsFromEffects, playCard, playMove, sideInCheck, viewState,
+  Effect, GameState, canStillMate, cardOptions, cardPlayable, checkKind, clockRate, createGame, createGameFromFen,
+  evaluateEnd, incrementSuspended, legalMovesOf, modsFromEffects, playCard, playMove, sideInCheck, viewState,
 } from '../src/shared/game';
 
 const game = (fen: string, w: CardId[] = [], b: CardId[] = [], timed = true) => createGameFromFen(fen, { w, b }, timed, 'climats');
@@ -643,5 +643,87 @@ describe('Catalogues', () => {
       s = mv(s, 'e1', 'e2');
       expect(s.effects).toHaveLength(0);
     }
+  });
+});
+
+// Corrections après la vérification adverse (test/climats-adverse.test.ts, docs/progres/verif-climats-*.md).
+describe('Présage : pas de pat par magie, R4b à l’arrivée', () => {
+  it('une Chevauchée qui laisserait l’adversaire sans aucun coup à sa réponse est refusée', () => {
+    // Noirs : Rh8 seul ; Rg8 est jouable aujourd'hui, mais à l'arrivée le fou h6 sautera en g8.
+    const s = game('7k/R7/7B/8/8/8/8/2K5 w - - 0 1', ['cavalcade']);
+    expect(refused(s, 0)).toBe('À son arrivée, cette carte laisserait l’adversaire sans aucun coup.');
+    expect(cardPlayable(s, 'w', 0)).toBe(false);
+    // Avec un pion libre, les Noirs gardent un coup : la carte est permise.
+    const t = game('7k/R7/7B/p7/8/8/8/2K5 w - - 0 1', ['cavalcade']);
+    expect(cardPlayable(t, 'w', 0)).toBe(true);
+  });
+
+  it('un camp réduit aux coups de pion ne peut pas annoncer l’Ère glaciaire', () => {
+    // Ra1 enfermé (b1 tenu par le fou e4) : sans la règle, ses pions avanceraient ensuite par « la magie cède »
+    // pendant que le pion h7 noir resterait gelé.
+    const s = game('7k/7p/8/3P4/4b3/8/PP6/K7 w - - 0 1', ['ice_age']);
+    expect(refused(s, 0)).toBe('À son arrivée, cette carte te laisserait sans aucun coup.');
+  });
+
+  it('un camp dont le seul coup est une prise ne peut pas annoncer la Trêve', () => {
+    const s = game('7k/8/8/8/8/1ppb4/1P6/K7 w - - 0 1', ['truce']);
+    expect(all(s)).toEqual(['b2c3']);
+    expect(refused(s, 0)).toBe('À son arrivée, cette carte te laisserait sans aucun coup.');
+    // Dans une position ordinaire, la Trêve et l'Ère glaciaire s'annoncent.
+    const o = createGame({ w: ['truce', 'ice_age'], b: [] }, false, 'climats');
+    expect(cardPlayable(o, 'w', 0)).toBe(true);
+    expect(cardPlayable(o, 'w', 1)).toBe(true);
+  });
+});
+
+describe('Grande Marée sous la Lune de sang', () => {
+  it('refusée quand une capture est jouable (qui peut prendre doit prendre), permise sinon', () => {
+    const s = withEffect(game('4k3/8/8/3p4/4P3/8/P7/4K3 w - - 0 1', ['tide']), 'blood_moon');
+    expect(all(s)).toEqual(['e4d5']);
+    expect(refused(s, 0)).toBe('La Lune de sang impose une capture.');
+    const t = withEffect(game('4k3/8/8/8/4P3/8/P7/4K3 w - - 0 1', ['tide']), 'blood_moon');
+    const r = playCard(t, 'w', 0, [], '');
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe('Échec à l’arrivée, à la fonte : la cause', () => {
+  it('l’échec vient du Mur qui fond, même si une Chevauchée sans rapport arrive en même temps', () => {
+    let s = withEffect(game('4r2k/8/8/8/8/8/P7/4K3 w - - 0 1'), 'ice_wall', { square: q('e4'), remaining: 1 });
+    s = withEffect(s, 'cavalcade', { pending: true, delay: 1, remaining: 4 }, 'b');
+    expect(sideInCheck(s)).toBe(true);
+    expect(checkKind(s)).toBe('melt');
+  });
+});
+
+describe('Matériel insuffisant avec des cartes', () => {
+  it('un Mur de glace en main ou posé rend le mat possible avec une pièce mineure', () => {
+    const s = game('7k/8/6K1/8/8/4B3/8/8 w - - 0 1', ['ice_wall']);
+    expect(evaluateEnd(s)).toBeNull();
+    expect(canStillMate(s, 'w')).toBe(true);
+    expect(canStillMate(s, 'b')).toBe(false);
+    const walled = card(s, 0, 'g8');
+    expect(walled.result).toBeNull();
+    expect(mv(walled, 'e3', 'd4').result).toEqual({ winner: 'w', reason: 'checkmate' });
+    // Cavalier : Mur g8, puis Cf7#.
+    const n = game('7k/8/6K1/4N3/8/8/8/8 w - - 0 1', ['ice_wall']);
+    expect(evaluateEnd(n)).toBeNull();
+    expect(mv(card(n, 0, 'g8'), 'e5', 'f7').result).toEqual({ winner: 'w', reason: 'checkmate' });
+    // Le Mur (adverse) fond, plus aucune carte : nulle.
+    const m = withEffect(game('7k/8/6K1/8/8/4B3/8/8 w - - 0 1'), 'ice_wall', { square: q('a8'), remaining: 1 });
+    expect(evaluateEnd(m)).toBeNull();
+    expect(mv(m, 'g6', 'f6').result).toEqual({ winner: null, reason: 'insufficient' });
+  });
+
+  it('la Faille et la Chevauchée ne suffisent pas (vérifié par force brute)', () => {
+    // La Chevauchée dure 2 coups : la réponse des Noirs à Ff6+ est jugée après son expiration, Rg8 reste jouable.
+    expect(evaluateEnd(game('7k/8/8/8/8/8/8/K4B2 w - - 0 1', ['cavalcade']))).toEqual({ winner: null, reason: 'insufficient' });
+    const active = withEffect(game('7k/8/8/4B3/8/8/8/K7 w - - 0 1'), 'cavalcade', { remaining: 2 }, 'w');
+    const checked = mv(active, 'e5', 'f6');
+    expect(checked.result).toEqual({ winner: null, reason: 'insufficient' });
+    expect(all({ ...checked, result: null })).toEqual(['h8g8', 'h8h7']);
+    const rift = game('7k/8/6K1/8/8/4B3/8/8 w - - 0 1', ['rift']);
+    expect(evaluateEnd(rift)).toEqual({ winner: null, reason: 'insufficient' });
+    expect(canStillMate(rift, 'w')).toBe(false);
   });
 });

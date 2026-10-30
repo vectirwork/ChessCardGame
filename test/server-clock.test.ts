@@ -1,11 +1,12 @@
 // Pendule du serveur sous les cartes Climats (src/server/games.ts, fonctions sans sockets) :
-// Sablier fou (×2 pour les deux camps, sans incrément), Déjà-vu (temps rendu à l'adversaire), Rituel (un coup),
-// cinématiques hors pendule (R10). Le temps est simulé (horloge factice de vitest).
+// Sablier fou (×2 pour les deux camps, sans incrément), Déjà-vu (temps rendu à l'adversaire, incrément du coup
+// effacé repris au lanceur), Rituel (un coup), cinématiques hors pendule (R10), reprise après un redémarrage.
+// Le temps est simulé (horloge factice de vitest).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sqIndex as q } from '../src/shared/chess';
 import { CardId, Catalog } from '../src/shared/cards';
 import { GameState, clockRate, createGame, incrementSuspended, playCard, playMove } from '../src/shared/game';
-import { CINEMATIC_MS, RoomData, commitCard, commitMove } from '../src/server/games';
+import { CINEMATIC_MS, RoomData, commitCard, commitMove, resumeClock, settleClock } from '../src/server/games';
 
 const T0 = 1_800_000_000_000;
 
@@ -18,6 +19,8 @@ function room(w: CardId[], b: CardId[], catalog: Catalog = 'climats'): RoomData 
     clock: { initial: 180, increment: 2, w: 180_000, b: 180_000, running: 'w', since: T0 },
     drawOffer: null, rematch: { w: false, b: false, next: null }, ratingDiff: null, firstMoveDeadline: null,
     createdAt: T0, started: true,
+    // begin() note la pendule au début du premier tour.
+    turnMarks: [{ ply: 0, color: 'w', ms: 180_000 }],
   };
 }
 
@@ -78,7 +81,7 @@ describe('pendule et cartes Climats (serveur)', () => {
     expect(clock(d).w).toBe(before.w - 30_000 - 5000 + 2000);
   });
 
-  it('Déjà-vu : l’adversaire retrouve le temps qu’il avait au début du coup effacé, pas le lanceur', () => {
+  it('Déjà-vu : l’adversaire retrouve le temps qu’il avait au début du coup effacé ; le lanceur perd l’incrément de son coup effacé', () => {
     const d = room(['deja_vu'], []);
     move(d, 3000, 'e2', 'e4');
     const wAfter = clock(d).w;
@@ -91,8 +94,36 @@ describe('pendule et cartes Climats (serveur)', () => {
     expect(clock(d).running).toBe('w');
     // Noirs : temps du début de leur coup effacé (incrément compris, perdu avec le coup).
     expect(clock(d).b).toBe(bStart);
-    // Blancs : leur temps continue de s'écouler depuis leur coup effacé (5 s), plus la cinématique.
-    expect(clock(d).w).toBe(wAfter - 5000 + CINEMATIC_MS);
+    // Blancs : leur temps continue de s'écouler depuis leur coup effacé (5 s), sans l'incrément de ce coup (2 s),
+    // plus la cinématique.
+    expect(clock(d).w).toBe(wAfter - 5000 - 2000 + CINEMATIC_MS);
+  });
+
+  it('Déjà-vu en 15+10 : un coup joué vite puis effacé ne rapporte pas de temps au lanceur', () => {
+    const d = room(['deja_vu'], []);
+    d.tc = '15+10';
+    d.clock = { initial: 900, increment: 10, w: 900_000, b: 900_000, running: 'w', since: T0 };
+    d.turnMarks = [{ ply: 0, color: 'w', ms: 900_000 }];
+    move(d, 1000, 'e2', 'e4');
+    move(d, 1000, 'e7', 'e5');
+    card(d, 1000, 0);
+    expect(d.state.ply).toBe(0);
+    // Avant la correction : 909 200 ms (l'incrément du coup effacé restait acquis).
+    expect(clock(d).w).toBe(900_000 - 2000 + CINEMATIC_MS);
+    expect(clock(d).b).toBe(900_000);
+  });
+
+  it('Déjà-vu qui efface un Rituel : l’incrément de la Grande Marée est repris aussi', () => {
+    const d = room(['tide', 'deja_vu'], []);
+    move(d, 1000, 'e2', 'e4');
+    move(d, 1000, 'e7', 'e5');
+    const w0 = clock(d).w;
+    card(d, 1000, 0); // Grande Marée : 1 s, +2 s
+    expect(clock(d).w).toBe(w0 - 1000 + 2000);
+    move(d, 1000, 'g8', 'e7'); // (la marée a poussé les pions noirs d'une case)
+    card(d, 1000, 1);
+    expect(d.state.ply).toBe(2);
+    expect(clock(d).w).toBe(w0 - 2000 + CINEMATIC_MS);
   });
 
   it('Déjà-vu qui efface l’arrivée d’un Sablier fou : la pendule en marche ralentit sans perdre le temps écoulé', () => {
@@ -108,15 +139,16 @@ describe('pendule et cartes Climats (serveur)', () => {
     expect(clockRate(d.state, 'b')).toBe(2);
     const b0 = clock(d).b;
     // Les Noirs réfléchissent 3 s à ×2 (6 s perdues), puis lancent le Déjà-vu : le Sablier redevient annoncé.
+    // L'incrément de leur coup effacé (…e5, 2 s) leur est repris.
     card(d, 3000, 0);
     expect(d.state.pos.turn).toBe('b');
     expect(clockRate(d.state, 'b')).toBe(1);
-    expect(clock(d).b).toBe(b0 - 6000 + CINEMATIC_MS);
+    expect(clock(d).b).toBe(b0 - 6000 - 2000 + CINEMATIC_MS);
     // Les Blancs retrouvent le temps du début de leur coup effacé (cinématique d'arrivée comprise, effacée avec lui).
     expect(clock(d).w).toBe(wStart);
     // La suite se joue au rythme normal, avec incrément ; le pion e7 est interdit.
     move(d, 1000, 'd7', 'd5');
-    expect(clock(d).b).toBe(b0 - 6000 + CINEMATIC_MS - 1000 + 2000);
+    expect(clock(d).b).toBe(b0 - 6000 - 2000 + CINEMATIC_MS - 1000 + 2000);
   });
 
   it('Grande Marée (Rituel) : compte comme un coup (incrément, trait adverse, cinématique créditée à l’adversaire)', () => {
@@ -143,6 +175,37 @@ describe('pendule et cartes Climats (serveur)', () => {
     move(d, 1000, 'e2', 'e4');
     move(d, 5000, 'e7', 'e5');
     expect(clock(d).b).toBe(180_000 - 10_000 + 2000);
+  });
+
+  it('redémarrage normal : le temps réfléchi avant l’arrêt reste décompté, pas le temps d’arrêt', () => {
+    const d = room(['hourglass'], []);
+    move(d, 1000, 'e2', 'e4');
+    vi.advanceTimersByTime(12_000); // les Noirs réfléchissent 12 s, puis le serveur s'arrête
+    settleClock(d); // flushRooms
+    d.savedAt = Date.now(); // saveRoom
+    const saved = JSON.parse(JSON.stringify(d)) as RoomData;
+    vi.advanceTimersByTime(60_000); // serveur arrêté
+    resumeClock(saved); // resumeRoom
+    move(saved, 1000, 'e7', 'e5');
+    // Avant la correction : 180 000 - 1000 + 2000 (les 12 s d'avant l'arrêt étaient rendues).
+    expect(clock(saved).b).toBe(180_000 - 12_000 - 1000 + 2000);
+  });
+
+  it('arrêt brutal : le temps écoulé jusqu’à la dernière sauvegarde est décompté (au double sous le Sablier)', () => {
+    const d = room(['hourglass'], []);
+    card(d, 0, 0);
+    move(d, 0, 'e2', 'e4');
+    move(d, 0, 'e7', 'e5'); // le Sablier arrive : ×2
+    expect(clockRate(d.state, 'w')).toBe(2);
+    const w0 = clock(d).w;
+    vi.advanceTimersByTime(3000);
+    d.savedAt = Date.now(); // une sauvegarde pendant la réflexion, sans pendule figée
+    const saved = JSON.parse(JSON.stringify(d)) as RoomData;
+    vi.advanceTimersByTime(20_000); // la suite de la réflexion et l'arrêt sont perdus
+    resumeClock(saved);
+    expect(clock(saved).w).toBe(w0 - 6000);
+    move(saved, 1000, 'g1', 'f3');
+    expect(clock(saved).w).toBe(w0 - 6000 - 2000);
   });
 
   it('anciens états sans catalogue : parties Duel, toujours jouables après sérialisation', () => {

@@ -1049,27 +1049,19 @@ export function positionKey(s: GameState): string {
 }
 
 /**
- * Une carte ou un effet permet-il à `c` de mater avec ses seules pièces mineures (vérifié par force brute sur
- * Roi et pièce mineure contre Roi) ?
+ * Une carte ou un effet permet-il à `c` de mater avec ses seules pièces mineures ? Vérifié par force brute sur
+ * Roi et pièce mineure contre Roi (scripts de vérification de la phase 3, docs/progres/cartes-moteur.md) :
  * - Résurrection en main, avec une pièce à ressusciter ;
  * - Mur de glace en main, ou déjà posé (par l'un ou l'autre camp) : il bouche une case de fuite (Mur g8, puis
- *   Fd4# ou Cf7# contre Rh8) ;
- * - Chevauchée en main, annoncée ou active, avec un fou : il attaque aussi en sautant (Ff6# contre Rh8).
- * La Faille (rangées 4 et 5) ne suffit jamais ; les autres cartes n'ajoutent ni attaque ni case bouchée.
+ *   Fd4# ou Cf7# contre Rh8).
+ * Aucune autre carte ne suffit : la Faille (rangées 4 et 5) ne ferme jamais toutes les fuites, et la
+ * Chevauchée dure 2 coups : la réponse du camp maté est jugée après son expiration, sans les sauts.
  */
 function cardMateHelp(s: GameState, c: Color): boolean {
   const inHand = (card: CardId) => s.hands[c].some(h => !h.used && h.card === card);
   if (inHand('revive') && s.captured[c].some(t => t !== 'q')) return true;
-  let minor = false;
-  let bishop = false;
-  for (const p of s.pos.board) {
-    if (!p || p.c !== c) continue;
-    if (p.t === 'b') bishop = true;
-    if (p.t === 'b' || p.t === 'n') minor = true;
-  }
-  if (!minor) return false;
-  if (inHand('ice_wall') || s.effects.some(e => e.card === 'ice_wall')) return true;
-  return bishop && (inHand('cavalcade') || s.effects.some(e => e.card === 'cavalcade'));
+  if (!inHand('ice_wall') && !s.effects.some(e => e.card === 'ice_wall')) return false;
+  return s.pos.board.some(p => !!p && p.c === c && (p.t === 'b' || p.t === 'n'));
 }
 
 function insufficientMaterial(s: GameState): boolean {

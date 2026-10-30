@@ -1,37 +1,57 @@
 // Gestion du compte : profil, sécurité, collection, achats, données personnelles.
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { ITEMS, formatPrice, productById } from '../../shared/catalog';
+import type { CSSProperties } from 'react';
 import type { MeUser } from '../../shared/protocol';
 import { api, errMsg } from '../api';
 import { PageLoader, Spinner } from '../components/Layout';
 import { useApp } from '../store';
+import { PageHead, PlacePage, StarMark, useTitle } from './PageScene';
 import { Swatch } from './Shop';
 
 type Tab = 'profile' | 'security' | 'collection' | 'purchases' | 'data';
 
+const TABS: [Tab, string][] = [
+  ['profile', 'Profil'],
+  ['security', 'Sécurité'],
+  ['collection', 'Collection'],
+  ['purchases', 'Achats'],
+  ['data', 'Mes données'],
+];
+const TAB_PARAM: Record<string, Tab> = { profil: 'profile', securite: 'security', collection: 'collection', achats: 'purchases', donnees: 'data' };
+
 export default function Account() {
+  useTitle('Mon compte');
   const { me, ready } = useApp();
-  const [tab, setTab] = useState<Tab>('profile');
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => TAB_PARAM[params.get('onglet') ?? ''] ?? 'profile');
   if (!ready) return <PageLoader />;
   if (!me) return <Navigate to="/connexion?retour=/compte" replace />;
+  const owned = ITEMS.filter(i => !i.free && me.items.includes(i.id)).length;
   return (
-    <div className="container page narrow" style={{ maxWidth: 860 }}>
-      <div className="row" style={{ gap: 18, marginBottom: 26 }}>
-        <span className="avatar lg">{me.username[0]?.toUpperCase()}</span>
-        <div>
-          <h1 className="page-title" style={{ margin: 0 }}>{me.username}</h1>
-          <div className="row" style={{ gap: 8, marginTop: 6 }}>
+    <PlacePage place="cabinet" className="acc" narrow>
+      <div className="acc-head">
+        <span className="acc-avatar" aria-hidden="true">
+          <span className="avatar lg">{me.username[0]?.toUpperCase()}</span>
+        </span>
+        <PageHead
+          place="Le Cabinet"
+          aside="Mon compte"
+          title={me.username}
+        >
+          <div className="acc-badges">
             <span className="badge gold">Elo {me.rating}</span>
             <span className="badge">{me.gamesPlayed} parties classées</span>
-            <Link to={`/joueur/${me.username}`} style={{ fontSize: 14 }}>Voir mon profil public</Link>
+            <span className="badge">{owned} objets premium</span>
+            <Link to={`/joueur/${me.username}`} className="btn-line">Voir mon profil public</Link>
           </div>
-        </div>
+        </PageHead>
       </div>
-      <div className="tabs">
-        {([['profile', 'Profil'], ['security', 'Sécurité'], ['collection', 'Collection'], ['purchases', 'Achats'], ['data', 'Mes données']] as [Tab, string][]).map(([k, l]) => (
-          <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>
+      <div className="tabs" role="tablist" aria-label="Rubriques du compte">
+        {TABS.map(([k, l]) => (
+          <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
       {tab === 'profile' && <ProfileTab me={me} />}
@@ -39,7 +59,7 @@ export default function Account() {
       {tab === 'collection' && <CollectionTab me={me} />}
       {tab === 'purchases' && <PurchasesTab />}
       {tab === 'data' && <DataTab />}
-    </div>
+    </PlacePage>
   );
 }
 
@@ -76,7 +96,7 @@ function ProfileTab({ me }: { me: MeUser }) {
       <form className="panel panel-pad stack" onSubmit={(e: FormEvent) => { e.preventDefault(); void f1.run(async () => { const r = await api<{ user: MeUser }>('/account/profile', { method: 'PATCH', body: { username } }); setMe(r.user); return 'Pseudo mis à jour.'; }); }}>
         <h3>Pseudo</h3>
         <div className="field">
-          <input className="input" value={username} onChange={e => setUsername(e.target.value)} maxLength={20} />
+          <input className="input" aria-label="Pseudo" value={username} onChange={e => setUsername(e.target.value)} maxLength={20} />
         </div>
         {f1.error && <div className="form-error">{f1.error}</div>}
         {f1.ok && <div className="form-ok">{f1.ok}</div>}
@@ -89,7 +109,7 @@ function ProfileTab({ me }: { me: MeUser }) {
         </div>
         {!me.emailVerified && (
           <div className="notice">
-            <span>✉️</span>
+            <span className="notice-k">À faire</span>
             <span>Confirmez votre adresse pour sécuriser votre compte.{' '}
               <button type="button" className="btn btn-sm" onClick={() => void f3.run(async () => { await api('/auth/resend-verification', { body: {} }); return 'E-mail envoyé.'; })}>Renvoyer le lien</button>
             </span>
@@ -97,12 +117,12 @@ function ProfileTab({ me }: { me: MeUser }) {
         )}
         {f3.ok && <div className="form-ok">{f3.ok}</div>}
         <div className="field">
-          <input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} />
+          <input className="input" type="email" aria-label="Adresse e-mail" value={email} onChange={e => setEmail(e.target.value)} />
         </div>
         {email !== me.email && (
           <div className="field">
-            <label>Mot de passe actuel (pour confirmer)</label>
-            <input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" />
+            <label htmlFor="acc-pw-mail">Mot de passe actuel (pour confirmer)</label>
+            <input id="acc-pw-mail" className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" />
           </div>
         )}
         {f2.error && <div className="form-error">{f2.error}</div>}
@@ -123,8 +143,8 @@ function SecurityTab() {
     <div className="stack" style={{ gap: 20 }}>
       <form className="panel panel-pad stack" onSubmit={(e: FormEvent) => { e.preventDefault(); void f.run(async () => { await api('/account/password', { body: { current, next } }); setCurrent(''); setNext(''); return 'Mot de passe modifié. Vos autres appareils ont été déconnectés.'; }); }}>
         <h3>Changer de mot de passe</h3>
-        <div className="field"><label>Mot de passe actuel</label><input className="input" type="password" autoComplete="current-password" value={current} onChange={e => setCurrent(e.target.value)} /></div>
-        <div className="field"><label>Nouveau mot de passe</label><input className="input" type="password" autoComplete="new-password" minLength={8} value={next} onChange={e => setNext(e.target.value)} /></div>
+        <div className="field"><label htmlFor="acc-pw-cur">Mot de passe actuel</label><input id="acc-pw-cur" className="input" type="password" autoComplete="current-password" value={current} onChange={e => setCurrent(e.target.value)} /></div>
+        <div className="field"><label htmlFor="acc-pw-new">Nouveau mot de passe</label><input id="acc-pw-new" className="input" type="password" autoComplete="new-password" minLength={8} value={next} onChange={e => setNext(e.target.value)} /></div>
         {f.error && <div className="form-error">{f.error}</div>}
         {f.ok && <div className="form-ok">{f.ok}</div>}
         <div><button className="btn" disabled={f.busy || !current || next.length < 8}>{f.busy ? <Spinner /> : 'Modifier'}</button></div>
@@ -141,35 +161,61 @@ function SecurityTab() {
 
 function CollectionTab({ me }: { me: MeUser }) {
   const { setMe, toast } = useApp();
+  const [busy, setBusy] = useState<string | null>(null);
   const equip = async (id: string) => {
+    setBusy(id);
     try {
       const r = await api<{ user: MeUser }>('/account/equip', { body: { itemId: id } });
       setMe(r.user);
+      toast(`${ITEMS.find(i => i.id === id)?.name} équipé.`, 'success');
     } catch (e) {
       toast(errMsg(e), 'error');
+    } finally {
+      setBusy(null);
     }
   };
   return (
-    <div className="stack" style={{ gap: 26 }}>
-      {(['skin', 'board'] as const).map(kind => (
-        <div key={kind}>
-          <h3>{kind === 'skin' ? 'Skins d’animation' : 'Plateaux'}</h3>
-          <div className="collection">
-            {ITEMS.filter(i => i.kind === kind).map(i => {
-              const has = me.items.includes(i.id);
-              const on = me.equippedSkin === i.id || me.equippedBoard === i.id;
-              return (
-                <button key={i.id} className={`coll-item ${on ? 'on' : ''} ${has ? '' : 'locked'}`} onClick={() => has && !on && equip(i.id)} disabled={!has}>
-                  <Swatch item={i} small />
-                  <span>{i.name}</span>
-                  <small>{on ? '✓ Équipé' : has ? 'Équiper' : '🔒'}</small>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-      <Link to="/boutique" className="btn btn-primary" style={{ alignSelf: 'flex-start' }}>Agrandir ma collection</Link>
+    <div className="stack" style={{ gap: 30 }}>
+      {(['skin', 'board'] as const).map(kind => {
+        const list = ITEMS.filter(i => i.kind === kind);
+        const has = list.filter(i => me.items.includes(i.id)).length;
+        return (
+          <section key={kind} className="acc-coll">
+            <div className="acc-coll-head">
+              <h3>{kind === 'skin' ? 'Skins d’animation' : 'Plateaux'}</h3>
+              <span className="faint">{has} sur {list.length}</span>
+            </div>
+            <div className="collection">
+              {list.map(i => {
+                const owned = me.items.includes(i.id);
+                const on = me.equippedSkin === i.id || me.equippedBoard === i.id;
+                const col = i.skin ? { '--p': i.skin.primary } : { '--p': i.board!.dark };
+                return (
+                  <button
+                    key={i.id}
+                    type="button"
+                    className={`coll-item ${on ? 'on' : ''} ${owned ? '' : 'locked'}`}
+                    style={col as CSSProperties}
+                    onClick={() => owned && !on && equip(i.id)}
+                    disabled={!owned || busy === i.id}
+                    aria-pressed={on}
+                    aria-label={`${i.name} : ${on ? 'équipé' : owned ? 'équiper' : 'à découvrir dans la boutique'}`}
+                  >
+                    <span className="coll-swatch"><Swatch item={i} /></span>
+                    <span className="coll-name">{i.name}</span>
+                    <small>{busy === i.id ? <Spinner /> : on ? 'Équipé' : owned ? 'Équiper' : 'Dans la boutique'}</small>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
+      <div className="acc-coll-foot">
+        <StarMark size={12} />
+        <span>Un skin change l’animation de vos sorts, un plateau l’échiquier : vos adversaires les voient aussi.</span>
+        <Link to="/boutique" className="btn-gold sm">Agrandir ma collection</Link>
+      </div>
     </div>
   );
 }
@@ -180,7 +226,7 @@ function PurchasesTab() {
     api<{ purchases: any[] }>('/account/purchases').then(r => setRows(r.purchases)).catch(() => setRows([]));
   }, []);
   if (!rows) return <PageLoader />;
-  if (!rows.length) return <div className="empty">Aucun achat pour le moment. <Link to="/boutique">Découvrir la boutique</Link></div>;
+  if (!rows.length) return <div className="empty">Aucun achat pour le moment.<br /><Link to="/boutique" className="btn-line">Découvrir le Bazar céleste</Link></div>;
   const status: Record<string, string> = { paid: 'Payé', refunded: 'Remboursé', failed: 'Échoué' };
   return (
     <div className="panel table-wrap">
@@ -218,7 +264,7 @@ function DataTab() {
         <h3>Supprimer mon compte</h3>
         <p className="muted" style={{ margin: 0 }}>Suppression définitive : profil, classement, collection et historique. Les factures sont conservées de façon anonymisée, comme la loi l’exige. Cette action est irréversible.</p>
         <label className="check"><input type="checkbox" checked={confirm} onChange={e => setConfirm(e.target.checked)} /> <span>Je comprends que mes achats seront perdus.</span></label>
-        <div className="field"><label>Mot de passe</label><input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" /></div>
+        <div className="field"><label htmlFor="acc-pw-del">Mot de passe</label><input id="acc-pw-del" className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" /></div>
         {f.error && <div className="form-error">{f.error}</div>}
         <div><button className="btn btn-danger" disabled={!confirm || !password || f.busy}>{f.busy ? <Spinner /> : 'Supprimer définitivement'}</button></div>
       </form>

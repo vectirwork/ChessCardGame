@@ -1,6 +1,8 @@
 // Moteur d'échecs de Spellmate.
 // Règles complètes (roque, prise en passant, promotion) et modificateurs de cartes :
-// cases bloquées, pièces gelées ou protégées, portée réduite, saut et passe-muraille.
+// - Duel : cases bloquées, pièces gelées ou protégées, portée réduite, saut et passe-muraille ;
+// - Climats : pions gelés, sauts des pièces longues, Trêve, explosions, promotion en 7e rangée, portails.
+// Sans modificateur (NO_MODS), ce sont les échecs classiques : les tests perft le garantissent.
 // Cases : index = rangée * 8 + colonne, a1 = 0, h1 = 7, a8 = 56, h8 = 63.
 
 export type Color = 'w' | 'b';
@@ -31,32 +33,73 @@ export const F_CASTLE_Q = 16;
 export const F_PROMO = 32;
 export const F_LEAP = 64;
 export const F_PHASE = 128;
+/** Déflagration : la capture explose (la pièce qui capture saute avec sa victime et ses voisines). */
+export const F_BLAST = 256;
+/** Passage par un portail : la pièce s'arrête sur `via` et ressort sur `to`. */
+export const F_PORTAL = 512;
+/** « La magie cède » : coup joué comme si les effets n'existaient pas pour les pièces du joueur. */
+export const F_RELAXED = 1024;
 
 export interface Move {
   from: number;
   to: number;
   flags: number;
   promo?: PieceType;
+  /** Portail d'entrée d'un passage (F_PORTAL) ; `to` est la sortie. */
+  via?: number;
 }
 
 /** Modificateurs actifs, calculés à partir des effets de cartes. */
 export interface Mods {
+  /** Cases infranchissables : Mur de glace, Faille. */
   blocked: boolean[];
+  /** Duel : pièces gelées (Cryogénie). */
   frozen: Set<number>;
+  /** Duel : pièces imprenables (Égide). */
   shielded: Set<number>;
+  /** Portée des pièces longues par couleur (Gravité). */
   range: Record<Color, number>;
+  /** Duel : pièces qui peuvent sauter comme un cavalier (Saut du cavalier). */
   leap: Set<number>;
+  /** Duel : pièces qui traversent leurs alliées (Passe-muraille). */
   phase: Set<number>;
+  /** Portails ouverts (une seule paire). */
+  portals: [number, number] | null;
+  /** Ère glaciaire : aucun pion ne bouge (les cases qu'ils attaquent restent interdites au roi). */
+  pawnsFrozen: boolean;
+  /** Chevauchée : tours, fous et dames sautent aussi comme un cavalier. */
+  leapAll: boolean;
+  /** Trêve : aucune capture, sauf pour sortir d'un échec. */
+  truce: boolean;
+  /** Lune de sang : capture obligatoire (filtre appliqué par legalMovesOf et par l'IA, pas ici). */
+  mustCapture: boolean;
+  /** Déflagration : les captures qui ne sont pas des coups de roi explosent. */
+  blast: boolean;
+  /** Couronnement : promotion dès la 7e rangée. */
+  crown: boolean;
 }
 
-export const NO_MODS: Mods = {
-  blocked: new Array(64).fill(false),
-  frozen: new Set(),
-  shielded: new Set(),
-  range: { w: 7, b: 7 },
-  leap: new Set(),
-  phase: new Set(),
-};
+/** Jeu de modificateurs vide (nouvel objet, modifiable). */
+export function emptyMods(): Mods {
+  return {
+    blocked: new Array(64).fill(false),
+    frozen: new Set(),
+    shielded: new Set(),
+    range: { w: 7, b: 7 },
+    leap: new Set(),
+    phase: new Set(),
+    portals: null,
+    pawnsFrozen: false,
+    leapAll: false,
+    truce: false,
+    mustCapture: false,
+    blast: false,
+    crown: false,
+  };
+}
+
+/** Échecs classiques : aucun effet. Ne pas modifier cet objet partagé. */
+export const NO_MODS: Mods = emptyMods();
 
 export const opposite = (c: Color): Color => (c === 'w' ? 'b' : 'w');
 export const fileOf = (sq: number) => sq & 7;
@@ -124,12 +167,12 @@ export function isAttacked(pos: Position, target: number, by: Color, mods: Mods)
       if (p && p.c === by && p.t === 'p' && !mods.frozen.has(p.id)) return true;
     }
   }
-  // Cavaliers
+  // Cavaliers (et pièces longues sous la Chevauchée)
   for (const [df, dr] of KNIGHT) {
     const f = tf + df, r = tr + dr;
     if (!onBoard(f, r)) continue;
     const p = b[sq(f, r)];
-    if (p && p.c === by && p.t === 'n' && !mods.frozen.has(p.id)) return true;
+    if (p && p.c === by && (p.t === 'n' || (mods.leapAll && isSlider(p.t))) && !mods.frozen.has(p.id)) return true;
   }
   // Roi
   for (const [df, dr] of KING) {
@@ -166,16 +209,23 @@ function canCapture(target: Piece | null, mover: Color, mods: Mods): boolean {
   return !!target && target.c !== mover && target.t !== 'k' && !mods.shielded.has(target.id);
 }
 
-function pushPawnMove(out: Move[], from: number, to: number, flags: number, lastRank: boolean) {
-  if (lastRank) {
+function pushPawnMove(out: Move[], from: number, to: number, flags: number, promote: boolean) {
+  if (promote) {
     for (const promo of ['q', 'r', 'b', 'n'] as PieceType[]) out.push({ from, to, flags: flags | F_PROMO, promo });
   } else {
     out.push({ from, to, flags });
   }
 }
 
-/** Coups pseudo-légaux du camp au trait (sans vérifier que le roi reste à l'abri). */
-export function pseudoMoves(pos: Position, mods: Mods): Move[] {
+/** Rangée relative (0 = première rangée du camp, 6 = sa 7e rangée). */
+const relRank = (r: number, c: Color) => (c === 'w' ? r : 7 - r);
+
+/**
+ * Coups pseudo-légaux du camp au trait (sans vérifier que le roi reste à l'abri).
+ * `mods` régit le déplacement ; `modsAfter` (effets au prochain coup adverse) sert au roque :
+ * le roi ne part pas d'une case, ni ne traverse une case, que l'adversaire pourra attaquer (R5).
+ */
+export function pseudoMoves(pos: Position, mods: Mods, modsAfter: Mods = mods): Move[] {
   const out: Move[] = [];
   const b = pos.board;
   const us = pos.turn;
@@ -186,14 +236,17 @@ export function pseudoMoves(pos: Position, mods: Mods): Move[] {
     const ff = fileOf(from), fr = rankOf(from);
     switch (p.t) {
       case 'p': {
+        if (mods.pawnsFrozen) break;
         const dir = us === 'w' ? 1 : -1;
         const start = us === 'w' ? 1 : 6;
         const last = us === 'w' ? 7 : 0;
         const r1 = fr + dir;
         if (r1 < 0 || r1 > 7) break;
+        // Couronnement : promotion dès la 7e rangée (jamais par prise en passant, qui arrive en 6e).
+        const promote = r1 === last || (mods.crown && relRank(r1, us) === 6);
         const one = sq(ff, r1);
         if (!b[one] && !mods.blocked[one]) {
-          pushPawnMove(out, from, one, 0, r1 === last);
+          pushPawnMove(out, from, one, 0, promote);
           if (fr === start) {
             const two = sq(ff, fr + 2 * dir);
             if (!b[two] && !mods.blocked[two]) out.push({ from, to: two, flags: F_DOUBLE });
@@ -204,27 +257,35 @@ export function pseudoMoves(pos: Position, mods: Mods): Move[] {
           if (f < 0 || f > 7) continue;
           const to = sq(f, r1);
           if (mods.blocked[to]) continue;
-          if (canCapture(b[to], us, mods)) pushPawnMove(out, from, to, F_CAPTURE, r1 === last);
-          else if (to === pos.ep && !b[to]) {
+          if (canCapture(b[to], us, mods)) {
+            // Sous la Déflagration, le pion explose : un seul coup, sans choix de promotion.
+            if (mods.blast) out.push({ from, to, flags: F_CAPTURE | F_BLAST });
+            else pushPawnMove(out, from, to, F_CAPTURE, promote);
+          } else if (to === pos.ep && !b[to]) {
             const victim = b[sq(f, fr)];
             if (victim && victim.t === 'p' && victim.c === them && !mods.shielded.has(victim.id)) {
-              out.push({ from, to, flags: F_CAPTURE | F_EP });
+              out.push({ from, to, flags: F_CAPTURE | F_EP | (mods.blast ? F_BLAST : 0) });
             }
           }
         }
         break;
       }
-      case 'n':
+      case 'n': {
+        const start = out.length;
         jumpMoves(pos, mods, from, KNIGHT, out, 0);
+        if (mods.portals) portalMoves(pos, mods.portals, from, out, start);
         break;
+      }
       case 'k':
         jumpMoves(pos, mods, from, KING, out, 0);
-        castleMoves(pos, mods, from, out);
+        castleMoves(pos, mods, modsAfter, from, out);
         break;
       default: {
+        const start = out.length;
         if (mods.phase.has(p.id)) phaseMoves(pos, mods, from, out);
         else slideMoves(pos, mods, from, out);
-        if (mods.leap.has(p.id)) jumpMoves(pos, mods, from, KNIGHT, out, F_LEAP);
+        if (mods.leap.has(p.id) || mods.leapAll) jumpMoves(pos, mods, from, KNIGHT, out, F_LEAP);
+        if (mods.portals) portalMoves(pos, mods.portals, from, out, start);
       }
     }
   }
@@ -234,6 +295,8 @@ export function pseudoMoves(pos: Position, mods: Mods): Move[] {
 function jumpMoves(pos: Position, mods: Mods, from: number, deltas: [number, number][], out: Move[], extra: number) {
   const us = pos.turn;
   const ff = fileOf(from), fr = rankOf(from);
+  // Un roi capture toujours sans explosion.
+  const blast = mods.blast && pos.board[from]!.t !== 'k' ? F_BLAST : 0;
   for (const [df, dr] of deltas) {
     const f = ff + df, r = fr + dr;
     if (!onBoard(f, r)) continue;
@@ -241,13 +304,14 @@ function jumpMoves(pos: Position, mods: Mods, from: number, deltas: [number, num
     if (mods.blocked[to]) continue;
     const t = pos.board[to];
     if (!t) out.push({ from, to, flags: extra });
-    else if (canCapture(t, us, mods)) out.push({ from, to, flags: F_CAPTURE | extra });
+    else if (canCapture(t, us, mods)) out.push({ from, to, flags: F_CAPTURE | extra | blast });
   }
 }
 
 function slideMoves(pos: Position, mods: Mods, from: number, out: Move[]) {
   const p = pos.board[from]!;
   const range = mods.range[p.c];
+  const blast = mods.blast ? F_BLAST : 0;
   const ff = fileOf(from), fr = rankOf(from);
   for (const [df, dr] of slideDirs(p.t)) {
     let f = ff + df, r = fr + dr, dist = 1;
@@ -257,7 +321,7 @@ function slideMoves(pos: Position, mods: Mods, from: number, out: Move[]) {
       const t = pos.board[to];
       if (!t) out.push({ from, to, flags: 0 });
       else {
-        if (canCapture(t, p.c, mods)) out.push({ from, to, flags: F_CAPTURE });
+        if (canCapture(t, p.c, mods)) out.push({ from, to, flags: F_CAPTURE | blast });
         break;
       }
       f += df; r += dr; dist++;
@@ -265,10 +329,30 @@ function slideMoves(pos: Position, mods: Mods, from: number, out: Move[]) {
   }
 }
 
+/**
+ * Portails : une pièce (cavalier, fou, tour, dame) qui peut s'arrêter sur un portail peut aussi ressortir par
+ * l'autre, si les deux sont libres. Les coups de la pièce sont dans `out` à partir de `start` ; on ajoute les
+ * passages, sauf quand la sortie est déjà atteignable directement (le résultat serait le même coup).
+ */
+function portalMoves(pos: Position, portals: [number, number], from: number, out: Move[], start: number) {
+  const [a, c] = portals;
+  if (pos.board[a] || pos.board[c]) return; // un portail occupé ferme la paire
+  const end = out.length;
+  const reach = (x: number) => {
+    for (let i = start; i < end; i++) if (out[i].to === x) return out[i];
+    return null;
+  };
+  for (const [entry, exit] of [[a, c], [c, a]] as const) {
+    const m = reach(entry);
+    if (m && !reach(exit)) out.push({ from, to: exit, via: entry, flags: (m.flags & ~F_CAPTURE) | F_PORTAL });
+  }
+}
+
 /** Passe-muraille : la pièce traverse ses propres pièces ; une pièce adverse ou un mur de glace l'arrête. */
 function phaseMoves(pos: Position, mods: Mods, from: number, out: Move[]) {
   const p = pos.board[from]!;
   const range = mods.range[p.c];
+  const blast = mods.blast ? F_BLAST : 0;
   const ff = fileOf(from), fr = rankOf(from);
   for (const [df, dr] of slideDirs(p.t)) {
     let f = ff + df, r = fr + dr, dist = 1, passed = false;
@@ -280,7 +364,7 @@ function phaseMoves(pos: Position, mods: Mods, from: number, out: Move[]) {
       if (!t) out.push({ from, to, flags: flag });
       else if (t.c === p.c) passed = true;
       else {
-        if (canCapture(t, p.c, mods)) out.push({ from, to, flags: F_CAPTURE | flag });
+        if (canCapture(t, p.c, mods)) out.push({ from, to, flags: F_CAPTURE | flag | blast });
         break;
       }
       f += df; r += dr; dist++;
@@ -288,7 +372,7 @@ function phaseMoves(pos: Position, mods: Mods, from: number, out: Move[]) {
   }
 }
 
-function castleMoves(pos: Position, mods: Mods, from: number, out: Move[]) {
+function castleMoves(pos: Position, mods: Mods, modsAfter: Mods, from: number, out: Move[]) {
   const us = pos.turn;
   const them = opposite(us);
   const home = us === 'w' ? 4 : 60;
@@ -296,7 +380,9 @@ function castleMoves(pos: Position, mods: Mods, from: number, out: Move[]) {
   const kBit = us === 'w' ? 1 : 4;
   const qBit = us === 'w' ? 2 : 8;
   if (!(pos.castling & (kBit | qBit))) return;
-  if (isAttacked(pos, home, them, mods)) return;
+  // Attaques vues avec les effets du prochain coup adverse (R5) : un mur qui fond, une Chevauchée qui arrive.
+  const attacked = (s: number) => isAttacked(pos, s, them, modsAfter);
+  if (attacked(home)) return;
   const b = pos.board;
   const rookOk = (s: number) => {
     const r = b[s];
@@ -304,11 +390,11 @@ function castleMoves(pos: Position, mods: Mods, from: number, out: Move[]) {
   };
   const free = (s: number) => !b[s] && !mods.blocked[s];
   if (pos.castling & kBit && rookOk(home + 3) && free(home + 1) && free(home + 2) &&
-      !isAttacked(pos, home + 1, them, mods) && !isAttacked(pos, home + 2, them, mods)) {
+      !attacked(home + 1) && !attacked(home + 2)) {
     out.push({ from: home, to: home + 2, flags: F_CASTLE_K });
   }
   if (pos.castling & qBit && rookOk(home - 4) && free(home - 1) && free(home - 2) && free(home - 3) &&
-      !isAttacked(pos, home - 1, them, mods) && !isAttacked(pos, home - 2, them, mods)) {
+      !attacked(home - 1) && !attacked(home - 2)) {
     out.push({ from: home, to: home - 2, flags: F_CASTLE_Q });
   }
 }
@@ -322,6 +408,8 @@ export interface Undo {
   ep: number;
   halfmove: number;
   fullmove: number;
+  /** Déflagration : pièces détruites par l'explosion (la pièce qui capture comprise). */
+  blasted?: { sq: number; piece: Piece }[];
 }
 
 const ROOK_HOME_BITS: Record<number, number> = { 7: 1, 0: 2, 63: 4, 56: 8 };
@@ -353,6 +441,24 @@ export function makeMove(pos: Position, m: Move): Undo {
   if (moved.t === 'k') pos.castling &= moved.c === 'w' ? ~3 : ~12;
   if (ROOK_HOME_BITS[m.from] !== undefined) pos.castling &= ~ROOK_HOME_BITS[m.from];
   if (ROOK_HOME_BITS[m.to] !== undefined) pos.castling &= ~ROOK_HOME_BITS[m.to];
+  if (m.flags & F_BLAST) {
+    // Explosion centrée sur la case d'arrivée : la pièce qui capture, puis les voisines (ni pions ni rois).
+    const blasted = [{ sq: m.to, piece: b[m.to]! }];
+    b[m.to] = null;
+    const tf = fileOf(m.to), tr = rankOf(m.to);
+    for (const [df, dr] of KING) {
+      const f = tf + df, r = tr + dr;
+      if (!onBoard(f, r)) continue;
+      const s = sq(f, r);
+      const p = b[s];
+      if (!p || p.t === 'p' || p.t === 'k') continue;
+      blasted.push({ sq: s, piece: p });
+      b[s] = null;
+      // Une tour détruite sur sa case de départ perd son droit de roque.
+      if (ROOK_HOME_BITS[s] !== undefined) pos.castling &= ~ROOK_HOME_BITS[s];
+    }
+    undo.blasted = blasted;
+  }
   pos.ep = m.flags & F_DOUBLE ? (m.from + m.to) / 2 : -1;
   pos.halfmove = moved.t === 'p' || m.flags & F_CAPTURE ? 0 : pos.halfmove + 1;
   if (pos.turn === 'b') pos.fullmove++;
@@ -363,6 +469,7 @@ export function makeMove(pos: Position, m: Move): Undo {
 export function unmakeMove(pos: Position, u: Undo) {
   const b = pos.board;
   const m = u.move;
+  if (u.blasted) for (const x of u.blasted) b[x.sq] = x.piece;
   if (m.flags & F_CASTLE_K) {
     b[m.to + 1] = b[m.to - 1];
     b[m.to - 1] = null;
@@ -382,13 +489,17 @@ export function unmakeMove(pos: Position, u: Undo) {
 
 /**
  * Coups légaux du camp au trait.
- * `modsNow` régit le déplacement ; `modsAfter` (effets après décompte du coup joué) sert à vérifier
- * que le roi du joueur n'est pas attaqué une fois le coup joué et les effets expirés retirés.
+ * `modsNow` régit le déplacement ; `modsAfter` (effets après décompte du coup joué : expirations et arrivées)
+ * sert à vérifier que le roi du joueur n'est pas attaqué une fois le coup joué (R4d).
+ * Trêve : hors échec (selon `modsAfter`, R5), les captures sont écartées. La capture obligatoire de la
+ * Lune de sang n'est pas appliquée ici (voir `applyMustCapture`).
  */
 export function legalMoves(pos: Position, modsNow: Mods = NO_MODS, modsAfter: Mods = modsNow): Move[] {
   const us = pos.turn;
   const res: Move[] = [];
-  for (const m of pseudoMoves(pos, modsNow)) {
+  const noCapture = modsNow.truce && !inCheck(pos, us, modsAfter);
+  for (const m of pseudoMoves(pos, modsNow, modsAfter)) {
+    if (noCapture && m.flags & F_CAPTURE) continue;
     const u = makeMove(pos, m);
     if (!inCheck(pos, us, modsAfter)) res.push(m);
     unmakeMove(pos, u);
@@ -399,7 +510,9 @@ export function legalMoves(pos: Position, modsNow: Mods = NO_MODS, modsAfter: Mo
 /** Existe-t-il au moins un coup légal ? (arrêt au premier trouvé) */
 export function hasLegalMove(pos: Position, modsNow: Mods = NO_MODS, modsAfter: Mods = modsNow, skip?: (m: Move) => boolean): boolean {
   const us = pos.turn;
-  for (const m of pseudoMoves(pos, modsNow)) {
+  const noCapture = modsNow.truce && !inCheck(pos, us, modsAfter);
+  for (const m of pseudoMoves(pos, modsNow, modsAfter)) {
+    if (noCapture && m.flags & F_CAPTURE) continue;
     if (skip && skip(m)) continue;
     const u = makeMove(pos, m);
     const ok = !inCheck(pos, us, modsAfter);
@@ -409,22 +522,33 @@ export function hasLegalMove(pos: Position, modsNow: Mods = NO_MODS, modsAfter: 
   return false;
 }
 
+export const isCapture = (m: Move) => (m.flags & F_CAPTURE) !== 0;
+
+/** Lune de sang : s'il existe une capture, seules les captures restent. Ne vide jamais la liste. */
+export function applyMustCapture(moves: Move[]): Move[] {
+  return moves.some(isCapture) ? moves.filter(isCapture) : moves;
+}
+
 const SAN_LETTER: Record<PieceType, string> = { p: '', n: 'N', b: 'B', r: 'R', q: 'Q', k: 'K' };
 
-/** Notation algébrique (lettres anglaises) ; `legal` sert à lever les ambiguïtés. */
+/**
+ * Notation algébrique (lettres anglaises) ; `legal` sert à lever les ambiguïtés.
+ * Spellmate ajoute `*` pour une capture qui explose (Déflagration) et `entrée→sortie` pour un passage de portail.
+ */
 export function toSan(pos: Position, m: Move, legal: Move[]): string {
   if (m.flags & F_CASTLE_K) return 'O-O';
   if (m.flags & F_CASTLE_Q) return 'O-O-O';
   const p = pos.board[m.from]!;
+  const blast = m.flags & F_BLAST ? '*' : '';
   let s = '';
   if (p.t === 'p') {
     if (m.flags & F_CAPTURE) s += 'abcdefgh'[fileOf(m.from)] + 'x';
     s += sqName(m.to);
     if (m.promo) s += '=' + SAN_LETTER[m.promo];
-    return s;
+    return s + blast;
   }
   s += SAN_LETTER[p.t];
-  const rivals = legal.filter(o => o.to === m.to && o.from !== m.from && pos.board[o.from]?.t === p.t);
+  const rivals = legal.filter(o => o.to === m.to && o.via === m.via && o.from !== m.from && pos.board[o.from]?.t === p.t);
   if (rivals.length) {
     const sameFile = rivals.some(o => fileOf(o.from) === fileOf(m.from));
     const sameRank = rivals.some(o => rankOf(o.from) === rankOf(m.from));
@@ -433,8 +557,9 @@ export function toSan(pos: Position, m: Move, legal: Move[]): string {
     else s += sqName(m.from);
   }
   if (m.flags & F_CAPTURE) s += 'x';
+  if (m.via !== undefined) s += sqName(m.via) + '→';
   s += sqName(m.to);
-  return s;
+  return s + blast;
 }
 
 const FR_LETTER: Record<string, string> = { K: 'R', Q: 'D', R: 'T', B: 'F', N: 'C' };

@@ -8,3 +8,5 @@ test-results/
 .pgdata/
 concepts/*/critique/
 data/
+# Captures brutes des agents : converties en JPG avant commit
+concepts/**/*.png

@@ -1,0 +1,464 @@
+/* Coque de partie immersive (GameShell) : HUD autour de l'échiquier, style Odyssée.
+   Jetons : styles/global.css (--gold, --serif, --caps, --ease…). Toutes les classes sont préfixées gs-. */
+
+.gs {
+  position: fixed;
+  inset: 0;
+  z-index: 14;
+  pointer-events: none;
+  color: var(--text);
+}
+.gs-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(55% 70% at 62% 52%, rgb(var(--tint, 120 92 255) / 0.16), transparent 70%),
+    linear-gradient(180deg, #03040c 0%, #070821 55%, #0d0b26 100%);
+}
+.gs-backdrop-glow {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(38% 52% at 61% 54%, rgb(var(--tint, 120 92 255) / 0.18), transparent 70%),
+    radial-gradient(28% 40% at 61% 54%, rgba(243, 201, 105, 0.1), transparent 70%);
+}
+.gs-backdrop-stars {
+  position: absolute;
+  inset: 0;
+  opacity: 0.4;
+  background-image:
+    radial-gradient(1px 1px at 20px 30px, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(1px 1px at 120px 80px, rgba(255, 255, 255, 0.4), transparent),
+    radial-gradient(1.5px 1.5px at 200px 160px, rgba(255, 226, 160, 0.5), transparent),
+    radial-gradient(1px 1px at 330px 220px, rgba(190, 230, 255, 0.4), transparent);
+  background-size: 360px 260px;
+}
+.gs-stage {
+  position: fixed;
+  pointer-events: auto;
+}
+.gs-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.gs-hud button,
+.gs-hud .spell-card,
+.gs-hud a {
+  pointer-events: auto;
+}
+
+/* Barre du haut */
+.gs-top {
+  position: absolute;
+  left: 40px;
+  top: 26px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.gs-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px 10px 12px;
+  border-radius: 99px;
+  border: 1px solid var(--line);
+  background: rgba(10, 10, 26, 0.6);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.3s, background 0.3s;
+}
+.gs-back svg {
+  width: 18px;
+  height: 18px;
+}
+.gs-back:hover {
+  border-color: var(--gold);
+  background: rgba(243, 201, 105, 0.08);
+}
+.gs-badge {
+  font-family: var(--caps);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--soft);
+}
+
+/* Statut */
+.gs-status {
+  position: absolute;
+  left: 48px;
+  top: 19vh;
+  width: min(25vw, 360px);
+  pointer-events: none;
+}
+.gs-status > * {
+  pointer-events: auto;
+}
+.gs-kicker {
+  margin: 0 0 14px;
+  font-family: var(--caps);
+  font-size: 11.5px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.gs-title {
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 300;
+  font-size: clamp(38px, 3.4vw, 56px);
+  line-height: 1;
+  letter-spacing: -0.005em;
+}
+.gs-hint {
+  margin: 18px 0 0;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--dim);
+}
+.gs-hint small {
+  display: block;
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--faint);
+}
+.gs-prompt {
+  margin-top: 18px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid hsl(var(--h) 80% 70% / 0.4);
+  background: linear-gradient(160deg, hsl(var(--h) 80% 30% / 0.35), rgba(8, 8, 22, 0.6));
+}
+.gs-prompt p {
+  margin: 0;
+  font-size: 14.5px;
+  color: var(--dim);
+}
+.gs-prompt .gs-spell {
+  margin-bottom: 4px;
+  font-family: var(--serif);
+  font-size: 24px;
+  color: var(--text);
+}
+.gs-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-top: 14px;
+}
+.gs-result-text {
+  margin: 14px 0 0;
+  color: var(--dim);
+  font-size: 15px;
+}
+.gs-extra {
+  margin-top: 22px;
+}
+.gs-quiet-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hair);
+}
+.gs-quiet {
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--soft);
+  cursor: pointer;
+  border-bottom: 1px solid transparent;
+  transition: color 0.3s, border-color 0.3s;
+}
+.gs-quiet:hover {
+  color: var(--text);
+  border-bottom-color: var(--line);
+}
+.gs-quiet.is-armed {
+  color: #ffb3bd;
+  border-bottom-color: rgba(255, 120, 140, 0.6);
+}
+.gs-toast {
+  margin: 22px 0 0;
+  font-family: var(--caps);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  animation: gs-toast 3.4s ease forwards;
+}
+@keyframes gs-toast {
+  0% {
+    opacity: 0;
+  }
+  10%,
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Adversaire */
+.gs-opponent {
+  position: absolute;
+  right: 34px;
+  top: 26px;
+  display: grid;
+  justify-items: end;
+  gap: 14px;
+}
+.gs-opp-id {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: right;
+  flex-direction: row-reverse;
+}
+.gs-opp-id b {
+  display: block;
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 20px;
+  line-height: 1.1;
+}
+.gs-opp-id span {
+  font-size: 12px;
+  color: var(--faint);
+}
+.gs-eye {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(circle, #05050c 0 22%, transparent 23%),
+    radial-gradient(circle, #b28cff 0 46%, transparent 48%),
+    radial-gradient(circle, rgba(140, 100, 255, 0.4), transparent 72%);
+  box-shadow: 0 0 22px rgba(140, 100, 255, 0.5);
+}
+.gs-backs {
+  display: flex;
+  gap: 6px;
+}
+.gs-backs .spell-card {
+  --w: 38px;
+}
+.gs-opp-hand-m {
+  display: none;
+}
+
+/* Main en éventail */
+.gs-fan {
+  position: absolute;
+  left: 56px;
+  bottom: 40px;
+  z-index: 3;
+  display: flex;
+  align-items: flex-end;
+}
+.gs-fan-label {
+  position: absolute;
+  left: 4px;
+  top: -66px;
+  font-family: var(--caps);
+  font-size: 11px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--soft);
+  white-space: nowrap;
+}
+.gs-self-extra {
+  position: absolute;
+  left: 4px;
+  top: -112px;
+}
+.gs-fan-slot + .gs-fan-slot {
+  margin-left: -18px;
+}
+.gs-fan-card {
+  transform: translateY(var(--fy)) rotate(var(--fr));
+  transform-origin: 50% 120%;
+  transition: transform 0.6s var(--ease);
+}
+.gs-fan-slot:hover .gs-fan-card,
+.gs-fan-card.is-sel {
+  transform: translateY(calc(var(--fy) - 26px)) rotate(0deg);
+  z-index: 2;
+  position: relative;
+}
+.gs-fan .sc-hand {
+  --w: clamp(112px, 9vw, 138px);
+}
+.gs-fan .sc-foil {
+  mix-blend-mode: soft-light;
+  opacity: 0.5;
+}
+.gs-no-cards {
+  font-family: var(--caps);
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* Écrans moyens : le panneau de statut se resserre */
+@media (max-width: 1180px) and (min-width: 820px) {
+  .gs-status {
+    left: 32px;
+    width: min(27vw, 300px);
+  }
+  .gs-title {
+    font-size: 36px;
+  }
+  .gs-fan {
+    left: 32px;
+  }
+  .gs-fan .sc-hand {
+    --w: 104px;
+  }
+}
+
+/* Mobile : échiquier en haut, statut dessous, éventail centré en bas */
+.gs.is-mobile .gs-top {
+  left: 12px;
+  top: 12px;
+}
+.gs.is-mobile .gs-badge {
+  display: none;
+}
+.gs.is-mobile .gs-back {
+  padding: 8px 14px 8px 10px;
+  font-size: 12px;
+}
+.gs.is-mobile .gs-opponent {
+  right: 12px;
+  top: 10px;
+  gap: 6px;
+}
+.gs.is-mobile .gs-eye {
+  width: 30px;
+  height: 30px;
+}
+.gs.is-mobile .gs-opp-id b {
+  font-size: 16px;
+}
+.gs.is-mobile .gs-opp-id span {
+  font-size: 10.5px;
+}
+.gs.is-mobile .gs-opponent .gs-backs {
+  display: none;
+}
+.gs.is-mobile .gs-status {
+  left: 16px;
+  right: 16px;
+  width: auto;
+  top: calc(var(--gs-top) + var(--gs-g) + 12px);
+}
+.gs.is-mobile .gs-kicker {
+  margin-bottom: 4px;
+  font-size: 10px;
+}
+.gs.is-mobile .gs-title {
+  font-size: 28px;
+}
+.gs.is-mobile .gs-hint {
+  margin-top: 6px;
+  font-size: 13px;
+}
+.gs.is-mobile .gs-hint small {
+  display: none;
+}
+.gs.is-mobile .gs-prompt {
+  margin-top: 8px;
+  padding: 9px 12px;
+}
+.gs.is-mobile .gs-prompt p {
+  font-size: 13px;
+}
+.gs.is-mobile .gs-prompt .gs-spell {
+  font-size: 18px;
+  margin-bottom: 0;
+}
+.gs.is-mobile .gs-actions {
+  margin-top: 8px;
+}
+.gs.is-mobile .gs-actions .btn-gold.sm {
+  padding: 8px 16px;
+}
+.gs.is-mobile .gs-extra {
+  margin-top: 8px;
+}
+.gs.is-mobile .gs-quiet-row {
+  margin-top: 8px;
+  padding-top: 8px;
+}
+.gs.is-mobile .gs-fan-label {
+  display: none;
+}
+.gs.is-mobile .gs-toast {
+  margin-top: 6px;
+}
+.gs.is-mobile .gs-fan {
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+}
+.gs.is-mobile .gs-fan .sc-hand {
+  --w: 88px;
+}
+.gs.is-mobile .gs-fan-slot + .gs-fan-slot {
+  margin-left: -12px;
+}
+.gs.is-mobile .gs-opp-hand-m {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  font-family: var(--caps);
+  font-size: 10.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--soft);
+}
+.gs.is-mobile .gs-opp-hand-m .spell-card {
+  --w: 28px;
+}
+.gs.is-mobile .gs-self-extra {
+  position: fixed;
+  left: 16px;
+  top: auto;
+  bottom: calc(88px * 1.44 + 30px);
+}
+/* Petits écrans bas : on resserre l'éventail */
+@media (max-height: 700px) {
+  .gs.is-mobile .gs-fan .sc-hand {
+    --w: 72px;
+  }
+  .gs.is-mobile .gs-opp-hand-m {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gs-fan-card,
+  .gs-back,
+  .gs-quiet {
+    transition: none;
+  }
+  .gs-toast {
+    animation-duration: 3.4s;
+  }
+}

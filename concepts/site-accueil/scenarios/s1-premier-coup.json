@@ -1,0 +1,23 @@
+{
+  "url": "http://localhost:3000/",
+  "outDir": "/home/user/ChessCardGame/concepts/site-accueil",
+  "viewport": { "width": 1440, "height": 900 },
+  "steps": [
+    { "eval": "localStorage.clear(), sessionStorage.clear(), 'propre'" },
+    { "wait": 3800 },
+    { "shot": "01-accueil" },
+    { "clickSquare": "e2", "settle": 900 },
+    { "eval": "({ tilt: document.querySelector('.o-astre').style.getPropertyValue('--base-tilt'), live: document.querySelector('.o-astre').className })" },
+    { "shot": "02-echiquier-eveille" },
+    { "clickSquare": "e2", "settle": 350 },
+    { "shot": "03-piece-choisie" },
+    { "clickSquare": "e4", "settle": 420 },
+    { "shot": "04-transition" },
+    { "wait": 2600 },
+    { "eval": "({ immersive: document.documentElement.classList.contains('is-immersive'), status: document.querySelector('.gs-title')?.textContent })" },
+    { "shot": "05-mode-immersif" },
+    { "wait": 4000 },
+    { "eval": "({ status: document.querySelector('.gs-title')?.textContent, saved: !!localStorage.getItem('sm:odyssee:partie') })" },
+    { "shot": "06-reponse-oracle" }
+  ]
+}

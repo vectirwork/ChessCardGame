@@ -45,8 +45,10 @@ export interface ClockView {
   b: number;
   running: Color | null;
   serverNow: number;
-  /** Multiplicateur de vitesse (Distorsion temporelle). */
+  /** Multiplicateur de vitesse (Distorsion temporelle, Sablier fou). */
   rate: Record<Color, number>;
+  /** Sablier fou actif : les coups ne rapportent pas d'incrément (le « +2 » est barré). */
+  noIncrement?: boolean;
 }
 
 export interface GameView {

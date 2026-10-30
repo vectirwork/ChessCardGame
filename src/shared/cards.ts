@@ -1,8 +1,27 @@
 // Catalogue des cartes de pouvoir. Les règles d'application sont dans game.ts.
+// Deux catalogues de cartes coexistent (voir concepts/CARTES-GLOBALES.md pour les Climats) :
+// - 'climats' : des pouvoirs qui changent la partie pour les deux joueurs ;
+// - 'duel' : les 11 cartes historiques, qui visent surtout l'adversaire.
+// Le Mur de glace appartient aux deux.
 
 export type CardId =
-  | 'time_warp'
+  // Climats
+  | 'hourglass'
+  | 'truce'
+  | 'blood_moon'
+  | 'ice_age'
+  | 'coronation'
+  | 'blast'
+  | 'cavalcade'
+  // Terrains (le Mur de glace sert aussi au catalogue Duel)
   | 'ice_wall'
+  | 'rift'
+  | 'portals'
+  // Événements
+  | 'tide'
+  | 'deja_vu'
+  // Duel (cartes historiques)
+  | 'time_warp'
   | 'gravity'
   | 'freeze'
   | 'shield'
@@ -22,6 +41,8 @@ export type Rarity = 'commune' | 'rare' | 'épique' | 'légendaire';
  * - 'aucune' : échecs classiques, sans cartes.
  */
 export type Catalog = 'climats' | 'duel' | 'aucune';
+/** Catalogue qui contient des cartes. */
+export type CardCatalog = Exclude<Catalog, 'aucune'>;
 export const CATALOGS: { id: Catalog; label: string; description: string }[] = [
   { id: 'climats', label: 'Climats', description: 'Des pouvoirs qui changent la partie pour les deux joueurs.' },
   { id: 'duel', label: 'Duel', description: 'Les sorts historiques, qui visent l’adversaire.' },
@@ -30,6 +51,13 @@ export const CATALOGS: { id: Catalog; label: string; description: string }[] = [
 
 /** Famille d'une carte : Climat (règle globale), Terrain (cases), Événement (instantané), Duel (catalogue historique). */
 export type Family = 'climat' | 'terrain' | 'evenement' | 'duel';
+
+export const FAMILY_LABEL: Record<Family, string> = {
+  climat: 'Climat',
+  terrain: 'Terrain',
+  evenement: 'Événement',
+  duel: 'Duel',
+};
 
 export interface CardDef {
   id: CardId;
@@ -49,23 +77,238 @@ export interface CardDef {
   hue: number;
   /** Carte jouable seulement dans une partie avec pendule. */
   timedOnly?: boolean;
-  /** Durée de l'effet, en coups du camp concerné (absent pour un effet instantané). */
+  /** Carte exclue du tirage des parties contre l'IA (Sablier fou). */
+  humanOnly?: boolean;
+  /** Duel : durée de l'effet, en coups du camp concerné (absent pour un effet instantané). */
   turns?: number;
-  /** L'effet se décompte sur les coups de l'adversaire (sinon sur ceux du lanceur). */
+  /** Duel : l'effet se décompte sur les coups de l'adversaire (sinon sur ceux du lanceur). */
   countsOnOpponent?: boolean;
-  /** Catalogue auquel la carte appartient. */
-  catalog: Exclude<Catalog, 'aucune'>;
+  /**
+   * Climats : durée de l'effet en coups des deux camps (demi-coups), comptés à partir de son arrivée
+   * (Présage) ou du coup du lanceur (effet immédiat). Absent pour un Événement.
+   */
+  coups?: number;
+  /** Catalogues auxquels la carte appartient (le Mur de glace est dans les deux). */
+  catalogs: CardCatalog[];
+  /**
+   * @deprecated Premier catalogue de la carte (le Mur de glace est aussi du Duel) : utiliser `catalogs`,
+   * `inCatalog(id, catalog)` ou `cardsOf(catalog)`.
+   */
+  catalog: CardCatalog;
   family: Family;
-  /** Présage : l'effet est annoncé et n'arrive qu'au tour suivant du lanceur. */
+  /** Présage : l'effet est annoncé et n'arrive qu'au début du tour suivant du lanceur. */
   presage?: boolean;
   /** Rituel : la carte remplace le coup du lanceur. */
   ritual?: boolean;
 }
 
-export const CARDS: Record<CardId, CardDef> = {
+const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
+  // -------------------------------------------------------------------------------------------
+  // Climats : une règle pour tout le plateau, annoncée un tour à l'avance (Présage).
+  hourglass: {
+    id: 'hourglass',
+    catalogs: ['climats'],
+    family: 'climat',
+    name: 'Sablier fou',
+    tagline: 'Le temps s’emballe pour tout le monde.',
+    description:
+      'Annoncé, il arrive au début de votre prochain tour. Pendant 6 coups, les deux pendules s’écoulent deux fois plus vite et les coups ne rapportent plus d’incrément.',
+    targets: 0,
+    prompts: [],
+    duration: '6 coups (3 chacun)',
+    rarity: 'rare',
+    hue: 192,
+    timedOnly: true,
+    humanOnly: true,
+    presage: true,
+    coups: 6,
+  },
+  truce: {
+    id: 'truce',
+    catalogs: ['climats'],
+    family: 'climat',
+    name: 'Trêve',
+    tagline: 'Les armes se taisent.',
+    description:
+      'Annoncée, elle arrive au début de votre prochain tour. Pendant 3 coups, aucune capture n’est permise (prise en passant comprise), sauf pour sortir d’un échec. L’adversaire reprend les captures le premier.',
+    targets: 0,
+    prompts: [],
+    duration: '3 coups (vous, lui, vous)',
+    rarity: 'commune',
+    hue: 85,
+    presage: true,
+    coups: 3,
+  },
+  blood_moon: {
+    id: 'blood_moon',
+    catalogs: ['climats'],
+    family: 'climat',
+    name: 'Lune de sang',
+    tagline: 'Qui peut prendre, doit prendre.',
+    description:
+      'Annoncée, elle arrive au début de votre prochain tour. Pendant 3 coups, un joueur qui peut capturer doit capturer ; il choisit la capture (prise en passant comprise). L’adversaire retrouve le premier sa liberté.',
+    targets: 0,
+    prompts: [],
+    duration: '3 coups (vous, lui, vous)',
+    rarity: 'épique',
+    hue: 0,
+    presage: true,
+    coups: 3,
+  },
+  ice_age: {
+    id: 'ice_age',
+    catalogs: ['climats'],
+    family: 'climat',
+    name: 'Ère glaciaire',
+    tagline: 'Le front se fige.',
+    description:
+      'Annoncée, elle arrive au début de votre prochain tour. Pendant 4 coups, tous les pions des deux camps sont gelés : ils ne bougent ni ne capturent. Un roi ne peut toujours pas se placer sur une case qu’attaque un pion adverse.',
+    targets: 0,
+    prompts: [],
+    duration: '4 coups (2 chacun)',
+    rarity: 'rare',
+    hue: 222,
+    presage: true,
+    coups: 4,
+  },
+  coronation: {
+    id: 'coronation',
+    catalogs: ['climats'],
+    family: 'climat',
+    name: 'Couronnement',
+    tagline: 'La septième rangée suffit.',
+    description:
+      'Annoncé, il arrive au début de votre prochain tour. Pendant 4 coups, un pion qui arrive sur sa 7e rangée est promu aussitôt (dame, tour, fou ou cavalier, au choix). La prise en passant ne couronne jamais.',
+    targets: 0,
+    prompts: [],
+    duration: '4 coups (2 chacun)',
+    rarity: 'épique',
+    hue: 48,
+    presage: true,
+    coups: 4,
+  },
+  blast: {
+    id: 'blast',
+    catalogs: ['climats'],
+    family: 'climat',
+    name: 'Déflagration',
+    tagline: 'Chaque prise fait sauter le quartier.',
+    description:
+      'Annoncée, elle arrive au début de votre prochain tour. Pendant 4 coups, toute capture faite par une autre pièce qu’un roi explose : la pièce qui capture, sa victime et les pièces des 8 cases voisines disparaissent, sauf les pions et les rois. Un roi capture normalement.',
+    targets: 0,
+    prompts: [],
+    duration: '4 coups (2 chacun)',
+    rarity: 'légendaire',
+    hue: 25,
+    presage: true,
+    coups: 4,
+  },
+  cavalcade: {
+    id: 'cavalcade',
+    catalogs: ['climats'],
+    family: 'climat',
+    name: 'Chevauchée',
+    tagline: 'Toutes les lignes ont des sabots.',
+    description:
+      'Annoncée, elle arrive au début de votre prochain tour. Pendant 2 coups (le vôtre, puis la réponse adverse), les tours, fous et dames des deux camps peuvent aussi se déplacer et capturer comme un cavalier.',
+    targets: 0,
+    prompts: [],
+    duration: '2 coups (vous, lui)',
+    rarity: 'rare',
+    hue: 130,
+    presage: true,
+    coups: 2,
+  },
+
+  // -------------------------------------------------------------------------------------------
+  // Terrains : des cases transformées pour les deux camps.
+  ice_wall: {
+    id: 'ice_wall',
+    catalogs: ['climats', 'duel'],
+    family: 'terrain',
+    name: 'Mur de glace',
+    tagline: 'Ici, personne ne passe.',
+    description:
+      'Une case vide devient infranchissable pour les deux camps : aucune pièce ne peut s’y arrêter ni la traverser. Un cavalier peut sauter par-dessus.',
+    targets: 1,
+    prompts: ['Choisis une case vide à geler'],
+    duration: '6 coups (3 chacun)',
+    rarity: 'commune',
+    hue: 200,
+    // Duel : 3 coups adverses ; Climats : 6 coups des deux camps. C'est la même durée.
+    turns: 3,
+    countsOnOpponent: true,
+    coups: 6,
+  },
+  rift: {
+    id: 'rift',
+    catalogs: ['climats'],
+    family: 'terrain',
+    name: 'Faille',
+    tagline: 'Le plateau se fend en deux.',
+    description:
+      'Choisissez la 4e ou la 5e rangée. Pendant 4 coups, toutes ses cases vides deviennent un gouffre : aucune pièce ne peut s’y arrêter ni le traverser. Les cavaliers passent par-dessus.',
+    targets: 1,
+    prompts: ['Choisis la 4e ou la 5e rangée (une case de la rangée)'],
+    duration: '4 coups (2 chacun)',
+    rarity: 'commune',
+    hue: 285,
+    coups: 4,
+  },
+  portals: {
+    id: 'portals',
+    catalogs: ['climats'],
+    family: 'terrain',
+    name: 'Portails',
+    tagline: 'Ici, et là-bas.',
+    description:
+      'Choisissez une case vide entre la 3e et la 6e rangée : elle et sa symétrique par rapport au centre deviennent des portails, ouverts au début de votre prochain tour, pendant 6 coups. Un cavalier, un fou, une tour ou une dame qui s’arrête sur un portail peut ressortir par l’autre, s’il est libre.',
+    targets: 1,
+    prompts: ['Choisis une case vide : sa symétrique sera l’autre portail'],
+    duration: '6 coups (3 chacun)',
+    rarity: 'rare',
+    hue: 255,
+    presage: true,
+    coups: 6,
+  },
+
+  // -------------------------------------------------------------------------------------------
+  // Événements : agissent une fois.
+  tide: {
+    id: 'tide',
+    catalogs: ['climats'],
+    family: 'evenement',
+    name: 'Grande Marée',
+    tagline: 'La mer avance pour tout le monde.',
+    description:
+      'Rituel : la carte remplace votre coup. Tous les pions des deux camps qui sont sur leurs 2e à 5e rangées avancent d’une case, si elle est libre. C’est ensuite à l’adversaire de jouer.',
+    targets: 0,
+    prompts: [],
+    duration: 'Instantané',
+    rarity: 'rare',
+    hue: 172,
+    ritual: true,
+  },
+  deja_vu: {
+    id: 'deja_vu',
+    catalogs: ['climats'],
+    family: 'evenement',
+    name: 'Déjà-vu',
+    tagline: 'Tout ceci est déjà arrivé.',
+    description:
+      'Le monde recule d’un tour : votre dernier coup et la réponse adverse sont effacés, et le temps de réflexion adverse lui est rendu. Vous rejouez, sans pouvoir bouger la même pièce.',
+    targets: 0,
+    prompts: [],
+    duration: 'Instantané',
+    rarity: 'légendaire',
+    hue: 330,
+  },
+
+  // -------------------------------------------------------------------------------------------
+  // Duel : les cartes historiques.
   time_warp: {
     id: 'time_warp',
-    catalog: 'duel',
+    catalogs: ['duel'],
     family: 'duel',
     name: 'Distorsion temporelle',
     tagline: 'Le temps file entre ses doigts.',
@@ -79,24 +322,9 @@ export const CARDS: Record<CardId, CardDef> = {
     turns: 3,
     countsOnOpponent: true,
   },
-  ice_wall: {
-    id: 'ice_wall',
-    catalog: 'duel',
-    family: 'duel',
-    name: 'Mur de glace',
-    tagline: 'Ici, personne ne passe.',
-    description: "Une case vide devient infranchissable : aucune pièce ne peut s'y arrêter ni la traverser.",
-    targets: 1,
-    prompts: ['Choisis une case vide à geler'],
-    duration: '3 coups adverses',
-    rarity: 'commune',
-    hue: 200,
-    turns: 3,
-    countsOnOpponent: true,
-  },
   gravity: {
     id: 'gravity',
-    catalog: 'duel',
+    catalogs: ['duel'],
     family: 'duel',
     name: 'Gravité',
     tagline: 'Chaque pas pèse une tonne.',
@@ -111,7 +339,7 @@ export const CARDS: Record<CardId, CardDef> = {
   },
   freeze: {
     id: 'freeze',
-    catalog: 'duel',
+    catalogs: ['duel'],
     family: 'duel',
     name: 'Cryogénie',
     tagline: 'Figée dans la glace éternelle.',
@@ -126,7 +354,7 @@ export const CARDS: Record<CardId, CardDef> = {
   },
   shield: {
     id: 'shield',
-    catalog: 'duel',
+    catalogs: ['duel'],
     family: 'duel',
     name: 'Égide',
     tagline: 'Intouchable.',
@@ -141,7 +369,7 @@ export const CARDS: Record<CardId, CardDef> = {
   },
   swap: {
     id: 'swap',
-    catalog: 'duel',
+    catalogs: ['duel'],
     family: 'duel',
     name: 'Permutation',
     tagline: 'Deux âmes, deux places.',
@@ -155,7 +383,7 @@ export const CARDS: Record<CardId, CardDef> = {
   },
   rewind: {
     id: 'rewind',
-    catalog: 'duel',
+    catalogs: ['duel'],
     family: 'duel',
     name: 'Retour arrière',
     tagline: 'Ce coup-là ? Il n’a jamais existé.',
@@ -168,7 +396,7 @@ export const CARDS: Record<CardId, CardDef> = {
   },
   revive: {
     id: 'revive',
-    catalog: 'duel',
+    catalogs: ['duel'],
     family: 'duel',
     name: 'Résurrection',
     tagline: 'Les héros ne meurent jamais vraiment.',
@@ -182,7 +410,7 @@ export const CARDS: Record<CardId, CardDef> = {
   },
   knight_leap: {
     id: 'knight_leap',
-    catalog: 'duel',
+    catalogs: ['duel'],
     family: 'duel',
     name: 'Saut du cavalier',
     tagline: "L'élan d'un destrier.",
@@ -196,7 +424,7 @@ export const CARDS: Record<CardId, CardDef> = {
   },
   lightning: {
     id: 'lightning',
-    catalog: 'duel',
+    catalogs: ['duel'],
     family: 'duel',
     name: 'Foudre',
     tagline: 'Le ciel a tranché.',
@@ -209,7 +437,7 @@ export const CARDS: Record<CardId, CardDef> = {
   },
   phase: {
     id: 'phase',
-    catalog: 'duel',
+    catalogs: ['duel'],
     family: 'duel',
     name: 'Passe-muraille',
     tagline: 'Tes rangs s’écartent comme de la brume.',
@@ -224,7 +452,22 @@ export const CARDS: Record<CardId, CardDef> = {
   },
 };
 
+export const CARDS = Object.fromEntries(
+  Object.entries(DEFS).map(([id, def]) => [id, { ...def, catalog: def.catalogs[0] }]),
+) as Record<CardId, CardDef>;
+
+/** Toutes les cartes, Climats d'abord. Pour les cartes d'un seul catalogue : `cardsOf`. */
 export const CARD_IDS = Object.keys(CARDS) as CardId[];
+
+/** La carte appartient-elle à ce catalogue ? */
+export function inCatalog(id: CardId, catalog: Catalog): boolean {
+  return catalog !== 'aucune' && CARDS[id].catalogs.includes(catalog);
+}
+
+/** Cartes d'un catalogue, dans l'ordre de présentation (vide pour 'aucune'). */
+export function cardsOf(catalog: Catalog): CardId[] {
+  return CARD_IDS.filter(id => inCatalog(id, catalog));
+}
 
 export const RARITY_LABEL: Record<Rarity, string> = {
   commune: 'Commune',
@@ -233,6 +476,9 @@ export const RARITY_LABEL: Record<Rarity, string> = {
   légendaire: 'Légendaire',
 };
 
+/** Poids du tirage pondéré (catalogue Climats) : les cartes rares sortent moins souvent. */
+export const RARITY_WEIGHT: Record<Rarity, number> = { commune: 4, rare: 3, épique: 2, légendaire: 1 };
+
 export function isCardId(x: unknown): x is CardId {
-  return typeof x === 'string' && x in CARDS;
+  return typeof x === 'string' && Object.hasOwn(CARDS, x);
 }

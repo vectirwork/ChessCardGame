@@ -1,0 +1,10 @@
+{
+  "url": "http://localhost:3000/",
+  "outDir": "/home/user/ChessCardGame/concepts/site-accueil",
+  "viewport": { "width": 1440, "height": 900 },
+  "steps": [
+    { "wait": 4500 },
+    { "eval": "({ catalog: JSON.parse(localStorage.getItem('sm:odyssee:partie')||'null')?.state?.catalog ?? 'neuf', header: !!document.querySelector('.site-header'), astre: document.querySelector('.o-astre')?.getAttribute('style') })" },
+    { "shot": "01-accueil" }
+  ]
+}

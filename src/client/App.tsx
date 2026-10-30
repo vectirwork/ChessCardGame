@@ -29,8 +29,11 @@ export function App() {
   }, [loc.pathname, loc.hash]);
   return (
     <>
+      <a className="skip-link" href="#contenu">
+        Aller au contenu
+      </a>
       <Header />
-      <main>
+      <main id="contenu">
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/" element={<Home />} />

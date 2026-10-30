@@ -5,15 +5,14 @@ import { z } from 'zod';
 import { Color, PieceType, opposite } from '../shared/chess';
 import { DEFAULT_SKIN } from '../shared/catalog';
 import {
-  GameState, Result, canStillMate, createGame, dealHands, playCard, playMove, timeWarpOn,
+  CardInfo, GameState, MoveInfo, Result, canStillMate, catalogOf, clockRate, createGame, dealHands, incrementSuspended,
+  playCard, playMove, viewState,
 } from '../shared/game';
 import type {
   ClientToServer, GameEvent, GameMode, GameStatus, GameView, JoinReply, SeatView, ServerToClient,
 } from '../shared/protocol';
 import { EMOTES, QUICK_CONTROLS, TIME_CONTROLS, tcFromId } from '../shared/protocol';
-import { CATALOGS, Catalog } from '../shared/cards';
-
-const CATALOG_IDS = CATALOGS.map(c => c.id);
+import { CATALOGS, Catalog, isCardId } from '../shared/cards';
 import rateLimit from 'express-rate-limit';
 import { Identity, identityFromCookies, userById } from './auth';
 import { BOT_PROFILES, BotLevel } from '../shared/bot';
@@ -21,6 +20,8 @@ import { botPool } from './bot-pool';
 import { DbClient, one, q, tx } from './db';
 import { gameId, randomToken } from './security';
 import { toSummary } from './summary';
+
+const CATALOG_IDS = CATALOGS.map(c => c.id);
 
 type IO = Server<ClientToServer, ServerToClient>;
 type Sock = Socket<ClientToServer, ServerToClient, Record<string, never>, { identity: Identity }>;
@@ -38,7 +39,7 @@ interface Seat {
   level?: BotLevel;
 }
 
-interface Clock {
+export interface Clock {
   initial: number;
   increment: number;
   w: number;
@@ -47,7 +48,14 @@ interface Clock {
   since: number;
 }
 
-interface RoomData {
+/** Temps du camp au trait au début de son tour (pour rendre le temps d'un coup effacé par un Déjà-vu). */
+export interface TurnMark {
+  ply: number;
+  color: Color;
+  ms: number;
+}
+
+export interface RoomData {
   id: string;
   mode: GameMode;
   rated: boolean;
@@ -68,6 +76,8 @@ interface RoomData {
   /** Les deux joueurs ont joué leur premier coup (ne redevient jamais faux, même après un Retour arrière). */
   started?: boolean;
   lastActivity?: number;
+  /** Pendule au début des derniers tours (Déjà-vu). */
+  turnMarks?: TurnMark[];
 }
 
 class Room {
@@ -91,6 +101,8 @@ const MAX_OPEN_ROOMS = 8;
 const CLAIM_AFTER_MS = 60_000;
 /** Temps laissé à l'animation d'une carte de l'IA avant qu'elle ne joue son coup. */
 const BOT_CARD_PAUSE_MS = 2300;
+/** Climats (R10) : les cinématiques (lancement, arrivée d'un Présage, Rituel) ne coûtent pas de temps. */
+export const CINEMATIC_MS = 1200;
 
 const rooms = new Map<string, Room>();
 let io: IO;
@@ -146,6 +158,13 @@ async function loadRoom(id: string): Promise<Room | null> {
 
 /** Reprise après redémarrage : la pendule ne décompte pas le temps où le serveur était arrêté. */
 function resumeRoom(room: Room) {
+  // Les états enregistrés sans catalogue sont des parties Duel (catalogOf). Une carte inconnue (retirée du jeu
+  // depuis) rend la partie injouable : elle est annulée, sans effet sur le classement.
+  const hands = room.d.state.hands;
+  if ([...hands.w, ...hands.b].some(h => h.card !== null && !isCardId(h.card))) {
+    endGame(room, { winner: null, reason: 'aborted' });
+    return;
+  }
   if (room.d.clock?.running) room.d.clock.since = now();
   if (room.d.started === undefined) room.d.started = room.d.state.ply >= 2;
   room.d.lastActivity ??= now();
@@ -180,9 +199,8 @@ function seatView(room: Room, c: Color): SeatView | null {
 
 function viewFor(room: Room, you: Color | null): GameView {
   const d = room.d;
-  const reveal = d.status === 'ended';
-  const hide = (c: Color) => d.state.hands[c].map(h => (reveal || h.used || c === you ? h : { card: null, used: false }));
-  const state: GameState = { ...d.state, hands: { w: hide('w'), b: hide('b') }, keys: [] };
+  // Mains adverses masquées (sauf cartes jouées ou rendues par un Déjà-vu) ; les Présages sont publics.
+  const state: GameState = viewState(d.state, you, d.status === 'ended');
   const ck = d.clock;
   return {
     id: d.id,
@@ -196,11 +214,12 @@ function viewFor(room: Room, you: Color | null): GameView {
       initial: ck.initial,
       increment: ck.increment,
       // Temps restant à l'instant de l'envoi (le temps écoulé depuis le début du tour est déjà déduit)
-      w: Math.max(0, remaining(room, 'w')),
-      b: Math.max(0, remaining(room, 'b')),
+      w: Math.max(0, remaining(d, 'w')),
+      b: Math.max(0, remaining(d, 'b')),
       running: ck.running,
       serverNow: now(),
-      rate: { w: rate(room, 'w'), b: rate(room, 'b') },
+      rate: { w: rate(d, 'w'), b: rate(d, 'b') },
+      noIncrement: incrementSuspended(d.state),
     },
     drawOffer: d.drawOffer,
     rematch: d.rematch,
@@ -234,33 +253,97 @@ function broadcast(room: Room, event: GameEvent) {
 
 // ---------------------------------------------------------------------------------------------
 // Pendule
+// Fonctions sur les données de la salle seules (sans sockets) : testées dans test/server-clock.test.ts.
 
-function rate(room: Room, c: Color) {
-  return timeWarpOn(room.d.state, c) ? 2 : 1;
+function rate(d: RoomData, c: Color) {
+  return clockRate(d.state, c);
 }
 
-function remaining(room: Room, c: Color): number {
-  const ck = room.d.clock!;
+function remaining(d: RoomData, c: Color): number {
+  const ck = d.clock!;
   let t = ck[c];
-  if (ck.running === c) t -= (now() - ck.since) * rate(room, c);
+  if (ck.running === c) t -= (now() - ck.since) * rate(d, c);
   return t;
 }
 
 /** Arrête la pendule du joueur `mover` (avec incrément éventuel) ; à appeler AVANT de changer l'état. */
-function stopClock(room: Room, mover: Color, increment: boolean) {
-  const ck = room.d.clock;
+function stopClock(d: RoomData, mover: Color, increment: boolean) {
+  const ck = d.clock;
   if (!ck || ck.running !== mover) return;
-  ck[mover] = Math.max(0, remaining(room, mover)) + (increment ? ck.increment * 1000 : 0);
+  ck[mover] = Math.max(0, remaining(d, mover)) + (increment ? ck.increment * 1000 : 0);
   ck.running = null;
 }
 
-/** Relance la pendule du camp au trait, une fois que chacun a joué son premier coup. */
-function startClock(room: Room) {
-  const ck = room.d.clock;
+/** Relance la pendule du camp au trait, une fois que chacun a joué son premier coup ; note le début du tour. */
+function startClock(d: RoomData) {
+  const ck = d.clock;
   if (!ck) return;
-  const s = room.d.state;
-  ck.running = room.d.status === 'active' && !s.result && room.d.started ? s.pos.turn : null;
+  const s = d.state;
+  ck.running = d.status === 'active' && !s.result && d.started ? s.pos.turn : null;
   ck.since = now();
+  d.turnMarks = [...(d.turnMarks ?? []).filter(m => m.ply < s.ply), { ply: s.ply, color: s.pos.turn, ms: ck[s.pos.turn] }].slice(-4);
+}
+
+/** Fige le temps écoulé de la pendule en marche (avant un changement d'état qui peut changer sa vitesse). */
+function settleClock(d: RoomData) {
+  const ck = d.clock;
+  if (!ck?.running) return;
+  ck[ck.running] = Math.max(0, remaining(d, ck.running));
+  ck.since = now();
+}
+
+/** Climats (R10) : crédite au camp au trait la durée d'une cinématique, si sa pendule tourne. */
+function creditCinematic(d: RoomData, c: Color) {
+  const ck = d.clock;
+  if (!ck || ck.running !== c || catalogOf(d.state) !== 'climats') return;
+  ck[c] += CINEMATIC_MS * rate(d, c);
+}
+
+/**
+ * Pendule et état après un coup : incrément décidé sur l'état AVANT le coup (aucun sous le Sablier fou),
+ * démarrage de la partie, crédit de cinématique si un Présage arrive.
+ */
+export function commitMove(d: RoomData, color: Color, state: GameState, info: MoveInfo) {
+  stopClock(d, color, !incrementSuspended(d.state));
+  d.state = state;
+  d.drawOffer = null;
+  d.lastActivity = now();
+  if (d.state.ply >= 2) d.started = true;
+  startClock(d);
+  if (info.arrived?.length) creditCinematic(d, d.state.pos.turn);
+}
+
+/**
+ * Pendule et état après une carte. Renvoie vrai si le trait a changé (Rituel, Retour arrière).
+ * - Rituel : c'est un coup (incrément, démarrage de la partie) ; l'adversaire est crédité de la cinématique.
+ * - Déjà-vu : l'adversaire retrouve le temps qu'il avait au début du coup effacé ; le lanceur, non.
+ * - Autre carte : le lanceur, toujours au trait, est crédité de la cinématique de lancement.
+ */
+export function commitCard(d: RoomData, color: Color, state: GameState, info: CardInfo): boolean {
+  const before = d.state;
+  const turnChanges = state.pos.turn !== color;
+  // La vitesse de la pendule dépend de l'état (un Déjà-vu peut restaurer ou retirer un Sablier fou).
+  settleClock(d);
+  if (turnChanges) stopClock(d, color, !!info.ritual && !incrementSuspended(before));
+  d.state = state;
+  d.lastActivity = now();
+  if (info.card === 'deja_vu' && d.clock) {
+    const them = opposite(color);
+    const mark = d.turnMarks?.find(m => m.ply === state.ply + 1 && m.color === them);
+    if (mark) d.clock[them] = mark.ms;
+    d.turnMarks = d.turnMarks?.filter(m => m.ply <= state.ply);
+  }
+  if (turnChanges) {
+    if (info.ritual) {
+      d.drawOffer = null;
+      if (d.state.ply >= 2) d.started = true;
+    }
+    startClock(d);
+    creditCinematic(d, d.state.pos.turn);
+  } else {
+    creditCinematic(d, color);
+  }
+  return turnChanges;
 }
 
 function armTimers(room: Room) {
@@ -271,7 +354,7 @@ function armTimers(room: Room) {
   const ck = room.d.clock;
   if (ck?.running) {
     const c = ck.running;
-    const ms = Math.max(0, remaining(room, c) / rate(room, c)) + 30;
+    const ms = Math.max(0, remaining(room.d, c) / rate(room.d, c)) + 30;
     room.flagTimer = setTimeout(() => checkFlag(room), Math.min(ms, 2 ** 31 - 1));
   }
   if (room.d.firstMoveDeadline) {
@@ -286,7 +369,7 @@ function checkFlag(room: Room): boolean {
   const ck = room.d.clock;
   if (!ck?.running || room.d.status !== 'active') return false;
   const c = ck.running;
-  if (remaining(room, c) > 0) {
+  if (remaining(room.d, c) > 0) {
     armTimers(room);
     return false;
   }
@@ -344,7 +427,8 @@ function newRoom(opts: { mode: GameMode; rated: boolean; tc: string; mirror: boo
     catalog: opts.catalog,
     creator: opts.creator,
     seats: opts.seats,
-    state: createGame(dealHands(!!tc, opts.mirror, Math.random, opts.catalog), !!tc, opts.catalog),
+    // Contre l'IA, le Sablier fou n'est pas distribué (il ne pénaliserait que l'humain).
+    state: createGame(dealHands(!!tc, opts.mirror, Math.random, opts.catalog, { vsBot: opts.mode === 'bot' }), !!tc, opts.catalog),
     clock: tc ? { initial: tc.initial, increment: tc.increment, w: tc.initial * 1000, b: tc.initial * 1000, running: null, since: now() } : null,
     drawOffer: null,
     rematch: { w: false, b: false, next: null },
@@ -363,7 +447,7 @@ function newRoom(opts: { mode: GameMode; rated: boolean; tc: string; mirror: boo
 function begin(room: Room) {
   room.d.status = 'active';
   updateFirstMoveDeadline(room);
-  startClock(room);
+  startClock(room.d);
   armTimers(room);
   maybeBot(room);
 }
@@ -378,7 +462,7 @@ function endGame(room: Room, result?: Result) {
   if (d.status === 'ended') return;
   if (result) d.state = { ...d.state, result };
   const r = d.state.result!;
-  if (d.clock?.running) stopClock(room, d.clock.running, false);
+  if (d.clock?.running) stopClock(d, d.clock.running, false);
   d.status = 'ended';
   d.drawOffer = null;
   d.firstMoveDeadline = null;
@@ -472,13 +556,8 @@ function applyMove(room: Room, color: Color, from: number, to: number, promo?: P
   if (checkFlag(room)) return { ok: false, error: 'Temps écoulé.' };
   const r = playMove(d.state, from, to, promo);
   if (!r.ok) return r;
-  stopClock(room, color, true);
-  d.state = r.state;
-  d.drawOffer = null;
-  d.lastActivity = now();
-  if (d.state.ply >= 2) d.started = true;
+  commitMove(d, color, r.state, r.info);
   updateFirstMoveDeadline(room);
-  startClock(room);
   armTimers(room);
   broadcast(room, { type: 'move', color, info: r.info });
   if (d.state.result) endGame(room);
@@ -493,14 +572,8 @@ function applyCard(room: Room, color: Color, index: number, targets: number[]): 
   const skin = d.seats[color]?.skin ?? DEFAULT_SKIN;
   const r = playCard(d.state, color, index, targets, skin);
   if (!r.ok) return r;
-  const turnChanges = r.state.pos.turn !== color;
-  if (turnChanges) stopClock(room, color, false);
-  d.state = r.state;
-  d.lastActivity = now();
-  if (turnChanges) {
-    updateFirstMoveDeadline(room);
-    startClock(room);
-  }
+  const turnChanges = commitCard(d, color, r.state, r.info);
+  if (turnChanges) updateFirstMoveDeadline(room);
   armTimers(room);
   broadcast(room, { type: 'card', info: r.info });
   if (d.state.result) endGame(room);

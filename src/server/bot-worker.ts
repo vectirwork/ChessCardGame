@@ -19,7 +19,8 @@ export function decide(state: GameState, level: BotLevel): Omit<BotReply, 'id'> 
     if (r.ok) after = r.state;
     else card = null;
   }
-  // Après un Retour arrière, c'est à l'adversaire de rejouer : pas de coup à calculer.
+  // Après un Retour arrière (Duel) ou un Rituel (Grande Marée, qui tient lieu de coup), c'est à l'adversaire de
+  // jouer : pas de coup à calculer. Après un Déjà-vu, l'IA rejoue, sans la pièce interdite (legalMovesOf).
   const m = after.pos.turn === state.pos.turn && !after.result ? chooseBotMove(after, level) : null;
   return { card, move: m ? { from: m.from, to: m.to, promo: m.promo } : null };
 }

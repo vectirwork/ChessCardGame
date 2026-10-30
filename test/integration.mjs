@@ -1,10 +1,17 @@
 // Test d'intégration du serveur en marche : node test/integration.mjs [http://localhost:3000]
-// Parcourt : inscription, invitation sans compte, coups, cartes, abandon, revanche, IA, boutique (mode démo).
+// Parcourt : inscription, invitation sans compte, coups, carte globale (catalogue Climats, par défaut), choix du
+// catalogue (Duel, Sans cartes, file amicale), abandon, revanche, IA, boutique (mode démo).
 import { io } from 'socket.io-client';
 import assert from 'node:assert/strict';
 
 const BASE = process.argv[2] ?? 'http://localhost:3000';
 const sq = s => (s.charCodeAt(1) - 49) * 8 + (s.charCodeAt(0) - 97);
+
+// Catalogues de cartes (src/shared/cards.ts) ; le Mur de glace est dans les deux.
+const CLIMATS = ['hourglass', 'truce', 'blood_moon', 'ice_age', 'coronation', 'blast', 'cavalcade', 'ice_wall', 'rift', 'portals', 'tide', 'deja_vu'];
+const DUEL = ['time_warp', 'ice_wall', 'gravity', 'freeze', 'shield', 'swap', 'rewind', 'revive', 'knight_leap', 'lightning', 'phase'];
+/** Cartes annoncées (Présage) : l'effet est public avant son arrivée. */
+const PRESAGE = ['hourglass', 'truce', 'blood_moon', 'ice_age', 'coronation', 'blast', 'cavalcade', 'portals'];
 
 class Client {
   cookies = new Map();
@@ -73,8 +80,10 @@ assert.equal(j.view.status, 'active');
 assert.equal(j.view.you, 'b');
 assert.ok(j.view.state.hands.w.every(h => h.card === null), "les cartes adverses sont cachées");
 assert.ok(j.view.state.hands.b.every(h => h.card), 'ses propres cartes sont visibles');
+assert.equal(j.view.state.catalog, 'climats', 'catalogue Climats par défaut');
+assert.ok(j.view.state.hands.b.every(h => CLIMATS.includes(h.card)), 'cartes du catalogue Climats');
 await alice.waitFor(u => u.event.type === 'start');
-step('invitation par lien, invité avec pseudo, cartes adverses cachées');
+step('invitation par lien, invité avec pseudo, cartes adverses cachées, catalogue Climats');
 
 // 3. Coups
 let a = await alice.emit('game:move', { id: gameId, from: sq('e2'), to: sq('e5') });
@@ -90,29 +99,71 @@ const afterTwo = await alice.waitFor(u => u.view.state.ply === 2);
 assert.equal(afterTwo.view.clock.running, 'w', 'la pendule démarre après le premier coup de chacun');
 step('coups légaux, coups illégaux refusés, pendule');
 
-// 4. Une carte d'Alice (n'importe laquelle de jouable)
+// 4. Une carte globale d'Alice (la première jouable de sa main) : effet public, autres cartes toujours cachées
 const hand = afterTwo.view.state.hands.w;
 let played = false;
-const targetsFor = {
-  time_warp: [], gravity: [], rewind: [], ice_wall: [sq('e3')], freeze: [sq('b8')], shield: [sq('g1')], lightning: [sq('a7')],
-  knight_leap: [sq('f1')], phase: [sq('d1')], swap: [sq('b1'), sq('g1')], revive: [],
-};
-await new Promise(res => setTimeout(res, 1100)); // la pendule des Blancs tourne
+// Cibles : Mur de glace sur une case vide, Faille sur la 4e rangée, Portails c3 ⇄ f6 ; les autres n'en ont pas.
+const targetsFor = { ice_wall: [sq('e3')], rift: [sq('a4')], portals: [sq('c3')] };
+await new Promise(res => setTimeout(res, 1500)); // la pendule des Blancs tourne
 for (let i = 0; i < hand.length && !played; i++) {
   const card = hand[i].card;
-  if (card === 'revive' || card === 'rewind') continue;
-  a = await alice.emit('game:card', { id: gameId, index: i, targets: targetsFor[card] });
-  if (a.ok) {
-    played = card;
-    const u = await bob.waitFor(x => x.event.type === 'card');
-    assert.equal(u.event.info.card, card);
-    assert.equal(u.view.state.hands.w[i].card, card, 'une carte jouée est révélée');
-    assert.ok(u.view.clock.w <= 300_000 - 1000, `la pendule tient compte du temps écoulé (${u.view.clock.w})`);
-    a = await alice.emit('game:card', { id: gameId, index: (i + 1) % 3, targets: [] });
-    assert.equal(a.ok, false, 'une seule carte par tour');
+  a = await alice.emit('game:card', { id: gameId, index: i, targets: targetsFor[card] ?? [] });
+  if (!a.ok) continue;
+  played = card;
+  const u = await bob.waitFor(x => x.event.type === 'card');
+  const v = u.view.state;
+  assert.equal(u.event.info.card, card);
+  assert.equal(v.hands.w[i].card, card, 'une carte jouée est révélée');
+  assert.ok(v.hands.w.every((h, k) => k === i || h.card === null), 'les autres cartes restent cachées');
+  assert.ok(v.snaps.every(x => !('hands' in x)), 'les instantanés ne contiennent pas les mains');
+  if (PRESAGE.includes(card)) {
+    assert.ok(v.effects.some(e => e.card === card && e.pending && e.delay === 2), 'le Présage est public, avec son délai');
   }
+  if (card === 'tide') assert.equal(v.pos.turn, 'b', 'le Rituel tient lieu de coup');
+  if (card === 'deja_vu') assert.equal(v.ply, 0, 'le Déjà-vu efface le coup et sa réponse');
+  // 1,5 s écoulée, 1,2 s de cinématique créditée (R10) : la pendule est sous son départ, sans excès.
+  assert.ok(u.view.clock.w < 300_000 && u.view.clock.w > 290_000, `la pendule tient compte du temps écoulé (${u.view.clock.w})`);
+  a = await alice.emit('game:card', { id: gameId, index: (i + 1) % 3, targets: [] });
+  assert.equal(a.ok, false, 'une seule carte par tour');
 }
-step(`carte jouée et révélée à l'adversaire (${played || 'aucune jouable dans cette main'})`);
+assert.ok(played, `aucune carte jouable dans la main ${hand.map(h => h.card)}`);
+step(`carte globale jouée, publique, mains cachées (${played})`);
+
+// 4 bis. Choix du catalogue : Duel et Sans cartes par invitation, Duel par la file amicale (invités)
+for (const catalog of ['duel', 'aucune']) {
+  r = await alice.api('/games', { mode: 'invite', tc: '5+0', color: 'w', catalog });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  const id = r.data.id;
+  await alice.emit('game:join', { id });
+  let jb = await bob.emit('game:join', { id });
+  if (jb.needName) jb = await bob.emit('game:join', { id, name: 'Bob le Fou' });
+  assert.equal(jb.view.state.catalog, catalog);
+  const mine = jb.view.state.hands.b.map(h => h.card);
+  if (catalog === 'duel') assert.ok(mine.length === 3 && mine.every(c => DUEL.includes(c)), `main Duel : ${mine}`);
+  else assert.deepEqual(mine, [], 'pas de cartes');
+  assert.ok((await bob.emit('game:resign', { id })).ok);
+}
+r = await alice.api('/games', { mode: 'invite', tc: '5+0', catalog: 'inconnu' });
+assert.equal(r.status, 400, 'catalogue inconnu refusé');
+const carol = new Client();
+const dave = new Client();
+await carol.api('/me');
+await dave.api('/me');
+await carol.connect();
+await dave.connect();
+const matched = c => new Promise(res => c.socket.once('queue:matched', res));
+const [mc, md] = [matched(carol), matched(dave)];
+assert.ok((await carol.emit('queue:join', { tc: '3+2', rated: false, name: 'Carol', catalog: 'duel' })).ok);
+assert.ok((await dave.emit('queue:join', { tc: '3+2', rated: false, name: 'Dave', catalog: 'duel' })).ok);
+const [gc, gd] = await Promise.all([mc, md]);
+assert.equal(gc.gameId, gd.gameId);
+const jc = await carol.emit('game:join', { id: gc.gameId });
+assert.equal(jc.view.state.catalog, 'duel', 'la file amicale respecte le catalogue');
+assert.ok(jc.view.state.hands[jc.view.you].every(h => DUEL.includes(h.card)));
+assert.ok((await carol.emit('game:resign', { id: gc.gameId })).ok);
+carol.socket.close();
+dave.socket.close();
+step('catalogues Duel et Sans cartes, catalogue inconnu refusé, file amicale Duel');
 
 // 5. Abandon et revanche
 a = await bob.emit('game:resign', { id: gameId });
@@ -138,6 +189,19 @@ await alice.emit('game:move', { id: botGame, from: sq('d2'), to: sq('d4') });
 const botReply = await alice.waitFor(u => u.event.type === 'move' && u.event.color === 'b', 15000);
 assert.ok(botReply);
 step("partie contre l'IA : réponse reçue");
+
+// 6 bis. Contre l'IA, avec pendule : le Sablier fou n'est jamais distribué (ni à l'humain ni à l'IA)
+for (let k = 0; k < 4; k++) {
+  r = await alice.api('/games', { mode: 'bot', tc: '3+2', color: 'w', level: 1, catalog: 'climats' });
+  const id = r.data.id;
+  await alice.emit('game:join', { id });
+  assert.ok((await alice.emit('game:resign', { id })).ok);
+  const done = await alice.emit('game:join', { id });
+  const cards = [...done.view.state.hands.w, ...done.view.state.hands.b].map(h => h.card);
+  assert.equal(cards.length, 6);
+  assert.ok(!cards.includes('hourglass'), `Sablier fou distribué contre l'IA : ${cards}`);
+}
+step("contre l'IA : pas de Sablier fou dans les mains");
 
 // 7. Boutique en mode démo
 r = await alice.api('/shop/checkout', { productId: 'skin:inferno', waiver: false });

@@ -44,6 +44,20 @@
   inset: 0;
   pointer-events: none;
 }
+/* Voile sous la colonne de gauche : le texte reste lisible sur les anneaux et les astres qui tournent derrière */
+.gs-hud::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: calc(max(400px, 30vw) - 28px);
+  background: linear-gradient(90deg, rgba(4, 5, 14, 0.66) 0%, rgba(4, 5, 14, 0.46) 62%, rgba(4, 5, 14, 0));
+  pointer-events: none;
+}
+.gs.is-mobile .gs-hud::before {
+  display: none;
+}
 .gs-hud button,
 .gs-hud .spell-card,
 .gs-hud a {
@@ -93,9 +107,17 @@
 .gs-status {
   position: absolute;
   left: 48px;
-  top: 19vh;
+  top: clamp(96px, 19vh, 180px);
   width: min(25vw, 360px);
+  /* Jamais sur l'éventail : au-delà, le panneau défile discrètement */
+  max-height: calc(100vh - clamp(96px, 19vh, 180px) - 330px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
   pointer-events: none;
+}
+.gs-status::-webkit-scrollbar {
+  display: none;
 }
 .gs-status > * {
   pointer-events: auto;
@@ -366,6 +388,7 @@
   right: 16px;
   width: auto;
   top: calc(var(--gs-top) + var(--gs-g) + 12px);
+  max-height: calc(100vh - var(--gs-top) - var(--gs-g) - 12px - 150px);
 }
 .gs.is-mobile .gs-kicker {
   margin-bottom: 4px;
@@ -461,4 +484,48 @@
   .gs-toast {
     animation-duration: 3.4s;
   }
+}
+
+/* Effets en cours (Climats, Présages) */
+.gs-effects {
+  display: grid;
+  gap: 6px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.gs-effects li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--soft);
+}
+.gs-effects b {
+  font-family: var(--serif);
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--text);
+}
+.gs-effect-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  align-self: center;
+  background: hsl(var(--h) 85% 68%);
+  box-shadow: 0 0 10px hsl(var(--h) 90% 60% / 0.8);
+}
+.gs-effects li.is-pending .gs-effect-dot {
+  background: transparent;
+  border: 1px solid hsl(var(--h) 85% 68%);
+}
+.gs.is-mobile .gs-effects {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+.gs.is-mobile .gs-effects b {
+  font-size: 14px;
 }

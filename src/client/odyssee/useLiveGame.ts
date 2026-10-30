@@ -21,6 +21,7 @@ import { checkSquare } from '../components/Board';
 import type { BoardHandle } from '../components/Board';
 import { playCardSound, playSound } from '../sound';
 import { useVfx } from '../vfx/useVfx';
+import { castSafely } from './castSafely';
 import { liveCatalog } from './data';
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -169,7 +170,8 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void' }: Live
       playCardSound(info.card);
       setLastCast({ card: info.card, by: info.caster === PLAYER ? 'player' : 'bot', key: Date.now() });
       if (vfx && activeRef.current) {
-        await vfx.m.playCast(vfx.stage, info, skinStyle(skinId), {
+        // Garde-fou : une carte sans animation (carte nouvelle) ou une scène 3D qui rame ne bloquent jamais la partie
+        await castSafely(vfx, info, skinStyle(skinId), {
           impact: () => apply(n),
           hide: ids => setHidden(new Set(ids)),
           show: () => setHidden(new Set()),

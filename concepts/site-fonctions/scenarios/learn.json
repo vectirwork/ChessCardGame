@@ -1,0 +1,11 @@
+{
+  "url": "http://localhost:3000/apprendre",
+  "outDir": "/home/user/ChessCardGame/concepts/site-fonctions",
+  "viewport": { "width": 1440, "height": 900 },
+  "steps": [
+    { "eval": "localStorage.removeItem('sm:apprendre'), 'ok'" },
+    { "wait": 1500 },
+    { "shot": "learn-01-sommaire" },
+    { "shot": "learn-01b-sommaire-complet", "fullPage": true }
+  ]
+}

@@ -162,7 +162,11 @@ class Search {
 
   /**
    * Recherche des captures. Trêve : hors échec, aucune capture (seule l'immobilité compte).
-   * Lune de sang : si une capture légale existe, pas d'immobilité (stand pat) : le camp doit prendre.
+   * Lune de sang : si une capture légale existe, pas d'immobilité (stand pat) : le camp doit prendre. Et si
+   * c'est l'adversaire qui devra prendre au coup suivant, l'immobilité le laisse face à ses captures
+   * obligatoires : on les cherche (coup nul) au lieu de s'arrêter sur l'évaluation statique. Sans cela, l'IA
+   * ne voit pas l'appât qu'on lui tend : un pion offert, puis un coup d'attente, et sa capture forcée perd une
+   * pièce.
    */
   quiesce(pos: Position, alpha: number, beta: number, depth: number, ply: number): number {
     this.tick();
@@ -176,8 +180,9 @@ class Search {
     const forced = now.mustCapture && moves.some(m => m.flags & F_CAPTURE && this.isLegal(pos, m, after));
     if (forced) moves = moves.filter(m => m.flags & F_CAPTURE);
     else {
-      if (stand >= beta) return beta;
-      if (stand > alpha) alpha = stand;
+      const idle = after.mustCapture && depth > 1 ? this.pass(pos, alpha, beta, depth, ply) : stand;
+      if (idle >= beta) return beta;
+      if (idle > alpha) alpha = idle;
     }
     let best = forced ? -Infinity : alpha;
     for (const m of this.order(pos, moves)) {
@@ -192,6 +197,17 @@ class Search {
       if (v > best) best = v;
     }
     return best;
+  }
+
+  /** Coup nul (le camp au trait « attend ») : valeur des captures de l'adversaire, vue du camp au trait. */
+  private pass(pos: Position, alpha: number, beta: number, depth: number, ply: number): number {
+    const ep = pos.ep;
+    pos.turn = opposite(pos.turn);
+    pos.ep = -1;
+    const v = -this.quiesce(pos, -beta, -alpha, depth - 1, ply + 1);
+    pos.turn = opposite(pos.turn);
+    pos.ep = ep;
+    return v;
   }
 
   private isLegal(pos: Position, m: Move, after: Mods): boolean {

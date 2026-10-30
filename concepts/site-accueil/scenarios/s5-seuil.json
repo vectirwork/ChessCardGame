@@ -1,0 +1,48 @@
+{
+ "url": "http://localhost:3000/",
+ "outDir": "/home/user/ChessCardGame/concepts/site-accueil",
+ "viewport": {
+  "width": 1440,
+  "height": 900
+ },
+ "steps": [
+  {
+   "eval": "localStorage.clear(), sessionStorage.setItem(\"sm:intro\",\"1\"), \"propre\""
+  },
+  {
+   "wait": 2500
+  },
+  {
+   "eval": "(document.querySelectorAll(\".o-alt-track li button\")[5].click(), \"lieu 5\")"
+  },
+  {
+   "wait": 4500
+  },
+  {
+   "shot": "26-lieu-seuil"
+  },
+  {
+   "click": ".o-door",
+   "settle": 1200
+  },
+  {
+   "shot": "27-seuil-inviter"
+  },
+  {
+   "eval": "document.dispatchEvent(new KeyboardEvent(\"keydown\",{key:\"Escape\"})), window.dispatchEvent(new KeyboardEvent(\"keydown\",{key:\"Escape\"})), \"fermer\""
+  },
+  {
+   "wait": 800
+  },
+  {
+   "scrollTo": 99999,
+   "settle": 2500
+  },
+  {
+   "shot": "28-pied-de-page"
+  },
+  {
+   "eval": "({lieu: document.querySelector(\".o-alt-place\")?.textContent, footer: !!document.querySelector(\".site-footer\"), sheet: !!document.querySelector(\".o-sheet\")})"
+  }
+ ]
+}

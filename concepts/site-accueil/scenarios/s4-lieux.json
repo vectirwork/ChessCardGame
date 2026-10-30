@@ -1,0 +1,97 @@
+{
+ "url": "http://localhost:3000/",
+ "outDir": "/home/user/ChessCardGame/concepts/site-accueil",
+ "viewport": {
+  "width": 1440,
+  "height": 900
+ },
+ "steps": [
+  {
+   "eval": "localStorage.clear(), sessionStorage.setItem(\"sm:intro\",\"1\"), \"propre\""
+  },
+  {
+   "wait": 2500
+  },
+  {
+   "eval": "(document.querySelectorAll(\".o-alt-track li button\")[1].click(), \"lieu 1\")"
+  },
+  {
+   "wait": 3500
+  },
+  {
+   "shot": "20-lieu-foret"
+  },
+  {
+   "wheel": 1800
+  },
+  {
+   "wait": 2500
+  },
+  {
+   "shot": "21-foret-chapitre"
+  },
+  {
+   "eval": "(document.querySelectorAll(\".o-alt-track li button\")[2].click(), \"lieu 2\")"
+  },
+  {
+   "wait": 3500
+  },
+  {
+   "shot": "22-lieu-pics"
+  },
+  {
+   "eval": "(document.querySelectorAll(\".o-alt-track li button\")[3].click(), \"lieu 3\")"
+  },
+  {
+   "wait": 3500
+  },
+  {
+   "shot": "23-lieu-sablier"
+  },
+  {
+   "eval": "(document.querySelectorAll(\".o-alt-track li button\")[4].click(), \"lieu 4\")"
+  },
+  {
+   "wait": 3500
+  },
+  {
+   "shot": "24-lieu-bazar"
+  },
+  {
+   "click": ".o-lantern:nth-child(3)",
+   "settle": 2500
+  },
+  {
+   "shot": "25-bazar-lanterne"
+  },
+  {
+   "eval": "(document.querySelectorAll(\".o-alt-track li button\")[5].click(), \"lieu 5\")"
+  },
+  {
+   "wait": 3500
+  },
+  {
+   "shot": "26-lieu-seuil"
+  },
+  {
+   "click": ".o-door",
+   "settle": 900
+  },
+  {
+   "shot": "27-seuil-inviter"
+  },
+  {
+   "eval": "document.querySelector(\".o-sheet button[aria-label]\")?.click() ?? document.dispatchEvent(new KeyboardEvent(\"keydown\",{key:\"Escape\"})), \"fermer\""
+  },
+  {
+   "scrollTo": 99999,
+   "settle": 2500
+  },
+  {
+   "shot": "28-pied-de-page"
+  },
+  {
+   "eval": "({lieu: document.querySelector(\".o-alt-place\")?.textContent, footer: !!document.querySelector(\".site-footer\")})"
+  }
+ ]
+}

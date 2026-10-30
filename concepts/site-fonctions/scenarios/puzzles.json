@@ -1,0 +1,12 @@
+{
+  "url": "http://localhost:3000/problemes",
+  "outDir": "/home/user/ChessCardGame/concepts/site-fonctions",
+  "viewport": { "width": 1440, "height": 900 },
+  "steps": [
+    { "eval": "localStorage.removeItem('sm:problemes'), 'ok'" },
+    { "wait": 1200 },
+    { "shot": "puzzles-01-sommaire" },
+    { "scrollTo": 700 },
+    { "shot": "puzzles-02-liste" }
+  ]
+}

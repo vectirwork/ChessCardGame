@@ -1,0 +1,15 @@
+{
+  "url": "http://localhost:3000/problemes/carte-cryogenie",
+  "outDir": "/home/user/ChessCardGame/concepts/site-fonctions",
+  "viewport": { "width": 1440, "height": 900 },
+  "steps": [
+    { "wait": 1200 },
+    { "clickSquare": "d1" }, { "clickSquare": "d8", "settle": 500 },
+    { "shot": "puzzles-03-erreur" },
+    { "click": ".ft-hand .ft-card:first-child", "settle": 500 },
+    { "shot": "puzzles-04-ciblage" },
+    { "clickSquare": "a5", "settle": 600 },
+    { "clickSquare": "d1" }, { "clickSquare": "d8", "settle": 900 },
+    { "shot": "puzzles-05-resolu" }
+  ]
+}

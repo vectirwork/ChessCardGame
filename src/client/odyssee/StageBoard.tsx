@@ -13,6 +13,7 @@ import { skinStyle } from '../../shared/catalog';
 import { cardOptions, cardPlayable, createGame, legalMovesOf, playCard, playMove } from '../../shared/game';
 import type { GameState } from '../../shared/game';
 import { useVfx } from '../vfx/useVfx';
+import { castSafely } from './castSafely';
 
 export interface Act {
   /** Identifiant : un changement déclenche un sort immédiat. */
@@ -219,12 +220,12 @@ export function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, sti
       return;
     }
     show(prep.before);
-    void vfx.m.playCast(vfx.stage, prep.r.info, skinStyle(a.skin), {
+    void castSafely(vfx, prep.r.info, skinStyle(a.skin), {
       impact: () => show(prep.r.state),
       hide: ids => epoch === epochRef.current && setHidden(new Set(ids)),
       show: () => setHidden(new Set()),
       victimAtBottom: prep.color === 'b',
-    }).then(() => setHidden(new Set()));
+    });
   }, [vfx, still, act.key, playSignal]);
 
   useEffect(() => {
@@ -286,7 +287,7 @@ export function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, sti
         }
         // La légende annonce le sort au moment où il part, avec la carte réellement lancée
         castRef.current?.(card, a.skin);
-        await vfx.m.playCast(vfx.stage, r.info, skinStyle(a.skin), {
+        await castSafely(vfx, r.info, skinStyle(a.skin), {
           impact: () => apply(r.state, epoch),
           hide: ids => epoch === epochRef.current && setHidden(new Set(ids)),
           show: () => setHidden(new Set()),

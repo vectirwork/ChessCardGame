@@ -22,7 +22,7 @@ import {
 import { Engine, isMobile } from './engine';
 import { Chapter, EQ, EqRing, Kicker, Lines, Mark, OrbitRings, Sheet, Slot } from './parts';
 import { SCENES } from './scenery';
-import { GameShell, cardName } from './shell';
+import { EffectChips, GameShell, cardName } from './shell';
 import type { ShellAction } from './shell';
 import { StageBoard } from './StageBoard';
 import type { Act } from './StageBoard';
@@ -635,7 +635,10 @@ export default function OdysseeHome() {
 
       {place > 0 && mode === 'page' && (
         <button className={`o-pip-play ${docked ? 'is-docked' : ''}`} onClick={() => play()} aria-label={resume ? 'Reprendre la partie' : 'Jouer maintenant'}>
-          <span>{playLabel}</span>
+          <span>
+            {playLabel}
+            {resume && <small> · coup {moveNo}</small>}
+          </span>
         </button>
       )}
 
@@ -804,7 +807,11 @@ export default function OdysseeHome() {
                 <Kicker num="V" name="Le Bazar céleste" alt={PLACES[4].alt} />
                 <Lines className="o-h2" lines={['Du style.', <em key="e">Jamais d'avantage.</em>]} />
                 <p className="o-rv o-place-text">
-                  La boutique ne vend que de l'apparence : des skins d'animation pour vos sorts et des plateaux. Toutes les cartes, tous les modes et le classement restent gratuits.
+                  La boutique ne vend que de l'apparence : des skins d'animation pour vos sorts et des plateaux. Toutes les cartes, tous les modes et le classement restent gratuits.{' '}
+                  <span className="o-inline-more">
+                    <Link to="/boutique">Entrer dans la boutique</Link>
+                    {me && <Link to="/compte">Ma collection</Link>}
+                  </span>
                 </p>
               </header>
               <Slot label="Essayez un skin : l'échiquier le lance" />
@@ -901,10 +908,6 @@ export default function OdysseeHome() {
                   </Link>
                 ))}
               </div>
-              <p className="o-rv o-more">
-                <Link to="/boutique">Entrer dans la boutique</Link>
-                {me && <Link to="/compte">Ma collection</Link>}
-              </p>
             </div>
           </div>
         </section>
@@ -980,10 +983,17 @@ export default function OdysseeHome() {
         kicker={`Coup ${moveNo} · L'Oracle, ${levelName(g.level).toLowerCase()}`}
         title={statusOf(g)}
         hint={
-          <>
-            Lancez une carte avant votre coup, ou jouez directement.
-            <small>Une seule carte par tour. Revenez à la page quand vous voulez : la partie vous attend.</small>
-          </>
+          g.state.cardPlayed && g.myTurn ? (
+            <>
+              Sort lancé : jouez maintenant votre coup.
+              <small>Une seule carte par tour. Revenez à la page quand vous voulez : la partie vous attend.</small>
+            </>
+          ) : (
+            <>
+              Lancez une carte avant votre coup, ou jouez directement.
+              <small>Une seule carte par tour. Revenez à la page quand vous voulez : la partie vous attend.</small>
+            </>
+          )
         }
         result={
           g.result
@@ -1006,6 +1016,7 @@ export default function OdysseeHome() {
         actions={shellActions}
         statusExtra={
           <div className="o-shell-extra">
+            <EffectChips effects={g.state.effects} />
             <LevelPick level={g.level} onChange={g.setLevel} />
             <HumanOption q={q} compact={mobile} />
           </div>

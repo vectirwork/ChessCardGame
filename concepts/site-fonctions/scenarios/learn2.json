@@ -1,0 +1,17 @@
+{
+  "url": "http://localhost:3000/apprendre/tour",
+  "outDir": "/home/user/ChessCardGame/concepts/site-fonctions",
+  "viewport": { "width": 1440, "height": 900 },
+  "steps": [
+    { "eval": "localStorage.removeItem('sm:apprendre'), 'ok'" },
+    { "wait": 1200 },
+    { "shot": "learn-02-lecon-info" },
+    { "click": ".ft-steps li:nth-child(2) button" },
+    { "clickSquare": "a1" }, { "clickSquare": "a6", "settle": 500 },
+    { "shot": "learn-03-etoiles" },
+    { "clickSquare": "a6" }, { "clickSquare": "f6", "settle": 300 },
+    { "clickSquare": "f6" }, { "clickSquare": "f2", "settle": 300 },
+    { "clickSquare": "f2" }, { "clickSquare": "h2", "settle": 800 },
+    { "shot": "learn-04-etoiles-reussi" }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+ "url": "http://localhost:3000/",
+ "outDir": "/home/user/ChessCardGame/concepts/site-accueil",
+ "viewport": {
+  "width": 1440,
+  "height": 900
+ },
+ "steps": [
+  {
+   "eval": "localStorage.clear(), sessionStorage.setItem(\"sm:intro\",\"1\"), \"propre\""
+  },
+  {
+   "wait": 2500
+  },
+  {
+   "eval": "(document.querySelectorAll(\".o-alt-track li button\")[4].click(), \"lieu 4\")"
+  },
+  {
+   "wait": 3800
+  },
+  {
+   "shot": "24-lieu-bazar"
+  },
+  {
+   "eval": "(document.querySelectorAll(\".o-alt-track li button\")[5].click(), \"lieu 5\")"
+  },
+  {
+   "wait": 3800
+  },
+  {
+   "shot": "26-lieu-seuil"
+  }
+ ]
+}

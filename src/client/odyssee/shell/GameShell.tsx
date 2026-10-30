@@ -71,9 +71,9 @@ export interface GameShellProps {
   result?: { text: ReactNode; actions?: ReactNode } | null;
   /** Sort en cours de ciblage. */
   prompt?: ShellPrompt | null;
-  /** Actions discrètes sous le statut (Nouvelle partie, Abandonner…). */
+  /** Actions discrètes sous le statut (Nouvelle partie, Abandonner…). Masquées pendant un ciblage. */
   actions?: ShellAction[];
-  /** Contenu libre sous le statut (niveau de l'IA, file d'attente, effets actifs…). */
+  /** Contenu libre sous le statut (niveau de l'IA, file d'attente, effets actifs…). Masqué pendant un ciblage. */
   statusExtra?: ReactNode;
   opponent: ShellPlayer;
   /** Main du joueur. */
@@ -232,8 +232,9 @@ export function GameShell(p: GameShellProps) {
           ) : (
             p.hint && <div className="gs-hint gs-in">{p.hint}</div>
           )}
-          {p.statusExtra && <div className="gs-extra gs-in">{p.statusExtra}</div>}
-          {!p.result && p.actions && p.actions.some(a => !a.hidden) && (
+          {/* Pendant le ciblage d'un sort, seul le sort compte : le reste du panneau s'efface */}
+          {p.statusExtra && !prompt && <div className="gs-extra gs-in">{p.statusExtra}</div>}
+          {!p.result && !prompt && p.actions && p.actions.some(a => !a.hidden) && (
             <div className="gs-quiet-row gs-in">
               {p.actions
                 .filter(a => !a.hidden)

@@ -18,6 +18,7 @@ import type { Ack, GameUpdate, GameView, JoinReply } from '../../shared/protocol
 import { EMOTES } from '../../shared/protocol';
 import { Board, BoardHandle, checkSquare } from '../components/Board';
 import { Modal, Spinner } from '../components/Layout';
+import { rememberView } from '../features/history';
 import { castSafely } from '../odyssee/castSafely';
 import { GameShell, gameLayout } from '../odyssee/shell';
 import type { ShellAction, ShellPrompt } from '../odyssee/shell';
@@ -248,6 +249,8 @@ export default function GamePage() {
     setShowEnd(false);
     setSelCard(null);
     setFlipped(false);
+    // Nouvelle partie (revanche) : la scène 3D sera recréée au repos, pas pendant l'arrivée de la coque
+    setWarm(false);
     const onUpdate = (u: GameUpdate) => {
       if (u.view.id !== id) return;
       queue.current.push({ ...u, at: Date.now() });
@@ -318,6 +321,15 @@ export default function GamePage() {
       setPartial([]);
     }
   }, [myTurn]);
+
+  // Partie terminée : un invité la retrouve dans « Mes parties » (liste de ce navigateur). Un compte l'a déjà dans son
+  // historique serveur. rememberView ignore les spectateurs et les parties annulées.
+  const endedId = view?.status === 'ended' && view.state.result ? view.id : null;
+  useEffect(() => {
+    const v = viewRef.current;
+    if (!endedId || !v || me) return;
+    rememberView(v);
+  }, [endedId, me]);
 
   // ----- Actions -----
   const send = async (event: string, payload: Record<string, unknown>) => {
@@ -472,11 +484,18 @@ export default function GamePage() {
     ) : (
       <>Choisissez un pseudo pour prendre place.</>
     );
+  } else if (animating && casting && CARDS[casting.card]) {
+    hint = (
+      <>
+        {casting.mine ? 'Vous lancez' : `${casting.by} lance`} {CARDS[casting.card].name}.
+        <small>{CARDS[casting.card].tagline ?? 'Le sort prend effet sur l’échiquier.'}</small>
+      </>
+    );
   } else if (spectator) {
     hint = (
       <>
         Vous regardez cette partie en direct.
-        {hasCards && (state.hands.w.some(h => !h.card) || state.hands.b.some(h => !h.card)) && <small>Les mains restent cachées jusqu'au lancement des sorts.</small>}
+        {hasCards && <small>Les mains des deux joueurs sont visibles : chaque pouvoir touche les deux camps.</small>}
       </>
     );
   } else if (myTurn) {
@@ -499,7 +518,7 @@ export default function GamePage() {
     hint = (
       <>
         {turnSeat?.kind === 'bot' ? "L'IA calcule son coup." : 'Votre adversaire réfléchit.'}
-        {hasCards && you && state.hands[opposite(you)].some(h => !h.card) && <small>Ses cartes restent cachées jusqu'à ce qu'il les lance.</small>}
+        {hasCards && you && !layout.mobile && state.hands[opposite(you)].some(h => !h.used) && <small>Ses pouvoirs restent visibles en haut à droite.</small>}
       </>
     );
   }

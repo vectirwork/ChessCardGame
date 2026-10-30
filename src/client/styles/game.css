@@ -62,10 +62,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* La page dessine elle-même les mains (faces visibles) : celles de la coque s'effacent. shell.css est chargé après
+   game.css, d'où une spécificité un cran au-dessus de ses règles mobiles (.gs.is-mobile .gs-opp-hand-m). */
 .gs.gp.is-spectator .gs-fan,
 .gs.gp.no-hand .gs-fan-label,
-.gs.gp .gs-opp-hand-m,
-.gs.gp .gs-opponent > .gs-backs {
+.gs.gp .gs-status > .gs-opp-hand-m,
+.gs.gp .gs-hud .gs-opponent > .gs-backs {
   display: none;
 }
 /* Le panneau de statut défile quand il déborde : une fine barre le signale */
@@ -1075,7 +1077,9 @@
    ============================================================================================ */
 .pl {
   position: relative;
-  padding: clamp(28px, 6vh, 64px) 0 96px;
+  /* Haut et bas seulement : les marges latérales restent celles de .container (gouttière du site) */
+  padding-top: clamp(28px, 6vh, 64px);
+  padding-bottom: 96px;
 }
 .pl-sky {
   position: absolute;
@@ -1367,7 +1371,7 @@
 }
 .pl-games {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
   gap: 10px;
   margin: 0;
   padding: 0;

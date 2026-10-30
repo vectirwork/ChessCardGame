@@ -80,7 +80,7 @@ export default function Leaderboard() {
                 </Link>
                 <b className="lb-rating">{r.rating}</b>
                 <span className="lb-sub">
-                  {PLACE_LABEL[i]} · {r.games_played} parties
+                  {PLACE_LABEL[i]} · {r.games_played} {r.games_played > 1 ? 'parties' : 'partie'}
                 </span>
               </li>
             ))}

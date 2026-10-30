@@ -48,11 +48,35 @@ Pas de commit, pas de npm install, pas de redémarrage du serveur du port 3000.
 - `npm test` : 10 fichiers, 159 tests verts, 1 échec dans test/lessons.test.ts (leçon des cartes, étape 3 :
   src/shared/lessons.ts:438, Mur en f1…b1 hors des rangées 3 à 6 ; flux B).
 
+## Reprise (3e agent, 18 h 28, après redémarrage du conteneur)
+- état : tout est commité (4116dee) ; auto-jeu interrompu à 24 parties (sp1..3.jsonl) ; vérification tsc + npm test.
+- 18 h 31 : tsc : seule erreur concepts/galerie/data.ts(200,14) ; npm test : 159 verts, 1 échec (lessons.test.ts, flux B), 75 s.
+  Suite : instance 3163 (integration.mjs, climats-serveur.mjs), puis auto-jeu (≈ 100 parties de plus).
+- 18 h 33 : instance 3163 : integration.mjs vert ; climats-serveur.mjs sablier mur ia vert (4 parties IA) ; drapeau
+  redemarrage vert (THINK_MS=5000) ; legacy.mjs vert (partie en cours annulée, partie terminée relue) ; arrêtée.
+- 18 h 34 : auto-jeu niveau 2 lancé : sp4..6.jsonl (3 × 34 parties, graines 40404, 50505, 60606).
+- 18 h 51 : auto-jeu terminé : 126 parties au total (sp1..6.jsonl, `python3 stats.py sp*.jsonl`) ; 0 erreur,
+  0 coup refusé, 0 blocage ; Blancs 51 %, Noirs 38 %, nulles 11 %. Jouée/distribuée : Déflagration 24/24,
+  Mur 122/130, Faille 133/145, Lune 63/69, Ère glaciaire 76/122, Trêve 59/143, Marée 39/123. Détenteurs
+  G-P-N : Lune 39-23-7 (la plus forte), Trêve 59-64-20, Marée 53-56-14, Mur 54-60-16, Faille 67-68-10,
+  Ère 55-52-15, Déflagration 9-13-2.
+- 18 h 52 : expérience « une seule carte » lancée (solo.ts, solo-run.sh, solo-stats.py ; 8 configurations ×
+  20 parties : sans carte, puis chaque carte tenue par un seul camp, couleurs alternées) : 160 parties en 4 min,
+  0 erreur ; trop peu pour conclure (écart type ≈ 11 points).
+- 18 h 55 : 80 parties de plus par configuration (LOTS="3 4 5 6 7 8 9 10" ./solo-run.sh), ≈ 15 min.
+- 19 h 09 : expérience terminée : 800 parties (100 par configuration), 0 erreur, 1 coup « la magie cède »,
+  décision ≤ 1,1 s. Score du détenteur (G + N/2), écart type ≈ 5 points ; sans carte : 47 % (Blancs 38-44-18) :
+  Déflagration 69,5 % (jouée 94/100), Mur 69 % (95), Faille 68 % (92), Ère glaciaire 56 % (63), Marée 54,5 % (17),
+  Trêve 54 % (34), Lune 52,5 % (95). Les Terrains et la Déflagration pèsent ≈ +20 points entre IA de niveau 2,
+  les autres ≈ +5 à +9 ; Trêve et Marée sont peu jouées par l'IA (mesure « carte + IA », pas la force intrinsèque).
+- 19 h 10 : tsc final : seule erreur concepts/galerie/data.ts(200,14). Aucun fichier du flux A modifié par cette
+  reprise (code et tests inchangés depuis 4116dee) ; pas de serveur ni d'auto-jeu en cours.
+
 ## En cours
-- auto-jeu IA niveau 2 (24 parties, scratchpad/refonte/sp*.jsonl) pour les taux de cartes.
+- rien.
 
 ## Reste à faire
-- résumé final (forOthers : lessons.ts, puzzles.ts, client).
+- (fait) résumé final rendu à l'orchestrateur (forOthers : lessons.ts, puzzles.ts, pgn.ts, client, concepts/galerie).
 
 ## Décisions
 - Phase 3 : R4b à l'arrivée gardé (corrigé) ; Marée sous la Lune gardé ; pendule au redémarrage gardé ;
@@ -76,3 +100,10 @@ Pas de commit, pas de npm install, pas de redémarrage du serveur du port 3000.
 ## Commandes de vérification
 - `cd /home/user/ChessCardGame && npx tsc --noEmit -p .`
 - `npm test`
+- Serveur à moi : `D=/tmp/claude-0/-home-user/ebfbab70-aaa1-5fe8-af22-8d09cef460f2/scratchpad/refonte; $D/start.sh`
+  (port 3163, base neuve ; `keep` pour la garder) puis `node test/integration.mjs http://localhost:3163`,
+  `./node_modules/.bin/tsx test/climats-serveur.mjs http://localhost:3163 sablier mur ia`,
+  `THINK_MS=5000 RESTART_CMD="$D/stop.sh && $D/start.sh keep" ./node_modules/.bin/tsx test/climats-serveur.mjs http://localhost:3163 drapeau redemarrage`,
+  `node $D/legacy.mjs` (base neuve), puis `$D/stop.sh`.
+- Auto-jeu : `cd $D && /home/user/ChessCardGame/node_modules/.bin/tsx selfplay.ts 34 40404 2 2 > spX.jsonl`
+  puis `python3 stats.py sp*.jsonl` ; une seule carte : `LOTS="1 2" ./solo-run.sh` puis `python3 solo-stats.py`.

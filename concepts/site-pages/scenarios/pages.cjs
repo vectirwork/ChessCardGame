@@ -160,7 +160,9 @@ const fakeUsers = { users: NAMES.slice(0, 5).map((n, i) => ({ id: 'u' + i, usern
         await shot(page, P('caisse-demo'));
         await page.click('.co-actions .btn-primary');
         await page.waitForURL('**/boutique?objet=skin:void', { timeout: 60000 });
-        await page.waitForTimeout(1200);
+        // Sur mobile, la fiche est amenée à l'écran (défilement doux) : on attend la fin du défilement, sinon la
+        // capture tombe sur des tuiles pas encore peintes (écran noir dans le bac à sable).
+        await page.waitForTimeout(tag === 'mobile' ? 3000 : 1200);
         await shot(page, P('boutique-achete'));
         await page.click('.bz-fiche .btn-gold');
         await page.waitForTimeout(1200);

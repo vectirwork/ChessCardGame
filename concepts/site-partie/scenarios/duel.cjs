@@ -145,13 +145,14 @@ async function castFirst(page, onPicked) {
   await B.fill('#gp-guest-name', 'Basile');
   await B.click('.gp-join-btn');
   await B.waitForTimeout(2500);
-  await shot(B, '04-mobile-partie-noirs');
-  await A.waitForTimeout(800);
+  // Premier coup de chaque camp avant 45 s (sinon la partie est annulée) : les captures se glissent entre les coups,
+  // car une capture peut prendre longtemps quand le bac à sable est chargé.
   await shot(A, '05-partie-commencee');
+  console.log('A :', await playOne(A, [['e2', 'e4']]));
+  await shot(B, '04-mobile-partie-noirs');
+  console.log('B :', await playOne(B, [['e7', 'e5']]));
 
   // Ouverture
-  console.log('A :', await playOne(A, [['e2', 'e4']]));
-  console.log('B :', await playOne(B, [['e7', 'e5']]));
   console.log('A :', await playOne(A, [['g1', 'f3']]));
   console.log('B :', await playOne(B, [['b8', 'c6']]));
   console.log('A', await calm(A), '· B', await calm(B));
@@ -220,6 +221,7 @@ async function castFirst(page, onPicked) {
   await A.locator('.gp-end .btn-gold', { hasText: 'Accepter la revanche' }).click();
   await A.waitForURL(u => u.toString() !== url, { timeout: 15000 }).catch(() => {});
   await A.waitForTimeout(2000);
+  console.log('A', await calm(A));
   console.log('revanche :', A.url(), B.url());
   await shot(A, '19-revanche');
 

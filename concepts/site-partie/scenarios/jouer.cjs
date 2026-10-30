@@ -50,6 +50,10 @@ async function shot(page, name, fullPage = false) {
   await D.waitForTimeout(1500);
   await shot(D, '34-file-amicale-attente');
   await M.goto(`${BASE}/jouer?mode=friendly`, { waitUntil: 'networkidle' });
+  await M.waitForSelector('#pl-pseudo', { timeout: 30000 }).catch(async () => {
+    console.log('M sans champ pseudo :', M.url(), (await M.locator('body').innerText().catch(() => '')).slice(0, 500).replace(/\n+/g, ' / '));
+    await shot(M, '_debug-m');
+  });
   await M.fill('#pl-pseudo', 'Dorian');
   await M.locator('.pl-cta').click();
   await D.waitForURL(/\/partie\//, { timeout: 20000 }).catch(() => {});
@@ -84,6 +88,45 @@ async function shot(page, name, fullPage = false) {
   }));
   await S.waitForTimeout(1500);
   await shot(S, '38-ia-1280x720');
+
+  // Un premier coup (sinon la partie est annulée au bout de 45 s), puis retour sur /jouer : la partie contre l'IA
+  // apparaît dans « Vos parties en cours »
+  await S.locator('.sq[data-sq="12"]').first().click({ timeout: 40000 }).catch(e => console.log('e2 :', e.message));
+  await S.waitForTimeout(300);
+  await S.locator('.sq[data-sq="28"]').first().click({ timeout: 40000 }).catch(e => console.log('e4 :', e.message));
+  await S.waitForTimeout(4000);
+  console.log('IA, après 1. e4 :', await S.locator('.gs-title').first().textContent().catch(() => '?'));
+  await S.goto(`${BASE}/jouer`, { waitUntil: 'networkidle' });
+  await S.waitForTimeout(1200);
+  await S.locator('.pl-mine').scrollIntoViewIfNeeded().catch(() => {});
+  await shot(S, '39-jouer-parties-en-cours');
+  console.log('parties en cours :', (await S.locator('.pl-game').allTextContents()).join(' | ') || 'aucune');
+  // Fin propre : abandon de la partie contre l'IA
+  await S.locator('.pl-game').first().click().catch(() => {});
+  await S.locator('.gs-quiet', { hasText: 'Abandonner' }).click({ timeout: 40000 }).catch(() => {});
+  await S.locator('.gs-quiet', { hasText: "Confirmer l'abandon" }).click({ timeout: 10000 }).catch(() => {});
+  await S.waitForTimeout(800);
+  console.log('IA :', await S.locator('.gs-title').first().textContent().catch(() => '?'));
+
+  // Partie classée avec un compte (créé pour l'occasion, supprimé à la fin)
+  const R = await open(browser, 'R', { viewport: { width: 1440, height: 900 } });
+  await R.goto(`${BASE}/jouer?mode=ranked`, { waitUntil: 'networkidle' });
+  const stamp = Date.now().toString(36);
+  const reg = await R.evaluate(async stamp => {
+    const r = await fetch('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: `jouer-${stamp}@test.fr`, username: `jouer_${stamp}`, password: 'motdepasse123', acceptTerms: true }) });
+    return r.status;
+  }, stamp);
+  console.log('inscription :', reg);
+  await R.goto(`${BASE}/jouer?mode=ranked`, { waitUntil: 'networkidle' });
+  await R.waitForTimeout(1200);
+  await shot(R, '39b-jouer-classee-compte');
+  await R.locator('.pl-cta').click();
+  await R.waitForTimeout(1500);
+  await shot(R, '39c-file-classee-attente');
+  console.log('file classée :', (await R.locator('.pl-queue p').first().textContent().catch(() => '?')) ?? '?');
+  await R.locator('.pl-queue .btn-line').click().catch(() => {});
+  const del = await R.evaluate(async () => (await fetch('/api/account', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: 'motdepasse123' }) })).status);
+  console.log('compte supprimé :', del);
 
   console.log(logs.length ? logs.slice(0, 30).join('\n') : 'aucune erreur console');
   await browser.close();

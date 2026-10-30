@@ -39,8 +39,12 @@ export default function Account() {
         <PageHead place="Le Cabinet" aside="Mon compte" title={me.username}>
           <div className="acc-badges">
             <span className="badge gold">Elo {me.rating}</span>
-            <span className="badge">{me.gamesPlayed} parties classées</span>
-            <span className="badge">{owned} objets premium</span>
+            <span className="badge">
+              {me.gamesPlayed} {me.gamesPlayed > 1 ? 'parties classées' : 'partie classée'}
+            </span>
+            <span className="badge">
+              {owned} {owned > 1 ? 'objets premium' : 'objet premium'}
+            </span>
             <Link to={`/joueur/${me.username}`} className="btn-line">
               Voir mon profil public
             </Link>

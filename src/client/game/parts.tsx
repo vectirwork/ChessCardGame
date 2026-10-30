@@ -284,8 +284,11 @@ function effectLine(e: Effect, you: Color | null): string {
   const mine = you ? e.caster === you : false;
   const who = you ? (mine ? 'Votre sort' : 'Sort adverse') : `Sort des ${colorName(e.caster)}`;
   if (e.pending) {
-    const when = e.delay && e.delay > 1 ? `arrive dans ${plural(e.delay, 'coup')}` : 'arrive au prochain tour';
-    return `Présage · ${when}`;
+    // Un Présage arrive au début du prochain tour de son lanceur : delay = demi-coups restants (2 juste après
+    // l'annonce, le lanceur ayant encore son coup à jouer ; 1 pendant le tour de l'adversaire).
+    if (!you) return `Présage des ${colorName(e.caster)} · arrive à leur prochain tour`;
+    if (mine) return 'Votre Présage · arrive à votre prochain tour';
+    return `Présage adverse · arrive ${(e.delay ?? 1) > 1 ? 'après votre prochain coup' : 'après votre coup'}`;
   }
   if (e.permanent) return `${who} · permanent`;
   if (e.global) return `${who} · encore ${plural(e.remaining, 'coup')}`;

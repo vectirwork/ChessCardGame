@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { CARDS, CARD_IDS } from '../../shared/cards';
+import { CARDS, CARD_IDS, inCatalog } from '../../shared/cards';
 import type { CardId } from '../../shared/cards';
 import { fromFen } from '../../shared/chess';
 import { ITEMS, Item, PRODUCTS, Product, boardStyle, formatPrice, itemById } from '../../shared/catalog';
@@ -23,7 +23,7 @@ const BOARDS = ITEMS.filter(i => i.kind === 'board');
 const PACKS = PRODUCTS.filter(p => p.id.startsWith('pack:'));
 /** Position de départ, comme l'échiquier de démonstration : le passage à la scène des sorts ne se voit pas. */
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
-/** Sorts montrés par l'aperçu, dans cet ordre, parmi les cartes du catalogue en jeu (les 8 pouvoirs, sinon Duel). */
+/** Sorts montrés par l'aperçu, dans cet ordre, parmi les cartes du catalogue en jeu (les 8 pouvoirs ; Duel seulement si le moteur n'a pas encore les Pouvoirs). */
 const PREVIEW_ORDER = ['ice_wall', 'rift', 'tide', 'blast', 'ice_age', 'blood_moon', 'truce', 'hourglass', 'lightning', 'freeze', 'gravity', 'swap', 'shield'];
 const KIND_LABEL: Record<Item['kind'], string> = { skin: 'Skin d’animation', board: 'Plateau' };
 
@@ -50,7 +50,7 @@ export default function Shop() {
   const stageRef = useRef<HTMLDivElement>(null);
   const catalog = useMemo(() => liveCatalog(), []);
   const previewCards = useMemo(
-    () => PREVIEW_ORDER.filter(id => (CARD_IDS as string[]).includes(id) && CARDS[id as CardId].catalog === catalog) as CardId[],
+    () => PREVIEW_ORDER.filter(id => (CARD_IDS as string[]).includes(id) && inCatalog(id as CardId, catalog)) as CardId[],
     [catalog],
   );
   const [round, setRound] = useState(0);
@@ -102,9 +102,20 @@ export default function Shop() {
       });
   }, [params, me, setMe, toast, setParams]);
 
-  // Ancre #grimoires (lien depuis l'accueil)
+  // Ancre #grimoires (lien depuis l'accueil). Arrivée sur un objet (?objet=, retour de la caisse) : sur mobile, la
+  // fiche est sous les étagères ; on l'amène à l'écran pour que l'achat ou l'équipement soit à portée de main.
   useEffect(() => {
-    if (window.location.hash === '#grimoires') document.getElementById('grimoires')?.scrollIntoView();
+    if (window.location.hash === '#grimoires') {
+      document.getElementById('grimoires')?.scrollIntoView();
+      return;
+    }
+    if (!initial) return;
+    const t = window.setTimeout(() => {
+      const el = document.querySelector('.bz-fiche');
+      if (el && el.getBoundingClientRect().top > window.innerHeight * 0.8) el.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
+    }, 350);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const owned = (id: string) => !!itemById(id)?.free || !!me?.items.includes(id);

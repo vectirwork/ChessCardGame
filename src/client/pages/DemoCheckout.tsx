@@ -51,7 +51,8 @@ export default function DemoCheckout() {
       const r = await api<{ user: MeUser }>(`/shop/demo/${id}/complete`, { body: {} });
       setMe(r.user);
       toast('Paiement simulé réussi : vos objets sont dans votre collection.', 'success');
-      navigate(items.length === 1 ? `/boutique?objet=${items[0].id}` : '/boutique');
+      // Un objet : retour à sa fiche pour l'équiper ; un pack : la collection, où chaque objet s'équipe
+      navigate(items.length === 1 ? `/boutique?objet=${items[0].id}` : '/compte?onglet=collection');
     } catch (e) {
       toast(errMsg(e), 'error');
       setBusy(false);

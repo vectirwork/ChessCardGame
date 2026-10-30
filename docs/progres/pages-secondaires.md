@@ -23,10 +23,11 @@ Captures : concepts/site-pages/. Pas de commit, pas de npm install, ne pas redé
   ordinal « 1er », tableaux en cartes sur mobile, lien contact des Archives.
 
 ## En cours
-- Vérifications finales : node test/integration.mjs, tsc, npm test.
+- Rien : mission terminée (voir « Reprise » plus bas).
 
 ## Reste à faire
-- Vérifications finales et compte rendu.
+- Rien de mon côté. Hors périmètre, signalé : test/lessons.test.ts échoue (leçon Mur de glace en rangée 1, devenu
+  interdit par la règle « rangées 3 à 6 ») ; concepts/galerie/data.ts (tsc) ; climats-random expire parfois sous charge.
 
 ## Décisions
 - Chaque page intérieure est un « lieu » : Boutique = V · Le Bazar céleste (comme l'accueil), Auth/caisse = VI · Le
@@ -47,3 +48,18 @@ Captures : concepts/site-pages/. Pas de commit, pas de npm install, ne pas redé
 - node concepts/_tools/shoot.cjs concepts/site-pages/scenarios/boutique.json (et boutique-mobile.json)
 - node concepts/site-pages/scenarios/pages.cjs http://localhost:3000 concepts/site-pages [parcours] [bureau|mobile]
   (une capture à la fois : le WebGL logiciel sature avec deux navigateurs)
+
+## Reprise (18 h 30, après coupure de l'agent précédent)
+- tsc : seule erreur concepts/galerie/data.ts (hors périmètre). Captures blanches : bureau-mentions.png et
+  mobile-fonctions-problemes.png (pages saines au contrôle : prises pendant un rechargement de Vite) → à refaire.
+- Corrigé : accords « 1 objet premium », « 0 partie classée » (Account), « 1 partie » (podium du Classement) ;
+  Shop utilise inCatalog (cards.ts : `catalog` déprécié au profit de `catalogs`).
+- Refait : bureau-mentions.png, mobile-fonctions-*.png (aucune erreur console). node test/integration.mjs : 11/11 OK.
+- Ajouté : boutique, arrivée avec ?objet= (retour de caisse, liens de l'accueil) → la fiche est amenée à l'écran
+  si elle est sous le pli (mobile). À vérifier : parcours achat mobile.
+- Vérifié : parcours achat mobile (fiche amenée à l'écran, « Équiper » visible) ; un pack acheté mène à
+  /compte?onglet=collection (capture bureau-compte-collection-pack.png). mobile-boutique-achete.png remplacée
+  (l'ancienne, noire, était prise pendant le défilement) ; pages.cjs attend 3 s sur mobile à cet endroit.
+- Final : tsc → seule erreur concepts/galerie/data.ts (hors périmètre) ; npm test → 157/160, échecs hors périmètre
+  (lessons.test.ts : Mur de glace f1…b1 refusé ; climats-random.test.ts : délai dépassé sous charge, passe seul) ;
+  node test/integration.mjs → 11/11.

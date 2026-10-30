@@ -1,12 +1,13 @@
-// Vérification indépendante du catalogue Climats sur un vrai serveur (vérificateur, flux A).
-// Usage : ./node_modules/.bin/tsx test/climats-serveur.mjs http://localhost:3171 [sablier] [dejavu] [ia] [redemarrage] [drapeau]
-// (sans scénario : sablier, dejavu, ia ; « redemarrage » et « drapeau » seulement sur demande)
+// Vérification indépendante du catalogue Pouvoirs (identifiant 'climats') sur un vrai serveur (vérificateur,
+// flux A), mise à jour pour la décision du fondateur du 30 octobre (8 cartes, mains visibles, Mur permanent).
+// Usage : ./node_modules/.bin/tsx test/climats-serveur.mjs http://localhost:3171 [sablier] [mur] [ia] [redemarrage] [drapeau]
+// (sans scénario : sablier, mur, ia ; « redemarrage » et « drapeau » seulement sur demande)
 // (tsx : le script importe le moteur partagé pour choisir des coups légaux.)
 // Variables : RESTART_CMD (commande qui redémarre l'instance en gardant sa base, pour « redemarrage »),
 //             IA_GAMES (nombre de parties contre l'IA, 4 par défaut), IA_PLIES (120), THINK_MS (réflexion avant
 //             l'arrêt du serveur, 2000).
-// Chaque mise à jour reçue passe par un audit de non-fuite : aucune carte adverse cachée dans la vue, ni dans
-// l'objet, ni dans le JSON brut.
+// Chaque mise à jour reçue passe par un audit des mains visibles : les deux mains, exactes et complètes, pour les
+// joueurs comme pour les spectateurs, et aucun instantané hors Duel.
 import { io } from 'socket.io-client';
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
@@ -24,8 +25,8 @@ const log = (...a) => console.log(...a);
 const problems = [];
 const problem = (msg) => { problems.push(msg); console.log('PROBLÈME :', msg); };
 
-/** Vérité : main réelle de chaque camp, apprise de la vue de son propriétaire. */
-const truth = new Map(); // gameId -> { w: string[]|null, b: string[]|null }
+/** Vérité : mains de chaque camp, apprises de la première vue reçue (elles ne changent jamais). */
+const truth = new Map(); // gameId -> { w: string[], b: string[] }
 
 class Client {
   constructor(label) { this.label = label; this.cookies = new Map(); this.updates = []; this.cursor = 0; }
@@ -76,35 +77,19 @@ class Client {
   close() { this.socket?.close(); }
 }
 
-/** Audit de non-fuite d'une vue reçue par `client`. */
+/** Audit des mains visibles d'une vue reçue par `client`. */
 function audit(client, view, where) {
   const s = view.state;
-  const you = view.you;
-  const t = truth.get(view.id) ?? { w: null, b: null };
-  truth.set(view.id, t);
-  if (you) t[you] = s.hands[you].map(h => h.card);
-  for (const x of s.snaps ?? []) if ('hands' in x) problem(`${client.label} ${where} : un instantané contient des mains`);
-  if (view.status === 'ended') return; // mains révélées en fin de partie (voulu)
+  const hands = { w: s.hands.w.map(h => h.card), b: s.hands.b.map(h => h.card) };
+  if (!truth.has(view.id)) truth.set(view.id, hands);
+  const t = truth.get(view.id);
+  if ((s.snaps ?? []).length) problem(`${client.label} ${where} : instantanés hors Duel`);
   for (const c of ['w', 'b']) {
-    if (c === you) continue;
+    if (s.catalog === 'climats' && hands[c].length !== 3) problem(`${client.label} ${where} : main ${c} incomplète (${hands[c]})`);
     s.hands[c].forEach((h, i) => {
-      if (!h.used && !h.revealed && h.card !== null) problem(`${client.label} ${where} : carte adverse cachée visible (${c}[${i}] = ${h.card})`);
+      if (!h.card || !CARDS[h.card]) problem(`${client.label} ${where} : carte ${c}[${i}] cachée ou inconnue (${h.card})`);
     });
-  }
-  // JSON brut : les cartes cachées de l'adversaire (connues par sa propre vue) n'apparaissent nulle part,
-  // sauf si le même identifiant est légitimement présent (ma main, journal, effets, carte jouée ou rendue).
-  const json = JSON.stringify(view);
-  for (const c of ['w', 'b']) {
-    if (c === you || !t[c]) continue;
-    const legit = new Set([
-      ...(you ? s.hands[you].map(h => h.card) : []),
-      ...s.hands[c].filter(h => h.card).map(h => h.card),
-      ...s.log.filter(e => e.k === 'card').map(e => e.card),
-      ...s.effects.map(e => e.card),
-    ]);
-    for (const card of t[c]) {
-      if (card && !legit.has(card) && json.includes(`"${card}"`)) problem(`${client.label} ${where} : l'identifiant caché « ${card} » (${c}) figure dans le JSON de la vue`);
-    }
+    if (JSON.stringify(hands[c]) !== JSON.stringify(t[c])) problem(`${client.label} ${where} : main ${c} différente (${hands[c]} au lieu de ${t[c]})`);
   }
 }
 
@@ -174,7 +159,8 @@ async function sablier() {
   await seatBob(bob, id);
   const js = await spec.join(id, undefined, false);
   assert.equal(js.view.you, null);
-  assert.ok(js.view.state.hands.w.every(h => h.card === null) && js.view.state.hands.b.every(h => h.card === null), 'spectateur : mains cachées');
+  assert.deepEqual(js.view.state.hands.w.map(h => h.card), hand, 'spectateur : main blanche visible');
+  assert.ok(js.view.state.hands.b.every(h => h.card && CARDS[h.card]), 'spectateur : main noire visible');
   await move(id, alice, bob, 'e2', 'e4');
   await move(id, bob, alice, 'e7', 'e5');
   // Ply 2 : la pendule des Blancs tourne. Annonce du Sablier.
@@ -237,7 +223,7 @@ async function sablier() {
   assert.ok(a.ok, a.error);
   const mv = await bob.next(x => x.event.type === 'move' || x.event.type === 'end', 8000, 'Dxf7');
   if (mv.view.status === 'active') {
-    // R4c : les Noirs ont une carte qui sauve du mat (Mur, Faille, Marée, Déjà-vu) : la partie continue.
+    // R4c : les Noirs ont une carte qui sauve du mat : la partie continue.
     const sb = mv.view.state;
     const saving = sb.hands.b.map((h, i) => [h.card, i]).filter(([, i]) => cardPlayable(sb, 'b', i)).map(([c]) => c);
     log(`   Dxf7 : pas de mat, les Noirs ont une carte qui sauve (R4c) : ${saving.join(', ')} ; coups légaux : ${legalMovesOf(sb).length}`);
@@ -248,97 +234,64 @@ async function sablier() {
   const end = await bob.next(x => x.event.type === 'end', 8000, 'fin');
   assert.equal(end.view.status, 'ended');
   assert.ok(['checkmate', 'resign'].includes(end.view.state.result.reason) && end.view.state.result.winner === 'w', JSON.stringify(end.view.state.result));
-  assert.ok(end.view.state.hands.w.every(h => h.card), 'mains révélées en fin de partie');
+  assert.ok(end.view.state.hands.w.every(h => h.card), 'mains visibles en fin de partie');
   const endA = await alice.next(x => x.event.type === 'end', 8000, 'fin (Alice)');
   log(`   pendule blanche à la fin : ${endA.view.clock.w} ms (avant : ${b0})`);
-  step('mat Dxf7#, résultat et mains révélées en fin de partie');
+  step('mat Dxf7#, résultat et mains visibles en fin de partie');
   for (const c of [alice, bob, spec]) c.close();
 }
 
 // ---------------------------------------------------------------------------------------------
-// 2. Déjà-vu : temps rendu à l'adversaire (pas au lanceur), pièce interdite, carte adverse rendue face visible.
-async function dejavu() {
-  log('\n== Déjà-vu (3+2) ==');
+// 2. Mur de glace permanent : rangées 3 à 6, visible de tous, il reste jusqu'à la fin de la partie.
+async function mur() {
+  log('\n== Mur de glace permanent (3+2), avec un spectateur ==');
   const alice = await guest(); alice.label = 'Alice';
   const bob = await guest(); bob.label = 'Bob';
-  const { id, hand } = await inviteWith(alice, h => h.includes('deja_vu'));
-  const dIdx = hand.indexOf('deja_vu');
+  const spec = await guest(); spec.label = 'Spectateur';
+  const { id, hand } = await inviteWith(alice, h => h.includes('ice_wall'));
+  const wIdx = hand.indexOf('ice_wall');
   log(`   partie ${id}, main blanche ${hand.join(', ')}`);
   const jb = await seatBob(bob, id);
-  const bobHand = jb.view.state.hands.b.map(h => h.card);
-  log(`   main noire ${bobHand.join(', ')}`);
+  assert.deepEqual(jb.view.state.hands.w.map(h => h.card), hand, 'Bob voit la main blanche');
+  await spec.join(id, undefined, false);
   await move(id, alice, bob, 'e2', 'e4');
   await move(id, bob, alice, 'e7', 'e5');
-  let u = await move(id, alice, bob, 'g1', 'f3');
-  const bobStart = u.view.clock.b; // temps des Noirs au début de leur tour (coup qui sera effacé)
-  const aliceAfterNf3 = u.view.clock.w;
-  // Bob réfléchit 3 s, joue une carte immédiate (Mur ou Faille) si possible, puis Cc6.
-  await sleep(1500);
-  const vb = bob.last().view.state;
-  let bobCard = null;
-  for (const [i, h] of vb.hands.b.entries()) {
-    if (h.used || ['tide', 'deja_vu'].includes(h.card) || !cardPlayable(vb, 'b', i)) continue;
-    const opts = cardOptions(vb, 'b', i);
-    const t = CARDS[h.card].targets === 0 ? [] : [h.card === 'ice_wall' ? opts.find(q => q === sq('h4')) ?? opts[0] : h.card === 'rift' ? opts.find(q => q >> 3 === 4) ?? opts[0] : opts[0]];
-    const a = await bob.emit('game:card', { id, index: i, targets: t });
-    if (a.ok) { bobCard = { i, card: h.card }; await alice.next(x => x.event.type === 'card'); await bob.next(x => x.event.type === 'card'); break; }
+  // e2 (2e rangée) est vide, mais hors des rangées 3 à 6 : refusé.
+  let a = await alice.emit('game:card', { id, index: wIdx, targets: [sq('e2')] });
+  assert.equal(a.ok, false, 'Mur hors des rangées 3 à 6 refusé');
+  a = await alice.emit('game:card', { id, index: wIdx, targets: [sq('d3')] });
+  assert.ok(a.ok, a.error);
+  for (const c of [alice, bob, spec]) {
+    const u = await c.next(x => x.event.type === 'card', 8000, `Mur (${c.label})`);
+    const w = u.view.state.effects.find(e => e.card === 'ice_wall');
+    assert.ok(w && w.permanent && w.square === sq('d3') && w.remaining === 0, `${c.label} voit le Mur permanent en d3`);
+    assert.deepEqual(u.view.state.hands.w[wIdx], { card: 'ice_wall', used: true });
   }
-  log(`   carte noire jouée pendant le tour effacé : ${bobCard?.card ?? 'aucune'}`);
-  await sleep(1500);
-  u = await move(id, bob, alice, 'b8', 'c6');
-  const bobAfter = u.view.clock.b;
-  const thinkB = bobStart - bobAfter;
-  log(`   Noirs : ${bobStart} → ${bobAfter} ms (temps consommé moins incrément : ${thinkB})`);
-  // Alice réfléchit 1 s puis joue Déjà-vu.
-  const aBefore = u.view.clock.w; const s0 = u.view.clock.serverNow;
-  await sleep(1000);
-  const a = await alice.emit('game:card', { id, index: dIdx, targets: [] });
-  assert.equal(a.ok, true, `Déjà-vu refusé : ${a.error}`);
-  const ua = await alice.next(x => x.event.type === 'card');
-  const ub = await bob.next(x => x.event.type === 'card');
-  const v = ub.view;
-  assert.equal(v.state.ply, 2, 'retour à la position après 1…e5');
-  assert.equal(v.state.pos.turn, 'w');
-  near(v.clock.b, bobStart, 60, 'Noirs : temps rendu = temps au début du coup effacé');
-  near(aBefore - ua.view.clock.w, (ua.view.clock.serverNow - s0) - 1200, 150, 'Blancs (lanceur) : temps non rendu, cinématique créditée');
-  assert.equal(v.state.hands.w[dIdx].card, 'deja_vu', 'le Déjà-vu joué est visible');
-  if (bobCard) {
-    const h = ua.view.state.hands.b[bobCard.i];
-    assert.equal(h.used, false, 'la carte noire du tour effacé est rendue');
-    assert.equal(h.revealed, true, 'rendue face visible');
-    assert.equal(h.card, bobCard.card, 'Alice voit la carte rendue (déjà vue)');
-    assert.ok(!v.state.effects.some(e => e.card === bobCard.card && e.caster === 'b'), "l'effet de la carte effacée a disparu");
-  }
-  // Pièce interdite : le cavalier g1.
-  let r = await alice.emit('game:move', { id, from: sq('g1'), to: sq('f3') });
-  assert.equal(r.ok, false, 'la pièce du coup effacé est interdite');
-  r = await alice.emit('game:move', { id, from: sq('g1'), to: sq('h3') });
-  assert.equal(r.ok, false, 'toute la pièce est interdite, pas seulement le coup');
-  r = await alice.emit('game:card', { id, index: (dIdx + 1) % 3, targets: [] });
-  assert.equal(r.ok, false, 'le Déjà-vu compte comme la carte du tour');
-  step('Déjà-vu : position et effets restaurés, temps rendu aux Noirs seulement, pièce interdite, carte rendue face visible');
-  u = await move(id, alice, bob, 'd2', 'd4');
-  // Bob relance sa carte rendue s'il en avait une : elle doit être jouable à nouveau.
-  if (bobCard) {
-    const vb2 = bob.last().view.state;
-    const opts = cardOptions(vb2, 'b', bobCard.i);
-    const tg = CARDS[bobCard.card].targets === 0 ? [] : [opts[0]];
-    const ok = cardPlayable(vb2, 'b', bobCard.i) ? (await bob.emit('game:card', { id, index: bobCard.i, targets: tg })).ok : false;
-    log(`   carte rendue rejouée : ${ok}`);
-    if (ok) { await alice.next(x => x.event.type === 'card'); await bob.next(x => x.event.type === 'card'); }
-  }
-  await move(id, bob, alice, 'd7', 'd5');
-  // Fin par abandon des Noirs.
-  r = await bob.emit('game:resign', { id });
-  assert.ok(r.ok);
+  step('Mur en d3 (2e rangée refusée), permanent, visible des deux joueurs et du spectateur');
+  // 12 demi-coups (sans répétition) : le Mur reste ; il bloque le pion d2 et la diagonale f1-c4.
+  const plies = [['w', 'g1', 'f3'], ['b', 'b8', 'c6'], ['w', 'b1', 'c3'], ['b', 'g8', 'f6'], ['w', 'a2', 'a3'], ['b', 'a7', 'a6'],
+    ['w', 'h2', 'h3'], ['b', 'h7', 'h6'], ['w', 'a3', 'a4'], ['b', 'a6', 'a5'], ['w', 'h3', 'h4'], ['b', 'h6', 'h5']];
+  let u;
+  for (const [c, f, t] of plies) u = c === 'w' ? await move(id, alice, bob, f, t) : await move(id, bob, alice, f, t);
+  assert.ok(u.view.state.effects.some(e => e.card === 'ice_wall' && e.square === sq('d3')), 'le Mur reste après 12 demi-coups');
+  const sw = alice.last().view.state;
+  assert.ok(!legalMovesOf(sw).some(m => m.from === sq('d2')), 'le pion d2 est bloqué par le Mur');
+  a = await alice.emit('game:move', { id, from: sq('f1'), to: sq('c4') });
+  assert.equal(a.ok, false, 'le Mur coupe la diagonale f1-c4');
+  a = await alice.emit('game:move', { id, from: sq('f1'), to: sq('e2') });
+  assert.ok(a.ok, a.error);
+  await bob.next(x => x.event.type === 'move'); await alice.next(x => x.event.type === 'move');
+  step('le Mur reste toute la partie et bloque les deux camps');
+  a = await bob.emit('game:resign', { id });
+  assert.ok(a.ok);
   const end = await alice.next(x => x.event.type === 'end');
-  assert.deepEqual(end.view.state.result, { winner: 'w', reason: 'resign' });
+  assert.ok(end.view.state.effects.some(e => e.card === 'ice_wall'), 'le Mur est encore là en fin de partie');
   step('abandon : fin de partie');
-  alice.close(); bob.close();
+  for (const c of [alice, bob, spec]) c.close();
 }
 
 // ---------------------------------------------------------------------------------------------
-// 3. Contre l'IA, catalogue Climats : l'humain joue au hasard (coups et cartes), on mesure l'IA.
+// 3. Contre l'IA, catalogue Pouvoirs : l'humain joue au hasard (coups et cartes), on mesure l'IA.
 function randomTargets(s, color, index) {
   const need = CARDS[s.hands[color][index].card].targets;
   const out = [];
@@ -433,7 +386,7 @@ async function botGame(level, tc, maxPlies) {
 }
 
 async function ia() {
-  log('\n== Parties contre l’IA, catalogue Climats ==');
+  log('\n== Parties contre l’IA, catalogue Pouvoirs ==');
   const n = Number(process.env.IA_GAMES ?? 4);
   const jobs = [];
   for (let k = 0; k < n; k++) jobs.push(botGame(k % 2 ? 3 : 2, k % 2 ? 'none' : '10+0', Number(process.env.IA_PLIES ?? 120)));
@@ -458,7 +411,7 @@ async function redemarrage() {
   let alice = await guest(); alice.label = 'Alice';
   let bob = await guest(); bob.label = 'Bob';
   const terr = h => h.includes('ice_wall') || h.includes('rift');
-  const pres = ['truce', 'ice_age', 'coronation', 'blast', 'cavalcade', 'blood_moon', 'hourglass'];
+  const pres = ['truce', 'ice_age', 'blast', 'blood_moon', 'hourglass'];
   const { id, hand } = await inviteWith(alice, h => terr(h) && h.some(c => pres.includes(c)), { mirror: true });
   log(`   partie ${id}, mains (miroir) ${hand.join(', ')}`);
   await seatBob(bob, id);
@@ -488,7 +441,7 @@ async function redemarrage() {
   const pre = preU.view;
   pre.at = preU.at;
   const tStopReq = Date.now();
-  const preState = canon({ pos: pre.state.pos, effects: pre.state.effects, ply: pre.state.ply, hands: pre.state.hands.w, turnMarks: null });
+  const preState = canon({ pos: pre.state.pos, effects: pre.state.effects, ply: pre.state.ply, hands: pre.state.hands });
   const preClock = pre.clock;
   log(`   avant l'arrêt : ply ${pre.state.ply}, effets ${pre.state.effects.map(e => `${e.card}(${e.pending ? 'annoncé ' + e.delay : e.remaining})`).join(', ')}, pendule w ${preClock.w} (envoyée il y a ${Date.now() - pre.at} ms)`);
   alice.close(); bob.close();
@@ -502,7 +455,7 @@ async function redemarrage() {
   const jb = await bob.join(id);
   assert.ok(ja.ok && jb.ok, 'reprise de la partie');
   const post = ja.view;
-  const postState = canon({ pos: post.state.pos, effects: post.state.effects, ply: post.state.ply, hands: post.state.hands.w, turnMarks: null });
+  const postState = canon({ pos: post.state.pos, effects: post.state.effects, ply: post.state.ply, hands: post.state.hands });
   if (postState !== preState) {
     const a1 = JSON.parse(preState), b1 = JSON.parse(postState);
     for (const k of Object.keys(a1)) if (JSON.stringify(a1[k]) !== JSON.stringify(b1[k])) log(`   diff ${k} :\n     avant ${JSON.stringify(a1[k])}\n     après ${JSON.stringify(b1[k])}`);
@@ -585,7 +538,7 @@ async function drapeau() {
 const run = async () => {
   if (WANT.has('drapeau')) await drapeau();
   if (all || WANT.has('sablier')) await sablier();
-  if (all || WANT.has('dejavu')) await dejavu();
+  if (all || WANT.has('mur')) await mur();
   if (all || WANT.has('ia')) await ia();
   if (WANT.has('redemarrage')) await redemarrage();
   log(`\n${problems.length ? `${problems.length} problème(s) :\n - ` + problems.join('\n - ') : 'Aucun problème relevé.'}`);

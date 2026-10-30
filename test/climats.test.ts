@@ -251,28 +251,26 @@ describe('Faille', () => {
 });
 
 describe('Cumul des Terrains', () => {
-  it('Mur, Faille et Portails se cumulent, jamais sur une même case', () => {
-    let s = createGame({ w: ['ice_wall', 'portals'], b: ['rift', 'ice_wall'] }, false, 'climats');
+  it('Murs et Faille se cumulent, jamais sur une même case', () => {
+    let s = createGame({ w: ['ice_wall', 'truce'], b: ['rift', 'ice_wall'] }, false, 'climats');
     s = card(s, 0, 'c4'); // Mur de glace en c4
     s = mv(s, 'e2', 'e3');
     s = card(s, 0, 'a4'); // Faille sur la 4e rangée : le Mur n'en fait pas partie
     const rift = s.effects.find(e => e.card === 'rift')!;
     expect(rift.squares!.map(sqName).sort()).toEqual(['a4', 'b4', 'd4', 'e4', 'f4', 'g4', 'h4']);
     s = mv(s, 'e7', 'e6');
-    // Portails : ni sur un Terrain, ni en face d'un Terrain (c4 ⇄ f5, b4 ⇄ g5)
-    const portals = cardOptions(s, 'w', 1).map(sqName);
-    for (const x of ['c4', 'f5', 'b4', 'g5', 'd4']) expect(portals).not.toContain(x);
-    expect(portals).toContain('c3');
-    s = card(s, 1, 'c3'); // c3 ⇄ f6, annoncés
     s = mv(s, 'g1', 'f3');
-    // Mur noir : ni sur la Faille, ni sur le Mur, ni sur les Portails annoncés
+    // Mur noir : ni sur la Faille, ni sur le Mur, ni hors des rangées 3 à 6
     const walls = cardOptions(s, 'b', 1).map(sqName);
-    for (const x of ['c3', 'f6', 'c4', 'd4', 'h4']) expect(walls).not.toContain(x);
+    for (const x of ['c4', 'd4', 'h4', 'e7', 'a2', 'h1']) expect(walls).not.toContain(x);
     expect(walls).toContain('d3');
     s = card(s, 1, 'd3');
-    expect(s.effects.map(e => e.card).sort()).toEqual(['ice_wall', 'ice_wall', 'portals', 'rift']);
+    expect(s.effects.map(e => e.card).sort()).toEqual(['ice_wall', 'ice_wall', 'rift']);
     const blocked = modsFromEffects(s.effects).blocked;
     expect(['c4', 'd3', 'a4', 'h4', 'c3'].map(x => blocked[q(x)])).toEqual([true, true, true, true, false]);
+    // La Faille se referme, les Murs restent.
+    for (const [a, b] of [['e8', 'e7'], ['f3', 'g1'], ['e7', 'e8'], ['g1', 'f3']]) s = mv(s, a, b);
+    expect(s.effects.map(e => e.card)).toEqual(['ice_wall', 'ice_wall']);
   });
 });
 
@@ -321,29 +319,6 @@ describe('Déflagration', () => {
   });
 });
 
-describe('Couronnement', () => {
-  const crown = (s: GameState) => withEffect(s, 'coronation');
-
-  it('un pion est promu dès sa 7e rangée, en poussant ou en prenant', () => {
-    let s = crown(game('4k3/3n4/4P3/8/8/3p4/8/4K3 w - - 0 1'));
-    const e7 = legalMovesOf(s).filter(m => m.from === q('e6'));
-    expect(e7.filter(m => m.to === q('e7')).map(m => m.promo).sort()).toEqual(['b', 'n', 'q', 'r']);
-    expect(e7.filter(m => m.to === q('d7')).every(m => m.flags & F_PROMO)).toBe(true);
-    s = mv(s, 'e6', 'e7', 'n');
-    expect(s.pos.board[q('e7')]).toMatchObject({ t: 'n', c: 'w' });
-    expect(legalMovesOf(s).filter(m => m.from === q('d3') && m.to === q('d2'))).toHaveLength(4);
-    // Sans Couronnement : un simple coup
-    expect(legalMovesOf(game('4k3/3n4/4P3/8/8/8/8/4K3 w - - 0 1')).filter(m => m.from === q('e6') && m.to === q('e7'))).toHaveLength(1);
-  });
-
-  it('la prise en passant ne couronne jamais', () => {
-    const s = crown(game('4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1'));
-    const ep = legalMovesOf(s).filter(m => m.to === q('d6'));
-    expect(ep).toHaveLength(1);
-    expect(ep[0].promo).toBeUndefined();
-  });
-});
-
 describe('Trêve', () => {
   const truce = (s: GameState) => withEffect(s, 'truce', { remaining: 3 });
 
@@ -375,48 +350,6 @@ describe('Ère glaciaire', () => {
     const s = withEffect(game('4k3/8/3p4/8/8/8/4P3/4K3 w - - 0 1', ['truce', 'tide']), 'ice_age');
     expect(cardPlayable(s, 'w', 0)).toBe(true);
     expect(refused(s, 1)).toBe('Aucun pion ne peut avancer.');
-  });
-});
-
-describe('Portails', () => {
-  const open = (s: GameState) => withEffect(s, 'portals', { squares: [q('c3'), q('f6')], remaining: 6 });
-
-  it('cases symétriques, refusées au contact d’un roi', () => {
-    const s = game('8/8/8/8/3K4/8/8/k7 w - - 0 1', ['portals']);
-    const opts = cardOptions(s, 'w', 0);
-    expect(opts.length).toBeGreaterThan(0);
-    const touches = (i: number) => Math.abs((i & 7) - 3) <= 1 && Math.abs((i >> 3) - 3) <= 1;
-    expect(opts.some(i => touches(i) || touches(63 - i))).toBe(false);
-    expect(opts.every(i => i >> 3 >= 2 && i >> 3 <= 5)).toBe(true);
-    expect(card(s, 0, 'b3').effects[0].squares).toEqual([q('b3'), q('g6')]);
-  });
-
-  it('un cavalier, un fou, une tour ou une dame voyage ; un passage ne capture jamais', () => {
-    const s = open(game('4k3/8/8/8/8/8/8/1N2K3 w - - 0 1'));
-    const via = legalMovesOf(s).find(m => m.from === q('b1') && m.to === q('f6'))!;
-    expect(via.flags & F_PORTAL).toBeTruthy();
-    expect(via.via).toBe(q('c3'));
-    const r = playMove(s, q('b1'), q('f6'));
-    expect(r.ok && r.info.san).toBe('Nc3→f6');
-    expect(names(open(game('4k3/8/5p2/8/8/8/8/1N2K3 w - - 0 1')), 'b1')).not.toContain('f6');
-  });
-
-  it('un roi ou un pion s’y arrête sans voyager et ferme la paire', () => {
-    let s = open(game('4k3/p7/8/8/8/8/3K4/1N6 w - - 0 1'));
-    expect(names(s, 'd2')).toContain('c3');
-    expect(names(s, 'd2')).not.toContain('f6');
-    s = mv(s, 'd2', 'c3');
-    s = mv(s, 'a7', 'a6');
-    expect(names(s, 'b1')).not.toContain('f6');
-    const p = open(game('4k3/8/8/8/8/8/2P5/1N2K3 w - - 0 1'));
-    expect(names(p, 'c2')).toEqual(['c3', 'c4']);
-  });
-
-  it('une seule paire à la fois ; un passage peut parer un échec', () => {
-    const s = open(game('8/8/K6r/8/8/8/8/1N4k1 w - - 0 1', ['portals']));
-    expect(cardOptions(s, 'w', 0)).toEqual([]);
-    expect(sideInCheck(s)).toBe(true);
-    expect(names(s, 'b1')).toEqual(['f6']);
   });
 });
 
@@ -465,70 +398,7 @@ describe('Grande Marée (Rituel)', () => {
   });
 });
 
-describe('Déjà-vu', () => {
-  function line(w: CardId[], b: CardId[]) {
-    let s = createGame({ w, b }, true, 'climats');
-    s = mv(s, 'e2', 'e4');
-    s = mv(s, 'd7', 'd5');
-    return s;
-  }
-
-  it('restaure position, prises et journal ; la même pièce est interdite', () => {
-    let s = line(['deja_vu'], []);
-    s = mv(s, 'e4', 'd5');
-    s = mv(s, 'd8', 'd5');
-    expect(s.captured).toEqual({ w: ['p'], b: ['p'] });
-    const r = playCard(s, 'w', 0, [], '');
-    if (!r.ok) throw new Error(r.error);
-    s = r.state;
-    expect(s.pos.board[q('e4')]).toMatchObject({ t: 'p', c: 'w' });
-    expect(s.pos.board[q('d5')]).toMatchObject({ t: 'p', c: 'b' });
-    expect(s.captured).toEqual({ w: [], b: [] });
-    expect(s.ply).toBe(2);
-    expect(s.pos.turn).toBe('w');
-    expect(names(s, 'e4')).toEqual([]); // ni exd5 ni e5
-    expect(legalMovesOf(s).length).toBeGreaterThan(0);
-    expect(s.log.filter(e => e.k === 'move' && e.undone)).toHaveLength(2);
-    expect(r.info.moves).toEqual([{ from: q('d5'), to: q('d8') }, { from: q('d5'), to: q('e4') }]);
-    expect(playCard(s, 'w', 0, [], '').ok).toBe(false);
-  });
-
-  it('les cartes jouées par l’adversaire pendant le tour effacé lui sont rendues, face visible', () => {
-    let s = line(['deja_vu'], ['ice_wall', 'blood_moon', 'tide']);
-    s = mv(s, 'g1', 'f3');
-    s = card(s, 0, 'a5');
-    s = mv(s, 'c8', 'g4');
-    s = card(s, 0);
-    expect(s.hands.b[0]).toEqual({ card: 'ice_wall', used: false, revealed: true });
-    expect(s.effects).toEqual([]);
-    expect(s.log.find(e => e.k === 'card' && e.card === 'ice_wall')).toMatchObject({ undone: true });
-    const seen = viewState(s, 'w', false).hands.b.map(h => h.card);
-    expect(seen).toEqual(['ice_wall', null, null]);
-  });
-
-  it('un Rituel effacé reste dépensé (et aucune pièce n’est interdite)', () => {
-    let s = line(['tide', 'deja_vu'], []);
-    s = card(s, 0);
-    s = mv(s, 'b8', 'd7');
-    s = card(s, 1);
-    expect(s.hands.w[0].used).toBe(true);
-    expect(s.forbidden).toBeNull();
-    expect(s.pos.board[q('a2')]?.t).toBe('p');
-    expect(names(s, 'e4')).toEqual(['d5', 'e5']);
-  });
-
-  it('un mat peut être effacé', () => {
-    let s = createGame({ w: [], b: ['deja_vu'] }, false, 'climats');
-    for (const [a, b] of [['e2', 'e4'], ['e7', 'e5'], ['f1', 'c4'], ['b8', 'c6'], ['d1', 'h5'], ['g8', 'f6']]) s = mv(s, a, b);
-    s = mv(s, 'h5', 'f7');
-    expect(legalMovesOf(s)).toEqual([]);
-    expect(s.result).toBeNull(); // le Déjà-vu peut sauver
-    s = card(s, 0);
-    expect(s.pos.turn).toBe('b');
-    expect(names(s, 'g8')).toEqual([]);
-    expect(s.result).toBeNull();
-  });
-
+describe('Sablier fou', () => {
   it('sans pendule et contre l’IA, le Sablier fou ne se joue pas ; son effet accélère les deux pendules', () => {
     expect(cardPlayable(createGame({ w: ['hourglass'], b: [] }, false, 'climats'), 'w', 0)).toBe(false);
     let s = createGame({ w: ['hourglass'], b: [] }, true, 'climats');
@@ -546,35 +416,27 @@ describe('Déjà-vu', () => {
   });
 });
 
-describe('Non-fuite des mains', () => {
-  it('aucune vue ne contient une carte adverse non jouée (mains, instantanés, journal)', () => {
-    let s = createGame({ w: ['truce', 'ice_wall', 'deja_vu'], b: ['blood_moon', 'rift', 'tide'] }, true, 'climats');
+describe('Mains visibles', () => {
+  it('les deux mains sont publiques et exactes, cartes jouées comprises ; aucun instantané hors Duel', () => {
+    let s = createGame({ w: ['truce', 'ice_wall', 'tide'], b: ['blood_moon', 'rift', 'blast'] }, true, 'climats');
     const check = (st: GameState) => {
-      for (const [you, hidden] of [['w', ['blood_moon', 'tide', 'rift']], ['b', ['truce', 'ice_wall', 'deja_vu']], [null, []]] as const) {
-        const view = viewState(st, you, false);
-        const json = JSON.stringify(view);
-        const other = you ? opposite(you) : null;
-        for (const id of hidden) {
-          const h = st.hands[other!].find(x => x.card === id)!;
-          if (!h.used && !h.revealed) expect(json.includes(`"${id}"`), `${id} visible pour ${you}`).toBe(false);
-        }
-        if (you === null) {
-          for (const c of ['w', 'b'] as Color[]) for (const h of view.hands[c]) if (!h.used && !h.revealed) expect(h.card).toBeNull();
-        }
-        expect(view.snaps.every(sn => !('hands' in sn))).toBe(true);
-      }
+      const view = viewState(st);
+      expect(view.hands).toEqual(st.hands);
+      expect(view.hands.w.map(h => h.card)).toEqual(['truce', 'ice_wall', 'tide']);
+      expect(view.hands.b.map(h => h.card)).toEqual(['blood_moon', 'rift', 'blast']);
+      expect(view.effects).toEqual(st.effects);
+      expect(view.snaps).toEqual([]);
+      expect(view.keys).toEqual([]);
     };
     check(s);
     s = mv(s, 'e2', 'e4');
-    check(s);
-    s = card(s, 1, 'a5'); // Faille noire, jouée : publique
+    s = card(s, 1, 'a5'); // Faille noire
     s = mv(s, 'e7', 'e6');
     check(s);
-    s = card(s, 0); // Trêve annoncée : publique
+    s = card(s, 0); // Trêve annoncée
+    expect(s.hands.w[0]).toEqual({ card: 'truce', used: true });
     check(s);
     s = mv(s, 'g1', 'f3');
-    s = mv(s, 'b8', 'c6');
-    s = card(s, 2); // Déjà-vu : la Faille noire n'a pas été rejouée pendant le tour effacé
     check(s);
   });
 });
@@ -587,9 +449,9 @@ describe('Ère glaciaire et Trêve figent la nulle', () => {
 });
 
 describe('Garde-fous génériques', () => {
-  it('le camp au trait voit l’échec à la fonte d’un Mur (R5)', () => {
+  it('Duel : le camp au trait voit l’échec à la fonte d’un Mur (R5)', () => {
     // Mur noir en e4 entre la tour noire e8 et le roi blanc e1 ; il fond après le 3e coup blanc.
-    let s = game('k3r3/8/8/8/8/8/8/4K3 b - - 0 1', [], ['ice_wall']);
+    let s = createGameFromFen('k3r3/8/8/8/8/8/8/4K3 b - - 0 1', { w: [], b: ['ice_wall'] }, true, 'duel');
     s = card(s, 0, 'e4');
     for (const [a, b] of [['a8', 'b8'], ['e1', 'd1'], ['b8', 'a8'], ['d1', 'e1'], ['a8', 'b8']]) s = mv(s, a, b);
     expect(inCheck(s.pos, 'w', modsFromEffects(s.effects))).toBe(false);
@@ -607,38 +469,103 @@ describe('Garde-fous génériques', () => {
 });
 
 describe('Catalogues', () => {
-  it('12 cartes Climats, 11 Duel, le Mur de glace dans les deux', () => {
-    expect(cardsOf('climats')).toHaveLength(12);
+  it('8 Pouvoirs, 11 cartes Duel, le Mur de glace dans les deux ; Pouvoirs et Sans cartes proposés', () => {
+    expect(cardsOf('climats')).toEqual(['hourglass', 'truce', 'blood_moon', 'ice_age', 'blast', 'ice_wall', 'rift', 'tide']);
     expect(cardsOf('duel')).toHaveLength(11);
     expect(cardsOf('aucune')).toEqual([]);
     expect(CARDS.ice_wall.catalogs.slice().sort()).toEqual(['climats', 'duel']);
+    expect(CATALOGS.map(c => c.id)).toEqual(['climats', 'aucune']);
+    expect(CATALOGS[0].label).toBe('Pouvoirs');
+    expect([offeredCatalog('duel'), offeredCatalog('aucune'), offeredCatalog(undefined), offeredCatalog('x')])
+      .toEqual(['climats', 'aucune', 'climats', 'climats']);
   });
 
-  it('le Mur de glace compte 3 coups adverses en Duel et 6 coups en Climats, la même durée', () => {
-    for (const catalog of ['duel', 'climats'] as const) {
-      let s = createGameFromFen('4k3/8/8/8/8/8/8/R3K3 b - - 0 1', { w: [], b: ['ice_wall'] }, true, catalog);
-      s = card(s, 0, 'a4');
-      const plies = [['e8', 'd8'], ['e1', 'e2'], ['d8', 'e8'], ['e2', 'e1'], ['e8', 'd8']];
-      for (const [a, b] of plies) s = mv(s, a, b);
-      expect(s.effects).toHaveLength(1);
-      s = mv(s, 'e1', 'e2');
-      expect(s.effects).toHaveLength(0);
-    }
+  it('le Mur de glace est permanent dans les Pouvoirs, et fond après 3 coups adverses dans le Duel', () => {
+    const plies = [['e8', 'd8'], ['e1', 'e2'], ['d8', 'e8'], ['e2', 'e1'], ['e8', 'd8'], ['e1', 'e2']];
+    let duel = createGameFromFen('4k3/8/8/8/8/8/8/R3K3 b - - 0 1', { w: [], b: ['ice_wall'] }, true, 'duel');
+    duel = card(duel, 0, 'a4');
+    expect(duel.effects[0]).toMatchObject({ remaining: 3, countsOn: 'w' });
+    for (const [a, b] of plies.slice(0, 5)) duel = mv(duel, a, b);
+    expect(duel.effects).toHaveLength(1);
+    duel = mv(duel, 'e1', 'e2');
+    expect(duel.effects).toHaveLength(0);
+    let s = game('4k3/8/8/8/8/8/8/R3K3 b - - 0 1', [], ['ice_wall']);
+    s = card(s, 0, 'a4');
+    expect(s.effects[0]).toMatchObject({ card: 'ice_wall', square: q('a4'), permanent: true, global: true, remaining: 0 });
+    const walk = ['e8f8', 'e1f1', 'f8g8', 'f1g1', 'g8h8', 'g1h1', 'h8h7', 'h1h2', 'h7g7', 'h2g2', 'g7f7', 'g2f2'];
+    for (const x of walk) s = mv(s, x.slice(0, 2), x.slice(2));
+    expect(s.effects).toHaveLength(1);
+    expect(names(s, 'a1')).not.toContain('a4');
+  });
+
+  it('Pouvoirs : un Mur se pose sur une case vide des rangées 3 à 6 ; Duel : sur n’importe quelle case vide', () => {
+    const fen = '4k3/8/8/8/8/8/8/4K3 w - - 0 1';
+    const opts = cardOptions(game(fen, ['ice_wall']), 'w', 0);
+    expect(opts).toHaveLength(32);
+    expect(opts.every(i => i >> 3 >= 2 && i >> 3 <= 5)).toBe(true);
+    expect(cardOptions(createGameFromFen(fen, { w: ['ice_wall'], b: [] }, true, 'duel'), 'w', 0)).toHaveLength(62);
+    expect(refused(game(fen, ['ice_wall']), 0, 'e2')).toBe('Cible invalide.');
+    expect(refused(game('4k3/8/8/8/8/2n5/8/4K3 w - - 0 1', ['ice_wall']), 0, 'c3')).toBe('Cible invalide.');
+  });
+});
+
+describe('Murs permanents : roque, prise en passant, promotion, pat, échec, répétition', () => {
+  it('un Mur qui coupe la diagonale d’un fou adverse rend le petit roque possible, pour toute la partie', () => {
+    const fen = 'r3k3/8/b7/8/8/8/P7/4K2R w K - 0 1';
+    expect(names(game(fen), 'e1')).not.toContain('g1');
+    let s = wall(game(fen), 'c4');
+    for (const [a, b] of [['a2', 'a3'], ['a8', 'a7'], ['a3', 'a4'], ['a7', 'a8']]) s = mv(s, a, b);
+    const castle = legalMovesOf(s).find(m => m.from === q('e1') && m.to === q('g1'));
+    expect(castle && castle.flags & F_CASTLE_K).toBeTruthy();
+  });
+
+  it('un Mur sur la case de prise en passant l’interdit ; le pion bloqué par un Mur prend en diagonale et promeut', () => {
+    let s = createGame({ w: [], b: ['ice_wall'] }, false, 'climats');
+    for (const [a, b] of [['d2', 'd4'], ['e7', 'e5'], ['d4', 'd5'], ['c7', 'c5']]) s = mv(s, a, b);
+    expect(names(s, 'd5')).toContain('c6'); // prise en passant possible
+    const t = createGameFromFen('4k3/8/8/8/3p4/8/4P3/4K3 w - - 0 1', { w: [], b: ['ice_wall'] }, true, 'climats');
+    const u = card(mv(t, 'e2', 'e4'), 0, 'e3'); // Mur noir sur la case de prise en passant
+    expect(u.pos.ep).toBe(q('e3'));
+    expect(names(u, 'd4')).toEqual(['d3']);
+    // Les Murs ne touchent jamais la 7e ni la 8e rangée : la case de promotion reste libre.
+    const blocked = wall(game('4k3/8/3n4/4P3/8/8/8/4K3 w - - 0 1'), 'e6');
+    expect(names(blocked, 'e5')).toEqual(['d6']);
+    const promo = wall(game('2r1k3/1P6/8/8/8/8/8/4K3 w - - 0 1'), 'b6');
+    expect(legalMovesOf(promo).filter(m => m.from === q('b7')).map(m => sqName(m.to) + m.promo).sort())
+      .toEqual(['b8b', 'b8n', 'b8q', 'b8r', 'c8b', 'c8n', 'c8q', 'c8r']);
+  });
+
+  it('un roi muré sans être en échec joue par la magie cède (pas de pat) ; le Mur où il s’arrête disparaît', () => {
+    // Ra5 : a4 et a6 murés, b4, b5, b6 tenues par le roi c5.
+    const s = wall(wall(game('8/8/8/k1K5/8/8/8/7R b - - 0 1', [], [], false), 'a4', 'w'), 'a6', 'w');
+    expect(all(s)).toEqual(['a5a4', 'a5a6']);
+    expect(legalMovesOf(s).every(m => m.flags & F_RELAXED)).toBe(true);
+    expect(evaluateEnd(s)).toBeNull();
+    const n = mv(s, 'a5', 'a6');
+    expect(n.effects.map(e => sqName(e.square!))).toEqual(['a4']);
+    // Un vrai pat reste un pat (aucun coup, même sans les Murs).
+    const pat = wall(game('k7/8/1Q6/8/8/8/8/7K b - - 0 1'), 'c4');
+    expect(evaluateEnd(pat)).toEqual({ winner: null, reason: 'stalemate' });
+  });
+
+  it('un Mur coupe un échec ; le roi ne peut pas s’y poser', () => {
+    expect(sideInCheck(wall(game('k7/8/8/8/8/8/8/R3K3 b - - 0 1'), 'a4'))).toBe(false);
+    expect(sideInCheck(game('k7/8/8/8/8/8/8/R3K3 b - - 0 1'))).toBe(true);
+    expect(names(wall(game('8/8/8/8/3K4/8/8/k7 w - - 0 1'), 'd5'), 'd4')).not.toContain('d5');
+  });
+
+  it('avec des Murs permanents, la triple répétition se compte normalement', () => {
+    let s = wall(game('4k3/8/8/8/8/8/8/R3K3 w - - 0 1'), 'c5');
+    const key = positionKey(s);
+    s.keys = [key];
+    for (let k = 0; k < 2; k++) for (const [a, b] of [['a1', 'a2'], ['e8', 'd8'], ['a2', 'a1'], ['d8', 'e8']]) s = mv(s, a, b);
+    expect(positionKey(s)).toBe(key);
+    expect(s.result).toEqual({ winner: null, reason: 'repetition' });
   });
 });
 
 // Corrections après la vérification adverse (test/climats-adverse.test.ts, docs/progres/verif-climats-*.md).
-describe('Présage : pas de pat par magie, R4b à l’arrivée', () => {
-  it('une Chevauchée qui laisserait l’adversaire sans aucun coup à sa réponse est refusée', () => {
-    // Noirs : Rh8 seul ; Rg8 est jouable aujourd'hui, mais à l'arrivée le fou h6 sautera en g8.
-    const s = game('7k/R7/7B/8/8/8/8/2K5 w - - 0 1', ['cavalcade']);
-    expect(refused(s, 0)).toBe('À son arrivée, cette carte laisserait l’adversaire sans aucun coup.');
-    expect(cardPlayable(s, 'w', 0)).toBe(false);
-    // Avec un pion libre, les Noirs gardent un coup : la carte est permise.
-    const t = game('7k/R7/7B/p7/8/8/8/2K5 w - - 0 1', ['cavalcade']);
-    expect(cardPlayable(t, 'w', 0)).toBe(true);
-  });
-
+describe('Présage : R4b à l’arrivée', () => {
   it('un camp réduit aux coups de pion ne peut pas annoncer l’Ère glaciaire', () => {
     // Ra1 enfermé (b1 tenu par le fou e4) : sans la règle, ses pions avanceraient ensuite par « la magie cède »
     // pendant que le pion h7 noir resterait gelé.
@@ -668,43 +595,59 @@ describe('Grande Marée sous la Lune de sang', () => {
   });
 });
 
-describe('Échec à l’arrivée, à la fonte : la cause', () => {
-  it('l’échec vient du Mur qui fond, même si une Chevauchée sans rapport arrive en même temps', () => {
-    let s = withEffect(game('4r2k/8/8/8/8/8/P7/4K3 w - - 0 1'), 'ice_wall', { square: q('e4'), remaining: 1 });
-    s = withEffect(s, 'cavalcade', { pending: true, delay: 1, remaining: 4 }, 'b');
-    expect(sideInCheck(s)).toBe(true);
-    expect(checkKind(s)).toBe('melt');
+describe('Échec à la fermeture, à la fonte : la cause', () => {
+  it('l’échec vient de la Faille qui se ferme, même si un Mur sans rapport (ancienne partie) fond en même temps', () => {
+    const rank4 = ['a4', 'b4', 'c4', 'd4', 'f4', 'g4', 'h4'].map(q);
+    let s = withEffect(game('4r2k/8/8/8/4P3/8/8/4K3 w - - 0 1'), 'rift', { squares: rank4, remaining: 1 });
+    s = withEffect(s, 'ice_wall', { square: q('a6'), remaining: 1 });
+    expect(sideInCheck(s)).toBe(false); // la tour e8 est arrêtée par le pion e4
+    const t = withEffect(withEffect(game('4r2k/8/8/8/8/8/P7/4K3 w - - 0 1'), 'rift', { squares: [...rank4, q('e4')], remaining: 1 }), 'ice_wall', { square: q('a6'), remaining: 1 });
+    expect(sideInCheck(t)).toBe(true);
+    expect(checkKind(t)).toBe('close');
   });
 });
 
 describe('Matériel insuffisant avec des cartes', () => {
-  it('un Mur de glace en main ou posé rend le mat possible avec une pièce mineure', () => {
-    const s = game('7k/8/6K1/8/8/4B3/8/8 w - - 0 1', ['ice_wall']);
+  it('un seul Mur ne suffit jamais à une pièce mineure ; deux Murs bien placés, si', () => {
+    // Un seul Mur de glace (en main) : Roi et Fou contre Roi reste nul.
+    const one = game('7k/8/6K1/8/8/4B3/8/8 w - - 0 1', ['ice_wall']);
+    expect(evaluateEnd(one)).toEqual({ winner: null, reason: 'insufficient' });
+    expect(canStillMate(one, 'w')).toBe(false);
+    // Un Mur dans chaque main (un mat aidé compte) : pas de nulle.
+    const two = game('7k/8/6K1/8/8/4B3/8/8 w - - 0 1', ['ice_wall'], ['ice_wall']);
+    expect(evaluateEnd(two)).toBeNull();
+    expect(canStillMate(two, 'w')).toBe(true);
+    expect(canStillMate(two, 'b')).toBe(false);
+    // Mur posé en a3, un Mur en main : Mur a5, puis Fd1# contre Ra4 (Rc4 tient b3, b4, b5).
+    const s = wall(game('8/8/8/8/k1K5/5B2/8/8 w - - 0 1', ['ice_wall']), 'a3', 'w');
     expect(evaluateEnd(s)).toBeNull();
-    expect(canStillMate(s, 'w')).toBe(true);
-    expect(canStillMate(s, 'b')).toBe(false);
-    const walled = card(s, 0, 'g8');
+    const walled = card(s, 0, 'a5');
     expect(walled.result).toBeNull();
-    expect(mv(walled, 'e3', 'd4').result).toEqual({ winner: 'w', reason: 'checkmate' });
-    // Cavalier : Mur g8, puis Cf7#.
-    const n = game('7k/8/6K1/4N3/8/8/8/8 w - - 0 1', ['ice_wall']);
-    expect(evaluateEnd(n)).toBeNull();
-    expect(mv(card(n, 0, 'g8'), 'e5', 'f7').result).toEqual({ winner: 'w', reason: 'checkmate' });
-    // Le Mur (adverse) fond, plus aucune carte : nulle.
-    const m = withEffect(game('7k/8/6K1/8/8/4B3/8/8 w - - 0 1'), 'ice_wall', { square: q('a8'), remaining: 1 });
-    expect(evaluateEnd(m)).toBeNull();
-    expect(mv(m, 'g6', 'f6').result).toEqual({ winner: null, reason: 'insufficient' });
+    expect(mv(walled, 'f3', 'd1').result).toEqual({ winner: 'w', reason: 'checkmate' });
+    // Le dernier Mur posé ailleurs : plus aucun mat possible, nulle aussitôt.
+    expect(card(s, 0, 'd5').result).toEqual({ winner: null, reason: 'insufficient' });
+    // Un Mur posé loin du bord et un Mur en main : aucune paire possible.
+    expect(evaluateEnd(wall(game('7k/8/6K1/8/8/4B3/8/8 w - - 0 1', ['ice_wall']), 'd4'))).toEqual({ winner: null, reason: 'insufficient' });
   });
 
-  it('la Faille et la Chevauchée ne suffisent pas (vérifié par force brute)', () => {
-    // La Chevauchée dure 2 coups : la réponse des Noirs à Ff6+ est jugée après son expiration, Rg8 reste jouable.
-    expect(evaluateEnd(game('7k/8/8/8/8/8/8/K4B2 w - - 0 1', ['cavalcade']))).toEqual({ winner: null, reason: 'insufficient' });
-    const active = withEffect(game('7k/8/8/4B3/8/8/8/K7 w - - 0 1'), 'cavalcade', { remaining: 2 }, 'w');
-    const checked = mv(active, 'e5', 'f6');
-    expect(checked.result).toEqual({ winner: null, reason: 'insufficient' });
-    expect(all({ ...checked, result: null })).toEqual(['h8g8', 'h8h7']);
+  it('une Faille tient lieu d’un Mur, jamais seule ; Roi et Cavalier aussi', () => {
     const rift = game('7k/8/6K1/8/8/4B3/8/8 w - - 0 1', ['rift']);
     expect(evaluateEnd(rift)).toEqual({ winner: null, reason: 'insufficient' });
     expect(canStillMate(rift, 'w')).toBe(false);
+    const both = game('7k/8/6K1/4N3/8/8/8/8 w - - 0 1', ['rift'], ['ice_wall']);
+    expect(evaluateEnd(both)).toBeNull();
+    expect(canStillMate(both, 'w')).toBe(true);
+    // Faille de la 5e rangée et Mur a3 : Cb2# contre Ra4 (Rc4 tient b3, b4, b5 ; a5 est dans le gouffre).
+    const rank5 = [0, 1, 2, 3, 4, 5, 6, 7].map(f => 32 + f);
+    const m = wall(withEffect(game('8/8/8/8/k1K5/8/8/3N4 w - - 0 1'), 'rift', { squares: rank5, remaining: 4 }, 'w'), 'a3', 'w');
+    expect(evaluateEnd(m)).toBeNull();
+    expect(mv(m, 'd1', 'b2').result).toEqual({ winner: 'w', reason: 'checkmate' });
+  });
+
+  it('Duel (anciennes parties) : un Mur de glace en main suffit (Mur g8, puis Fd4#)', () => {
+    const s = createGameFromFen('7k/8/6K1/8/8/4B3/8/8 w - - 0 1', { w: ['ice_wall'], b: [] }, true, 'duel');
+    expect(evaluateEnd(s)).toBeNull();
+    expect(canStillMate(s, 'w')).toBe(true);
+    expect(mv(card(s, 0, 'g8'), 'e3', 'd4').result).toEqual({ winner: 'w', reason: 'checkmate' });
   });
 });

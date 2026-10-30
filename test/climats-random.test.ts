@@ -1,13 +1,14 @@
 // Tirage pondéré (R9) et parties au hasard : des centaines de parties avec des cartes au hasard, en vérifiant
-// les invariants du moteur après chaque action.
+// les invariants du moteur après chaque action. Catalogue Pouvoirs (identifiant 'climats') : 8 cartes, mains
+// visibles, Mur de glace permanent.
 import { describe, expect, it } from 'vitest';
 import { CARDS, CardId, Catalog, cardsOf } from '../src/shared/cards';
 import {
-  Color, F_BLAST, F_PORTAL, F_RELAXED, NO_MODS, fromFen, inCheck, legalMoves, opposite,
+  Color, F_BLAST, F_RELAXED, NO_MODS, fromFen, inCheck, legalMoves, opposite,
 } from '../src/shared/chess';
 import {
-  Effect, GameState, cardOptions, cardPlayable, createGame, createGameFromFen, dealHands, legalMovesOf,
-  modsFromEffects, playCard, playMove, positionKey, sideInCheck, viewState,
+  DealOptions, Effect, GameState, cardOptions, cardPlayable, catalogOf, createGame, createGameFromFen, dealHands,
+  legalMovesOf, modsFromEffects, playCard, playMove, positionKey, sideInCheck, viewState,
 } from '../src/shared/game';
 
 /** Générateur pseudo-aléatoire reproductible (mulberry32). */
@@ -35,10 +36,9 @@ describe('tirage pondéré (R9)', () => {
       }
       for (const id of w) seen[id] = (seen[id] ?? 0) + 1;
     }
-    // Table R9 (part des mains qui contiennent la carte, avec pendule et entre humains)
+    // Part des mains qui contiennent la carte, avec pendule et entre humains (8 cartes, 400 000 tirages).
     const table: Record<string, number> = {
-      ice_wall: 40, rift: 40, truce: 32, portals: 31, tide: 31, hourglass: 24, ice_age: 24, cavalcade: 24,
-      blood_moon: 17, coronation: 17, deja_vu: 10, blast: 8,
+      ice_wall: 53.6, rift: 53.4, truce: 44.8, tide: 42.4, hourglass: 34.8, ice_age: 34.9, blood_moon: 23.9, blast: 12.2,
     };
     for (const [id, pct] of Object.entries(table)) {
       expect(Math.abs(((seen[id as CardId] ?? 0) / N) * 100 - pct), id).toBeLessThan(2);
@@ -58,10 +58,30 @@ describe('tirage pondéré (R9)', () => {
     expect(dealHands(true, false, rand, 'aucune')).toEqual({ w: [], b: [] });
   });
 
-  it('un générateur dégénéré donne quand même une main valide', () => {
-    const { w } = dealHands(true, false, () => 0, 'climats');
-    expect(w).toHaveLength(3);
-    expect(w.filter(id => CARDS[id].family === 'climat').length).toBeLessThanOrEqual(2);
+  it('aucune main impossible, quelles que soient les options et le générateur (contre l’IA, sans pendule)', () => {
+    const valid = (hand: CardId[], timed: boolean, opts: DealOptions) => {
+      expect(hand).toHaveLength(3);
+      expect(new Set(hand).size).toBe(3);
+      expect(hand.every(id => cardsOf('climats').includes(id))).toBe(true);
+      expect(hand.filter(id => CARDS[id].family === 'climat').length).toBeLessThanOrEqual(2);
+      expect(hand.filter(id => CARDS[id].rarity === 'légendaire').length).toBeLessThanOrEqual(1);
+      if (!timed || opts.vsBot) expect(hand).not.toContain('hourglass');
+    };
+    let k = 0;
+    const generators: (() => number)[] = [
+      () => 0, () => 0.999999, () => 0.5, () => (k++ % 2 ? 0 : 0.999999), () => ((k++ * 0.37) % 1), rng(3), rng(4),
+    ];
+    for (const gen of generators) {
+      for (const timed of [true, false]) {
+        for (const opts of [{}, { vsBot: true }] as DealOptions[]) {
+          for (let i = 0; i < 300; i++) {
+            const { w, b } = dealHands(timed, i % 5 === 0, gen, 'climats', opts);
+            valid(w, timed, opts);
+            valid(b, timed, opts);
+          }
+        }
+      }
+    }
   });
 });
 
@@ -76,18 +96,16 @@ function checkInvariants(s: GameState) {
   expect(climates.filter(e => !e.pending).length).toBeLessThanOrEqual(1);
   expect(climates.filter(e => e.pending).length).toBeLessThanOrEqual(1);
   for (const e of s.effects) {
-    expect(e.remaining).toBeGreaterThan(0);
+    if (e.permanent) expect([e.card, e.remaining, e.global]).toEqual(['ice_wall', 0, true]);
+    else expect(e.remaining).toBeGreaterThan(0);
     if (e.pending) expect([1, 2]).toContain(e.delay);
   }
-  // Les vues envoyées aux joueurs ne révèlent jamais une carte adverse cachée (ni dans les instantanés).
-  for (const you of ['w', 'b'] as Color[]) {
-    const v = viewState(s, you, false);
-    const them = opposite(you);
-    s.hands[them].forEach((h, i) => {
-      if (!h.used && !h.revealed) expect(v.hands[them][i].card).toBeNull();
-    });
-    for (const snap of v.snaps) expect(Object.keys(snap)).not.toContain('hands');
-  }
+  // Mains visibles : la vue envoyée aux joueurs et aux spectateurs montre les deux mains, exactes.
+  const v = viewState(s);
+  expect(v.hands).toEqual(s.hands);
+  for (const c of ['w', 'b'] as Color[]) for (const h of v.hands[c]) expect(CARDS[h.card]).toBeDefined();
+  // Les instantanés (Retour arrière) n'existent qu'en Duel.
+  if (catalogOf(s) !== 'duel') expect(s.snaps).toEqual([]);
   if (s.result) {
     if (s.result.reason === 'checkmate') {
       expect(s.result.winner).toBe(opposite(s.pos.turn));
@@ -161,6 +179,12 @@ function playRandom(start: GameState, rand: () => number, maxPlies: number, labe
           if (!r.ok) continue;
           log.push(`[${card} ${targets.join(',')}]`);
           bump(card);
+          // Pouvoirs : un Mur de glace est permanent, sur une case des rangées 3 à 6.
+          if (card === 'ice_wall' && catalogOf(s) === 'climats') {
+            const w = r.state.effects[r.state.effects.length - 1];
+            expect(w).toMatchObject({ card: 'ice_wall', permanent: true });
+            expect(w.square! >> 3 >= 2 && w.square! >> 3 <= 5).toBe(true);
+          }
           s = r.state;
           cards++;
           checkInvariants(s);
@@ -180,7 +204,6 @@ function playRandom(start: GameState, rand: () => number, maxPlies: number, labe
       if (!r.ok) break;
       log.push(r.info.san);
       if (m.flags & F_RELAXED) bump('relaxed');
-      if (m.flags & F_PORTAL) bump('portal');
       if (m.flags & F_BLAST) bump('blast-capture');
       if (r.state.result) bump(r.state.result.reason);
       s = r.state;
@@ -257,16 +280,15 @@ function crampedGame(rand: () => number): GameState {
     const s = createGameFromFen(fen, { w: pick(), b: pick() }, rand() < 0.5, 'climats');
     const them = opposite(s.pos.turn);
     const effect = (card: Effect['card'], extra: Partial<Effect> = {}): Effect => {
-      const total = card === 'ice_age' ? 4 : 6;
-      const remaining = 1 + ri(total);
-      return { id: s.nextEffectId++, card, caster: them, countsOn: them, remaining, total, skin: '', global: true, ...extra };
+      const remaining = 1 + ri(4);
+      return { id: s.nextEffectId++, card, caster: them, countsOn: them, remaining, total: 4, skin: '', global: true, ...extra };
     };
     if (rand() < 2 / 3) s.effects = [effect('ice_age')];
     else {
-      // Un Mur devant chaque pion qui peut avancer (les captures de pion restent possibles).
+      // Un Mur permanent devant chaque pion qui peut avancer (les captures de pion restent possibles).
       const dir = s.pos.turn === 'w' ? 8 : -8;
       const fronts = [...new Set(moves.filter(m => !s.pos.board[m.to]).map(m => m.from + dir))];
-      s.effects = fronts.map(square => effect('ice_wall', { square }));
+      s.effects = fronts.map(square => effect('ice_wall', { square, permanent: true, remaining: 0, total: 0 }));
     }
     s.keys = [positionKey(s)];
     return s;
@@ -274,7 +296,7 @@ function crampedGame(rand: () => number): GameState {
 }
 
 describe('parties au hasard', () => {
-  it('300 parties Climats : aucune exception, invariants tenus, état sérialisable', () => {
+  it('300 parties Pouvoirs : aucune exception, invariants tenus, état sérialisable', () => {
     let cards = 0;
     let plies = 0;
     for (let g = 1; g <= 300; g++) {
@@ -286,7 +308,7 @@ describe('parties au hasard', () => {
     expect(plies).toBeGreaterThan(5000);
     // Toutes les cartes et les coups particuliers ont été exercés.
     for (const id of cardsOf('climats')) expect(stats.get(id) ?? 0, id).toBeGreaterThan(5);
-    for (const k of ['portal', 'blast-capture']) expect(stats.get(k) ?? 0, k).toBeGreaterThan(0);
+    expect(stats.get('blast-capture') ?? 0).toBeGreaterThan(0);
   }, 180_000);
 
   it('200 positions au hasard où seuls des pions peuvent bouger : sous l’Ère glaciaire ou les Murs, la magie cède', () => {

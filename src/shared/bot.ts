@@ -324,7 +324,7 @@ export function chooseBotCard(s: GameState, level: BotLevel): { index: number; t
   // L'IA ne joue jamais le Sablier fou (carte réservée aux parties entre humains).
   const playable = s.hands[me].map((_, i) => i).filter(i => {
     const card = s.hands[me][i].card;
-    return !!card && !CARDS[card].humanOnly && cardPlayable(s, me, i);
+    return !CARDS[card].humanOnly && cardPlayable(s, me, i);
   });
   if (!playable.length) return null;
   const mustPlay = legalMovesOf(s).length === 0;
@@ -347,7 +347,7 @@ export function chooseBotCard(s: GameState, level: BotLevel): { index: number; t
   // avant que le temps ne manque.
   const perCard: { index: number; targets: number[] }[][] = [];
   for (const index of playable) {
-    const card = s.hands[me][index].card as CardId;
+    const card = s.hands[me][index].card;
     if (card === 'time_warp') {
       // Duel : l'effet porte sur la pendule, que la recherche ne voit pas.
       if (mustPlay || (s.ply >= 24 && Math.random() < 0.25)) return { index, targets: [] };
@@ -360,7 +360,7 @@ export function chooseBotCard(s: GameState, level: BotLevel): { index: number; t
   let best: { index: number; targets: number[]; gain: number } | null = null;
   for (const c of queue) {
     if (Date.now() > deadline) break;
-    const card = s.hands[me][c.index].card as CardId;
+    const card = s.hands[me][c.index].card;
     const ref = baseline(card);
     if (ref === null) continue;
     const r = playCard(s, me, c.index, c.targets, '');
@@ -395,7 +395,7 @@ function cardBias(before: GameState, me: Color, card: CardId): number {
 
 /** Cibles candidates d'une carte, les plus prometteuses d'abord (une par résultat distinct). */
 function candidateTargets(s: GameState, me: Color, index: number): number[][] {
-  const card = s.hands[me][index].card as CardId;
+  const card = s.hands[me][index].card;
   const need = CARDS[card].targets;
   if (need === 0) return [[]];
   const first = cardOptions(s, me, index);

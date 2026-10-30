@@ -2,7 +2,7 @@
 // porte choisie (niveau, cartes, cadence, couleur, miroir, pseudo) et les parties en cours à reprendre.
 // La partie elle-même s'ouvre sur /partie/:id, dans la coque immersive de l'accueil.
 import { useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { CATALOGS } from '../../shared/cards';
 import type { Catalog } from '../../shared/cards';
@@ -108,6 +108,11 @@ export default function Play() {
     return () => clearTimeout(t);
   }, []);
 
+  // Catalogue choisi qui ne serait plus proposé (catalogues modifiés) : le premier proposé
+  useEffect(() => {
+    if (!CATALOGS.some(c => c.id === catalog)) setCatalog(CATALOGS[0]?.id ?? 'climats');
+  }, [catalog]);
+
   const quick = mode === 'friendly' || mode === 'ranked';
   useEffect(() => {
     if (quick && !QUICK_CONTROLS.includes(tc)) setTc('10+0');
@@ -177,7 +182,7 @@ export default function Play() {
     mode === 'bot'
       ? `Contre le ${BOT_PROFILES[level].name} · ${tcName(tc)}`
       : mode === 'invite'
-        ? `${catalog === 'aucune' ? 'Sans cartes' : `Cartes ${catName(catalog)}`} · ${tcName(tc)}`
+        ? `${catName(catalog)} · ${tcName(tc)}`
         : `${mode === 'ranked' ? 'Classée' : 'Amicale'} · ${tcName(tc)} · ${catName(catalog)}`;
 
   return (
@@ -271,7 +276,7 @@ export default function Play() {
 
               <fieldset className="pl-field">
                 <legend className="label">Cartes</legend>
-                <div className="pl-cats" role="radiogroup" aria-label="Cartes de la partie">
+                <div className="pl-cats" role="radiogroup" aria-label="Cartes de la partie" style={{ '--n': CATALOGS.length } as CSSProperties}>
                   {CATALOGS.map(c => (
                     <button key={c.id} type="button" role="radio" aria-checked={catalog === c.id} className="pl-cat" onClick={() => setCatalog(c.id)}>
                       <b>{c.label}</b>

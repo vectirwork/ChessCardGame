@@ -457,11 +457,12 @@ export function sideInCheck(s: GameState, c: Color = s.pos.turn): boolean {
 
 /**
  * Nature de l'échec du camp au trait, pour l'affichage (R5) : 'now' (échec ordinaire), 'close' (à la fermeture
- * d'une Faille), 'melt' (à la fonte d'un Mur : Duel, et Murs posés avant qu'il ne devienne permanent), 'expire'
- * (fin d'un autre effet : Cryogénie ou Gravité du Duel) ; null sans échec. Aucun Présage ne change les attaques :
- * une arrivée ne donne jamais échec.
+ * d'une Faille), 'melt' (à la fonte d'un Mur : Duel, et Murs posés avant qu'il ne devienne permanent) ; null sans
+ * échec. Seules ces fins d'effet rendent une attaque au camp adverse : aucun Présage ne change les attaques (une
+ * arrivée ne donne jamais échec), et les autres effets du Duel qui en retirent se décomptent sur les coups de
+ * leur victime.
  */
-export type CheckKind = 'now' | 'melt' | 'close' | 'expire';
+export type CheckKind = 'now' | 'melt' | 'close';
 export function checkKind(s: GameState): CheckKind | null {
   const c = s.pos.turn;
   if (!inCheck(s.pos, c, afterMods(s))) return null;
@@ -474,8 +475,8 @@ export function checkKind(s: GameState): CheckKind | null {
   const melted = ended('ice_wall');
   if (checkWithout(closed)) return 'close';
   if (checkWithout(melted)) return 'melt';
-  // Échec qui naît de plusieurs fins combinées : ordre de priorité fixe.
-  return closed.length ? 'close' : melted.length ? 'melt' : 'expire';
+  // Échec qui naît de plusieurs fins combinées (Faille et Mur) : ordre de priorité fixe.
+  return closed.length ? 'close' : 'melt';
 }
 
 export interface MoveInfo {
@@ -712,7 +713,7 @@ function rawCandidates(s: GameState, color: Color, card: CardId, partial: number
 
 /** Applique l'effet brut de la carte (sans les contrôles de fin). */
 function applyCardRaw(s: GameState, color: Color, index: number, targets: number[], skin: string): { state: GameState; info: CardInfo } | string {
-  const card = s.hands[color][index].card!;
+  const card = s.hands[color][index].card;
   const def = CARDS[card];
   if (targets.length !== def.targets) return 'Cible manquante.';
   for (let k = 0; k < targets.length; k++) {
@@ -915,7 +916,7 @@ function tryCard(s: GameState, color: Color, index: number, targets: number[], s
   if (pre) return { ok: false, error: pre };
   const r = applyCardRaw(s, color, index, targets, skin);
   if (typeof r === 'string') return { ok: false, error: r };
-  const err = validateAfterCard(s, r.state, color, s.hands[color][index].card!, r.info);
+  const err = validateAfterCard(s, r.state, color, s.hands[color][index].card, r.info);
   if (err) return { ok: false, error: err };
   return { ok: true, state: r.state, info: r.info };
 }
@@ -923,7 +924,7 @@ function tryCard(s: GameState, color: Color, index: number, targets: number[], s
 /** Cases valides pour la prochaine cible de la carte `index`, sachant les cibles déjà choisies. */
 export function cardOptions(s: GameState, color: Color, index: number, partial: number[] = []): number[] {
   if (cardPrecheck(s, color, index)) return [];
-  const card = s.hands[color][index].card!;
+  const card = s.hands[color][index].card;
   const need = CARDS[card].targets;
   if (partial.length >= need) return [];
   return rawCandidates(s, color, card, partial).filter(t => {
@@ -936,7 +937,7 @@ export function cardOptions(s: GameState, color: Color, index: number, partial: 
 /** La carte peut-elle être jouée maintenant (avec au moins une cible valide) ? */
 export function cardPlayable(s: GameState, color: Color, index: number): boolean {
   if (cardPrecheck(s, color, index)) return false;
-  const card = s.hands[color][index].card!;
+  const card = s.hands[color][index].card;
   if (CARDS[card].targets === 0) return tryCard(s, color, index, [], '').ok;
   return cardOptions(s, color, index).length > 0;
 }

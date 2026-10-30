@@ -28,7 +28,7 @@ import { useVfx } from '../vfx/useVfx';
 import { AwayNotice, CastBanner, DrawOffer, EndCard, FirstMoveCountdown, JoinSheet, WaitingCard, rematchLabel, resultTitle } from './overlays';
 import type { Casting } from './overlays';
 import {
-  Avatar, Captured, Clock, EffectsPanel, EmoteBubble, HandRow, MoveList, SeatName, catalogDescription, catalogLabel, colorName,
+  Avatar, Captured, Clock, EffectsPanel, EmoteBubble, HandRow, MoveList, SeatName, catalogDescription, catalogTag, colorName,
   modeLabel, seatSub, tcLabel,
 } from './parts';
 
@@ -127,7 +127,7 @@ export default function GamePage() {
     const t = window.setTimeout(() => {
       if (w.requestIdleCallback) idle = w.requestIdleCallback(() => setWarm(true), { timeout: 2000 });
       else setWarm(true);
-    }, 900);
+    }, 1600);
     return () => {
       window.clearTimeout(t);
       if (idle) w.cancelIdleCallback?.(idle);
@@ -449,7 +449,7 @@ export default function GamePage() {
   const railLeft = layout.x + layout.G / 2 + 28;
   const railTop = hasCards ? 238 : 178;
   const selfBottom = Math.max(28, layout.vh - boardBottom);
-  const railBottom = selfBottom + 132;
+  const railBottom = selfBottom + (spectator && hasCards ? 250 : 184);
   const showRail = !layout.mobile && layout.vw - 30 - railLeft >= 132 && layout.vh - railTop - railBottom >= 120;
 
   // ----- Statut -----
@@ -485,7 +485,9 @@ export default function GamePage() {
       : state.cardPlayed
         ? 'Sort lancé : jouez maintenant votre coup.'
         : hasCards && playable.some(Boolean)
-          ? 'Lancez une carte avant votre coup, ou jouez directement.'
+          ? layout.mobile
+            ? 'Une carte avant le coup, ou jouez directement.'
+            : 'Lancez une carte avant votre coup, ou jouez directement.'
           : 'Jouez votre coup.';
     hint = (
       <>
@@ -518,7 +520,7 @@ export default function GamePage() {
     ? {
         text: (
           <p>
-            {RESULT_TEXT[state.result!.reason] ?? 'Partie terminée'}.
+            {state.result!.reason === 'aborted' ? 'Elle ne compte ni au classement ni dans l’historique.' : `${RESULT_TEXT[state.result!.reason] ?? 'Partie terminée'}.`}
             {diff !== null && <span className={`gp-diff ${diff >= 0 ? 'up' : 'down'}`}>{` ${diff >= 0 ? '+' : ''}${diff} Elo`}</span>}
           </p>
         ),
@@ -555,6 +557,9 @@ export default function GamePage() {
     { label: sound ? 'Couper le son' : 'Activer le son', onClick: () => toggleSound(), hidden: !layout.mobile },
   ];
 
+  const oppSeat = view.seats[top];
+  const selfSeat = view.seats[bottom];
+
   const info = (
     <>
       {view.drawOffer && you && view.drawOffer !== you && view.status === 'active' && (
@@ -573,9 +578,6 @@ export default function GamePage() {
     </>
   );
 
-  const seatOf = (c: Color) => view.seats[c];
-  const oppSeat = seatOf(top);
-  const selfSeat = seatOf(bottom);
 
   const emoteMenu = you && vsHuman && view.status !== 'waiting' && (
     <div className="gp-emotes">
@@ -616,28 +618,28 @@ export default function GamePage() {
           </b>
           <span>{seatSub(selfSeat, bottom, view.ratingDiff?.[bottom] ?? null)}</span>
         </div>
-        {!layout.mobile && (
-          <div className="gp-tools">
-            <button type="button" className="gp-tool" onClick={() => setFlipped(f => !f)} aria-label="Retourner l'échiquier" title="Retourner l'échiquier">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M8 4v15M8 4 4.5 7.5M8 4l3.5 3.5M16 20V5m0 15-3.5-3.5M16 20l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
-            <button type="button" className="gp-tool" onClick={toggleSound} aria-pressed={!sound} aria-label={sound ? 'Couper le son' : 'Activer le son'} title={sound ? 'Couper le son' : 'Activer le son'}>
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-                {sound ? (
-                  <path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                ) : (
-                  <path d="M15.5 9.5l5 5m0-5-5 5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                )}
-              </svg>
-            </button>
-            {you === bottom && emoteMenu}
-          </div>
-        )}
         {layout.mobile && you === bottom && emoteMenu}
       </div>
+      {!layout.mobile && (
+        <div className="gp-tools">
+          <button type="button" className="gp-tool" onClick={() => setFlipped(f => !f)} aria-label="Retourner l'échiquier" title="Retourner l'échiquier">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 4v15M8 4 4.5 7.5M8 4l3.5 3.5M16 20V5m0 15-3.5-3.5M16 20l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <button type="button" className="gp-tool" onClick={toggleSound} aria-pressed={!sound} aria-label={sound ? 'Couper le son' : 'Activer le son'} title={sound ? 'Couper le son' : 'Activer le son'}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+              {sound ? (
+                <path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+              ) : (
+                <path d="M15.5 9.5l5 5m0-5-5 5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+              )}
+            </svg>
+          </button>
+          {you === bottom && emoteMenu}
+        </div>
+      )}
       <EmoteBubble text={emotes[bottom]} />
     </div>
   );
@@ -685,7 +687,7 @@ export default function GamePage() {
         badge={badge}
         kicker={
           <span title={catalogDescription(catalog)}>
-            {view.status === 'waiting' ? 'Partie en ligne' : `Coup ${moveNo}`} · {hasCards ? `cartes ${catalogLabel(catalog)}` : 'sans cartes'}
+            {view.status === 'waiting' ? 'Partie en ligne' : `Coup ${moveNo}`} · {catalogTag(catalog)}
           </span>
         }
         title={title}

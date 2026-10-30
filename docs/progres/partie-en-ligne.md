@@ -21,8 +21,17 @@ src/client/pages/Play.tsx, src/client/styles/game.css. Captures : concepts/site-
   fin de partie, consigne masquée sur mobile au tour adverse.
 - Pendant ma session, le flux A/C modifie les cartes (src/shared, tests) : erreurs tsc chez eux, aucune dans mes
   fichiers.
+- Refonte des cartes du flux A en cours (16 h 30, docs/progres/cartes-refonte.md) : CATALOGS = Pouvoirs + Sans
+  cartes (Duel retiré, la page Jouer lit CATALOGS), HandCard.card non nul (mains visibles), Effect.permanent (Mur).
+  Adapté : catalogTag (« Pouvoirs », « sans cartes »), effet permanent, mains dessinées par la page (HandRow : faces
+  quand le serveur les envoie, dos sinon ; la coque ne montre que des dos), carte inconnue du client neutralisée
+  (known()) au lieu de faire tomber la page (SpellCard plantait sur « rarity » pendant la transition).
+- Outils (retourner, son, message) sur leur propre ligne dans le bloc « vous » (le nom disparaissait faute de place).
+- Partie annulée : texte « ne compte ni au classement ni dans l'historique » (le titre disait déjà « annulée »).
+- Scène 3D différée à 1,6 s + repos (elle figeait l'animation d'arrivée dans le bac à sable).
+- jouer.cjs : file amicale OK (deux invités → même /partie/:id, badge « Partie amicale · 10 + 0 »).
 ## En cours
-- 2e passe de captures (duel.cjs) + scénario jouer.cjs (page Jouer, file amicale, badge « Partie amicale »).
+- Passe finale de captures (duel.cjs, jouer.cjs), puis node test/integration.mjs, npm test, tsc.
 ## Reste à faire
 - Refonte GamePage avec GameShell ; Présages + catalogue ; Play.tsx ; captures ; integration.mjs ; tsc ; npm test.
 ## Décisions

@@ -1,12 +1,15 @@
-// Tests adverses du catalogue Climats (règles et moteur), écrits par un vérificateur indépendant.
-// Ils cherchent à casser l'implémentation : états impossibles, Présage, « la magie cède », Déflagration, Couronnement,
-// Portails, Faille et roque, prise en passant sous Trêve et Lune de sang, répétition et 50 coups, Déjà-vu,
-// tirage pondéré, sérialisation, et des parties au hasard plus agressives que celles de climats-random.test.ts.
-// Les tests marqués « ÉCART » échouent volontairement : ce sont des preuves, laissées en place.
+// Tests adverses du catalogue Pouvoirs (identifiant 'climats' : règles et moteur), écrits par un vérificateur
+// indépendant, puis mis à jour pour la décision du fondateur du 30 octobre (8 cartes, mains visibles, Mur de glace
+// permanent ; Couronnement, Chevauchée, Portails et Déjà-vu retirés).
+// Ils cherchent à casser l'implémentation : états impossibles, Présage, « la magie cède », Déflagration, Faille et
+// roque, prise en passant sous Trêve et Lune de sang, répétition et 50 coups, Murs permanents, mains visibles,
+// tirage pondéré, sérialisation, matériel insuffisant, et des parties au hasard plus agressives que celles de
+// climats-random.test.ts. Les quatre « ÉCARTS » relevés par la vérification sont corrigés (ou sans objet avec les
+// cartes retirées) : leurs tests vérifient désormais le comportement attendu.
 import { describe, expect, it } from 'vitest';
 import { CARDS, CardId, cardsOf } from '../src/shared/cards';
 import {
-  Color, F_BLAST, F_CAPTURE, F_EP, F_LEAP, F_PORTAL, F_PROMO, F_RELAXED, Mods, NO_MODS, Position, fileOf, hasLegalMove,
+  Color, F_BLAST, F_CAPTURE, F_EP, F_PROMO, F_RELAXED, Mods, NO_MODS, Piece, Position, fileOf, hasLegalMove,
   inCheck, legalMoves, makeMove, opposite, pseudoMoves, rankOf, sqIndex as q, sqName, toFen, unmakeMove,
 } from '../src/shared/chess';
 import {
@@ -50,6 +53,9 @@ function withEffect(s: GameState, cardId: CardId, extra: Partial<Effect> = {}, c
   return n;
 }
 const rank = (r: number) => [0, 1, 2, 3, 4, 5, 6, 7].map(f => (r - 1) * 8 + f);
+/** Mur de glace permanent (Pouvoirs). */
+const wall = (s: GameState, square: string, caster: Color = 'b') =>
+  withEffect(s, 'ice_wall', { square: q(square), permanent: true, remaining: 0, total: 0 }, caster);
 
 /** Générateur pseudo-aléatoire reproductible (mulberry32). */
 function rng(seed: number) {
@@ -66,8 +72,8 @@ function rng(seed: number) {
 // États impossibles
 
 describe('États impossibles : le roi de celui qui vient de jouer n’est jamais en prise', () => {
-  it('un Mur qui fond après mon coup ne couvre plus mon roi : seuls les coups qui quittent la colonne sont légaux', () => {
-    // Tour noire e8, Mur e4 qui fond après le coup blanc.
+  it('un Mur qui fond après mon coup (posé avant la refonte, ou Duel) ne couvre plus mon roi : seuls les coups qui quittent la colonne sont légaux', () => {
+    // Tour noire e8, Mur e4 à durée (6 coups, ancienne partie) qui fond après le coup blanc.
     const s = withEffect(game('4r2k/8/8/8/8/8/P7/4K3 w - - 0 1'), 'ice_wall', { square: q('e4'), remaining: 1 });
     expect(sideInCheck(s)).toBe(true);
     expect(checkKind(s)).toBe('melt');
@@ -83,43 +89,15 @@ describe('États impossibles : le roi de celui qui vient de jouer n’est jamais
     expect(all(s).every(m => m.startsWith('e1') && !m.endsWith('e2'))).toBe(true);
   });
 
-  it('R4e : l’arrivée de ma propre Chevauchée peut mettre MON roi en échec, jamais celui de l’adversaire', () => {
-    let s = game('6k1/8/q7/8/8/8/5PPP/6K1 w - - 0 1', ['cavalcade']);
-    s = card(s, 0);
-    s = mv(s, 'h2', 'h3');
-    // La réponse noire est jugée avec la Chevauchée arrivée : Dame en e2, à un saut de g1.
-    const r = mvInfo(s, 'a6', 'e2');
-    s = r.state;
-    expect(r.info.arrived?.length).toBe(1);
-    expect(live(s)).toEqual(['cavalcade']);
-    expect(inCheck(s.pos, 'b', modsFromEffects(s.effects))).toBe(false);
-    expect(sideInCheck(s)).toBe(true);
-    expect(checkKind(s)).toBe('now');
-    // Chaque réponse blanche met le roi à l'abri des sauts.
-    for (const m of legalMovesOf(s)) {
-      const n = playMove(s, m.from, m.to, m.promo);
-      expect(n.ok).toBe(true);
-      if (n.ok) expect(inCheck(n.state.pos, 'w', modsFromEffects(n.state.effects))).toBe(false);
+  it('un Mur permanent ne fond jamais : le roi qu’il couvre le reste, aucun échec « à la fonte »', () => {
+    let s = wall(game('4r2k/8/8/8/8/8/P7/4K3 w - - 0 1'), 'e4');
+    for (const x of ['a2a3', 'h8g8', 'a3a4', 'g8h8', 'a4a5', 'h8g8', 'a5a6', 'g8h8']) {
+      expect(sideInCheck(s)).toBe(false);
+      expect(checkKind(s)).toBeNull();
+      s = mv(s, x.slice(0, 2), x.slice(2));
     }
-  });
-
-  it('une Chevauchée qui expire ne laisse aucun « échec par saut » fantôme', () => {
-    // Chevauchée blanche, dernier coup (celui des Noirs) : la dame noire se pose à un saut du roi blanc.
-    const s = withEffect(game('6k1/8/q7/8/8/8/5PPP/6K1 b - - 0 1'), 'cavalcade', { remaining: 1 }, 'w');
-    const n = mv(s, 'a6', 'e2');
-    expect(n.effects).toEqual([]);
-    expect(sideInCheck(n)).toBe(false);
-    expect(n.log[n.log.length - 1]).toMatchObject({ san: 'Qe2' });
-  });
-
-  it('un Climat qui remplace la Chevauchée retire les sauts à son arrivée, sans créer d’échec', () => {
-    // Les Noirs ont annoncé la Trêve ; elle arrive après le coup blanc et chasse la Chevauchée blanche.
-    let s = withEffect(game('6k1/8/8/8/8/8/5PPP/Q5K1 w - - 0 1'), 'cavalcade', { remaining: 2 }, 'w');
-    s = withEffect(s, 'truce', { pending: true, delay: 1, remaining: 3 }, 'b');
-    const r = mvInfo(s, 'a1', 'e5');
-    expect(r.state.effects.map(e => e.card)).toEqual(['truce']);
-    expect(r.info.expired?.length).toBe(1);
-    expect(sideInCheck(r.state)).toBe(false);
+    expect(s.effects).toHaveLength(1);
+    expect(has(s, 'e1e2')).toBe(true);
   });
 });
 
@@ -176,81 +154,20 @@ describe('Présage', () => {
     expect(has(r.state, 'd5e4')).toBe(false); // la nouvelle Trêve interdit la prise
   });
 
-  it('annonce effacée par un Déjà-vu adverse : l’effet disparaît, la carte revient face visible et se rejoue', () => {
-    let s = createGame({ w: ['ice_age'], b: ['deja_vu'] }, false, 'climats');
-    s = mv(s, 'e2', 'e4');
-    s = mv(s, 'e7', 'e5');
-    s = card(s, 0); // Blancs : Ère glaciaire annoncée
-    s = mv(s, 'g1', 'f3');
-    s = card(s, 0); // Noirs : Déjà-vu (efface …e5 et Cf3, avec l'annonce faite entre les deux)
-    expect(s.effects).toEqual([]);
-    expect(s.hands.w[0]).toMatchObject({ card: 'ice_age', used: false, revealed: true });
-    expect(viewState(s, 'b', false).hands.w[0].card).toBe('ice_age');
-    expect(has(s, 'e7e5')).toBe(false); // pièce interdite
-    s = mv(s, 'd7', 'd5');
-    expect(cardPlayable(s, 'w', 0)).toBe(true);
-  });
-
-  it('annonce du lanceur, puis son propre Déjà-vu : le Présage revient avec son délai d’alors et arrive à l’heure', () => {
-    let s = createGame({ w: ['ice_age', 'deja_vu'], b: [] }, false, 'climats');
-    s = card(s, 0);
-    s = mv(s, 'e2', 'e4');
-    s = mv(s, 'e7', 'e5'); // arrivée
-    expect(live(s)).toEqual(['ice_age']);
-    s = card(s, 1); // Déjà-vu
-    expect(s.effects).toHaveLength(1);
-    expect(s.effects[0]).toMatchObject({ card: 'ice_age', pending: true, delay: 2 });
-    expect(s.hands.w.map(h => h.used)).toEqual([true, true]);
-    expect(has(s, 'e2e4')).toBe(false);
-    s = mv(s, 'd2', 'd4');
-    expect(s.effects[0]).toMatchObject({ pending: true, delay: 1 });
-    s = mv(s, 'd7', 'd5');
-    expect(live(s)).toEqual(['ice_age']);
-    expect(s.effects[0].remaining).toBe(4);
-  });
-
-  it('ÉCART R4b : un Présage d’Ère glaciaire ne doit pas permettre au lanceur de se bloquer pour jouer « comme si les effets n’existaient pas »', () => {
+  it('R4b à l’arrivée (écart corrigé) : un Présage d’Ère glaciaire ne permet pas au lanceur de se bloquer pour jouer « comme si les effets n’existaient pas »', () => {
     // Blancs : Ra1 enfermé (b1 tenu par le fou e4), seuls des coups de pion. Ils annoncent l'Ère glaciaire.
-    let s = game('7k/7p/8/3P4/4b3/8/PP6/K7 w - - 0 1', ['ice_age']);
+    const s = game('7k/7p/8/3P4/4b3/8/PP6/K7 w - - 0 1', ['ice_age']);
     const r = playCard(s, 'w', 0, [], '');
-    if (r.ok) {
-      s = mv(r.state, 'd5', 'd6');
-      s = mv(s, 'h8', 'g8'); // l'Ère glaciaire arrive
-      const white = legalMovesOf(s);
-      // Constat : les pions blancs avancent (coups R6) pendant que le pion h7 noir reste gelé.
-      expect(white.some(m => sqName(m.from) === 'd6')).toBe(true);
-      expect(white.every(m => m.flags & F_RELAXED)).toBe(true);
-      s = mv(s, 'd6', 'd7');
-      expect(all(s).some(m => m.startsWith('h7'))).toBe(false);
-    }
-    // Attendu (intention de R4b, appliquée au monde qui arrive, comme R4a) : l'annonce est refusée.
     expect(r.ok, 'l’Ère glaciaire annoncée par un camp réduit aux coups de pion est acceptée').toBe(false);
+    expect(cardPlayable(s, 'w', 0)).toBe(false);
   });
 
-  it('ÉCART « pas de pat par magie » : une Chevauchée annoncée pate l’adversaire sans qu’aucun coup n’y contribue', () => {
-    // Noirs : Rh8 seul. Aux échecs ordinaires, Rg8 est jouable. À l'arrivée, le fou h6 sautera en g8.
-    let s = game('7k/R7/7B/8/8/8/8/2K5 w - - 0 1', ['cavalcade']);
-    expect(legalMoves({ ...s.pos, turn: 'b' }).map(m => sqName(m.from) + sqName(m.to))).toEqual(['h8g8']);
-    const r = playCard(s, 'w', 0, [], '');
-    if (!r.ok) return; // correctif possible : la carte est refusée (comme R4a pour l'échec)
-    s = mv(r.state, 'c1', 'd1'); // coup de roi sans rapport
-    // Constat : pat déclaré (nulle) par l'effet seul. Attendu : la carte refusée, ou un coup rendu aux Noirs.
-    expect(s.result, 'pat par magie après une Chevauchée annoncée').toBeNull();
-  });
 });
 
 // ---------------------------------------------------------------------------------------------
 // La magie cède (R6)
 
 describe('La magie cède (R6), cas limites', () => {
-  it('la pièce interdite par un Déjà-vu le reste pour les coups de la magie cède', () => {
-    const s0 = withEffect(game('7k/8/8/8/8/8/4n1PP/7K w - - 0 1'), 'ice_age');
-    const s = { ...s0, forbidden: { from: q('g2') } };
-    const moves = legalMovesOf(s);
-    expect(moves.map(m => sqName(m.from) + sqName(m.to)).sort()).toEqual(['h2h3', 'h2h4']);
-    expect(moves.every(m => m.flags & F_RELAXED)).toBe(true);
-  });
-
   it('Trêve : un camp dont les seuls coups sont des prises prend (coup R6) et le compteur des 50 coups repart à zéro', () => {
     // Ra1 : a2 tenu par le pion b3, b1 par le fou d3 ; le pion b2 ne peut que prendre en c3.
     const s = withEffect(game('7k/8/8/8/8/1ppb4/1P6/K7 w - - 37 40'), 'truce', { remaining: 2 });
@@ -356,110 +273,6 @@ describe('Déflagration près des rois et des pièces protégées', () => {
 });
 
 // ---------------------------------------------------------------------------------------------
-// Couronnement
-
-describe('Couronnement et échec', () => {
-  const crown = (s: GameState) => withEffect(s, 'coronation', { remaining: 3 }, 'w');
-
-  it('une promotion en 7e rangée qui donne échec est notée et oblige à répondre', () => {
-    const s = crown(game('4k3/8/3P4/8/8/8/8/6K1 w - - 0 1'));
-    const pushes = legalMovesOf(s).filter(m => sqName(m.from) === 'd6');
-    expect(pushes.every(m => m.flags & F_PROMO)).toBe(true);
-    expect(pushes.map(m => m.promo).sort()).toEqual(['b', 'n', 'q', 'r']);
-    const r = mvInfo(s, 'd6', 'd7', 'q');
-    expect(r.info.check).toBe(true);
-    expect(r.state.pos.board[q('d7')]).toMatchObject({ t: 'q', c: 'w' });
-    expect(r.state.log[r.state.log.length - 1]).toMatchObject({ san: 'd7=Q+' });
-    expect(all(r.state)).toEqual(['e8d7', 'e8f8']);
-  });
-
-  it('promotion en 7e rangée qui découvre un échec du fou', () => {
-    const s = crown(game('5k2/8/3P4/8/1B6/8/8/6K1 w - - 0 1'));
-    const r = mvInfo(s, 'd6', 'd7', 'r'); // la tour d7 ne voit pas f8 : l'échec vient du fou b4
-    expect(r.info.check).toBe(true);
-  });
-
-  it('pendant le Présage, le pion qui atteint sa 7e rangée n’est pas promu ; il se promeut ensuite en 8e', () => {
-    let s = game('4k3/8/3P4/8/8/8/8/6K1 w - - 0 1', ['coronation']);
-    s = card(s, 0);
-    const r = mvInfo(s, 'd6', 'd7');
-    expect(r.info.move.flags & F_PROMO).toBeFalsy();
-    s = mv(r.state, 'e8', 'e7');
-    expect(live(s)).toEqual(['coronation']);
-    expect(legalMovesOf(s).filter(m => sqName(m.from) === 'd7').every(m => sqName(m.to) === 'd8' && m.promo)).toBe(true);
-  });
-
-  it('les Noirs couronnent en 2e rangée, et la dame promue donne échec', () => {
-    let s = crown(game('6k1/8/8/8/8/2p5/8/K7 b - - 0 1'));
-    s = mv(s, 'g8', 'g7');
-    s = mv(s, 'a1', 'b1');
-    // Le compteur : 3 → 2 → 1 ; reste un coup noir sous le Couronnement.
-    const r = mvInfo(s, 'c3', 'c2', 'q');
-    expect(r.state.pos.board[q('c2')]).toMatchObject({ t: 'q', c: 'b' });
-    expect(r.info.check).toBe(true); // Dc2 attaque b1
-  });
-
-  it('Déjà-vu : une pièce promue pendant le tour effacé redevient un pion', () => {
-    let s = crown(game('6k1/8/3P4/8/8/8/8/K7 w - - 0 1', ['deja_vu']));
-    s = mv(s, 'd6', 'd7', 'q');
-    s = mv(s, 'g8', 'h8');
-    s = card(s, 0);
-    expect(s.pos.board[q('d6')]).toMatchObject({ t: 'p', c: 'w' });
-    expect(s.pos.board[q('d7')]).toBeNull();
-    expect(has(s, 'd6d7')).toBe(false); // même pièce interdite
-  });
-});
-
-// ---------------------------------------------------------------------------------------------
-// Portails
-
-describe('Portails et détection d’échec', () => {
-  const portals = (s: GameState, a: string, extra: Partial<Effect> = {}) =>
-    withEffect(s, 'portals', { squares: [q(a), 63 - q(a)], remaining: 4, ...extra }, 'w');
-
-  it('un passage qui donne échec est noté Tc3→f6+ et l’adversaire doit répondre', () => {
-    const s = portals(game('5k2/8/8/8/8/8/8/2R3K1 w - - 0 1'), 'c3');
-    const pass = legalMovesOf(s).find(m => m.flags & F_PORTAL && sqName(m.to) === 'f6');
-    expect(pass).toMatchObject({ from: q('c1'), via: q('c3') });
-    const r = mvInfo(s, 'c1', 'f6');
-    expect(r.info.check).toBe(true);
-    expect(r.info.san).toBe('Rc3→f6');
-    expect(r.state.log[r.state.log.length - 1]).toMatchObject({ san: 'Rc3→f6+' });
-    expect(all(r.state).every(m => m.startsWith('f8') && !m.endsWith('f7'))).toBe(true);
-  });
-
-  it('une pièce clouée peut s’arrêter sur l’entrée (sur la ligne) mais pas ressortir hors de la ligne', () => {
-    const s = portals(game('k3r3/8/8/8/8/8/4R3/4K3 w - - 0 1'), 'e3');
-    expect(has(s, 'e2e3')).toBe(true);
-    expect(legalMovesOf(s).some(m => m.flags & F_PORTAL)).toBe(false); // e3 → d6 quitterait la ligne
-  });
-
-  it('un roi peut se poser sur une sortie qu’une pièce adverse atteindrait par le portail : un passage n’attaque pas', () => {
-    const s = portals(game('8/6k1/8/8/8/8/8/2R3K1 b - - 0 1'), 'c3');
-    expect(has(s, 'g7f6')).toBe(true);
-    const n = mv(s, 'g7', 'f6');
-    expect(legalMovesOf(n).some(m => m.flags & F_PORTAL)).toBe(false); // portail occupé : paire fermée
-  });
-
-  it('Chevauchée et Portails : un saut s’arrête sur l’entrée et ressort', () => {
-    let s = portals(game('6k1/8/8/8/8/8/8/1R4K1 w - - 0 1'), 'c3');
-    s = withEffect(s, 'cavalcade', { remaining: 2 }, 'w');
-    const m = legalMovesOf(s).find(x => x.from === q('b1') && x.via === q('c3'));
-    expect(m && sqName(m.to)).toBe('f6');
-    expect(m!.flags & (F_LEAP | F_PORTAL)).toBe(F_LEAP | F_PORTAL);
-    expect(m!.flags & F_CAPTURE).toBe(0);
-  });
-
-  it('aucun coup en double (même départ, même arrivée) quand la sortie est aussi atteignable autrement', () => {
-    // Fou a1 : c3 (entrée) puis f6 (sortie) sont sur sa diagonale ; aucun passage n'est ajouté.
-    const s = portals(game('8/7k/8/8/8/8/8/B5K1 w - - 0 1'), 'c3');
-    const keys = legalMovesOf(s).map(m => `${m.from}-${m.to}-${m.promo ?? ''}`);
-    expect(new Set(keys).size).toBe(keys.length);
-    expect(legalMovesOf(s).some(m => m.flags & F_PORTAL)).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------------------------
 // Faille et roque
 
 describe('Faille et roque', () => {
@@ -513,17 +326,10 @@ describe('Prise en passant sous Trêve ou Lune de sang', () => {
     expect(all(s)).toEqual(['e5d6', 'g2h3']);
   });
 
-  it('Lune de sang : la prise en passant par la pièce interdite (Déjà-vu) ne compte plus', () => {
-    let s = withEffect(game('6k1/3p4/8/4P3/8/8/7P/K7 b - - 0 1'), 'blood_moon', { remaining: 3 }, 'b');
-    s = mv(s, 'd7', 'd5');
-    expect(all(s)).toEqual(['e5d6']);
-    const f = { ...s, forbidden: { from: q('e5') } };
-    expect(all(f)).toEqual(['a1a2', 'a1b1', 'a1b2', 'h2h3', 'h2h4']);
-  });
-
   it('un Mur sur la case de prise en passant l’interdit', () => {
-    const s = withEffect(game('6k1/8/8/3pP3/8/8/8/K7 w - d6 0 1'), 'ice_wall', { square: q('d6'), remaining: 3 });
+    const s = wall(game('6k1/8/8/3pP3/8/8/8/K7 w - d6 0 1'), 'd6');
     expect(has(s, 'e5d6')).toBe(false);
+    expect(has(game('6k1/8/8/3pP3/8/8/8/K7 w - d6 0 1'), 'e5d6')).toBe(true);
   });
 });
 
@@ -550,13 +356,14 @@ describe('Répétition et règle des 50 coups avec effets', () => {
     expect(plies).toBe(8);
   });
 
-  it('un Mur actif rend chaque position unique ; la répétition ne compte qu’après la fonte', () => {
+  it('un Mur permanent ne rend pas les positions uniques : la répétition se compte comme sans effet', () => {
     let s = game(fen, ['ice_wall']);
     s = card(s, 0, 'a4');
     const { s: end, plies } = shuffleUntilEnd(s);
     expect(end.result).toEqual({ winner: null, reason: 'repetition' });
-    // 6 coups de Mur (positions toutes différentes), puis 8 demi-coups : 3e occurrence de la position d'après la fonte.
-    expect(plies).toBe(14);
+    // La position d'après la carte n'est pas comptée (aucun coup ne l'a produite) : la première à revenir trois
+    // fois est celle d'après Cf3, aux demi-coups 1, 5 et 9.
+    expect(plies).toBe(9);
   });
 
   it('une carte jouée change la position (droits différents) : pas de répétition avec la position d’avant', () => {
@@ -592,84 +399,36 @@ describe('Répétition et règle des 50 coups avec effets', () => {
     expect(t.pos.halfmove).toBe(0);
   });
 
-  it('Déjà-vu : les positions effacées ne comptent plus pour la répétition', () => {
-    let s = game(fen, ['deja_vu']);
-    for (const m of shuffle.slice(0, 2)) s = mv(s, m.slice(0, 2), m.slice(2));
-    const len = s.keys.length;
-    s = mv(s, 'f3', 'g1');
-    s = mv(s, 'f6', 'g8');
-    s = card(s, 0);
-    expect(s.keys).toHaveLength(len);
-    expect(s.keys[s.keys.length - 1]).toBe(positionKey({ ...s, hands: { ...s.hands, w: s.hands.w.map(h => ({ ...h, used: false })) } }));
-  });
 });
 
 // ---------------------------------------------------------------------------------------------
-// Déjà-vu et instantanés
+// Mains visibles et instantanés
 
-describe('Déjà-vu et instantanés', () => {
-  it('restaure exactement l’état d’avant le coup du lanceur, vide l’historique et ne s’enchaîne pas', () => {
-    let s = createGame({ w: ['deja_vu', 'ice_wall'], b: ['deja_vu'] }, false, 'climats');
+describe('Mains visibles et instantanés', () => {
+  it('la vue de tous (joueurs, spectateurs) montre les deux mains exactes, cartes jouées ou non', () => {
+    let s = createGame({ w: ['truce', 'blast', 'ice_wall'], b: ['tide', 'rift', 'blood_moon'] }, false, 'climats');
     s = mv(s, 'e2', 'e4');
-    s = mv(s, 'd7', 'd5');
-    const A = s;
-    s = mv(s, 'e4', 'd5');
-    s = mv(s, 'd8', 'd5');
-    s = card(s, 0);
-    expect(toFen(s.pos)).toBe(toFen(A.pos));
-    expect(s.captured).toEqual(A.captured);
-    expect(s.effects).toEqual(A.effects);
-    expect(s.ply).toBe(A.ply);
-    expect(s.keys).toEqual(A.keys);
-    expect(s.snaps).toEqual([]);
-    expect(s.cardPlayed).toBe(true);
-    expect(cardPlayable(s, 'w', 1)).toBe(false); // une seule carte par tour
-    s = mv(s, 'g1', 'f3');
-    // Les Noirs n'ont qu'un instantané (le coup blanc) : pas de Déjà-vu possible.
-    expect(cardPlayable(s, 'b', 0)).toBe(false);
+    s = card(s, 1, 'a4');
+    s = mv(s, 'e7', 'e5');
+    const v = viewState(s);
+    expect(v.hands).toEqual(s.hands);
+    expect(v.hands.b).toEqual([{ card: 'tide', used: false }, { card: 'rift', used: true }, { card: 'blood_moon', used: false }]);
+    expect(JSON.stringify(v)).toContain('"blood_moon"');
+    // Pouvoirs : aucun instantané (le Retour arrière n'existe qu'en Duel).
+    expect(v.snaps).toEqual([]);
   });
 
-  it('les instantanés ne portent que des drapeaux ; une vue n’y révèle aucune carte', () => {
-    let s = createGame({ w: ['deja_vu', 'blast', 'portals'], b: ['tide', 'cavalcade', 'rift'] }, false, 'climats');
+  it('Duel : les instantanés du Retour arrière restent, sans main ni drapeau', () => {
+    let s = createGame({ w: ['rewind'], b: ['freeze'] }, false, 'duel');
     s = mv(s, 'e2', 'e4');
     s = mv(s, 'e7', 'e5');
-    for (const snap of s.snaps) {
-      expect(Object.keys(snap)).not.toContain('hands');
-      expect(snap.used).toEqual({ w: [false, false, false], b: [false, false, false] });
-    }
-    const v = JSON.stringify(viewState(s, 'w', false));
-    for (const id of ['tide', 'cavalcade', 'rift']) expect(v).not.toContain(`"${id}"`);
-  });
-
-  it('une Grande Marée adverse effacée : les pions reviennent, la carte est rendue face visible', () => {
-    let s = createGame({ w: ['deja_vu'], b: ['tide'] }, false, 'climats');
-    s = mv(s, 'e2', 'e4');
-    s = mv(s, 'e7', 'e5');
-    const before = toFen(s.pos);
-    s = mv(s, 'g1', 'f3');
-    s = card(s, 0); // Marée noire (Rituel)
-    expect(s.pos.turn).toBe('w');
-    s = card(s, 0); // Déjà-vu blanc
-    expect(toFen(s.pos)).toBe(before);
-    expect(s.hands.b[0]).toMatchObject({ card: 'tide', used: false, revealed: true });
-    expect(viewState(s, 'w', false).hands.b[0].card).toBe('tide');
-    expect(has(s, 'g1f3')).toBe(false);
-  });
-
-  it('Déjà-vu après aller-retour JSON : même résultat que sur l’état d’origine', () => {
-    let s = createGame({ w: ['deja_vu'], b: ['ice_wall'] }, false, 'climats');
-    s = mv(s, 'e2', 'e4');
-    s = card(s, 0, 'e5');
-    s = mv(s, 'd7', 'd5');
-    s = mv(s, 'e4', 'd5');
-    s = mv(s, 'd8', 'd5');
-    const copy = JSON.parse(JSON.stringify(s)) as GameState;
-    const a = playCard(s, 'w', 0, [], '');
-    const b = playCard(copy, 'w', 0, [], '');
-    expect(a.ok && b.ok).toBe(true);
-    if (a.ok && b.ok) {
-      expect(JSON.parse(JSON.stringify(b.state))).toEqual(JSON.parse(JSON.stringify(a.state)));
-      expect(a.state.effects.map(e => e.card)).toEqual(['ice_wall']); // le Mur noir d'avant reste
+    expect(s.snaps).toHaveLength(2);
+    for (const snap of s.snaps) expect(Object.keys(snap).sort()).toEqual(['captured', 'cardPlayed', 'effects', 'forbidden', 'keysLen', 'next', 'ply', 'pos']);
+    const r = playCard(s, 'w', 0, [], '');
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.state.forbidden).toEqual({ from: q('e7'), to: q('e5'), promo: undefined });
+      expect(has(r.state, 'e7e5')).toBe(false);
     }
   });
 });
@@ -715,19 +474,19 @@ describe('Tirage pondéré (R9), sur des milliers de mains', () => {
     }
   });
 
-  it('les Légendaires restent rares et les Communes fréquentes, sans pendule comme avec', () => {
+  it('la Légendaire reste rare et les Communes fréquentes, sans pendule comme avec', () => {
     const rand = rng(99);
     const N = 20000;
     const seen: Partial<Record<CardId, number>> = {};
     for (let i = 0; i < N; i++) for (const id of dealHands(false, false, rand, 'climats').w) seen[id] = (seen[id] ?? 0) + 1;
     const pct = (id: CardId) => ((seen[id] ?? 0) / N) * 100;
     expect(pct('hourglass')).toBe(0);
-    // Sans Sablier, les autres montent de 2 à 4 points (section R9).
-    expect(pct('ice_wall')).toBeGreaterThan(40);
-    expect(pct('ice_wall')).toBeLessThan(46);
-    expect(pct('blast')).toBeGreaterThan(7);
-    expect(pct('blast')).toBeLessThan(12);
-    expect(pct('deja_vu') + pct('blast')).toBeLessThan(24);
+    // Sans Sablier (7 cartes) : Mur 57,5 %, Déflagration 14,9 % (400 000 tirages).
+    expect(pct('ice_wall')).toBeGreaterThan(54);
+    expect(pct('ice_wall')).toBeLessThan(61);
+    expect(pct('blast')).toBeGreaterThan(12);
+    expect(pct('blast')).toBeLessThan(18);
+    expect(pct('blast')).toBeLessThan(pct('blood_moon'));
   }, 60_000);
 });
 
@@ -736,13 +495,14 @@ describe('Tirage pondéré (R9), sur des milliers de mains', () => {
 
 describe('Sérialisation', () => {
   it('un état chargé de tous les effets survit à JSON et à structuredClone, puis se joue à l’identique', () => {
-    let s = game('r3k2r/ppp2ppp/2n5/3pp3/3PP3/2N5/PPP2PPP/R3K2R w KQkq - 4 9', ['deja_vu', 'tide', 'ice_wall'], ['rift', 'portals', 'blood_moon']);
-    s = withEffect(s, 'ice_wall', { square: q('h4'), remaining: 5 });
+    let s = game('r3k2r/ppp2ppp/2n5/3pp3/3PP3/2N5/PPP2PPP/R3K2R w KQkq - 4 9', ['truce', 'tide', 'ice_wall'], ['rift', 'ice_age', 'blood_moon']);
+    s = wall(s, 'h4');
+    s = wall(s, 'a3', 'w');
+    s = withEffect(s, 'ice_wall', { square: q('h6'), remaining: 5 }); // Mur à durée d'une ancienne partie
     s = withEffect(s, 'rift', { squares: [q('a5'), q('b5'), q('c5'), q('f5'), q('g5'), q('h5')], remaining: 3 });
-    s = withEffect(s, 'portals', { squares: [q('a3'), q('h6')], remaining: 6, pending: true, delay: 1 }, 'w');
-    s = withEffect(s, 'coronation', { remaining: 2 }, 'w');
+    s = withEffect(s, 'truce', { remaining: 2 }, 'w');
     s = withEffect(s, 'blast', { remaining: 4, pending: true, delay: 2 }, 'b');
-    s = { ...s, hands: { ...s.hands, b: [{ card: 'rift', used: false, revealed: true }, ...s.hands.b.slice(1)] } };
+    s = { ...s, hands: { ...s.hands, b: [{ card: 'rift', used: true }, ...s.hands.b.slice(1)] } };
     s = mv(s, 'h2', 'h3');
     s = mv(s, 'a7', 'a6');
     for (const copy of [JSON.parse(JSON.stringify(s)) as GameState, structuredClone(s)]) {
@@ -769,28 +529,70 @@ describe('Sérialisation', () => {
 // ---------------------------------------------------------------------------------------------
 // Matériel insuffisant et libellés d'échec
 
-describe('Matériel insuffisant avec des cartes en main', () => {
-  it('ÉCART : Roi et Fou plus un Mur de glace en main contre Roi seul n’est pas nul (Mur g8, puis Fd4#)', () => {
-    const s = game('7k/8/6K1/8/8/4B3/8/8 w - - 0 1', ['ice_wall']);
-    // Preuve que le mat existe : on neutralise la nulle et on joue la suite.
-    const r = playCard({ ...s, result: null }, 'w', 0, [q('g8')], '');
-    if (!r.ok) throw new Error(r.error);
-    const m = playMove({ ...r.state, result: null }, q('e3'), q('d4'));
-    expect(m.ok && m.state.result).toEqual({ winner: 'w', reason: 'checkmate' });
-    // Constat : le moteur déclare la nulle avant même la carte, et la pendule ne laisserait pas gagner au temps.
-    expect(evaluateEnd(s), 'nulle par matériel insuffisant malgré le Mur en main').toBeNull();
-    expect(canStillMate(s, 'w')).toBe(true);
-  });
-});
+describe('Matériel insuffisant avec des Murs (écart corrigé, puis revu pour les Murs des rangées 3 à 6)', () => {
+  // Positions de la force brute (scratchpad, docs/progres/cartes-refonte.md) : pour chacune des 16 paires de Murs,
+  // un mat de Roi et Cavalier, puis de Roi et Fou, contre Roi (Noirs au trait).
+  const MATES: [string, string, 'n' | 'b', string, string, string][] = [
+    ['a3', 'b4', 'n', 'a4', 'a6', 'c5'],
+    ['a3', 'b4', 'b', 'a4', 'a6', 'd1'],
+    ['a3', 'a5', 'n', 'a4', 'c4', 'b2'],
+    ['a3', 'a5', 'b', 'a4', 'c3', 'c6'],
+    ['b3', 'a4', 'n', 'a3', 'a1', 'c2'],
+    ['b3', 'a4', 'b', 'a3', 'a1', 'c5'],
+    ['g3', 'h4', 'n', 'h3', 'g1', 'f2'],
+    ['g3', 'h4', 'b', 'h3', 'g1', 'f5'],
+    ['h3', 'g4', 'n', 'h4', 'g6', 'f5'],
+    ['h3', 'g4', 'b', 'h4', 'g6', 'e1'],
+    ['h3', 'h5', 'n', 'h4', 'f4', 'g2'],
+    ['h3', 'h5', 'b', 'h4', 'f3', 'f6'],
+    ['a4', 'b5', 'n', 'a5', 'a7', 'c6'],
+    ['a4', 'b5', 'b', 'a5', 'a7', 'e1'],
+    ['a4', 'a6', 'n', 'a5', 'c5', 'b3'],
+    ['a4', 'a6', 'b', 'a5', 'c4', 'c7'],
+    ['b4', 'a5', 'n', 'a4', 'a2', 'c3'],
+    ['b4', 'a5', 'b', 'a4', 'a2', 'c6'],
+    ['g4', 'h5', 'n', 'h4', 'g2', 'f3'],
+    ['g4', 'h5', 'b', 'h4', 'g2', 'f6'],
+    ['h4', 'g5', 'n', 'h5', 'g7', 'f6'],
+    ['h4', 'g5', 'b', 'h5', 'g7', 'd1'],
+    ['h4', 'h6', 'n', 'h5', 'f5', 'g3'],
+    ['h4', 'h6', 'b', 'h5', 'f4', 'f7'],
+    ['a5', 'b6', 'n', 'a6', 'a8', 'c7'],
+    ['a5', 'b6', 'b', 'a6', 'a8', 'f1'],
+    ['b5', 'a6', 'n', 'a5', 'a3', 'c4'],
+    ['b5', 'a6', 'b', 'a5', 'a3', 'c7'],
+    ['g5', 'h6', 'n', 'h5', 'g3', 'f4'],
+    ['g5', 'h6', 'b', 'h5', 'g3', 'f7'],
+    ['h5', 'g6', 'n', 'h6', 'g8', 'f7'],
+    ['h5', 'g6', 'b', 'h6', 'g8', 'c1']
+  ];
 
-describe('Libellé de l’échec (checkKind, R5)', () => {
-  it('ÉCART : un Mur sans rapport qui fond ne doit pas transformer un échec « à l’arrivée » en échec « à la fonte »', () => {
-    // La Chevauchée blanche arrive après le coup noir : la dame d6 sautera en e8. Un Mur a5, loin de tout, fond.
-    let s = game('4k3/8/3Q4/8/8/8/8/4K3 b - - 0 1');
-    s = withEffect(s, 'cavalcade', { pending: true, delay: 1, remaining: 2 }, 'w');
-    s = withEffect(s, 'ice_wall', { square: q('a5'), remaining: 1 }, 'b');
-    expect(sideInCheck(s)).toBe(true);
-    expect(checkKind(s)).toBe('arrival');
+  it('chaque paire de Murs permanents permet un mat avec une seule pièce mineure', () => {
+    for (const [a, b, t, bk, wk, m] of MATES) {
+      const board: (Piece | null)[] = new Array(64).fill(null);
+      board[q(bk)] = { id: 1, t: 'k', c: 'b' };
+      board[q(wk)] = { id: 2, t: 'k', c: 'w' };
+      board[q(m)] = { id: 3, t, c: 'w' };
+      let s = createGame({ w: [], b: [] }, false, 'climats');
+      s = { ...s, pos: { board, turn: 'b', castling: 0, ep: -1, halfmove: 0, fullmove: 40 } };
+      s = wall(wall(s, a, 'w'), b, 'b');
+      expect(evaluateEnd(s), `${a}+${b} ${t}${m}`).toEqual({ winner: 'w', reason: 'checkmate' });
+      // Sans l'un des deux Murs, ce n'est plus un mat.
+      const one = wall({ ...s, effects: [] }, a, 'w');
+      expect(evaluateEnd(one), `${a} seul`).not.toEqual({ winner: 'w', reason: 'checkmate' });
+    }
+  });
+
+  it('Roi et Fou plus un seul Mur de glace en main contre Roi : nulle ; un Mur dans chaque main : la partie continue', () => {
+    const s = game('7k/8/6K1/8/8/4B3/8/8 w - - 0 1', ['ice_wall']);
+    expect(evaluateEnd(s)).toEqual({ winner: null, reason: 'insufficient' });
+    expect(canStillMate(s, 'w')).toBe(false);
+    const t = game('7k/8/6K1/8/8/4B3/8/8 w - - 0 1', ['ice_wall'], ['ice_wall']);
+    expect(evaluateEnd(t)).toBeNull();
+    expect(canStillMate(t, 'w')).toBe(true);
+    // Fous de même couleur des deux camps et un Terrain en main : pas de nulle par prudence.
+    expect(evaluateEnd(game('7k/8/6K1/8/8/4B3/1b6/8 w - - 0 1', ['rift']))).toBeNull();
+    expect(evaluateEnd(game('7k/8/6K1/8/8/4B3/1b6/8 w - - 0 1'))).toEqual({ winner: null, reason: 'insufficient' });
   });
 });
 
@@ -838,26 +640,22 @@ function invariants(s: GameState, fromStart: boolean) {
   expect(climates.filter(e => !e.pending).length).toBeLessThanOrEqual(1);
   expect(climates.filter(e => e.pending).length).toBeLessThanOrEqual(1);
   expect(s.effects.filter(e => e.card === 'rift').length).toBeLessThanOrEqual(1);
-  expect(s.effects.filter(e => e.card === 'portals').length).toBeLessThanOrEqual(1);
   const terrain = new Set<number>();
   for (const e of s.effects) {
-    expect(e.remaining).toBeGreaterThan(0);
+    if (e.permanent) expect([e.card, e.remaining, e.total]).toEqual(['ice_wall', 0, 0]);
+    else expect(e.remaining).toBeGreaterThan(0);
     expect(e.remaining).toBeLessThanOrEqual(e.total);
     if (e.pending) expect([1, 2]).toContain(e.delay);
-    const sqs = e.card === 'ice_wall' ? [e.square!] : e.card === 'rift' || e.card === 'portals' ? e.squares ?? [] : [];
+    const sqs = e.card === 'ice_wall' ? [e.square!] : e.card === 'rift' ? e.squares ?? [] : [];
     for (const x of sqs) {
       expect(terrain.has(x), `deux Terrains en ${sqName(x)}`).toBe(false);
       terrain.add(x);
     }
   }
-  for (const you of ['w', 'b'] as Color[]) {
-    const v = viewState(s, you, false);
-    const them = opposite(you);
-    s.hands[them].forEach((h, i) => {
-      if (!h.used && !h.revealed) expect(v.hands[them][i].card).toBeNull();
-    });
-    for (const snap of v.snaps) expect(Object.keys(snap)).not.toContain('hands');
-  }
+  // Mains visibles : la vue de tous montre les deux mains, exactes ; aucun instantané hors Duel.
+  const v = viewState(s);
+  expect(v.hands).toEqual(s.hands);
+  expect(v.snaps).toEqual([]);
   if (s.result) {
     if (s.result.reason === 'checkmate') {
       expect(s.result.winner).toBe(opposite(s.pos.turn));
@@ -920,7 +718,7 @@ function aggressive(start: GameState, rand: () => number, maxSteps: number, from
       if (!s.cardPlayed && (rand() < 0.85 || !legalMovesOf(s).length)) {
         const free = s.hands[me].map((_, i) => i).filter(i => !s.hands[me][i].used);
         for (const i of free.sort(() => rand() - 0.5)) {
-          const id = s.hands[me][i].card!;
+          const id = s.hands[me][i].card;
           const targets: number[] = [];
           let ok = true;
           for (let k = 0; k < CARDS[id].targets; k++) {
@@ -933,8 +731,12 @@ function aggressive(start: GameState, rand: () => number, maxSteps: number, from
           if (CARDS[id].targets) expect(r.ok, `${id} ${targets.map(sqName)} : ${r.ok ? '' : r.error}`).toBe(true);
           if (!r.ok) continue;
           if (!r.info.ritual) {
-            // R4a : jamais d'échec par une carte, ni maintenant ni (Présage) à l'arrivée pour la position actuelle.
+            // R4a : jamais d'échec par une carte.
             expect(inCheck(r.state.pos, opposite(me), modsFromEffects(r.state.effects))).toBe(false);
+          }
+          if (id === 'ice_wall') {
+            const w = r.state.effects[r.state.effects.length - 1];
+            expect(w.permanent && rankOf(w.square!) >= 2 && rankOf(w.square!) <= 5, `Mur ${sqName(w.square!)}`).toBe(true);
           }
           log.push(`[${id}${targets.map(sqName).join(',')}]`);
           bump(id);
@@ -946,7 +748,7 @@ function aggressive(start: GameState, rand: () => number, maxSteps: number, from
       }
       const legal = legalMovesOf(s);
       expect(legal.length, 'aucun coup et aucune carte jouée').toBeGreaterThan(0);
-      const sharp = legal.filter(m => m.flags & (F_CAPTURE | F_PORTAL | F_PROMO | F_RELAXED));
+      const sharp = legal.filter(m => m.flags & (F_CAPTURE | F_PROMO | F_RELAXED));
       const m = sharp.length && rand() < 0.6 ? sharp[Math.floor(rand() * sharp.length)] : legal[Math.floor(rand() * legal.length)];
       const now = modsFromEffects(s.effects);
       const r = playMove(s, m.from, m.to, m.promo);
@@ -964,11 +766,10 @@ function aggressive(start: GameState, rand: () => number, maxSteps: number, from
           expect(!p || p.t === 'p' || p.t === 'k', `voisine survivante ${sqName(x)}`).toBe(true);
         }
       }
-      if (now.crown && s.pos.board[m.from]!.t === 'p' && !(m.flags & (F_BLAST | F_RELAXED))) {
-        const rel = me === 'w' ? rankOf(m.to) : 7 - rankOf(m.to);
-        if (rel === 6 && !(m.flags & F_EP)) expect(n.pos.board[m.to]?.t).not.toBe('p');
-      }
-      for (const [f, k] of [[F_RELAXED, 'relaxed'], [F_BLAST, 'explosion'], [F_PORTAL, 'passage'], [F_PROMO, 'promotion']] as const) {
+      // Promotion en 8e rangée seulement (le Couronnement est retiré), jamais par un pion qui explose.
+      if (m.flags & F_PROMO) expect(rankOf(m.to) === 0 || rankOf(m.to) === 7).toBe(true);
+      if (now.truce && !(m.flags & F_RELAXED) && m.flags & F_CAPTURE) expect(inCheck(s.pos, me, modsFromEffects(tickEffects(s.effects, me)))).toBe(true);
+      for (const [f, k] of [[F_RELAXED, 'relaxed'], [F_BLAST, 'explosion'], [F_PROMO, 'promotion']] as const) {
         if (m.flags & f) bump(k);
       }
       log.push(r.info.san + (m.flags & F_RELAXED ? '(R6)' : ''));
@@ -986,11 +787,11 @@ function aggressive(start: GameState, rand: () => number, maxSteps: number, from
   }
 }
 
-/** Position clairsemée au hasard, avec beaucoup de Murs, parfois une Faille, des Portails et un Climat. */
+/** Position clairsemée au hasard, avec beaucoup de Murs (permanents ou à durée), parfois une Faille, et un Climat. */
 function crowdedTerrain(rand: () => number): GameState {
   const ri = (n: number) => Math.floor(rand() * n);
   const pool = cardsOf('climats');
-  const CLIM: CardId[] = ['truce', 'blood_moon', 'ice_age', 'coronation', 'blast', 'cavalcade'];
+  const CLIM: CardId[] = ['truce', 'blood_moon', 'ice_age', 'blast', 'hourglass'];
   for (;;) {
     const b: (string | null)[] = new Array(64).fill(null);
     const put = (t: string) => {
@@ -1037,22 +838,13 @@ function crowdedTerrain(rand: () => number): GameState {
       const e = empties();
       const x = e[ri(e.length)];
       used.add(x);
-      effects.push(eff('ice_wall', { square: x }));
+      effects.push(eff('ice_wall', rand() < 0.7 ? { square: x, permanent: true, remaining: 0, total: 0 } : { square: x }));
     }
     if (rand() < 0.3) {
       const r = 3 + ri(2);
       const sqs = empties().filter(i => i >> 3 === r);
       sqs.forEach(x => used.add(x));
       if (sqs.length) effects.push(eff('rift', { squares: sqs }));
-    }
-    if (rand() < 0.25) {
-      const c = empties().filter(i => rankOf(i) >= 2 && rankOf(i) <= 5 && !used.has(63 - i) && !s.pos.board[63 - i]);
-      if (c.length) {
-        const x = c[ri(c.length)];
-        used.add(x);
-        used.add(63 - x);
-        effects.push(eff('portals', { squares: [x, 63 - x] }));
-      }
     }
     if (rand() < 0.8) effects.push(eff(rand() < 0.5 ? 'ice_age' : CLIM[ri(CLIM.length)]));
     if (rand() < 0.3) {
@@ -1070,7 +862,7 @@ function crowdedTerrain(rand: () => number): GameState {
 }
 
 describe('parties au hasard agressives (cartes jouées dès que possible)', () => {
-  it('130 parties Climats depuis la position initiale (graines 70 000+), mains tirées ou imposées', () => {
+  it('130 parties Pouvoirs depuis la position initiale (graines 70 000+), mains tirées ou imposées', () => {
     const stats = new Map<string, number>();
     const pool = cardsOf('climats');
     for (let g = 0; g < 130; g++) {
@@ -1082,10 +874,10 @@ describe('parties au hasard agressives (cartes jouées dès que possible)', () =
       aggressive(createGame(hands, g % 4 !== 0, 'climats'), rand, 240, true, `partie ${seed}`, stats);
     }
     for (const id of cardsOf('climats')) expect(stats.get(id) ?? 0, id).toBeGreaterThan(25);
-    for (const k of ['explosion', 'passage', 'promotion']) expect(stats.get(k) ?? 0, k).toBeGreaterThan(10);
+    for (const k of ['explosion', 'promotion']) expect(stats.get(k) ?? 0, k).toBeGreaterThan(10);
   }, 120_000);
 
-  it('300 positions clairsemées couvertes de Murs, Failles, Portails et Climats (graines 31 000+)', () => {
+  it('300 positions clairsemées couvertes de Murs, Failles et Climats (graines 31 000+)', () => {
     const stats = new Map<string, number>();
     for (let g = 0; g < 300; g++) {
       const seed = 31_000 + g;

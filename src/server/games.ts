@@ -155,7 +155,7 @@ async function loadRoom(id: string): Promise<Room | null> {
  * Une partie en cours qui garde une carte retirée du jeu (Couronnement, Chevauchée, Portails, Déjà-vu : décision
  * du 30 octobre), en main ou en effet, ne peut plus être arbitrée.
  */
-function hasRetiredCard(s: GameState): boolean {
+export function hasRetiredCard(s: GameState): boolean {
   return [...s.hands.w, ...s.hands.b].some(h => !isCardId(h.card)) || s.effects.some(e => !isCardId(e.card));
 }
 

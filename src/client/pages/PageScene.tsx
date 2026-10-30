@@ -31,6 +31,11 @@ function rng(seed: number) {
   };
 }
 
+/** Rang en toutes lettres abrégées : 1er, 2e, 3e… */
+export function ordinal(n: number) {
+  return n === 1 ? '1er' : `${n}e`;
+}
+
 /** Titre du document : « Boutique · Spellmate ». */
 export function useTitle(title: string) {
   useEffect(() => {

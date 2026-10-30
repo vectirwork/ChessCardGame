@@ -27,6 +27,11 @@ export function catalogLabel(c: Catalog): string {
   return CATALOGS.find(x => x.id === c)?.label ?? 'Duel';
 }
 
+/** Catalogue en quelques mots (« Pouvoirs », « sans cartes ») pour les surtitres. */
+export function catalogTag(c: Catalog): string {
+  return c === 'aucune' ? 'sans cartes' : catalogLabel(c);
+}
+
 export function catalogDescription(c: Catalog): string {
   return CATALOGS.find(x => x.id === c)?.description ?? '';
 }
@@ -254,7 +259,7 @@ export function MoveList({ log, className = '' }: { log: LogEntry[]; className?:
               <span className="gp-mv-n" aria-hidden="true" />
               <span className="gp-mv-card">
                 <i aria-hidden="true" />
-                {def.name}
+                <span className="gp-mv-card-name">{def.name}</span>
                 <small>{colorName(l.e.c)}</small>
               </span>
             </li>
@@ -282,6 +287,7 @@ function effectLine(e: Effect, you: Color | null): string {
     const when = e.delay && e.delay > 1 ? `arrive dans ${plural(e.delay, 'coup')}` : 'arrive au prochain tour';
     return `Présage · ${when}`;
   }
+  if (e.permanent) return `${who} · permanent`;
   if (e.global) return `${who} · encore ${plural(e.remaining, 'coup')}`;
   if (e.countsOn === e.caster) return `${who} · ce tour`;
   if (!you) return `${who} · encore ${plural(e.remaining, 'coup')} des ${colorName(e.countsOn)}`;
@@ -301,7 +307,7 @@ export function EffectsPanel({ effects, you, title = 'Sorts en cours' }: { effec
           const def = CARDS[e.card];
           if (!def) return null;
           const mine = you ? e.caster === you : e.caster === 'w';
-          const pips = e.pending ? 0 : Math.min(e.total, 8);
+          const pips = e.pending || e.permanent ? 0 : Math.min(e.total, 8);
           return (
             <li
               key={e.id}

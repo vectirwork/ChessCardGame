@@ -9,7 +9,7 @@ import { TIME_CONTROLS } from '../../shared/protocol';
 import { api, errMsg } from '../api';
 import { PageLoader } from '../components/Layout';
 import { useApp } from '../store';
-import { PageHead, PlacePage, useTitle } from './PageScene';
+import { PageHead, PlacePage, ordinal, useTitle } from './PageScene';
 
 interface ProfileData {
   profile: {
@@ -76,7 +76,7 @@ export default function Profile() {
           </span>
           <PageHead
             place="L’Observatoire"
-            aside={p.rank ? `${p.rank}ᵉ au classement` : 'Profil'}
+            aside={p.rank ? `${ordinal(p.rank)} au classement` : 'Profil'}
             title={p.username}
             lede={
               <>
@@ -99,7 +99,7 @@ export default function Profile() {
         </div>
         <div className="prof-rating">
           <b>{p.rating}</b>
-          <span>Elo{p.rank ? ` · ${p.rank}ᵉ` : ''}</span>
+          <span>Elo{p.rank ? ` · ${ordinal(p.rank)}` : ''}</span>
         </div>
       </div>
 

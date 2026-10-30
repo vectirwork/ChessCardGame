@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { PageLoader } from '../components/Layout';
 import { useApp } from '../store';
-import { PageHead, PlacePage, StarMark, useTitle } from './PageScene';
+import { PageHead, PlacePage, StarMark, ordinal, useTitle } from './PageScene';
 
 interface Row {
   username: string;
@@ -45,7 +45,7 @@ export default function Leaderboard() {
             <StarMark size={12} />
             {myRank >= 0 ? (
               <>
-                Vous êtes <b>{myRank + 1}ᵉ</b> avec <b>{me.rating}</b> points.
+                Vous êtes <b>{ordinal(myRank + 1)}</b> avec <b>{me.rating}</b> points.
               </>
             ) : (
               <>

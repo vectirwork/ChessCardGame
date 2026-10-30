@@ -17,13 +17,16 @@ Captures : concepts/site-pages/. Pas de commit, pas de npm install, ne pas redé
   « Revoir » → /analyse/:id), Leaderboard (podium), Admin, Legal (Archives + nav), NotFound (boussole) : réécrits.
 - pages.css réécrit en entier (anciennes classes Play/Rules/Home conservées).
 
+- Captures bureau + mobile de toutes les pages : concepts/site-pages/{bureau,mobile}-*.png (parcours complet :
+  inscription, récapitulatif, caisse démo, achat, équipement, collection ; classement/profil/admin avec API simulée
+  par page.route). Corrections : alignement mobile de la vitrine, bouton Payer, pastilles de la collection,
+  ordinal « 1er », tableaux en cartes sur mobile, lien contact des Archives.
+
 ## En cours
-- Captures de toutes les pages (concepts/site-pages/scenarios/pages.cjs), corrections visuelles.
+- Vérifications finales : node test/integration.mjs, tsc, npm test.
 
 ## Reste à faire
-- Boutique (Bazar céleste, aperçu animé, achat démo, équipement), DemoCheckout, Auth, Account, Profile,
-  Leaderboard, Admin, Legal, NotFound, habillage fonctions classiques.
-- Captures bureau + mobile, node test/integration.mjs, tsc, npm test.
+- Vérifications finales et compte rendu.
 
 ## Décisions
 - Chaque page intérieure est un « lieu » : Boutique = V · Le Bazar céleste (comme l'accueil), Auth/caisse = VI · Le
@@ -41,4 +44,6 @@ Captures : concepts/site-pages/. Pas de commit, pas de npm install, ne pas redé
 - npx tsc --noEmit -p .
 - npm test
 - node test/integration.mjs (contre http://localhost:3000)
-- node concepts/_tools/shoot.cjs concepts/site-pages/scenarios/<x>.json
+- node concepts/_tools/shoot.cjs concepts/site-pages/scenarios/boutique.json (et boutique-mobile.json)
+- node concepts/site-pages/scenarios/pages.cjs http://localhost:3000 concepts/site-pages [parcours] [bureau|mobile]
+  (une capture à la fois : le WebGL logiciel sature avec deux navigateurs)

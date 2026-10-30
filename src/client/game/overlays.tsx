@@ -11,7 +11,7 @@ import type { GameView } from '../../shared/protocol';
 import { Modal, Spinner } from '../components/Layout';
 import { SpellCard } from '../components/SpellCard';
 import { getGuestName, useApp } from '../store';
-import { catalogDescription, catalogLabel, colorName, tcLong } from './parts';
+import { catalogDescription, catalogTag, colorName, tcLong } from './parts';
 
 export interface Casting {
   card: CardId;
@@ -96,7 +96,7 @@ export function WaitingCard({ id, view, catalog, onCancel }: { id: string; view:
           </button>
         </div>
         <p className="gp-card-meta">
-          Vous jouez les {colorName(mine)} · {tcLong(view.clock)} · {catalog === 'aucune' ? 'sans cartes' : `cartes ${catalogLabel(catalog)}`}
+          Vous jouez les {colorName(mine)} · {tcLong(view.clock)} · {catalogTag(catalog)}
           {view.mirror && catalog !== 'aucune' ? ' · mains miroir' : ''}
         </p>
       </div>
@@ -122,7 +122,7 @@ export function JoinSheet({ host, loggedIn, mirror, catalog, view, onJoin }: { h
         <p className="gp-card-text">
           {catalog === 'aucune'
             ? 'Une partie d’échecs classiques, sans cartes.'
-            : `Les échecs, plus trois cartes de pouvoir chacun. Cartes ${catalogLabel(catalog)} : ${catalogDescription(catalog).toLowerCase()}`}
+            : `Les échecs, plus trois cartes de pouvoir chacun. ${catalogDescription(catalog)}`}
         </p>
         {mirror && catalog !== 'aucune' && <p className="gp-note">Mode miroir : vous recevrez tous les deux les mêmes cartes.</p>}
         {!loggedIn ? (
@@ -249,7 +249,7 @@ export function EndCard({ view, onClose, onRematch, loggedIn, footer, screen }: 
         </div>
         <p className="gp-kick">Fin de partie{moves > 0 && !aborted ? ` · ${plural(moves, 'coup')}` : ''}</p>
         <h2 className="gp-card-title">{win ? <em>Victoire.</em> : resultTitle(view)}</h2>
-        <p className="gp-card-text">{RESULT_TEXT[r.reason] ?? 'Partie terminée'}.</p>
+        <p className="gp-card-text">{aborted ? 'Elle ne compte ni au classement ni dans l’historique.' : `${RESULT_TEXT[r.reason] ?? 'Partie terminée'}.`}</p>
         {diff !== null && (
           <p className={`gp-end-diff ${diff >= 0 ? 'up' : 'down'}`}>
             {diff >= 0 ? '+' : ''}

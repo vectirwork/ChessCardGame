@@ -155,11 +155,11 @@ const fakeUsers = { users: NAMES.slice(0, 5).map((n, i) => ({ id: 'u' + i, usern
         await shot(page, P('boutique-recapitulatif'));
         await page.check('.bz-co-waiver input');
         await page.click('.bz-co-pay');
-        await page.waitForURL('**/boutique/demo/**', { timeout: 15000 });
+        await page.waitForURL('**/boutique/demo/**', { timeout: 60000 });
         await page.waitForTimeout(1000);
         await shot(page, P('caisse-demo'));
         await page.click('.co-actions .btn-primary');
-        await page.waitForURL('**/boutique?objet=skin:void', { timeout: 15000 });
+        await page.waitForURL('**/boutique?objet=skin:void', { timeout: 60000 });
         await page.waitForTimeout(1200);
         await shot(page, P('boutique-achete'));
         await page.click('.bz-fiche .btn-gold');

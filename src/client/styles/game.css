@@ -343,7 +343,10 @@
   color: var(--soft);
 }
 .gp-opp-hand-m .gp-hand-row .spell-card {
-  --w: 28px;
+  --w: 23px;
+}
+.gs.is-mobile .gp-opp-hand-m {
+  margin-top: 8px;
 }
 .gp-self.is-mobile {
   left: 14px;
@@ -387,14 +390,14 @@
 .gp-tools {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
-  flex: none;
 }
 .gp-tool {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   border: 1px solid var(--hair);
   background: rgba(10, 10, 26, 0.6);
@@ -402,8 +405,12 @@
   transition: color 0.3s, border-color 0.3s;
 }
 .gp-tool svg {
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
+}
+.gp-tools .gp-emote-btn {
+  width: 32px;
+  height: 32px;
 }
 .gp-tool:hover,
 .gp-tool[aria-pressed='true'] {
@@ -574,6 +581,13 @@
   line-height: 1.15;
   color: hsl(var(--h) 85% 82%);
 }
+.gp-mv-card {
+  flex-wrap: wrap;
+  row-gap: 0;
+}
+.gp-mv-card-name {
+  white-space: nowrap;
+}
 .gp-mv-card i {
   flex: none;
   width: 6px;
@@ -673,7 +687,12 @@
 .gs.is-mobile .gp-effects ul {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 14px;
+  gap: 4px 16px;
+}
+.gs.is-mobile .gp-effect-txt {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
 .gs.is-mobile .gp-effects li {
   grid-template-columns: 10px auto;
@@ -1263,7 +1282,7 @@
 }
 .pl-cats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr));
   gap: 8px;
 }
 .pl-cat {

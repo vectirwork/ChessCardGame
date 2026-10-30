@@ -15,6 +15,22 @@ export type CardId =
 
 export type Rarity = 'commune' | 'rare' | 'épique' | 'légendaire';
 
+/**
+ * Catalogue utilisé par une partie :
+ * - 'climats' : cartes à effets globaux (par défaut, voir concepts/CARTES-GLOBALES.md) ;
+ * - 'duel' : les 11 cartes historiques, qui visent surtout l'adversaire ;
+ * - 'aucune' : échecs classiques, sans cartes.
+ */
+export type Catalog = 'climats' | 'duel' | 'aucune';
+export const CATALOGS: { id: Catalog; label: string; description: string }[] = [
+  { id: 'climats', label: 'Climats', description: 'Des pouvoirs qui changent la partie pour les deux joueurs.' },
+  { id: 'duel', label: 'Duel', description: 'Les sorts historiques, qui visent l’adversaire.' },
+  { id: 'aucune', label: 'Sans cartes', description: 'Les échecs classiques, rien d’autre.' },
+];
+
+/** Famille d'une carte : Climat (règle globale), Terrain (cases), Événement (instantané), Duel (catalogue historique). */
+export type Family = 'climat' | 'terrain' | 'evenement' | 'duel';
+
 export interface CardDef {
   id: CardId;
   name: string;
@@ -37,11 +53,20 @@ export interface CardDef {
   turns?: number;
   /** L'effet se décompte sur les coups de l'adversaire (sinon sur ceux du lanceur). */
   countsOnOpponent?: boolean;
+  /** Catalogue auquel la carte appartient. */
+  catalog: Exclude<Catalog, 'aucune'>;
+  family: Family;
+  /** Présage : l'effet est annoncé et n'arrive qu'au tour suivant du lanceur. */
+  presage?: boolean;
+  /** Rituel : la carte remplace le coup du lanceur. */
+  ritual?: boolean;
 }
 
 export const CARDS: Record<CardId, CardDef> = {
   time_warp: {
     id: 'time_warp',
+    catalog: 'duel',
+    family: 'duel',
     name: 'Distorsion temporelle',
     tagline: 'Le temps file entre ses doigts.',
     description: "La pendule adverse s'écoule deux fois plus vite pendant ses 3 prochains coups.",
@@ -56,6 +81,8 @@ export const CARDS: Record<CardId, CardDef> = {
   },
   ice_wall: {
     id: 'ice_wall',
+    catalog: 'duel',
+    family: 'duel',
     name: 'Mur de glace',
     tagline: 'Ici, personne ne passe.',
     description: "Une case vide devient infranchissable : aucune pièce ne peut s'y arrêter ni la traverser.",
@@ -69,6 +96,8 @@ export const CARDS: Record<CardId, CardDef> = {
   },
   gravity: {
     id: 'gravity',
+    catalog: 'duel',
+    family: 'duel',
     name: 'Gravité',
     tagline: 'Chaque pas pèse une tonne.',
     description: 'La portée des tours, fous et dames adverses est divisée par deux : 3 cases au plus.',
@@ -82,6 +111,8 @@ export const CARDS: Record<CardId, CardDef> = {
   },
   freeze: {
     id: 'freeze',
+    catalog: 'duel',
+    family: 'duel',
     name: 'Cryogénie',
     tagline: 'Figée dans la glace éternelle.',
     description: 'Gèle une pièce adverse (sauf le roi) : elle ne peut ni bouger, ni capturer, ni protéger.',
@@ -95,6 +126,8 @@ export const CARDS: Record<CardId, CardDef> = {
   },
   shield: {
     id: 'shield',
+    catalog: 'duel',
+    family: 'duel',
     name: 'Égide',
     tagline: 'Intouchable.',
     description: 'Une de vos pièces (sauf le roi) devient imprenable et insensible aux cartes adverses.',
@@ -108,6 +141,8 @@ export const CARDS: Record<CardId, CardDef> = {
   },
   swap: {
     id: 'swap',
+    catalog: 'duel',
+    family: 'duel',
     name: 'Permutation',
     tagline: 'Deux âmes, deux places.',
     description:
@@ -120,6 +155,8 @@ export const CARDS: Record<CardId, CardDef> = {
   },
   rewind: {
     id: 'rewind',
+    catalog: 'duel',
+    family: 'duel',
     name: 'Retour arrière',
     tagline: 'Ce coup-là ? Il n’a jamais existé.',
     description: "Annule le dernier coup adverse. Votre adversaire doit rejouer, et pas le même coup.",
@@ -131,6 +168,8 @@ export const CARDS: Record<CardId, CardDef> = {
   },
   revive: {
     id: 'revive',
+    catalog: 'duel',
+    family: 'duel',
     name: 'Résurrection',
     tagline: 'Les héros ne meurent jamais vraiment.',
     description:
@@ -143,6 +182,8 @@ export const CARDS: Record<CardId, CardDef> = {
   },
   knight_leap: {
     id: 'knight_leap',
+    catalog: 'duel',
+    family: 'duel',
     name: 'Saut du cavalier',
     tagline: "L'élan d'un destrier.",
     description: 'Pour ce tour, une de vos tours, fous ou dames peut aussi se déplacer comme un cavalier.',
@@ -155,6 +196,8 @@ export const CARDS: Record<CardId, CardDef> = {
   },
   lightning: {
     id: 'lightning',
+    catalog: 'duel',
+    family: 'duel',
     name: 'Foudre',
     tagline: 'Le ciel a tranché.',
     description: 'Pulvérise un pion adverse, où qu’il soit sur l’échiquier.',
@@ -166,6 +209,8 @@ export const CARDS: Record<CardId, CardDef> = {
   },
   phase: {
     id: 'phase',
+    catalog: 'duel',
+    family: 'duel',
     name: 'Passe-muraille',
     tagline: 'Tes rangs s’écartent comme de la brume.',
     description:

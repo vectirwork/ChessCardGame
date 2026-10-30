@@ -11,12 +11,14 @@ import type {
   ClientToServer, GameEvent, GameMode, GameStatus, GameView, JoinReply, SeatView, ServerToClient,
 } from '../shared/protocol';
 import { EMOTES, QUICK_CONTROLS, TIME_CONTROLS, tcFromId } from '../shared/protocol';
+import { CATALOGS, Catalog } from '../shared/cards';
+
+const CATALOG_IDS = CATALOGS.map(c => c.id);
 import rateLimit from 'express-rate-limit';
-import type pg from 'pg';
 import { Identity, identityFromCookies, userById } from './auth';
-import { BOT_PROFILES, BotLevel } from './bot';
+import { BOT_PROFILES, BotLevel } from '../shared/bot';
 import { botPool } from './bot-pool';
-import { one, q, tx } from './db';
+import { DbClient, one, q, tx } from './db';
 import { gameId, randomToken } from './security';
 import { toSummary } from './summary';
 
@@ -52,6 +54,8 @@ interface RoomData {
   status: GameStatus;
   tc: string;
   mirror: boolean;
+  /** Catalogue de cartes ('climats', 'duel', 'aucune'). */
+  catalog?: Catalog;
   creator: string;
   seats: Record<Color, Seat | null>;
   state: GameState;
@@ -105,7 +109,7 @@ function scheduleSave(room: Room) {
   }, 250);
 }
 
-async function saveRoom(room: Room, client?: pg.PoolClient) {
+async function saveRoom(room: Room, client?: DbClient) {
   const d = room.d;
   const r = d.state.result;
   // Un compte supprimé pendant la partie ne doit pas bloquer la sauvegarde (clé étrangère)
@@ -326,7 +330,7 @@ function botSeat(level: BotLevel): Seat {
   };
 }
 
-function newRoom(opts: { mode: GameMode; rated: boolean; tc: string; mirror: boolean; creator: string; seats: Record<Color, Seat | null> }): Room {
+function newRoom(opts: { mode: GameMode; rated: boolean; tc: string; mirror: boolean; catalog: Catalog; creator: string; seats: Record<Color, Seat | null> }): Room {
   const tc = tcFromId(opts.tc) ?? null;
   let id = gameId();
   while (rooms.has(id)) id = gameId();
@@ -337,9 +341,10 @@ function newRoom(opts: { mode: GameMode; rated: boolean; tc: string; mirror: boo
     status: opts.seats.w && opts.seats.b ? 'active' : 'waiting',
     tc: opts.tc,
     mirror: opts.mirror,
+    catalog: opts.catalog,
     creator: opts.creator,
     seats: opts.seats,
-    state: createGame(dealHands(!!tc, opts.mirror), !!tc),
+    state: createGame(dealHands(!!tc, opts.mirror, Math.random, opts.catalog), !!tc, opts.catalog),
     clock: tc ? { initial: tc.initial, increment: tc.increment, w: tc.initial * 1000, b: tc.initial * 1000, running: null, since: now() } : null,
     drawOffer: null,
     rematch: { w: false, b: false, next: null },
@@ -525,7 +530,7 @@ async function createRematch(room: Room): Promise<void> {
     room.rematchPending = false;
     throw e;
   }
-  const next = newRoom({ mode: d.mode, rated: d.rated, tc: d.tc, mirror: d.mirror, creator: d.creator, seats });
+  const next = newRoom({ mode: d.mode, rated: d.rated, tc: d.tc, mirror: d.mirror, catalog: d.catalog ?? d.state.catalog ?? 'duel', creator: d.creator, seats });
   d.rematch.next = next.d.id;
   for (const s of room.sockets) s.emit('game:redirect', { from: d.id, to: next.d.id });
   broadcast(room, { type: 'sync' });
@@ -539,6 +544,8 @@ interface QueueEntry {
   identity: Identity;
   rating: number;
   since: number;
+  /** Pseudo de l'invité (file amicale). */
+  name?: string;
 }
 const queues = new Map<string, QueueEntry[]>();
 
@@ -555,30 +562,40 @@ function queueSize() {
   return n;
 }
 
-async function joinQueue(sock: Sock, tc: string): Promise<Ack> {
+/**
+ * File d'attente. Classée : comptes uniquement, appariement par classement Elo.
+ * Amicale : ouverte aux invités (pseudo anonyme), non classée, premier arrivé premier servi.
+ */
+async function joinQueue(sock: Sock, tc: string, rated: boolean, guestName?: string, catalog: Catalog = 'climats'): Promise<Ack> {
   const identity = sock.data.identity;
-  if (!identity.user) return { ok: false, error: 'Connecte-toi pour jouer en partie classée.' };
+  if (rated && !identity.user) return { ok: false, error: 'Connecte-toi pour jouer en partie classée.' };
   if (!QUICK_CONTROLS.includes(tc)) return { ok: false, error: 'Cadence inconnue.' };
+  let name: string | undefined;
+  if (!identity.user) {
+    const parsed = guestNameSchema.safeParse(guestName ?? '');
+    name = parsed.success ? parsed.data : `Anonyme-${Math.floor(1000 + Math.random() * 9000)}`;
+  }
   const key = keyOf(identity);
   leaveQueues(key);
-  const list = queues.get(tc) ?? [];
-  // Adversaire le plus proche en classement, avec une tolérance qui s'élargit avec l'attente
-  const me = (await userById(identity.user.id))?.rating ?? identity.user.rating;
+  const pool = `${tc}|${rated ? 'classee' : 'amicale'}|${catalog}`;
+  const list = queues.get(pool) ?? [];
+  const me = identity.user ? (await userById(identity.user.id))?.rating ?? identity.user.rating : 1200;
+  // Classée : adversaire le plus proche en classement, avec une tolérance qui s'élargit avec l'attente
   const candidates = list
     .filter(e => e.key !== key)
-    .filter(e => Math.abs(e.rating - me) <= 250 + ((now() - e.since) / 1000) * 25)
-    .sort((a, b) => Math.abs(a.rating - me) - Math.abs(b.rating - me));
+    .filter(e => !rated || Math.abs(e.rating - me) <= 250 + ((now() - e.since) / 1000) * 25)
+    .sort((a, b) => (rated ? Math.abs(a.rating - me) - Math.abs(b.rating - me) : a.since - b.since));
   const opp = candidates[0];
   if (!opp) {
-    list.push({ key, identity, rating: me, since: now() });
-    queues.set(tc, list);
+    list.push({ key, identity, rating: me, since: now(), name });
+    queues.set(pool, list);
     sock.emit('queue:status', { waiting: true, tc, since: now(), players: queueSize() });
     return { ok: true };
   }
-  queues.set(tc, list.filter(e => e !== opp));
-  const [a, b] = await Promise.all([seatFor(identity), seatFor(opp.identity)]);
+  queues.set(pool, list.filter(e => e !== opp));
+  const [a, b] = await Promise.all([seatFor(identity, name), seatFor(opp.identity, opp.name)]);
   const white = Math.random() < 0.5;
-  const room = newRoom({ mode: 'quick', rated: true, tc, mirror: false, creator: key, seats: white ? { w: a, b } : { w: b, b: a } });
+  const room = newRoom({ mode: 'quick', rated, tc, mirror: false, catalog, creator: key, seats: white ? { w: a, b } : { w: b, b: a } });
   io.to(`id:${key}`).to(`id:${opp.key}`).emit('queue:matched', { gameId: room.d.id });
   return { ok: true };
 }
@@ -788,7 +805,8 @@ export function attachSockets(server: IO) {
       if (typeof ack !== 'function') return;
       if (!allow()) return ack({ ok: false, error: 'Trop de requêtes.' });
       try {
-        ack(await joinQueue(sock, String(p?.tc ?? '')));
+        const catalog = CATALOG_IDS.includes(p?.catalog as Catalog) ? (p.catalog as Catalog) : 'climats';
+        ack(await joinQueue(sock, String(p?.tc ?? ''), p?.rated !== false, p?.name, catalog));
       } catch (e) {
         console.error('File classée :', e);
         ack({ ok: false, error: 'Erreur serveur, réessaie.' });
@@ -886,6 +904,7 @@ gamesRouter.post('/', createLimiter, async (req, res) => {
       color: z.enum(['w', 'b', 'random']).default('random'),
       level: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
       mirror: z.boolean().default(false),
+      catalog: z.enum(['climats', 'duel', 'aucune']).default('climats'),
       name: z.string().optional(),
     })
     .safeParse(req.body);
@@ -906,12 +925,36 @@ gamesRouter.post('/', createLimiter, async (req, res) => {
   const color: Color = o.color === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : o.color;
   const other = o.mode === 'bot' ? botSeat(o.level ?? 2) : null;
   const seats = color === 'w' ? { w: me, b: other } : { w: other, b: me };
-  const room = newRoom({ mode: o.mode, rated: false, tc: o.tc, mirror: o.mirror, creator: keyOf(identity), seats });
+  const room = newRoom({ mode: o.mode, rated: false, tc: o.tc, mirror: o.mirror, catalog: o.catalog, creator: keyOf(identity), seats });
   await saveRoom(room);
   res.json({ id: room.d.id });
 });
 
 /** Parties en cours du visiteur (pour les reprendre). */
+/** Parties en cours, pour les spectateurs (« Parties en direct »). Les parties entre humains d'abord. */
+gamesRouter.get('/live', (_req, res) => {
+  const list = [...rooms.values()]
+    .filter(r => r.d.status === 'active' && r.d.started)
+    .map(r => ({
+      id: r.d.id,
+      mode: r.d.mode,
+      rated: r.d.rated,
+      tc: r.d.tc,
+      catalog: r.d.catalog ?? r.d.state.catalog ?? 'duel',
+      white: r.d.seats.w?.name ?? null,
+      black: r.d.seats.b?.name ?? null,
+      whiteRating: r.d.seats.w?.rating ?? null,
+      blackRating: r.d.seats.b?.rating ?? null,
+      vsBot: r.d.seats.w?.kind === 'bot' || r.d.seats.b?.kind === 'bot',
+      plies: r.d.state.ply,
+      spectators: Math.max(0, r.sockets.size - 2),
+      lastActivity: r.d.lastActivity ?? r.d.createdAt,
+    }))
+    .sort((a, b) => Number(a.vsBot) - Number(b.vsBot) || (b.whiteRating ?? 0) + (b.blackRating ?? 0) - ((a.whiteRating ?? 0) + (a.blackRating ?? 0)))
+    .slice(0, 40);
+  res.json({ games: list });
+});
+
 gamesRouter.get('/mine', (req, res) => {
   const k = keyOf(req.identity);
   const mine = [...rooms.values()]

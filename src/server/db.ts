@@ -1,32 +1,116 @@
-// Accès PostgreSQL et migrations (appliquées au démarrage, dans l'ordre, une seule fois).
+// Accès à la base et migrations (appliquées au démarrage, dans l'ordre, une seule fois).
+// Deux moteurs, même SQL :
+// - DATABASE_URL définie : PostgreSQL (production, Docker) ;
+// - sinon : PGlite, un vrai PostgreSQL embarqué dans Node, stocké dans DATA_DIR (lancement local sans rien installer).
+import { mkdirSync } from 'node:fs';
+import path from 'node:path';
 import pg from 'pg';
 import { config } from './config';
 
-export const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 10 });
-
-export async function q<T extends pg.QueryResultRow = any>(text: string, params: unknown[] = []): Promise<T[]> {
-  const r = await pool.query<T>(text, params);
-  return r.rows;
+export interface DbResult<T> {
+  rows: T[];
+  rowCount: number | null;
 }
 
-export async function one<T extends pg.QueryResultRow = any>(text: string, params: unknown[] = []): Promise<T | null> {
+/** Connexion utilisable dans une transaction. */
+export interface DbClient {
+  query<T = any>(text: string, params?: unknown[]): Promise<DbResult<T>>;
+  /** Plusieurs instructions SQL sans paramètres (migrations). */
+  exec(sql: string): Promise<void>;
+}
+
+interface Driver extends DbClient {
+  transaction<T>(fn: (c: DbClient) => Promise<T>): Promise<T>;
+  end(): Promise<void>;
+  label: string;
+}
+
+function postgresDriver(url: string): Driver {
+  const pool = new pg.Pool({ connectionString: url, max: 10 });
+  const wrap = (c: pg.Pool | pg.PoolClient): DbClient => ({
+    async query<T>(text: string, params: unknown[] = []) {
+      const r = await c.query(text, params);
+      return { rows: r.rows as T[], rowCount: r.rowCount };
+    },
+    async exec(sql: string) {
+      await c.query(sql);
+    },
+  });
+  return {
+    ...wrap(pool),
+    label: 'PostgreSQL',
+    async transaction(fn) {
+      const c = await pool.connect();
+      try {
+        await c.query('BEGIN');
+        const r = await fn(wrap(c));
+        await c.query('COMMIT');
+        return r;
+      } catch (e) {
+        await c.query('ROLLBACK');
+        throw e;
+      } finally {
+        c.release();
+      }
+    },
+    end: () => pool.end(),
+  };
+}
+
+async function pgliteDriver(dir: string): Promise<Driver> {
+  mkdirSync(dir, { recursive: true });
+  const { PGlite } = await import('@electric-sql/pglite');
+  const db = await PGlite.create(dir);
+  type Tx = { query: typeof db.query; exec: typeof db.exec };
+  const wrap = (c: Tx): DbClient => ({
+    async query<T>(text: string, params: unknown[] = []) {
+      const r = await c.query<T>(text, params as any[]);
+      return { rows: r.rows, rowCount: r.affectedRows ?? r.rows.length };
+    },
+    async exec(sql: string) {
+      await c.exec(sql);
+    },
+  });
+  return {
+    ...wrap(db),
+    label: `PGlite (${dir})`,
+    transaction: fn => db.transaction(t => fn(wrap(t))),
+    end: () => db.close(),
+  };
+}
+
+let driver: Driver | null = null;
+
+export async function connectDb(): Promise<string> {
+  if (driver) return driver.label;
+  driver = config.databaseUrl
+    ? postgresDriver(config.databaseUrl)
+    : await pgliteDriver(path.resolve(config.dataDir, 'db'));
+  return driver.label;
+}
+
+function d(): Driver {
+  if (!driver) throw new Error('Base non connectée : appelez connectDb() au démarrage.');
+  return driver;
+}
+
+export const db = {
+  query: <T = any>(text: string, params: unknown[] = []) => d().query<T>(text, params),
+  end: () => (driver ? driver.end() : Promise.resolve()),
+};
+
+export async function q<T = any>(text: string, params: unknown[] = []): Promise<T[]> {
+  return (await d().query<T>(text, params)).rows;
+}
+
+export async function one<T = any>(text: string, params: unknown[] = []): Promise<T | null> {
   const rows = await q<T>(text, params);
   return rows[0] ?? null;
 }
 
-export async function tx<T>(fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
-  const c = await pool.connect();
-  try {
-    await c.query('BEGIN');
-    const r = await fn(c);
-    await c.query('COMMIT');
-    return r;
-  } catch (e) {
-    await c.query('ROLLBACK');
-    throw e;
-  } finally {
-    c.release();
-  }
+/** Transaction : n'utilisez que `c` à l'intérieur (avec PGlite, un appel à q() attendrait la fin de la transaction). */
+export async function tx<T>(fn: (c: DbClient) => Promise<T>): Promise<T> {
+  return d().transaction(fn);
 }
 
 const MIGRATIONS: string[] = [
@@ -129,13 +213,13 @@ const MIGRATIONS: string[] = [
 ];
 
 export async function migrate(): Promise<void> {
-  await pool.query(`CREATE TABLE IF NOT EXISTS schema_migrations (version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`);
+  await d().query(`CREATE TABLE IF NOT EXISTS schema_migrations (version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`);
   const done = new Set((await q<{ version: number }>('SELECT version FROM schema_migrations')).map(r => r.version));
   for (let i = 0; i < MIGRATIONS.length; i++) {
     const version = i + 1;
     if (done.has(version)) continue;
     await tx(async c => {
-      await c.query(MIGRATIONS[i]);
+      await c.exec(MIGRATIONS[i]);
       await c.query('INSERT INTO schema_migrations (version) VALUES ($1)', [version]);
     });
     console.log(`Migration ${version} appliquée.`);

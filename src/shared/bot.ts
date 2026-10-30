@@ -3,11 +3,11 @@
 import {
   Color, F_CAPTURE, F_PROMO, Move, Mods, Position, VALUE, clonePosition, inCheck, legalMoves, makeMove,
   pseudoMoves, unmakeMove,
-} from '../shared/chess';
-import { CARDS, CardId } from '../shared/cards';
+} from './chess';
+import { CARDS, CardId } from './cards';
 import {
   GameState, cardOptions, cardPlayable, legalMovesOf, modsFromEffects, playCard,
-} from '../shared/game';
+} from './game';
 
 export type BotLevel = 1 | 2 | 3;
 
@@ -116,6 +116,8 @@ const MATE = 100000;
 class Search {
   nodes = 0;
   aborted = false;
+  /** Variantes principales par profondeur (tableau triangulaire). */
+  pv: Move[][] = [];
   constructor(private mods: Mods, private deadline: number) {}
 
   private order(pos: Position, moves: Move[]): Move[] {
@@ -160,6 +162,7 @@ class Search {
   negamax(pos: Position, depth: number, alpha: number, beta: number, ply: number): number {
     this.tick();
     if (this.aborted) return 0;
+    this.pv[ply] = [];
     if (depth === 0) return this.quiesce(pos, alpha, beta, 4);
     const moves = legalMoves(pos, this.mods);
     if (!moves.length) return inCheck(pos, pos.turn, this.mods) ? -MATE + ply : 0;
@@ -169,7 +172,10 @@ class Search {
       const v = -this.negamax(pos, depth - 1, -beta, -alpha, ply + 1);
       unmakeMove(pos, u);
       if (v > best) best = v;
-      if (v > alpha) alpha = v;
+      if (v > alpha) {
+        alpha = v;
+        this.pv[ply] = [m, ...(this.pv[ply + 1] ?? [])];
+      }
       if (alpha >= beta) break;
     }
     return best;
@@ -177,15 +183,15 @@ class Search {
 
   /** Meilleurs coups à la racine (les coups racine viennent de l'état complet : effets et interdits compris). */
   /** `exact` : scores exacts pour tous les coups (utile quand on ajoute du bruit), au prix de l'élagage. */
-  root(pos: Position, rootMoves: Move[], depth: number, exact = false, ordered = false): { move: Move; score: number }[] {
-    const scored: { move: Move; score: number }[] = [];
+  root(pos: Position, rootMoves: Move[], depth: number, exact = false, ordered = false): { move: Move; score: number; pv: Move[] }[] {
+    const scored: { move: Move; score: number; pv: Move[] }[] = [];
     let alpha = -Infinity;
     for (const m of ordered ? rootMoves : this.order(pos, rootMoves)) {
       const u = makeMove(pos, m);
       const v = -this.negamax(pos, depth - 1, -Infinity, exact ? Infinity : -alpha, 1);
       unmakeMove(pos, u);
       if (this.aborted) break;
-      scored.push({ move: m, score: v });
+      scored.push({ move: m, score: v, pv: [m, ...(this.pv[1] ?? [])] });
       if (v > alpha) alpha = v;
     }
     return scored.sort((a, b) => b.score - a.score);
@@ -279,4 +285,52 @@ function candidateTargets(s: GameState, me: Color, index: number): number[][] {
 function randomTargets(s: GameState, me: Color, index: number): number[] {
   const all = candidateTargets(s, me, index);
   return all[Math.floor(Math.random() * all.length)] ?? [];
+}
+
+// ---------------------------------------------------------------------------------------------
+// Analyse (page Analyse, relecture des parties)
+
+export interface Analysis {
+  depth: number;
+  /** Évaluation en centipions du point de vue des Blancs. */
+  scoreWhite: number;
+  /** Mat en N coups (positif : les Blancs matent), sinon null. */
+  mate: number | null;
+  best: Move | null;
+  /** Meilleure suite, en coups (le premier est `best`). */
+  pv: Move[];
+  nodes: number;
+}
+
+/**
+ * Analyse par approfondissement itératif jusqu'à `maxDepth` ou `timeMs`.
+ * `onDepth` est appelé après chaque profondeur terminée (affichage progressif).
+ * Les effets de cartes actifs sont pris en compte comme des modificateurs fixes.
+ */
+export function analyse(s: GameState, maxDepth = 6, timeMs = 3000, onDepth?: (a: Analysis) => void): Analysis {
+  const sign = s.pos.turn === 'w' ? 1 : -1;
+  const empty: Analysis = { depth: 0, scoreWhite: 0, mate: null, best: null, pv: [], nodes: 0 };
+  if (s.result) {
+    const w = s.result.winner;
+    return { ...empty, scoreWhite: w === 'w' ? MATE : w === 'b' ? -MATE : 0 };
+  }
+  let rootMoves = legalMovesOf(s);
+  if (!rootMoves.length) return empty;
+  const deadline = Date.now() + timeMs;
+  const mods = modsFromEffects(s.effects);
+  let last = empty;
+  let nodes = 0;
+  for (let depth = 1; depth <= maxDepth; depth++) {
+    const search = new Search(mods, deadline);
+    const res = search.root(clonePosition(s.pos), rootMoves, depth, false, depth > 1);
+    nodes += search.nodes;
+    if (!res.length || (search.aborted && last.best)) break;
+    const top = res[0];
+    const mateIn = Math.abs(top.score) > MATE - 1000 ? Math.ceil((MATE - Math.abs(top.score)) / 2) * Math.sign(top.score) * sign : null;
+    last = { depth, scoreWhite: top.score * sign, mate: mateIn, best: top.move, pv: top.pv, nodes };
+    onDepth?.(last);
+    if (search.aborted || mateIn !== null) break;
+    rootMoves = res.map(x => x.move);
+  }
+  return last;
 }

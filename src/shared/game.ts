@@ -6,7 +6,7 @@ import {
   Color, F_PROMO, Move, Mods, Piece, PieceType, Position, clonePosition, fromFen, hasLegalMove, inCheck,
   initialPosition, isLightSquare, isSlider, legalMoves, makeMove, opposite, rankOf, sqName, toSan,
 } from './chess';
-import { CARDS, CARD_IDS, CardId } from './cards';
+import { CARDS, CARD_IDS, Catalog, CardId } from './cards';
 
 export interface Effect {
   id: number;
@@ -20,6 +20,10 @@ export interface Effect {
   pieceId?: number;
   /** Skin d'animation du lanceur, pour que les deux joueurs voient le même effet. */
   skin: string;
+  /** Présage : effet annoncé, pas encore actif (il le devient au tour suivant du lanceur). */
+  pending?: boolean;
+  /** Cases concernées quand il y en a plusieurs (Faille, Portails…). */
+  squares?: number[];
 }
 
 export interface HandCard {
@@ -85,6 +89,8 @@ export interface GameState {
   /** Coup interdit après un Retour arrière. */
   forbidden: MoveRef | null;
   timed: boolean;
+  /** Catalogue de cartes de la partie (absent dans les parties antérieures : 'duel'). */
+  catalog?: Catalog;
   result: Result | null;
 }
 
@@ -93,8 +99,9 @@ export const CARDS_PER_PLAYER = 3;
 // ---------------------------------------------------------------------------------------------
 // Création
 
-export function dealHands(timed: boolean, mirror: boolean, rand: () => number = Math.random): Record<Color, CardId[]> {
-  const pool = CARD_IDS.filter(id => timed || !CARDS[id].timedOnly);
+export function dealHands(timed: boolean, mirror: boolean, rand: () => number = Math.random, catalog: Catalog = 'duel'): Record<Color, CardId[]> {
+  if (catalog === 'aucune') return { w: [], b: [] };
+  const pool = CARD_IDS.filter(id => CARDS[id].catalog === catalog && (timed || !CARDS[id].timedOnly));
   const draw = () => {
     const a = pool.slice();
     for (let i = a.length - 1; i > 0; i--) {
@@ -107,7 +114,7 @@ export function dealHands(timed: boolean, mirror: boolean, rand: () => number = 
   return { w, b: mirror ? w.slice() : draw() };
 }
 
-export function createGame(hands: Record<Color, CardId[]>, timed: boolean): GameState {
+export function createGame(hands: Record<Color, CardId[]>, timed: boolean, catalog: Catalog = 'duel'): GameState {
   const { pos, nextId } = initialPosition();
   const s: GameState = {
     pos,
@@ -126,6 +133,7 @@ export function createGame(hands: Record<Color, CardId[]>, timed: boolean): Game
     snaps: [],
     forbidden: null,
     timed,
+    catalog,
     result: null,
   };
   s.keys.push(positionKey(s));

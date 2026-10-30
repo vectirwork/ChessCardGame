@@ -126,7 +126,8 @@ export interface ClientToServer {
   'game:claim': (p: { id: string }, ack: (r: Ack) => void) => void;
   'game:rematch': (p: { id: string }, ack: (r: Ack) => void) => void;
   'game:emote': (p: { id: string; key: string }) => void;
-  'queue:join': (p: { tc: string }, ack: (r: Ack) => void) => void;
+  /** rated : partie classée (comptes) ; sinon file amicale ouverte aux invités (name = pseudo). */
+  'queue:join': (p: { tc: string; rated?: boolean; name?: string; catalog?: string }, ack: (r: Ack) => void) => void;
   'queue:leave': () => void;
 }
 

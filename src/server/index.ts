@@ -13,14 +13,15 @@ import { adminRouter } from './admin';
 import { authRouter, identify, sameOrigin, toMe } from './auth';
 import { botPool } from './bot-pool';
 import { config } from './config';
-import { migrate, pool } from './db';
+import { connectDb, db, migrate } from './db';
 import { attachSockets, flushRooms, gamesRouter, restoreRooms } from './games';
 import { shopRouter, stripeWebhook } from './shop';
 
 async function main() {
+  const dbLabel = await connectDb();
   await migrate();
   if (process.argv.includes('--migrate-only')) {
-    await pool.end();
+    await db.end();
     return;
   }
 
@@ -56,7 +57,7 @@ async function main() {
 
   app.use('/api', express.json({ limit: '100kb' }), sameOrigin, identify);
   app.get('/api/health', async (_req, res) => {
-    await pool.query('SELECT 1');
+    await db.query('SELECT 1');
     res.json({ ok: true });
   });
   app.get('/api/me', (req, res) => {
@@ -112,7 +113,7 @@ async function main() {
   await restoreRooms();
 
   server.listen(config.port, () => {
-    console.log(`${config.appName} prêt sur ${config.publicUrl} (port ${config.port}, paiements : ${config.payments})`);
+    console.log(`${config.appName} prêt sur ${config.publicUrl} (port ${config.port}, base : ${dbLabel}, paiements : ${config.payments})`);
   });
 
   const shutdown = async () => {
@@ -121,7 +122,7 @@ async function main() {
     await flushRooms();
     io.close();
     server.close();
-    await pool.end().catch(() => undefined);
+    await db.end().catch(() => undefined);
     process.exit(0);
   };
   process.on('SIGTERM', shutdown);

@@ -1,7 +1,7 @@
 // Thread de calcul de l'IA : la recherche ne bloque jamais la boucle d'événements du serveur.
 import { parentPort } from 'node:worker_threads';
 import { playCard, GameState } from '../shared/game';
-import { BotLevel, chooseBotCard, chooseBotMove } from './bot';
+import { BotLevel, chooseBotCard, chooseBotMove } from '../shared/bot';
 
 export interface BotRequest { id: number; state: GameState; level: BotLevel }
 export interface BotReply {

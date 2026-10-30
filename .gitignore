@@ -7,3 +7,4 @@ dist/
 test-results/
 .pgdata/
 concepts/*/critique/
+data/

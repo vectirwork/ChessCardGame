@@ -19,7 +19,10 @@ export const config = {
   port,
   appName: env.APP_NAME ?? 'Spellmate',
   publicUrl: (env.PUBLIC_URL ?? `http://localhost:${port}`).replace(/\/$/, ''),
-  databaseUrl: env.DATABASE_URL ?? 'postgres://spellmate:spellmate@localhost:5432/spellmate',
+  /** Vide : base PGlite embarquée dans DATA_DIR (aucune installation nécessaire). */
+  databaseUrl: env.DATABASE_URL ?? '',
+  /** Données locales (base PGlite) : data/ en production locale, data/dev/ en développement. */
+  dataDir: env.DATA_DIR ?? (isProd ? 'data' : 'data/dev'),
   secret: env.SECRET_KEY ?? (isProd ? '' : 'dev-secret-a-changer'),
   trustProxy: env.TRUST_PROXY ? env.TRUST_PROXY === 'true' : isProd,
   payments: paymentsMode,
@@ -57,6 +60,6 @@ if (config.payments === 'stripe' && !config.stripe.secretKey) {
   console.error('PAYMENTS_MODE=stripe mais STRIPE_SECRET_KEY est vide : arrêt.');
   process.exit(1);
 }
-if (isProd && config.payments === 'demo') {
+if (isProd && config.payments === 'demo' && !config.publicUrl.startsWith('http://localhost')) {
   console.warn('Attention : paiements en mode démo en production, les achats sont gratuits.');
 }

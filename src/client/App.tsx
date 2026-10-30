@@ -15,6 +15,11 @@ const Leaderboard = lazy(() => import('./pages/Leaderboard'));
 const Admin = lazy(() => import('./pages/Admin'));
 const Legal = lazy(() => import('./pages/Legal'));
 const NotFound = lazy(() => import('./pages/NotFound'));
+const Learn = lazy(() => import('./pages/Learn'));
+const Puzzles = lazy(() => import('./pages/Puzzles'));
+const Analysis = lazy(() => import('./pages/Analysis'));
+const MyGames = lazy(() => import('./pages/MyGames'));
+const Live = lazy(() => import('./pages/Live'));
 
 export function App() {
   const loc = useLocation();
@@ -43,6 +48,14 @@ export function App() {
             <Route path="/joueur/:username" element={<Profile />} />
             <Route path="/classement" element={<Leaderboard />} />
             <Route path="/admin" element={<Admin />} />
+            <Route path="/apprendre" element={<Learn />} />
+            <Route path="/apprendre/:lesson" element={<Learn />} />
+            <Route path="/problemes" element={<Puzzles />} />
+            <Route path="/problemes/:puzzle" element={<Puzzles />} />
+            <Route path="/analyse" element={<Analysis />} />
+            <Route path="/analyse/:gameId" element={<Analysis />} />
+            <Route path="/parties" element={<MyGames />} />
+            <Route path="/direct" element={<Live />} />
             <Route path="/cgu" element={<Legal page="cgu" />} />
             <Route path="/cgv" element={<Legal page="cgv" />} />
             <Route path="/confidentialite" element={<Legal page="privacy" />} />

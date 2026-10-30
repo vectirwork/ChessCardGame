@@ -2,7 +2,7 @@
 import { cpus } from 'node:os';
 import { Worker } from 'node:worker_threads';
 import type { GameState } from '../shared/game';
-import type { BotLevel } from './bot';
+import type { BotLevel } from '../shared/bot';
 import type { BotReply } from './bot-worker';
 
 type Pending = { resolve: (r: BotReply) => void; reject: (e: Error) => void };

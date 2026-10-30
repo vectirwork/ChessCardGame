@@ -145,6 +145,7 @@ export class Engine {
   private awake = 0;
   private awakeTarget = 0;
   private gameFrom: Pose | null = null;
+  private lastT = 0;
   private tick = (time: number) => {
     this.lenis?.raf(time * 1000);
     this.frame();
@@ -438,9 +439,13 @@ export class Engine {
       m.x += mdx * 0.06;
       m.y += mdy * 0.06;
     }
+    // Éveil : approche exponentielle indépendante de la cadence (≈ 0,35 s pour se redresser)
+    const now = performance.now();
+    const dt = Math.min(0.1, Math.max(0, (now - (this.lastT || now)) / 1000));
+    this.lastT = now;
     const da = this.awakeTarget - this.awake;
     const waking = Math.abs(da) > 0.001;
-    if (waking) this.awake = Math.abs(da) < 0.004 ? this.awakeTarget : this.awake + da * 0.16;
+    if (waking) this.awake = Math.abs(da) < 0.01 ? this.awakeTarget : this.awake + da * (1 - Math.exp(-dt / 0.1));
     if (y === this.lastY && !moving && !waking && !this.dirty) return;
     if (this.els.header && this.gameMix === 0) {
       const dy = y - this.lastY;

@@ -1,0 +1,86 @@
+{
+ "url": "http://localhost:3000/",
+ "outDir": "/home/user/ChessCardGame/concepts/site-accueil",
+ "viewport": {
+  "width": 1440,
+  "height": 900
+ },
+ "steps": [
+  {
+   "eval": "localStorage.clear(), sessionStorage.setItem(\"sm:intro\",\"1\"), \"propre\""
+  },
+  {
+   "wait": 2500
+  },
+  {
+   "clickSquare": "e2",
+   "settle": 700
+  },
+  {
+   "clickSquare": "e2",
+   "settle": 300
+  },
+  {
+   "clickSquare": "e4",
+   "settle": 3200
+  },
+  {
+   "wait": 3500
+  },
+  {
+   "eval": "({status: document.querySelector(\".gs-title\")?.textContent, cartes: [...document.querySelectorAll(\".gs-fan .spell-card\")].map(c => c.getAttribute(\"aria-label\")?.split(\" : \")[0] + (c.classList.contains(\"disabled\") ? \" (bloquée)\" : \"\"))})"
+  },
+  {
+   "eval": "(() => { const c = [...document.querySelectorAll(\".gs-fan .spell-card:not(.disabled):not(.used)\")]; if (!c.length) return \"aucune\"; c[0].click(); return document.querySelector(\".gs-spell\") ? \"ok\" : \"clic\"; })()"
+  },
+  {
+   "wait": 600
+  },
+  {
+   "shot": "07-carte-selectionnee"
+  },
+  {
+   "eval": "document.querySelector(\".gs-prompt .btn-line\")?.click(), \"annule\""
+  },
+  {
+   "wait": 500
+  },
+  {
+   "eval": "(async () => {\n  const cards = [...document.querySelectorAll('.gs-fan .spell-card:not(.disabled):not(.used)')];\n  if (!cards.length) return 'aucune carte jouable';\n  cards[0].click();\n  await new Promise(r => setTimeout(r, 500));\n  const name = document.querySelector('.gs-spell')?.textContent;\n  for (let k = 0; k < 3; k++) {\n    const btn = document.querySelector('.gs-prompt .btn-gold');\n    if (btn) { btn.click(); return 'lancé ' + name; }\n    const t = document.querySelector('.o-astre-game .sq.target');\n    if (!t) return 'pas de cible ' + name;\n    const r = t.getBoundingClientRect();\n    const ev = new PointerEvent('pointerdown', { bubbles: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 0, pointerId: 1, pointerType: 'mouse', isPrimary: true });\n    document.querySelector('.o-astre-game .board').dispatchEvent(ev);\n    await new Promise(r => setTimeout(r, 350));\n    if (!document.querySelector('.gs-prompt')) return 'lancé ' + name;\n  }\n  return 'ciblage ' + name;\n})()\n"
+  },
+  {
+   "wait": 900
+  },
+  {
+   "shot": "08-sort-en-cours"
+  },
+  {
+   "wait": 2600
+  },
+  {
+   "shot": "09-sort-pose"
+  },
+  {
+   "wait": 5000
+  },
+  {
+   "eval": "({status: document.querySelector(\".gs-title\")?.textContent, toast: document.querySelector(\".gs-toast\")?.textContent})"
+  },
+  {
+   "click": ".gs-back",
+   "settle": 700
+  },
+  {
+   "shot": "10-retour-transition"
+  },
+  {
+   "wait": 3000
+  },
+  {
+   "eval": "({immersive: document.documentElement.classList.contains(\"is-immersive\"), caption: document.querySelector(\".o-astre-caption\")?.textContent})"
+  },
+  {
+   "shot": "11-retour-page-partie-en-cours"
+  }
+ ]
+}

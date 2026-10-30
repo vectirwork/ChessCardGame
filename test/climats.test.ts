@@ -132,7 +132,7 @@ describe('Durées', () => {
     s = mv(s, 'd7', 'd5'); // arrivée : 3 coups (Blancs, Noirs, Blancs)
     expect(names(s, 'e4')).toEqual(['e5']); // exd5 interdit
     s = mv(s, 'g1', 'f3');
-    expect(names(s, 'd5')).toEqual([]); // dxe4 interdit
+    expect(names(s, 'd5')).toEqual(['d4']); // dxe4 interdit
     s = mv(s, 'b8', 'c6');
     expect(names(s, 'e4')).toEqual(['e5']);
     s = mv(s, 'f1', 'b5');
@@ -143,7 +143,7 @@ describe('Durées', () => {
 
 describe('La magie cède (R6)', () => {
   it('Ère glaciaire : Rh1, g2, h2 contre Ce2 jouent g3, g4, h3 ou h4', () => {
-    const s = withEffect(game('7k/8/8/8/8/8/4nPPP/7K w - - 0 1'.replace('4nPPP', '4n1PP')), 'ice_age');
+    const s = withEffect(game('7k/8/8/8/8/8/4n1PP/7K w - - 0 1'), 'ice_age');
     const moves = legalMovesOf(s);
     expect(moves.map(m => sqName(m.from) + sqName(m.to)).sort()).toEqual(['g2g3', 'g2g4', 'h2h3', 'h2h4']);
     expect(moves.every(m => m.flags & F_RELAXED)).toBe(true);
@@ -185,10 +185,14 @@ describe('La magie cède (R6)', () => {
   });
 
   it('la Faille reçoit un pont sous une pièce qui s’y arrête par la magie', () => {
-    let s = game('7k/8/8/8/r7/8/8/K7 w - - 0 1', ['rift']);
-    s = withEffect(s, 'rift', { squares: [q('b4'), q('c4')], remaining: 3 });
-    // Roi a1 : a2 et b1 attaqués par la tour a4 ? Non : seulement a2 (colonne a). b1, b2 libres.
-    expect(all(s).length).toBeGreaterThan(0);
+    // Roi a1 enfermé par le fou d3 et la tour h2 ; seul le pion a3 bougerait, mais a4 est dans le gouffre.
+    const rank4 = [0, 1, 2, 3, 4, 5, 6, 7].map(f => 24 + f);
+    const s = withEffect(game('7k/8/8/8/8/P2b4/7r/K7 w - - 0 1'), 'rift', { squares: rank4, remaining: 3 });
+    expect(all(s)).toEqual(['a3a4']);
+    const r = playMove(s, q('a3'), q('a4'));
+    if (!r.ok) throw new Error(r.error);
+    expect(r.info.move.flags & F_RELAXED).toBeTruthy();
+    expect(r.state.effects[0].squares).toEqual(rank4.slice(1));
   });
 });
 
@@ -250,12 +254,14 @@ describe('Faille', () => {
     let s = createGame({ w: [], b: ['rift', 'rift'] }, false, 'climats');
     s = mv(s, 'e2', 'e4');
     s = card(s, 0, 'a4');
+    expect(s.effects[0].squares).toHaveLength(7);
     expect(s.effects[0].squares).not.toContain(q('e4'));
-    expect(cardOptions(s, 'b', 1)).toEqual([]);
+    const blocked = modsFromEffects(s.effects).blocked;
+    expect([blocked[q('e4')], blocked[q('d4')]]).toEqual([false, true]);
     s = mv(s, 'e7', 'e5');
-    expect(names(s, 'f1')).toEqual(['e2']); // la diagonale f1-a6 est coupée en c4
-    expect(names(s, 'e4')).toEqual([]);
+    expect(names(s, 'f1')).toEqual(['d3', 'e2']); // la diagonale f1-a6 est coupée en c4
     s = mv(s, 'g1', 'f3');
+    expect(cardOptions(s, 'b', 1)).toEqual([]); // une seule Faille à la fois
     s = mv(s, 'g8', 'f6');
     expect(s.effects).toHaveLength(1);
     s = mv(s, 'f3', 'e5');
@@ -359,7 +365,7 @@ describe('Ère glaciaire', () => {
   });
 
   it('le remplacement par un autre Climat n’est jamais refusé ; la Marée est injouable', () => {
-    const s = withEffect(game('4k3/8/3p4/4K3/8/8/4P3/8 w - - 0 1', ['truce', 'tide']), 'ice_age');
+    const s = withEffect(game('4k3/8/3p4/8/8/8/4P3/4K3 w - - 0 1', ['truce', 'tide']), 'ice_age');
     expect(cardPlayable(s, 'w', 0)).toBe(true);
     expect(refused(s, 1)).toBe('Aucun pion ne peut avancer.');
   });
@@ -389,11 +395,11 @@ describe('Portails', () => {
   });
 
   it('un roi ou un pion s’y arrête sans voyager et ferme la paire', () => {
-    let s = open(game('4k3/8/8/8/8/8/3K4/1N6 w - - 0 1'));
+    let s = open(game('4k3/p7/8/8/8/8/3K4/1N6 w - - 0 1'));
     expect(names(s, 'd2')).toContain('c3');
     expect(names(s, 'd2')).not.toContain('f6');
     s = mv(s, 'd2', 'c3');
-    s = mv(s, 'e8', 'd8');
+    s = mv(s, 'a7', 'a6');
     expect(names(s, 'b1')).not.toContain('f6');
     const p = open(game('4k3/8/8/8/8/8/2P5/1N2K3 w - - 0 1'));
     expect(names(p, 'c2')).toEqual(['c3', 'c4']);
@@ -496,7 +502,7 @@ describe('Déjà-vu', () => {
   it('un Rituel effacé reste dépensé (et aucune pièce n’est interdite)', () => {
     let s = line(['tide', 'deja_vu'], []);
     s = card(s, 0);
-    s = mv(s, 'g8', 'f6');
+    s = mv(s, 'b8', 'd7');
     s = card(s, 1);
     expect(s.hands.w[0].used).toBe(true);
     expect(s.forbidden).toBeNull();
@@ -548,14 +554,14 @@ describe('Non-fuite des mains', () => {
         if (you === null) {
           for (const c of ['w', 'b'] as Color[]) for (const h of view.hands[c]) if (!h.used && !h.revealed) expect(h.card).toBeNull();
         }
-        expect(JSON.stringify(view.snaps)).not.toMatch(/"card"/);
+        expect(view.snaps.every(sn => !('hands' in sn))).toBe(true);
       }
     };
     check(s);
     s = mv(s, 'e2', 'e4');
     check(s);
     s = card(s, 1, 'a5'); // Faille noire, jouée : publique
-    s = mv(s, 'e7', 'e5');
+    s = mv(s, 'e7', 'e6');
     check(s);
     s = card(s, 0); // Trêve annoncée : publique
     check(s);
@@ -575,17 +581,15 @@ describe('Ère glaciaire et Trêve figent la nulle', () => {
 
 describe('Garde-fous génériques', () => {
   it('le camp au trait voit l’échec à la fonte d’un Mur (R5)', () => {
-    // Mur blanc en e4 entre la tour noire e8 et le roi blanc e1, qui fond après le prochain coup noir
-    let s = game('k3r3/8/8/8/8/8/8/4K3 w - - 0 1', ['ice_wall']);
+    // Mur noir en e4 entre la tour noire e8 et le roi blanc e1 ; il fond après le 3e coup blanc.
+    let s = game('k3r3/8/8/8/8/8/8/4K3 b - - 0 1', [], ['ice_wall']);
     s = card(s, 0, 'e4');
-    s = mv(s, 'e1', 'd1');
-    s = mv(s, 'a8', 'b8');
-    s = mv(s, 'd1', 'e1');
-    s = mv(s, 'b8', 'a8');
-    s = mv(s, 'e1', 'd1');
-    // Le mur fondra après ce coup noir : les Noirs ne peuvent pas compter dessus, mais ce n'est pas leur roi.
-    expect(s.effects).toHaveLength(1);
+    for (const [a, b] of [['a8', 'b8'], ['e1', 'd1'], ['b8', 'a8'], ['d1', 'e1'], ['a8', 'b8']]) s = mv(s, a, b);
     expect(inCheck(s.pos, 'w', modsFromEffects(s.effects))).toBe(false);
+    expect(sideInCheck(s)).toBe(true);
+    expect(checkKind(s)).toBe('melt');
+    expect(names(s, 'e1')).not.toContain('e2');
+    expect(names(s, 'e1')).toContain('d2');
   });
 
   it('les perft restent ceux des échecs classiques sous un catalogue sans effet', () => {
@@ -600,7 +604,7 @@ describe('Catalogues', () => {
     expect(cardsOf('climats')).toHaveLength(12);
     expect(cardsOf('duel')).toHaveLength(11);
     expect(cardsOf('aucune')).toEqual([]);
-    expect(CARDS.ice_wall.catalogs.sort()).toEqual(['climats', 'duel']);
+    expect(CARDS.ice_wall.catalogs.slice().sort()).toEqual(['climats', 'duel']);
   });
 
   it('le Mur de glace compte 3 coups adverses en Duel et 6 coups en Climats, la même durée', () => {

@@ -24,7 +24,7 @@ const PACKS = PRODUCTS.filter(p => p.id.startsWith('pack:'));
 /** Position de départ, comme l'échiquier de démonstration : le passage à la scène des sorts ne se voit pas. */
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 /** Sorts montrés par l'aperçu, dans cet ordre, parmi les cartes du catalogue en jeu (les 8 pouvoirs ; Duel seulement si le moteur n'a pas encore les Pouvoirs). */
-const PREVIEW_ORDER = ['ice_wall', 'rift', 'tide', 'blast', 'ice_age', 'blood_moon', 'truce', 'hourglass', 'lightning', 'freeze', 'gravity', 'swap', 'shield'];
+const PREVIEW_ORDER = ['ice_wall', 'rift', 'tide', 'blast', 'ice_age', 'blood_moon', 'truce', 'hourglass'];
 const KIND_LABEL: Record<Item['kind'], string> = { skin: 'Skin d’animation', board: 'Plateau' };
 
 const productOf = (itemId: string) => PRODUCTS.find(p => p.id === itemId) ?? PRODUCTS.find(p => p.items.length === 1 && p.items[0] === itemId);

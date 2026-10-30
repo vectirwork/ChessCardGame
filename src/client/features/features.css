@@ -1338,7 +1338,7 @@ textarea.ft-mono {
 .ft-empty {
   color: var(--dim);
 }
-.ft-empty a {
+.ft-empty a:not(.btn) {
   color: var(--gold);
 }
 div.ft-empty p {

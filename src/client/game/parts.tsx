@@ -187,17 +187,20 @@ export function EmoteBubble({ text }: { text: string | null }) {
   );
 }
 
-/** Main d'un joueur en petites cartes : face visible quand la carte est connue (mains visibles), dos sinon. */
-export function HandRow({ hand, label, className = '' }: { hand: HandCard[]; label: string; className?: string }) {
+/**
+ * Main d'un joueur, faces visibles (mains visibles) : bandeaux compacts lisibles (emblème, nom, famille, « Jouée »)
+ * ou petites cartes (`mini`). Le dos ne sert plus qu'à une carte inconnue (ancienne partie).
+ */
+export function HandRow({ hand, label, className = '', mini = false }: { hand: HandCard[]; label: string; className?: string; mini?: boolean }) {
   if (!hand.length) return null;
   return (
-    <div className={`gp-hand-row ${className}`} aria-label={label}>
+    <div className={`gp-hand-row ${mini ? '' : 'is-compact'} ${className}`} aria-label={label}>
       {hand.map((h, i) => {
         const def = h.card ? CARDS[h.card] : undefined;
         if (!def) return <CardBack key={i} size="mini" used={h.used} />;
         return (
           <span key={i} className="gp-hand-card" title={`${def.name}${h.used ? ' (utilisée)' : ''} : ${def.description}`}>
-            <SpellCard id={h.card!} size="mini" used={h.used} tilt={false} />
+            <SpellCard id={def.id} size={mini ? 'mini' : 'compact'} used={h.used} tilt={false} />
           </span>
         );
       })}

@@ -563,7 +563,7 @@ type Ack = { ok: boolean; error?: string };
 function applyMove(room: Room, color: Color, from: number, to: number, promo?: PieceType): Ack {
   const d = room.d;
   if (d.status !== 'active') return { ok: false, error: 'La partie n’est pas en cours.' };
-  if (d.state.pos.turn !== color) return { ok: false, error: "Ce n'est pas ton tour." };
+  if (d.state.pos.turn !== color) return { ok: false, error: "Ce n'est pas votre tour." };
   if (checkFlag(room)) return { ok: false, error: 'Temps écoulé.' };
   const r = playMove(d.state, from, to, promo);
   if (!r.ok) return r;
@@ -654,7 +654,7 @@ function queueSize() {
  */
 async function joinQueue(sock: Sock, tc: string, rated: boolean, guestName?: string, catalog: Catalog = 'climats'): Promise<Ack> {
   const identity = sock.data.identity;
-  if (rated && !identity.user) return { ok: false, error: 'Connecte-toi pour jouer en partie classée.' };
+  if (rated && !identity.user) return { ok: false, error: 'Connectez-vous pour jouer en partie classée.' };
   if (!QUICK_CONTROLS.includes(tc)) return { ok: false, error: 'Cadence inconnue.' };
   let name: string | undefined;
   if (!identity.user) {
@@ -749,7 +749,7 @@ export function attachSockets(server: IO) {
         const room = await loadRoom(String(id));
         if (!room) return ack({ ok: false, error: 'Partie introuvable.' });
         const color = colorOf(room, identity);
-        if (!color) return ack({ ok: false, error: 'Tu ne joues pas dans cette partie.' });
+        if (!color) return ack({ ok: false, error: 'Vous ne jouez pas dans cette partie.' });
         ack(await fn(room, color));
       } catch (e) {
         console.error(e);
@@ -826,7 +826,7 @@ export function attachSockets(server: IO) {
     sock.on('game:abort', (p, ack) =>
       withRoom(p?.id, ack, room => {
         if (room.d.status === 'ended') return { ok: false, error: 'Partie terminée.' };
-        if (room.d.status === 'active' && room.d.started) return { ok: false, error: 'Trop tard pour annuler, tu peux abandonner.' };
+        if (room.d.status === 'active' && room.d.started) return { ok: false, error: 'Trop tard pour annuler : vous pouvez abandonner.' };
         endGame(room, { winner: null, reason: 'aborted' });
         return { ok: true };
       }));
@@ -857,7 +857,7 @@ export function attachSockets(server: IO) {
         const opp = opposite(color);
         const since = room.away[opp];
         if (room.d.status !== 'active' || since === null || now() - since < CLAIM_AFTER_MS) {
-          return { ok: false, error: "Ton adversaire peut encore revenir." };
+          return { ok: false, error: "Votre adversaire peut encore revenir." };
         }
         endGame(room, { winner: color, reason: 'abandon' });
         return { ok: true };
@@ -1008,12 +1008,12 @@ gamesRouter.post('/', createLimiter, async (req, res) => {
   const identity = req.identity;
   const open = [...rooms.values()].filter(r => r.d.status !== 'ended' && r.d.creator === keyOf(identity)).length;
   if (open >= MAX_OPEN_ROOMS) {
-    return res.status(429).json({ error: 'Tu as déjà trop de parties ouvertes : termine-en ou annule-en une.' });
+    return res.status(429).json({ error: 'Vous avez déjà trop de parties ouvertes : terminez-en ou annulez-en une.' });
   }
   let name: string | undefined;
   if (!identity.user) {
     const n = guestNameSchema.safeParse(o.name ?? '');
-    if (!n.success) return res.status(400).json({ error: 'Choisis un pseudo de 2 à 20 caractères.' });
+    if (!n.success) return res.status(400).json({ error: 'Choisissez un pseudo de 2 à 20 caractères.' });
     name = n.data;
   }
   const me = await seatFor(identity, name);
@@ -1060,6 +1060,8 @@ gamesRouter.get('/mine', (req, res) => {
       mode: r.d.mode,
       opponent: (r.d.seats.w?.key === k ? r.d.seats.b : r.d.seats.w)?.name ?? null,
       tc: r.d.tc,
+      rated: r.d.rated,
+      catalog: catalogOf(r.d.state),
       createdAt: r.d.createdAt,
     }));
   res.json({ games: mine });

@@ -333,6 +333,21 @@
 .gp-hand-card {
   display: block;
 }
+/* Bandeaux compacts : empilés sous la pendule adverse, en ligne qui passe à la ligne sur mobile */
+.gp-hand-row.is-compact {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+}
+.gp-opp-hand-m .gp-hand-row.is-compact {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  min-width: 0;
+}
+.gp-opp-hand-m {
+  flex-wrap: wrap;
+}
 .gp-opp-hand-m {
   display: flex;
   align-items: center;

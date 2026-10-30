@@ -21,6 +21,7 @@ interface MyGame {
   mode: string;
   opponent: string | null;
   tc: string;
+  rated?: boolean;
   catalog?: Catalog;
   createdAt?: number;
 }
@@ -361,7 +362,7 @@ export default function Play() {
                 <Link to={`/partie/${g.id}`} className="pl-game">
                   <b>{g.status === 'waiting' ? 'Invitation en attente' : `Contre ${g.opponent ?? '…'}`}</b>
                   <small>
-                    {g.mode === 'bot' ? "Contre l'IA" : g.mode === 'invite' ? 'Entre amis' : 'File de parties'} · {tcName(g.tc)}
+                    {g.mode === 'bot' ? "Contre l'IA" : g.mode === 'invite' ? 'Entre amis' : g.rated ? 'Partie classée' : 'Partie amicale'} · {tcName(g.tc)}
                     {g.catalog ? ` · ${catName(g.catalog)}` : ''}
                   </small>
                   <span className="pl-go">{g.status === 'waiting' ? 'Ouvrir' : 'Reprendre'}</span>

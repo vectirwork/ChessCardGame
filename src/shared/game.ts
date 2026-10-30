@@ -598,7 +598,7 @@ export interface CardInfo {
 /** Vérifications communes : tour du joueur, carte disponible, une seule carte par tour. */
 function cardPrecheck(s: GameState, color: Color, index: number): string | null {
   if (s.result) return 'La partie est terminée.';
-  if (s.pos.turn !== color) return "Ce n'est pas ton tour.";
+  if (s.pos.turn !== color) return "Ce n'est pas votre tour.";
   if (s.cardPlayed) return 'Une seule carte par tour.';
   const h = s.hands[color][index];
   if (!h) return 'Carte inconnue.';
@@ -882,7 +882,7 @@ function presageRefusal(s: GameState, n: GameState, color: Color, id: number): s
   const others = n.effects.filter(e => e.id !== id);
   const arrival = (effects: Effect[]) => probeState(n, color, tickEffects(tickEffects(effects, color), them));
   if (hasStrictLegal(s) && hasStrictLegal(arrival(others)) && !hasStrictLegal(arrival(n.effects))) {
-    return 'À son arrivée, cette carte te laisserait sans aucun coup.';
+    return 'À son arrivée, cette carte vous laisserait sans aucun coup.';
   }
   return null;
 }
@@ -900,13 +900,13 @@ function validateAfterCard(s: GameState, n: GameState, color: Color, card: CardI
   }
   const them = opposite(color);
   if (CARDS[card].ritual) {
-    if (inCheck(n.pos, color, nowMods(n))) return 'Ce rituel laisserait ton roi en échec.';
+    if (inCheck(n.pos, color, nowMods(n))) return 'Ce rituel laisserait votre roi en échec.';
     if (inCheck(n.pos, them, nowMods(n)) || sideInCheck(n)) return 'Une carte ne peut pas mettre le roi adverse en échec.';
     return null;
   }
   if (inCheck(n.pos, them, nowMods(n))) return 'Une carte ne peut pas mettre le roi adverse en échec.';
-  if (!hasLegal(n)) return 'Après cette carte, tu n’aurais plus aucun coup légal.';
-  if (magicYields(n) && !hasStrictLegal(n) && hasStrictLegal(s)) return 'Cette carte te laisserait sans aucun coup.';
+  if (!hasLegal(n)) return 'Après cette carte, vous n’auriez plus aucun coup légal.';
+  if (magicYields(n) && !hasStrictLegal(n) && hasStrictLegal(s)) return 'Cette carte vous laisserait sans aucun coup.';
   if (CARDS[card].presage && info.effectId !== undefined && magicYields(n)) return presageRefusal(s, n, color, info.effectId);
   return null;
 }
@@ -977,58 +977,64 @@ export function positionKey(s: GameState): string {
 }
 
 /**
- * Paires de Murs de glace (rangées 3 à 6) avec lesquelles une seule pièce mineure peut mater : Roi et Fou, ou
- * Roi et Cavalier, contre Roi. Vérifié par force brute (journal docs/progres/cartes-refonte.md) : aucun mat avec
- * un seul Mur ; ces 16 paires, au bord de l'échiquier, suffisent au fou comme au cavalier (Murs a3 et a5, Rc4,
- * Fc6# contre Ra4). Une Faille (4e ou 5e rangée) peut tenir lieu de l'une des deux cases, jamais des deux ;
- * seule, elle ne suffit jamais.
+ * Paires de Murs de glace (rangées 3 à 6) avec lesquelles une seule pièce mineure peut mater : Roi et Cavalier, ou
+ * Roi et Fou de la bonne couleur, contre Roi. Vérifié par force brute : aucun mat avec un seul Mur ; ces 16 paires, au
+ * bord de l'échiquier, suffisent au cavalier, et chacune à une seule couleur de fou (`light` : fou de cases claires ;
+ * Murs a3 et a5, Rc4, Fc6# contre Ra4).
  */
-const WALL_MATE_PAIRS: [number, number][] = (
-  [['a3', 'b4'], ['a3', 'a5'], ['b3', 'a4'], ['g3', 'h4'], ['h3', 'g4'], ['h3', 'h5'], ['a4', 'b5'], ['a4', 'a6'],
-    ['b4', 'a5'], ['g4', 'h5'], ['h4', 'g5'], ['h4', 'h6'], ['a5', 'b6'], ['b5', 'a6'], ['g5', 'h6'], ['h5', 'g6']] as const
-).map(([x, y]) => [sqIndex(x), sqIndex(y)]);
+const WALL_MATE_PAIRS: { squares: [number, number]; light: boolean }[] = (
+  [['a3', 'b4', 1], ['a3', 'a5', 1], ['b3', 'a4', 0], ['g3', 'h4', 1], ['h3', 'g4', 0], ['h3', 'h5', 0],
+    ['a4', 'b5', 0], ['a4', 'a6', 0], ['b4', 'a5', 1], ['g4', 'h5', 0], ['h4', 'g5', 1], ['h4', 'h6', 1],
+    ['a5', 'b6', 1], ['b5', 'a6', 0], ['g5', 'h6', 1], ['h5', 'g6', 0]] as const
+).map(([x, y, l]) => ({ squares: [sqIndex(x), sqIndex(y)], light: l === 1 }));
 
 /** Cartes `card` encore en main, des deux camps (un mat aidé compte : chacun peut poser des Terrains). */
 const unusedCards = (s: GameState, card: CardId) =>
   s.hands.w.filter(h => !h.used && h.card === card).length + s.hands.b.filter(h => !h.used && h.card === card).length;
 
+/** Pièces mineures d'un camp, pour savoir quelles paires de Murs peuvent lui servir. */
+interface Minors { knight: boolean; lightBishop: boolean; darkBishop: boolean }
+
 /**
- * Pouvoirs : les Murs posés et les Terrains encore en main (des deux camps) peuvent-ils former une paire de
- * `WALL_MATE_PAIRS` ?
+ * Pouvoirs : les Terrains posés ou encore en main (des deux camps) peuvent-ils permettre un mat avec ces pièces ?
+ * - deux Murs formant une paire de `WALL_MATE_PAIRS` utilisable par l'une des pièces ;
+ * - une Faille (posée ou en main) avec au moins un Mur (posé ou en main) : une Faille ferme toute une rangée, et les
+ *   combinaisons possibles (Murs c3 et e3 avec la Faille de la 4e rangée, par exemple) sont trop nombreuses pour une
+ *   table : par prudence, on considère qu'un mat reste possible (la règle des 50 coups reste).
  */
-function terrainMate(s: GameState): boolean {
+function terrainMate(s: GameState, m: Minors): boolean {
   const walls = new Set<number>();
-  const rift = new Set<number>();
+  let riftPosed = false;
   for (const e of s.effects) {
     if (e.card === 'ice_wall' && e.square !== undefined) walls.add(e.square);
-    if (e.card === 'rift') for (const q of e.squares ?? []) rift.add(q);
+    if (e.card === 'rift') riftPosed = true;
   }
   const wallCards = unusedCards(s, 'ice_wall');
-  const riftCard = unusedCards(s, 'rift') > 0;
+  if ((riftPosed || unusedCards(s, 'rift') > 0) && walls.size + wallCards > 0) return true;
   return WALL_MATE_PAIRS.some(pair => {
-    let need = 0;
-    let riftUsed = false;
-    for (const q of pair) {
-      if (walls.has(q)) continue;
-      if (!riftUsed && (rift.has(q) || (riftCard && (rankOf(q) === 3 || rankOf(q) === 4)))) {
-        riftUsed = true;
-        continue;
-      }
-      need++;
-    }
-    return need <= wallCards;
+    if (!m.knight && !(pair.light ? m.lightBishop : m.darkBishop)) return false;
+    return pair.squares.filter(q => !walls.has(q)).length <= wallCards;
   });
 }
 
 /**
  * Une carte ou un effet permet-il à `c` de mater avec une seule pièce mineure ?
- * - Pouvoirs : deux Murs bien placés (posés ou encore en main, `terrainMate`).
+ * - Pouvoirs : des Murs (et une Faille) bien placés, posés ou encore en main (`terrainMate`).
  * - Duel (anciennes parties) : Résurrection en main avec une pièce à ressusciter, ou Mur de glace (3 coups,
  *   n'importe quelle case) en main ou posé : Mur g8, puis Fd4# ou Cf7# contre Rh8.
  */
 function cardMateHelp(s: GameState, c: Color): boolean {
-  const minor = s.pos.board.some(p => !!p && p.c === c && (p.t === 'b' || p.t === 'n'));
-  if (catalogOf(s) !== 'duel') return minor && terrainMate(s);
+  const m: Minors = { knight: false, lightBishop: false, darkBishop: false };
+  s.pos.board.forEach((p, i) => {
+    if (!p || p.c !== c) return;
+    if (p.t === 'n') m.knight = true;
+    if (p.t === 'b') {
+      if (isLightSquare(i)) m.lightBishop = true;
+      else m.darkBishop = true;
+    }
+  });
+  const minor = m.knight || m.lightBishop || m.darkBishop;
+  if (catalogOf(s) !== 'duel') return minor && terrainMate(s, m);
   const inHand = (card: CardId) => s.hands[c].some(h => !h.used && h.card === card);
   if (inHand('revive') && s.captured[c].some(t => t !== 'q')) return true;
   return minor && (inHand('ice_wall') || s.effects.some(e => e.card === 'ice_wall'));

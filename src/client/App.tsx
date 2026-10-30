@@ -40,6 +40,7 @@ export function App() {
             <Route path="/jouer" element={<Play />} />
             <Route path="/partie/:id" element={<GamePage />} />
             <Route path="/cartes" element={<Rules />} />
+            <Route path="/regles" element={<Rules />} />
             <Route path="/boutique" element={<Shop />} />
             <Route path="/boutique/demo/:id" element={<DemoCheckout />} />
             <Route path="/connexion" element={<Auth mode="login" />} />

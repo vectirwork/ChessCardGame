@@ -163,7 +163,7 @@ describe('La magie cède (R6)', () => {
     const fen = '6r1/8/8/8/8/7K/8/k4n2 w - - 0 1';
     const s = game(fen, ['ice_wall']);
     expect(all(s)).toEqual(['h3h4']);
-    expect(refused(s, 0, 'h4')).toBe('Cette carte te laisserait sans aucun coup.');
+    expect(refused(s, 0, 'h4')).toBe('Cette carte vous laisserait sans aucun coup.');
     expect(cardOptions(s, 'w', 0).map(sqName)).not.toContain('h4');
     // Déjà bloqué par un Mur adverse : il peut jouer une carte (et jouera ensuite Rh4, la magie cède)
     const t = wall(game(fen, ['ice_wall']), 'h4');
@@ -570,13 +570,13 @@ describe('Présage : R4b à l’arrivée', () => {
     // Ra1 enfermé (b1 tenu par le fou e4) : sans la règle, ses pions avanceraient ensuite par « la magie cède »
     // pendant que le pion h7 noir resterait gelé.
     const s = game('7k/7p/8/3P4/4b3/8/PP6/K7 w - - 0 1', ['ice_age']);
-    expect(refused(s, 0)).toBe('À son arrivée, cette carte te laisserait sans aucun coup.');
+    expect(refused(s, 0)).toBe('À son arrivée, cette carte vous laisserait sans aucun coup.');
   });
 
   it('un camp dont le seul coup est une prise ne peut pas annoncer la Trêve', () => {
     const s = game('7k/8/8/8/8/1ppb4/1P6/K7 w - - 0 1', ['truce']);
     expect(all(s)).toEqual(['b2c3']);
-    expect(refused(s, 0)).toBe('À son arrivée, cette carte te laisserait sans aucun coup.');
+    expect(refused(s, 0)).toBe('À son arrivée, cette carte vous laisserait sans aucun coup.');
     // Dans une position ordinaire, la Trêve et l'Ère glaciaire s'annoncent.
     const o = createGame({ w: ['truce', 'ice_age'], b: [] }, false, 'climats');
     expect(cardPlayable(o, 'w', 0)).toBe(true);

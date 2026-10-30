@@ -301,7 +301,7 @@ describe('Matériel insuffisant avec des Murs et une Faille', () => {
     expect(canStillMate(s, 'w')).toBe(true);
   });
 
-  it('ÉCART : Murs c3 et e3 (hors paire) et une Faille en main : nulle déclarée alors que les Blancs matent en un (Faille, puis Cf2#)', () => {
+  it('corrigé : Murs c3 et e3 (hors paire) et une Faille en main : nulle déclarée alors que les Blancs matent en un (Faille, puis Cf2#)', () => {
     // Partie réelle : chaque camp pose son Mur, les Blancs gardent la Faille.
     let s = G('8/8/8/8/3k4/8/8/3K2N1 w - - 0 1', ['ice_wall', 'rift'], ['ice_wall']);
     const open = (x: GameState): GameState => ({ ...x, result: null });
@@ -319,7 +319,7 @@ describe('Matériel insuffisant avec des Murs et une Faille', () => {
     expect({ declared, canMate: canStillMate(open(r.state), 'w') }).toEqual({ declared: null, canMate: true });
   });
 
-  it('ÉCART : même chose avec la Faille déjà posée : nulle déclarée, canStillMate faux, alors que Cf2 est mat', () => {
+  it('corrigé : même chose avec la Faille déjà posée : nulle déclarée, canStillMate faux, alors que Cf2 est mat', () => {
     // Rd1, Ch1 contre Rd3 ; Murs c3 et e3 ; Faille sur la 4e rangée (3 coups restants). Les Blancs au trait.
     let s = G('8/8/8/8/8/3k4/8/3K3N w - - 0 1');
     s = withFx(s, wallFx('c3', 'w'), wallFx('e3', 'b'), riftFx(s, 4, 3, 'w'));
@@ -345,7 +345,7 @@ describe('Matériel insuffisant avec des Murs et une Faille', () => {
     expect(mates).toContain('Kd1 Nf2');
   });
 
-  it('ÉCART : Roi et Fou de cases foncées avec les Murs a3 et a5 (paire des fous clairs) contre Roi : aucun mat possible, mais ni nulle ni perte au temps', () => {
+  it('corrigé : Roi et Fou de cases foncées avec les Murs a3 et a5 (paire des fous clairs) contre Roi : aucun mat possible, mais ni nulle ni perte au temps', () => {
     // Force brute : avec les Murs a3 et a5 (et aucun autre), un fou de cases foncées ne mate jamais.
     const mods = emptyMods();
     mods.blocked[q('a3')] = true;

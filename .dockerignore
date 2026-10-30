@@ -4,3 +4,6 @@ dist
 .env
 *.log
 test-results
+data
+.pgdata
+concepts

@@ -459,7 +459,8 @@ export default function GamePage() {
   // Colonne droite (ordinateur) : liste des coups si la place le permet, sinon action « Coups joués »
   const boardBottom = layout.y + layout.G / 2;
   const railLeft = layout.x + layout.G / 2 + 28;
-  const railTop = hasCards ? 238 : 178;
+  // Avec cartes, la main adverse (trois bandeaux empilés) occupe le haut de la colonne.
+  const railTop = hasCards ? 300 : 178;
   const selfBottom = Math.max(28, layout.vh - boardBottom);
   const railBottom = selfBottom + (spectator && hasCards ? 250 : 184);
   const showRail = !layout.mobile && layout.vw - 30 - railLeft >= 132 && layout.vh - railTop - railBottom >= 120;

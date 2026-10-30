@@ -124,7 +124,7 @@ function CompactCard({ def, used, selected, disabled, onClick, className = '' }:
 
 export function CardBack({ size = 'hand', used }: { size?: 'hand' | 'mini'; used?: boolean }) {
   return (
-    <div className={`spell-card card-back sc-${size} ${used ? 'used' : ''}`} aria-label="Carte cachée">
+    <div className={`spell-card card-back sc-${size} ${used ? 'used' : ''}`} aria-label="Carte inconnue (ancienne formule)">
       <div className="cb-pattern">
         <svg viewBox="0 0 100 140" aria-hidden="true">
           <defs>

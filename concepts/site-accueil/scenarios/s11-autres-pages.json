@@ -1,0 +1,32 @@
+{
+ "url": "http://localhost:3000/boutique",
+ "outDir": "/home/user/ChessCardGame/concepts/site-accueil",
+ "viewport": {
+  "width": 1440,
+  "height": 900
+ },
+ "steps": [
+  {
+   "wait": 3000
+  },
+  {
+   "shot": "50-page-boutique"
+  },
+  {
+   "eval": "(history.pushState({}, \"\", \"/apprendre\"), dispatchEvent(new PopStateEvent(\"popstate\")), \"apprendre\")"
+  },
+  {
+   "wait": 2500
+  },
+  {
+   "shot": "51-page-apprendre"
+  },
+  {
+   "click": ".menu-btn",
+   "settle": 900
+  },
+  {
+   "shot": "52-menu-complet"
+  }
+ ]
+}

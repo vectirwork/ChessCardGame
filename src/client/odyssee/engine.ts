@@ -369,15 +369,21 @@ export class Engine {
     const secs = this.sections;
     if (!secs.length) return poseFor('hero', vw, vh);
     let p: Pose | null = null;
+    // Mobile : le premier écran est plus haut que la fenêtre ; l'échiquier défile avec son texte au lieu de rester
+    // posé dessus, puis traverse la nuée depuis l'endroit où on l'a laissé
+    const hero0 = secs[0];
+    const heroShift = isMobile(vw) ? clamp01((y - hero0.start) / Math.max(1, hero0.end - hero0.start)) * (hero0.end - hero0.start) : 0;
     for (let i = 0; i < secs.length && !p; i++) {
       const s = secs[i];
       if (y <= s.end) {
         if (y >= s.start || i === 0) {
           p = { ...this.pose(s.pose) };
+          if (i === 0) p.y -= heroShift;
           break;
         }
         const prev = secs[i - 1];
-        const a = this.pose(prev.pose);
+        const a = { ...this.pose(prev.pose) };
+        if (i === 1) a.y -= heroShift;
         const b = this.pose(s.pose);
         if (prev.pose === s.pose) {
           p = { ...b };
@@ -468,7 +474,8 @@ export class Engine {
         for (const el of sc.els) el.style.visibility = visible ? 'visible' : 'hidden';
       }
       if (!visible) continue;
-      const fadeIn = smooth(clamp01((y - (sc.start - vh * 1.05)) / (vh * 0.75)));
+      // Mobile : le premier écran est plus haut que la fenêtre ; le lieu suivant n'arrive qu'une fois le texte lu
+      const fadeIn = mobile ? smooth(clamp01((y - (sc.start - vh * 0.6)) / (vh * 0.5))) : smooth(clamp01((y - (sc.start - vh * 1.05)) / (vh * 0.75)));
       const fadeOut = 1 - smooth(clamp01((y - (sc.end + vh * 0.2)) / (vh * 0.5)));
       const op = sc.start === 0 ? fadeOut : fadeIn * fadeOut;
       for (const el of sc.els) {
@@ -488,7 +495,7 @@ export class Engine {
     for (let i = 1; i < this.skies.length; i++) {
       const sc = this.scenes[i];
       if (!sc) continue;
-      const k = smooth(clamp01((y - (sc.start - vh * 1.0)) / (vh * 0.9)));
+      const k = mobile ? smooth(clamp01((y - (sc.start - vh * 0.6)) / (vh * 0.6))) : smooth(clamp01((y - (sc.start - vh * 1.0)) / (vh * 0.9)));
       this.skies[i].style.opacity = k.toFixed(3);
     }
 

@@ -2778,12 +2778,9 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
 }
 
 /* Vignette « Jouer » (mobile, hors de l'accueil) */
-/* Pendant la descente, un rappel discret ramène à la partie (bas à droite, sous l'altimètre) */
-.ody .o-pip-play {
-  position: fixed;
-  right: 30px;
-  bottom: 26px;
-  z-index: 7;
+/* Pendant la descente, un rappel discret ramène à la partie : dans l'en-tête (ordinateur, portail vers
+   #header-slot) ou en bas au centre (mobile) */
+.o-pip-play {
   display: flex;
   padding: 0;
   border: 0;
@@ -2799,7 +2796,7 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
     transform: translateY(14px);
   }
 }
-.ody .o-pip-play span {
+.o-pip-play span {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -2815,22 +2812,31 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
   box-shadow: 0 10px 30px -8px rgba(243, 201, 105, 0.85), 0 0 0 1px rgba(255, 241, 196, 0.6) inset;
   transition: box-shadow 0.4s;
 }
-.ody .o-pip-play span::before {
+.o-pip-play span::before {
   content: '';
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: #1a1206;
 }
-.ody .o-pip-play small {
+.o-pip-play small {
   font: inherit;
   font-weight: 400;
   opacity: 0.75;
 }
-.ody .o-pip-play:hover span {
+.o-pip-play span {
+  white-space: nowrap;
+}
+/* Dans l'en-tête : même hauteur que le bouton Menu */
+.site-header .o-pip-play span {
+  height: 38px;
+  padding: 0 17px 0 14px;
+  font-size: 11px;
+}
+.o-pip-play:hover span {
   box-shadow: 0 14px 40px -8px rgba(243, 201, 105, 1), 0 0 0 1px rgba(255, 241, 196, 0.8) inset;
 }
-.ody .o-pip-play:focus-visible {
+.o-pip-play:focus-visible {
   outline: 2px solid var(--gold-hi);
   outline-offset: 3px;
 }
@@ -3030,9 +3036,6 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
     opacity: 0.85;
   }
 }
-.ody .o-shell-extra .gs-effects {
-  margin: 0 0 6px;
-}
 
 /* Bazar : les liens vers la boutique suivent le texte (la colonne tient dans un écran) */
 .ody .o-inline-more {
@@ -3079,9 +3082,36 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
   .ody .o-pip-play small {
     display: none;
   }
+  /* Centré en bas : la vignette de l'échiquier se pose en bas à droite */
+  .ody .o-pip-play {
+    left: 0;
+    right: 0;
+    width: max-content;
+    margin: 0 auto;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ody .o-pip-play {
+  .o-pip-play {
     animation: none;
+  }
+}
+.ody .o-pip-play {
+  position: fixed;
+  bottom: 16px;
+  z-index: 7;
+}
+.ody .o-pick .btn-gold {
+  flex: none;
+  white-space: nowrap;
+}
+/* Mobile : le titre de l'accueil reprend toute la largeur (la règle ordinateur plus haut le limitait à 44vw) */
+@media (max-width: 819px) {
+  .ody .o-hero-copy,
+  .ody .o-lede {
+    max-width: none;
+  }
+  /* Le premier écran est plus haut que la fenêtre : la traversée des nuées attend que les options soient lues */
+  .ody .o-hero {
+    padding-bottom: 26vh;
   }
 }

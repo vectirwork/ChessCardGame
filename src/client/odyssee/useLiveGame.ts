@@ -8,6 +8,7 @@
 //
 // `active` (mode immersif) : les sorts s'animent en 3D et l'IA joue. Hors mode immersif, la partie est en pause :
 // l'IA attend, et la scène 3D est vidée (aucun rendu WebGL pour un échiquier qu'on ne regarde pas).
+// La scène 3D n'est créée qu'à la première intention de jouer (`warm`) ou au passage en mode immersif.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { askBot } from '../ai';
 import type { BotLevel } from '../ai';
@@ -102,9 +103,12 @@ export interface LiveGameOptions {
   active: boolean;
   /** Skin des sorts de l'IA. */
   botSkin?: string;
+  /** Préparer la scène 3D (three.js, ~1 s de calcul sur un téléphone) : dès que le visiteur manifeste l'intention de
+   *  jouer. Elle est de toute façon créée au passage en mode immersif ; jamais au chargement de la page. */
+  warm?: boolean;
 }
 
-export function useLiveGame({ skin, theme, active, botSkin = 'skin:void' }: LiveGameOptions) {
+export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm = false }: LiveGameOptions) {
   const [state, setState] = useState<GameState>(() => loadSaved() ?? newGame());
   const [resumed] = useState(() => state.ply > 0);
   const [level, setLevelState] = useState<BotLevel>(loadLevel);
@@ -116,7 +120,11 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void' }: Live
   const [thinking, setThinking] = useState(false);
   const [lastCast, setLastCast] = useState<LastCast | null>(null);
   const [botTick, setBotTick] = useState(0);
-  const vfx = useVfx(wrapEl, PLAYER);
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (active || warm) setArmed(true);
+  }, [active, warm]);
+  const vfx = useVfx(armed ? wrapEl : null, PLAYER);
 
   const stateRef = useRef(state);
   const activeRef = useRef(active);

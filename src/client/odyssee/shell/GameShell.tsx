@@ -71,9 +71,13 @@ export interface GameShellProps {
   result?: { text: ReactNode; actions?: ReactNode } | null;
   /** Sort en cours de ciblage. */
   prompt?: ShellPrompt | null;
-  /** Actions discrètes sous le statut (Nouvelle partie, Abandonner…). Masquées pendant un ciblage. */
+  /** Actions discrètes sous le statut (Nouvelle partie, Abandonner…). Masquées pendant un ciblage ; repliées
+   *  sous « Options » sur mobile. */
   actions?: ShellAction[];
-  /** Contenu libre sous le statut (niveau de l'IA, file d'attente, effets actifs…). Masqué pendant un ciblage. */
+  /** Informations toujours visibles sous la consigne (effets en cours : <EffectChips />…). */
+  info?: ReactNode;
+  /** Contenu libre sous le statut (niveau de l'IA, file d'attente…). Masqué pendant un ciblage ; replié sous
+   *  « Options » sur mobile. */
   statusExtra?: ReactNode;
   opponent: ShellPlayer;
   /** Main du joueur. */
@@ -152,6 +156,7 @@ export function GameShell(p: GameShellProps) {
     return () => ctx.revert();
   }, [active]);
 
+  const [moreOpen, setMoreOpen] = useState(false);
   const { prompt, onBack, onEscape } = p;
   useEffect(() => {
     if (!active) return;
@@ -167,6 +172,9 @@ export function GameShell(p: GameShellProps) {
 
   if (!active) return null;
 
+  const shownActions = !p.result && p.actions ? p.actions.filter(a => !a.hidden) : [];
+  const hasMore = !!p.statusExtra || shownActions.length > 0;
+
   const backs = (
     <div className="gs-backs" aria-label={`Cartes de ${p.opponent.name}`}>
       {p.opponent.hand.map((h, i) => (h.card && h.used ? <SpellCard key={i} id={h.card} size="mini" used tilt={false} /> : <CardBack key={i} size="mini" used={h.used} />))}
@@ -181,7 +189,7 @@ export function GameShell(p: GameShellProps) {
   } as CSSProperties;
 
   return (
-    <div ref={rootRef} className={`gs ${layout.mobile ? 'is-mobile' : ''} ${p.className ?? ''}`} style={{ '--gs-g': `${layout.G}px`, '--gs-top': `${layout.y - layout.G / 2}px` } as CSSProperties}>
+    <div ref={rootRef} className={`gs ${layout.mobile ? 'is-mobile' : ''} ${prompt ? 'has-prompt' : ''} ${moreOpen ? 'more-open' : ''} ${p.className ?? ''}`} style={{ '--gs-g': `${layout.G}px`, '--gs-top': `${layout.y - layout.G / 2}px` } as CSSProperties}>
       {p.backdrop && (
         <div className="gs-backdrop" aria-hidden="true">
           <div className="gs-backdrop-glow" />
@@ -217,7 +225,7 @@ export function GameShell(p: GameShellProps) {
           ) : prompt ? (
             <div className="gs-prompt gs-in" style={{ '--h': prompt.hue } as CSSProperties}>
               <p className="gs-spell">{prompt.name}</p>
-              <p>{prompt.text}</p>
+              <p className="gs-prompt-text">{prompt.text}</p>
               <div className="gs-actions">
                 {prompt.onCast && (
                   <button type="button" className="btn-gold sm" onClick={prompt.onCast}>
@@ -232,16 +240,24 @@ export function GameShell(p: GameShellProps) {
           ) : (
             p.hint && <div className="gs-hint gs-in">{p.hint}</div>
           )}
+          {p.info && !prompt && <div className="gs-info gs-in">{p.info}</div>}
           {/* Pendant le ciblage d'un sort, seul le sort compte : le reste du panneau s'efface */}
-          {p.statusExtra && !prompt && <div className="gs-extra gs-in">{p.statusExtra}</div>}
-          {!p.result && !prompt && p.actions && p.actions.some(a => !a.hidden) && (
-            <div className="gs-quiet-row gs-in">
-              {p.actions
-                .filter(a => !a.hidden)
-                .map(a => (
-                  <ActionButton key={a.label} a={a} />
-                ))}
-            </div>
+          {!prompt && hasMore && layout.mobile && (
+            <button type="button" className="gs-more-btn gs-in" aria-expanded={moreOpen} onClick={() => setMoreOpen(o => !o)}>
+              {moreOpen ? 'Masquer les options' : 'Options de la partie'}
+            </button>
+          )}
+          {!prompt && (!layout.mobile || moreOpen) && (
+            <>
+              {p.statusExtra && <div className="gs-extra gs-in">{p.statusExtra}</div>}
+              {shownActions.length > 0 && (
+                <div className="gs-quiet-row gs-in">
+                  {shownActions.map(a => (
+                    <ActionButton key={a.label} a={a} />
+                  ))}
+                </div>
+              )}
+            </>
           )}
           {!prompt && (
             <div className="gs-opp-hand-m">

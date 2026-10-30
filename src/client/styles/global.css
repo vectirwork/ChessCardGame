@@ -818,6 +818,14 @@ kbd {
   align-items: center;
   gap: 18px;
 }
+/* Emplacement d'action contextuelle (portail d'une page, ex. « Reprendre · coup 12 » sur l'accueil) */
+.header-slot {
+  display: flex;
+  align-items: center;
+}
+.header-slot:empty {
+  display: none;
+}
 .menu-btn {
   display: inline-flex;
   align-items: center;

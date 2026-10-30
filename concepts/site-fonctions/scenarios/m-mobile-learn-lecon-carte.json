@@ -1,0 +1,1 @@
+{"url": "http://localhost:3150/apprendre/cartes", "outDir": "/home/user/ChessCardGame/concepts/site-fonctions", "viewport": {"width": 390, "height": 844}, "dpr": 2, "steps": [{"wait": 1500}, {"click": ".ft-steps li:nth-child(2) button"}, {"wait": 600}, {"shot": "mobile-learn-lecon-carte", "fullPage": true}]}

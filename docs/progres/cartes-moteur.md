@@ -24,11 +24,31 @@ Reprise (2e agent) après redémarrage du conteneur. Travail du 1er agent : inst
   Marée refusée dans l'Écossaise, budget de temps). Verts.
 - bot-worker : commentaire Rituel/Déjà-vu.
 
-## En cours
-- test/integration.mjs : catalogue + carte globale ; vérifier sur ma propre instance (PORT 3157, DATA_DIR /tmp/...).
+- test/integration.mjs : catalogue Climats par défaut, carte globale (Présage public, Rituel, Déjà-vu), Duel et Sans
+  cartes par invitation, catalogue inconnu refusé, file amicale Duel, pas de Sablier contre l'IA. Vérifié 12 fois sur
+  ma propre instance (cartes jouées : tide, rift, portals, truce, blood_moon, ice_wall, blast, ice_age, cavalcade,
+  hourglass) ; un échec isolé non reproduit au 4e passage sur la même instance (message d'erreur enrichi depuis).
+  Instance : scratchpad/start-server.sh et stop-server.sh (PORT 3157, groupe de processus, PID noté).
 
-## Reste à faire
-- npx tsc, npm test, résumé final.
+- test/climats.test.ts : test « Cumul des Terrains » (Mur, Faille, Portails sur des cases distinctes).
+- bot.ts : sans coup légal, chooseBotCard joue toujours une carte (R4c), même si le temps manque.
+- Auto-jeu IA niveau 2 (6 parties, script scratchpad/selfplay.ts) : aucune exception, cartes jouées (Mur, Faille, Lune,
+  Chevauchée, Couronnement, Déjà-vu).
+- tsc : seule erreur concepts/galerie/data.ts (hors flux A). npm test : 9 fichiers, 119 tests verts (avant le test
+  « Cumul »).
+
+## Terminé (15 h 25)
+- `npx tsc --noEmit -p .` : seule erreur concepts/galerie/data.ts:200 (Record<CardId,…> sans les 12 cartes Climats ;
+  fichier hors flux A, à corriger par l'orchestrateur : Partial<Record<…>> ou entrées ajoutées).
+- `npm test` : 9 fichiers, 120 tests verts, ≈ 67 s (climats-random ≈ 65 s à lui seul).
+- Instance serveur arrêtée ; aucun navigateur lancé.
+
+## Pour l'orchestrateur
+- `CARDS[id].catalog` est déprécié (premier catalogue : le Mur de glace y vaut 'climats') : src/client/odyssee/data.ts
+  (l. 45) et src/client/odyssee/StageBoard.tsx (l. 33) filtrent encore par `.catalog ===` : le Duel y perd le Mur de
+  glace. Remplacer par `cardsOf(catalog)` / `inCatalog(id, catalog)`.
+- Parties locales contre l’IA (src/client/odyssee/useLiveGame.ts l. 42) : sans pendule, le Sablier est déjà exclu ; avec
+  une pendule, passer `{ vsBot: true }` à `dealHands`.
 
 ## Décisions
 - R5 (échec vu avec les effets du prochain coup adverse) s'applique à tous les catalogues (Duel compris).
@@ -37,3 +57,11 @@ Reprise (2e agent) après redémarrage du conteneur. Travail du 1er agent : inst
 - `cd /home/user/ChessCardGame && npx tsc --noEmit -p .`
 - `npx vitest run test/climats.test.ts test/climats-random.test.ts`
 - `npm test`
+
+## Phase 3 : correctifs après vérification adverse (démarrée ≈ 16 h 15)
+Problèmes à traiter (rapports verif-climats-regles.md et verif-climats-serveur-ia.md) :
+1. Pat par magie (Chevauchée annoncée) ; 2. R4b contournée par Présage ; 3. matériel insuffisant avec Mur en main ;
+4. checkKind 'melt' au lieu de 'arrival' ; 5. pendule au redémarrage ; 6. Marée sous la Lune ;
+7. Déjà-vu : incrément du coup effacé gardé ; 8. IA : Portails jamais joués.
+### En cours
+- lecture du code et du document de règles.

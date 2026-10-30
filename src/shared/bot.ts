@@ -370,7 +370,11 @@ export function chooseBotCard(s: GameState, level: BotLevel): { index: number; t
     const gain = v - ref + cardBias(s, me, card);
     if (!best || gain > best.gain) best = { index: c.index, targets: c.targets, gain };
   }
-  if (!best) return null;
+  if (!best) {
+    // Sans coup légal, une carte doit être jouée (R4c), même si le temps a manqué pour les comparer.
+    if (!mustPlay) return null;
+    return { index: playable[0], targets: candidateTargets(s, me, playable[0])[0] ?? [] };
+  }
   // Une carte est une ressource : on la garde en ouverture, sauf gain net.
   const keep = profile.cardThreshold + Math.max(0, 30 - s.ply) * 6;
   if (mustPlay || best.gain >= keep) return { index: best.index, targets: best.targets };

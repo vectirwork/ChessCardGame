@@ -269,6 +269,32 @@ describe('Faille', () => {
   });
 });
 
+describe('Cumul des Terrains', () => {
+  it('Mur, Faille et Portails se cumulent, jamais sur une même case', () => {
+    let s = createGame({ w: ['ice_wall', 'portals'], b: ['rift', 'ice_wall'] }, false, 'climats');
+    s = card(s, 0, 'c4'); // Mur de glace en c4
+    s = mv(s, 'e2', 'e3');
+    s = card(s, 0, 'a4'); // Faille sur la 4e rangée : le Mur n'en fait pas partie
+    const rift = s.effects.find(e => e.card === 'rift')!;
+    expect(rift.squares!.map(sqName).sort()).toEqual(['a4', 'b4', 'd4', 'e4', 'f4', 'g4', 'h4']);
+    s = mv(s, 'e7', 'e6');
+    // Portails : ni sur un Terrain, ni en face d'un Terrain (c4 ⇄ f5, b4 ⇄ g5)
+    const portals = cardOptions(s, 'w', 1).map(sqName);
+    for (const x of ['c4', 'f5', 'b4', 'g5', 'd4']) expect(portals).not.toContain(x);
+    expect(portals).toContain('c3');
+    s = card(s, 1, 'c3'); // c3 ⇄ f6, annoncés
+    s = mv(s, 'g1', 'f3');
+    // Mur noir : ni sur la Faille, ni sur le Mur, ni sur les Portails annoncés
+    const walls = cardOptions(s, 'b', 1).map(sqName);
+    for (const x of ['c3', 'f6', 'c4', 'd4', 'h4']) expect(walls).not.toContain(x);
+    expect(walls).toContain('d3');
+    s = card(s, 1, 'd3');
+    expect(s.effects.map(e => e.card).sort()).toEqual(['ice_wall', 'ice_wall', 'portals', 'rift']);
+    const blocked = modsFromEffects(s.effects).blocked;
+    expect(['c4', 'd3', 'a4', 'h4', 'c3'].map(x => blocked[q(x)])).toEqual([true, true, true, true, false]);
+  });
+});
+
 describe('Déflagration', () => {
   const blast = (s: GameState) => withEffect(s, 'blast');
 

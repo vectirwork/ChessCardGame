@@ -1,0 +1,1 @@
+{"url": "http://localhost:3150/problemes/fourchette-c7", "outDir": "/home/user/ChessCardGame/concepts/site-fonctions", "viewport": {"width": 390, "height": 844}, "dpr": 2, "steps": [{"wait": 1800}, {"shot": "mobile-puzzle", "fullPage": true}]}

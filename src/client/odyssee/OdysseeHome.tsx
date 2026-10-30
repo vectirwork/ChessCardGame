@@ -3,6 +3,7 @@
 // une pièce ; au premier coup, la page s'efface vers la gauche et la partie passe en plein écran.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as RPointerEvent, ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import gsap from 'gsap';
 import { CARDS } from '../../shared/cards';
@@ -131,6 +132,8 @@ export default function OdysseeHome() {
   const [toast, setToast] = useState<{ text: string; key: number } | null>(null);
   const [reduced] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [mobile, setMobile] = useState(() => isMobile(window.innerWidth));
+  const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => setHeaderSlot(document.getElementById('header-slot')), []);
 
   const catalog = useMemo(() => liveCatalog(), []);
   const storyCards = useMemo(() => placeCards(catalog), [catalog]);
@@ -143,7 +146,23 @@ export default function OdysseeHome() {
 
   const mySkin = me?.equippedSkin ?? DEFAULT_SKIN;
   const myBoard = me?.equippedBoard ?? DEFAULT_BOARD;
-  const g = useLiveGame({ skin: mySkin, theme: myBoard, active: mode === 'game' });
+  // Scène 3D de la partie : préparée à la première intention de jouer (survol d'une pièce, toucher, carte) ou, à
+  // défaut, quand le navigateur est inoccupé après l'ouverture ; jamais pendant le premier affichage
+  const [intent, setIntent] = useState(false);
+  useEffect(() => {
+    type IdleWin = Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
+    const w = window as IdleWin;
+    let idle = 0;
+    const t = window.setTimeout(() => {
+      if (w.requestIdleCallback) idle = w.requestIdleCallback(() => setIntent(true), { timeout: 2500 });
+      else setIntent(true);
+    }, 3400);
+    return () => {
+      window.clearTimeout(t);
+      if (idle) w.cancelIdleCallback?.(idle);
+    };
+  }, []);
+  const g = useLiveGame({ skin: mySkin, theme: myBoard, active: mode === 'game', warm: intent });
   const q = useHumanQueue(catalog);
   const gRef = useRef(g);
   gRef.current = g;
@@ -264,6 +283,7 @@ export default function OdysseeHome() {
       const e = engineRef.current;
       const root = rootRef.current;
       if (!e || !root || modeRef.current !== 'page') return;
+      setIntent(true);
       setSheet(null);
       setHover(false);
       setHoverSq(null);
@@ -369,6 +389,7 @@ export default function OdysseeHome() {
     if (modeRef.current === 'page') wake(false);
   };
   const onAstreDownCapture = (e: RPointerEvent) => {
+    setIntent(true);
     const en = engineRef.current;
     if (!en || modeRef.current !== 'page' || placeRef.current !== 0) return;
     // Souris : un clic sur un plateau encore incliné tomberait à côté ; on redresse d'abord
@@ -388,6 +409,8 @@ export default function OdysseeHome() {
     const x = Math.floor(((e.clientX - r.left) / r.width) * 8);
     const y = Math.floor(((e.clientY - r.top) / r.height) * 8);
     const sq = x < 0 || x > 7 || y < 0 || y > 7 ? null : (7 - y) * 8 + x;
+    // La souris passe sur une pièce jouable : la scène 3D se prépare pendant que le visiteur hésite
+    if (sq !== null && movers.has(sq) && !intent) setIntent(true);
     setHoverSq(sq !== null && movers.has(sq) && g.selected === null ? sq : null);
   };
 
@@ -633,14 +656,20 @@ export default function OdysseeHome() {
         </div>
       </div>
 
-      {place > 0 && mode === 'page' && (
-        <button className={`o-pip-play ${docked ? 'is-docked' : ''}`} onClick={() => play()} aria-label={resume ? 'Reprendre la partie' : 'Jouer maintenant'}>
-          <span>
-            {playLabel}
-            {resume && <small> · coup {moveNo}</small>}
-          </span>
-        </button>
-      )}
+      {place > 0 &&
+        mode === 'page' &&
+        (() => {
+          const pip = (
+            <button className={`o-pip-play ${docked ? 'is-docked' : ''}`} onClick={() => play()} aria-label={resume ? `Reprendre la partie, coup ${moveNo}` : 'Jouer maintenant'}>
+              <span>
+                {playLabel}
+                {resume && <small> · coup {moveNo}</small>}
+              </span>
+            </button>
+          );
+          // Ordinateur : dans l'en-tête, à côté du menu ; mobile : en bas, à portée de pouce
+          return headerSlot && !mobile ? createPortal(pip, headerSlot) : pip;
+        })()}
 
       <div className={`o-astre-caption ${place === 0 ? 'is-live' : ''} ${reduced && place !== 0 ? 'is-still' : ''} ${hover && place !== 0 ? 'is-go' : ''}`} ref={captionRef} aria-live="off">
         {captionBody}
@@ -1014,9 +1043,9 @@ export default function OdysseeHome() {
         }
         prompt={prompt}
         actions={shellActions}
+        info={<EffectChips effects={g.state.effects} />}
         statusExtra={
           <div className="o-shell-extra">
-            <EffectChips effects={g.state.effects} />
             <LevelPick level={g.level} onChange={g.setLevel} />
             <HumanOption q={q} compact={mobile} />
           </div>

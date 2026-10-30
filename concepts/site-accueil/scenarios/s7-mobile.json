@@ -1,0 +1,83 @@
+{
+ "url": "http://localhost:3000/",
+ "outDir": "/home/user/ChessCardGame/concepts/site-accueil",
+ "viewport": {
+  "width": 390,
+  "height": 844
+ },
+ "dpr": 1,
+ "steps": [
+  {
+   "eval": "localStorage.clear(), sessionStorage.setItem(\"sm:intro\",\"1\"), \"propre\""
+  },
+  {
+   "eval": "location.reload(), \"rechargement\""
+  },
+  {
+   "wait": 4500
+  },
+  {
+   "eval": "// Attend que la scène 3D de la partie soit prête et que le fil principal soit libre (WebGL logiciel du bac à sable :\n// la création de la scène y bloque la page plusieurs secondes ; sur un vrai appareil, c'est l'affaire de 100 ms).\n(async () => {\n  const t0 = performance.now();\n  const pause = ms => new Promise(r => setTimeout(r, ms));\n  while (performance.now() - t0 < 90000) {\n    if (document.querySelector('canvas.o-live-canvas')) {\n      const a = performance.now();\n      await pause(200);\n      if (performance.now() - a < 400) {\n        await pause(600);\n        return 'calme après ' + Math.round((performance.now() - t0) / 1000) + ' s';\n      }\n    } else await pause(300);\n  }\n  return 'délai dépassé';\n})()\n"
+  },
+  {
+   "shot": "30-mobile-accueil"
+  },
+  {
+   "clickSquare": "e2",
+   "settle": 900
+  },
+  {
+   "clickSquare": "e2",
+   "settle": 400
+  },
+  {
+   "clickSquare": "e4",
+   "settle": 3600
+  },
+  {
+   "eval": "({immersive: document.documentElement.classList.contains(\"is-immersive\"), status: document.querySelector(\".gs-title\")?.textContent})"
+  },
+  {
+   "shot": "31-mobile-jeu"
+  },
+  {
+   "wait": 4000
+  },
+  {
+   "eval": "(() => { const c = [...document.querySelectorAll(\".gs-fan .spell-card:not(.disabled):not(.used)\")]; if (!c.length) return \"aucune\"; c[0].click(); return \"clic\"; })()"
+  },
+  {
+   "wait": 900
+  },
+  {
+   "shot": "32-mobile-carte"
+  },
+  {
+   "eval": "document.querySelector(\".gs-prompt .btn-line\")?.click(), \"annule\""
+  },
+  {
+   "wait": 500
+  },
+  {
+   "click": ".gs-back",
+   "settle": 3800
+  },
+  {
+   "shot": "33-mobile-retour"
+  },
+  {
+   "scrollToSelector": "#bazar",
+   "settle": 3500
+  },
+  {
+   "shot": "34-mobile-bazar"
+  },
+  {
+   "click": ".menu-btn",
+   "settle": 900
+  },
+  {
+   "shot": "35-mobile-menu"
+  }
+ ]
+}

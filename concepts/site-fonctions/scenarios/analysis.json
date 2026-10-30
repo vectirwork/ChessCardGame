@@ -1,0 +1,19 @@
+{
+  "url": "http://localhost:3000/analyse",
+  "outDir": "/home/user/ChessCardGame/concepts/site-fonctions",
+  "viewport": { "width": 1440, "height": 900 },
+  "steps": [
+    { "wait": 1200 },
+    { "clickSquare": "e2" }, { "clickSquare": "e4", "settle": 300 },
+    { "clickSquare": "e7" }, { "clickSquare": "e5", "settle": 300 },
+    { "clickSquare": "g1" }, { "clickSquare": "f3", "settle": 300 },
+    { "clickSquare": "b8" }, { "clickSquare": "c6", "settle": 300 },
+    { "click": "button[aria-label^='Coup précédent']" },
+    { "click": "button[aria-label^='Coup précédent']" },
+    { "clickSquare": "f1" }, { "clickSquare": "c4", "settle": 300 },
+    { "clickSquare": "g8" }, { "clickSquare": "f6", "settle": 4000 },
+    { "shot": "analysis-01-variantes-moteur" },
+    { "click": "button[role=tab]:nth-child(3)", "settle": 400 },
+    { "shot": "analysis-02-export" }
+  ]
+}

@@ -6,14 +6,22 @@ import type { Flag } from './review';
 
 export function EvalBar({ analysis, orientation, idle }: { analysis: Analysis | null; orientation: Color; idle?: boolean }) {
   const share = analysis ? whiteShare(analysis.scoreWhite, analysis.mate) : 0.5;
-  const label = analysis ? formatEval(analysis.scoreWhite, analysis.mate) : '';
+  const label = analysis ? compactEval(analysis.scoreWhite, analysis.mate) : '';
   const whiteBottom = orientation === 'w';
   return (
-    <div className={`ft-evalbar ${idle ? 'idle' : ''} ${whiteBottom ? '' : 'flip'}`} role="meter" aria-label="Évaluation" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(share * 100)} aria-valuetext={label || 'inconnue'}>
+    <div className={`ft-evalbar ${idle ? 'idle' : ''} ${whiteBottom ? '' : 'flip'}`} role="meter" aria-label="Évaluation" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(share * 100)} aria-valuetext={analysis ? formatEval(analysis.scoreWhite, analysis.mate) : 'inconnue'}>
       <span className="ft-evalbar-w" style={{ transform: `scaleY(${share})` }} />
-      {label && <span className={`ft-evalbar-v ${share >= 0.5 ? 'w' : 'b'}`}>{label.replace('+', '')}</span>}
+      {label && <span className={`ft-evalbar-v ${share >= 0.5 ? 'w' : 'b'}`}>{label}</span>}
     </div>
   );
+}
+
+/** Version courte pour la barre : « 0,4 », « 12 », « #3 ». */
+function compactEval(scoreWhite: number, mate: number | null): string {
+  const full = formatEval(scoreWhite, mate).replace(/^[+−]/, '');
+  if (full.startsWith('#')) return full.replace('−', '');
+  const v = Math.abs(scoreWhite) / 100;
+  return v >= 9.95 ? String(Math.round(v)) : full;
 }
 
 export function EvalGraph({ evals, current, flags, onPick }: { evals: (Analysis | null | undefined)[]; current: number; flags: Flag[]; onPick: (i: number) => void }) {

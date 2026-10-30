@@ -1,0 +1,10 @@
+{
+  "url": "http://localhost:3000/apprendre",
+  "outDir": "/home/user/ChessCardGame/concepts/site-fonctions",
+  "viewport": { "width": 390, "height": 844 },
+  "dpr": 2,
+  "steps": [
+    { "wait": 1500 },
+    { "shot": "mobile-learn-sommaire" }
+  ]
+}

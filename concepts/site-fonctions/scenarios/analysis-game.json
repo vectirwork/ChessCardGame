@@ -1,0 +1,14 @@
+{
+  "url": "http://localhost:3150/analyse/q67sKqvvaj",
+  "outDir": "/home/user/ChessCardGame/concepts/site-fonctions",
+  "viewport": { "width": 1440, "height": 900 },
+  "steps": [
+    { "wait": 3000 },
+    { "shot": "analysis-03-relecture-debut" },
+    { "wait": 16000 },
+    { "eval": "document.querySelector('.ft-review-meta')?.textContent" },
+    { "click": "button[aria-label^='Fin']", "settle": 2500 },
+    { "shot": "analysis-04-relecture-fin" },
+    { "shot": "analysis-04b-relecture-pleine", "fullPage": true }
+  ]
+}

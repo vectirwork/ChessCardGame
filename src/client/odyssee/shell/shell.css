@@ -529,3 +529,64 @@
 .gs.is-mobile .gs-effects b {
   font-size: 14px;
 }
+
+/* Informations toujours visibles (effets en cours) */
+.gs-info .gs-effects {
+  margin-top: 16px;
+}
+.gs.is-mobile .gs-info .gs-effects {
+  margin-top: 6px;
+}
+
+/* Mobile : options repliées sous un lien discret */
+.gs-more-btn {
+  margin-top: 10px;
+  padding: 4px 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--soft);
+  cursor: pointer;
+}
+.gs-more-btn[aria-expanded='true'] {
+  color: var(--text);
+  border-bottom-color: var(--gold);
+}
+
+/* Mobile, pendant le ciblage : le sort prend la place du titre, ses boutons restent toujours à portée */
+.gs.is-mobile.has-prompt .gs-kicker,
+.gs.is-mobile.has-prompt .gs-title {
+  display: none;
+}
+.gs.is-mobile .gs-prompt {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: 'name actions' 'text text';
+  align-items: center;
+  column-gap: 12px;
+  margin-top: 0;
+}
+.gs.is-mobile .gs-prompt .gs-spell {
+  grid-area: name;
+}
+.gs.is-mobile .gs-prompt .gs-prompt-text {
+  grid-area: text;
+  margin-top: 6px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.gs.is-mobile .gs-prompt .gs-actions {
+  grid-area: actions;
+  margin-top: 0;
+  gap: 12px;
+  flex-wrap: nowrap;
+}
+.gs.is-mobile .gs-prompt .btn-line {
+  font-size: 12.5px;
+}
+.gs.is-mobile.more-open .gs-hint,
+.gs.is-mobile.more-open .gs-opp-hand-m {
+  display: none;
+}

@@ -1,0 +1,67 @@
+{
+ "url": "http://localhost:3000/",
+ "outDir": "/home/user/ChessCardGame/concepts/site-accueil",
+ "viewport": {
+  "width": 390,
+  "height": 844
+ },
+ "dpr": 1,
+ "steps": [
+  {
+   "eval": "localStorage.clear(), sessionStorage.setItem(\"sm:intro\",\"1\"), \"propre\""
+  },
+  {
+   "eval": "location.reload(), \"rechargement\""
+  },
+  {
+   "wait": 4500
+  },
+  {
+   "eval": "// Attend que la scène 3D de la partie soit prête et que le fil principal soit libre (WebGL logiciel du bac à sable :\n// la création de la scène y bloque la page plusieurs secondes ; sur un vrai appareil, c'est l'affaire de 100 ms).\n(async () => {\n  const t0 = performance.now();\n  const pause = ms => new Promise(r => setTimeout(r, ms));\n  while (performance.now() - t0 < 90000) {\n    if (document.querySelector('canvas.o-live-canvas')) {\n      const a = performance.now();\n      await pause(200);\n      if (performance.now() - a < 400) {\n        await pause(600);\n        return 'calme après ' + Math.round((performance.now() - t0) / 1000) + ' s';\n      }\n    } else await pause(300);\n  }\n  return 'délai dépassé';\n})()\n"
+  },
+  {
+   "shot": "30-mobile-accueil"
+  },
+  {
+   "clickSquare": "e2",
+   "settle": 900
+  },
+  {
+   "clickSquare": "e2",
+   "settle": 400
+  },
+  {
+   "clickSquare": "e4",
+   "settle": 3600
+  },
+  {
+   "wait": 3000
+  },
+  {
+   "shot": "31-mobile-jeu"
+  },
+  {
+   "click": ".gs-more-btn",
+   "settle": 600
+  },
+  {
+   "shot": "31b-mobile-options"
+  },
+  {
+   "click": ".gs-more-btn",
+   "settle": 400
+  },
+  {
+   "eval": "(() => { const c = [...document.querySelectorAll(\".gs-fan .spell-card:not(.disabled):not(.used)\")]; if (!c.length) return \"aucune\"; c[0].click(); return \"clic\"; })()"
+  },
+  {
+   "wait": 900
+  },
+  {
+   "shot": "32-mobile-carte"
+  },
+  {
+   "eval": "({lancer: (() => { const b = document.querySelector(\".gs-prompt .btn-gold\"); if (!b) return \"cible\"; const r = b.getBoundingClientRect(); const top = document.elementFromPoint(r.left + r.width/2, r.top + r.height/2); return b.contains(top) ? \"visible et cliquable\" : \"masqué par \" + top?.className; })()})"
+  }
+ ]
+}

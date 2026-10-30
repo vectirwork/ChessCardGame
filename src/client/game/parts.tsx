@@ -1,14 +1,80 @@
-// Éléments de la page de partie : pendules, barres des joueurs, coups joués, effets actifs.
+// Éléments de la page de partie en ligne (style Odyssée) : pendules, pièces prises, coups joués, sorts en cours
+// (Présages annoncés compris), identité des joueurs. Classes gp-* (styles/game.css).
 import { useEffect, useRef, useState } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Color, PieceType, VALUE, sanToFrench } from '../../shared/chess';
-import { CARDS } from '../../shared/cards';
-import type { Effect, GameState, HandCard, LogEntry } from '../../shared/game';
+import { CARDS, CATALOGS } from '../../shared/cards';
+import type { Catalog } from '../../shared/cards';
+import { BOT_PROFILES } from '../../shared/bot';
+import type { Effect, GameState, LogEntry } from '../../shared/game';
 import { describeCardPlay } from '../../shared/game';
-import type { ClockView, SeatView } from '../../shared/protocol';
+import type { ClockView, GameView, SeatView } from '../../shared/protocol';
+import { TIME_CONTROLS } from '../../shared/protocol';
 import { CardEmblem } from '../components/CardArt';
 import { pieceUrl } from '../components/pieces';
+import { OracleEye } from '../odyssee/shell';
 import { playSound } from '../sound';
+
+const plural = (n: number, w: string) => `${n} ${w}${n > 1 ? 's' : ''}`;
+
+// ---------------------------------------------------------------------------------------------
+// Libellés
+
+export const colorName = (c: Color) => (c === 'w' ? 'Blancs' : 'Noirs');
+
+export function catalogLabel(c: Catalog): string {
+  return CATALOGS.find(x => x.id === c)?.label ?? 'Duel';
+}
+
+export function catalogDescription(c: Catalog): string {
+  return CATALOGS.find(x => x.id === c)?.description ?? '';
+}
+
+/** Nature de la partie, pour le badge du haut. La file amicale est une partie « quick » non classée. */
+export function modeLabel(view: GameView): string {
+  if (view.mode === 'bot') return "Contre l'IA";
+  if (view.mode === 'invite') return 'Entre amis';
+  return view.rated ? 'Partie classée' : 'Partie amicale';
+}
+
+export function tcLabel(clock: ClockView | null): string {
+  if (!clock) return 'Sans limite';
+  const t = TIME_CONTROLS.find(x => x.tc && x.tc.initial === clock.initial && x.tc.increment === clock.increment);
+  if (t) return t.label;
+  return `${Math.round(clock.initial / 60)} + ${clock.increment}`;
+}
+
+/** Cadence en toutes lettres (« 10 min + 5 s »). */
+export function tcLong(clock: ClockView | null): string {
+  if (!clock) return 'sans limite de temps';
+  const m = Math.round(clock.initial / 60);
+  return clock.increment ? `${m} min + ${clock.increment} s par coup` : `${m} min`;
+}
+
+export function levelName(seat: SeatView | null): string {
+  const l = seat?.level;
+  return l === 1 || l === 2 || l === 3 ? BOT_PROFILES[l].name : 'Sorcier';
+}
+
+/** Sous-titre d'un joueur : niveau de l'IA, classement, invité. */
+export function seatSub(seat: SeatView | null, color: Color, diff?: number | null): ReactNode {
+  if (!seat) return 'Invitation envoyée';
+  const parts: ReactNode[] = [];
+  if (seat.kind === 'bot') parts.push(`IA · niveau ${levelName(seat)}`);
+  else if (seat.kind === 'guest') parts.push('Invité');
+  if (seat.rating != null && seat.kind !== 'bot') parts.push(`${seat.rating} Elo`);
+  parts.push(colorName(color));
+  return (
+    <>
+      {parts.join(' · ')}
+      {diff != null && <em className={`gp-diff ${diff >= 0 ? 'up' : 'down'}`}>{diff >= 0 ? `+${diff}` : diff}</em>}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Pendules (exactes : temps restant à l'envoi, moins le temps écoulé depuis la réception, au rythme du joueur)
 
 export function formatClock(ms: number): string {
   const t = Math.max(0, ms);
@@ -32,7 +98,7 @@ export function useClock(clock: ClockView | null, color: Color, receivedAt: numb
   return t;
 }
 
-export function Clock({ clock, color, receivedAt, active }: { clock: ClockView | null; color: Color; receivedAt: number; active: boolean }) {
+export function Clock({ clock, color, receivedAt, active, compact }: { clock: ClockView | null; color: Color; receivedAt: number; active: boolean; compact?: boolean }) {
   const ms = useClock(clock, color, receivedAt);
   const warned = useRef(false);
   const low = ms !== null && ms < 20_000;
@@ -45,27 +111,25 @@ export function Clock({ clock, color, receivedAt, active }: { clock: ClockView |
     if (ms > 12_000) warned.current = false;
   }, [ms, active]);
   if (ms === null) return null;
-  const warp = clock && clock.rate[color] > 1;
+  const warp = !!clock && clock.rate[color] > 1;
   return (
-    <div className={`clock ${active ? 'on' : ''} ${low ? 'low' : ''} ${warp ? 'warp' : ''}`} aria-label="Pendule">
-      {warp && <span className="warp-badge" title="Distorsion temporelle : la pendule s'écoule deux fois plus vite">×2</span>}
-      {formatClock(ms)}
+    <div
+      className={`gp-clock ${active ? 'is-on' : ''} ${low ? 'is-low' : ''} ${warp ? 'is-warp' : ''} ${compact ? 'is-compact' : ''}`}
+      role="timer"
+      aria-label={`Pendule des ${colorName(color)} : ${formatClock(ms)}`}
+    >
+      {warp && (
+        <span className="gp-warp" title="Le temps s'écoule deux fois plus vite">
+          ×{clock!.rate[color]}
+        </span>
+      )}
+      <span className="gp-clock-t">{formatClock(ms)}</span>
     </div>
   );
 }
 
-function CapturedRow({ pieces, color, advantage }: { pieces: PieceType[]; color: Color; advantage: number }) {
-  const order: PieceType[] = ['q', 'r', 'b', 'n', 'p'];
-  const sorted = [...pieces].sort((a, b) => order.indexOf(a) - order.indexOf(b));
-  return (
-    <div className="captured">
-      {sorted.map((t, i) => (
-        <span key={i} className="cap" style={{ backgroundImage: pieceUrl(color, t) }} />
-      ))}
-      {advantage > 0 && <span className="adv">+{advantage}</span>}
-    </div>
-  );
-}
+// ---------------------------------------------------------------------------------------------
+// Pièces prises et avantage matériel
 
 export function material(state: GameState, c: Color): number {
   let m = 0;
@@ -73,60 +137,59 @@ export function material(state: GameState, c: Color): number {
   return m;
 }
 
-export function PlayerBar(props: {
-  seat: SeatView | null;
-  color: Color;
-  state: GameState;
-  clock: ClockView | null;
-  receivedAt: number;
-  active: boolean;
-  hand: HandCard[];
-  showHand: boolean;
-  emote?: string | null;
-  away?: number | null;
-  ratingDiff?: number | null;
-}) {
-  const { seat, color, state, clock, receivedAt, active, hand, showHand, emote, away, ratingDiff } = props;
+/** Pièces prises par `color` (donc de la couleur adverse) et avantage matériel. */
+export function Captured({ state, color }: { state: GameState; color: Color }) {
   const opp: Color = color === 'w' ? 'b' : 'w';
+  const order: PieceType[] = ['q', 'r', 'b', 'n', 'p'];
+  const pieces = [...state.captured[opp]].sort((a, b) => order.indexOf(a) - order.indexOf(b));
   const adv = Math.round((material(state, color) - material(state, opp)) / 100);
+  if (!pieces.length && adv <= 0) return null;
   return (
-    <div className={`player-bar ${active ? 'active' : ''}`}>
-      <div className={`pb-avatar ${color}`}>
-        {seat?.kind === 'bot' ? '✦' : (seat?.name ?? '?')[0]?.toUpperCase()}
-        {seat && <span className={`dot ${seat.online && away == null ? 'on' : ''}`} />}
-      </div>
-      <div className="pb-main">
-        <div className="pb-name">
-          {seat?.username ? <Link to={`/joueur/${seat.username}`}>{seat.name}</Link> : <span>{seat?.name ?? 'En attente…'}</span>}
-          {seat?.rating != null && <span className="pb-rating">{seat.rating}</span>}
-          {ratingDiff != null && <span className={`pb-diff ${ratingDiff >= 0 ? 'up' : 'down'}`}>{ratingDiff >= 0 ? '+' : ''}{ratingDiff}</span>}
-          {seat?.kind === 'guest' && <span className="badge">Invité</span>}
-        </div>
-        <CapturedRow pieces={state.captured[opp]} color={opp} advantage={adv} />
-      </div>
-      {showHand && (
-        <div className="pb-hand" aria-label="Cartes">
-          {hand.map((h, i) =>
-            h.used && h.card ? (
-              <span key={i} className="mini-card used" title={`${CARDS[h.card].name} (utilisée)`} style={{ '--h': CARDS[h.card].hue } as React.CSSProperties}>
-                <CardEmblem id={h.card} />
-              </span>
-            ) : (
-              <span key={i} className="mini-card back" title="Carte cachée" />
-            ),
-          )}
-        </div>
-      )}
-      <Clock clock={clock} color={color} receivedAt={receivedAt} active={active} />
-      {emote && <div className="emote-bubble">{emote}</div>}
+    <div className="gp-captured" aria-label="Pièces prises">
+      {pieces.map((t, i) => (
+        <span key={i} className="gp-cap" style={{ backgroundImage: pieceUrl(opp, t) }} />
+      ))}
+      {adv > 0 && <span className="gp-adv">+{adv}</span>}
     </div>
   );
 }
 
-export function MoveList({ log }: { log: LogEntry[] }) {
-  const ref = useRef<HTMLDivElement>(null);
+// ---------------------------------------------------------------------------------------------
+// Joueurs
+
+export function Avatar({ seat, color }: { seat: SeatView | null; color: Color }) {
+  if (seat?.kind === 'bot') return <OracleEye />;
+  return (
+    <span className={`gp-avatar ${color}`} aria-hidden="true">
+      {(seat?.name ?? '·')[0]?.toUpperCase()}
+      {seat && <i className={`gp-presence ${seat.online ? 'on' : ''}`} />}
+    </span>
+  );
+}
+
+export function SeatName({ seat }: { seat: SeatView | null }) {
+  if (!seat) return <>En attente…</>;
+  if (seat.username) return <Link to={`/joueur/${seat.username}`}>{seat.name}</Link>;
+  return <>{seat.name}</>;
+}
+
+export function EmoteBubble({ text }: { text: string | null }) {
+  if (!text) return null;
+  return (
+    <span className="gp-emote" role="status">
+      {text}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Coups joués (sorts compris)
+
+export function MoveList({ log, className = '' }: { log: LogEntry[]; className?: string }) {
+  const ref = useRef<HTMLOListElement>(null);
   useEffect(() => {
-    ref.current?.scrollTo({ top: ref.current.scrollHeight, behavior: 'smooth' });
+    const el = ref.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }, [log.length]);
   const rows: { n: number; w: LogEntry[]; b: LogEntry[] }[] = [];
   let n = 1;
@@ -142,53 +205,94 @@ export function MoveList({ log }: { log: LogEntry[] }) {
       cur = null;
     }
   }
+  if (!log.length) return <p className={`gp-moves-empty ${className}`}>Les coups et les sorts s'inscriront ici.</p>;
   return (
-    <div className="moves" ref={ref}>
-      {!log.length && <div className="moves-empty">Les coups et les sorts apparaîtront ici.</div>}
+    <ol className={`gp-moves ${className}`} ref={ref} aria-label="Coups joués">
       {rows.map(r => (
-        <div className="mv-row" key={r.n + ':' + r.w.length + ':' + r.b.length}>
-          <span className="mv-n">{r.n}.</span>
-          <span className="mv-cell">{r.w.map((e, i) => <Entry key={i} e={e} />)}</span>
-          <span className="mv-cell">{r.b.map((e, i) => <Entry key={i} e={e} />)}</span>
-        </div>
+        <li className="gp-mv-row" key={r.n + ':' + r.w.length + ':' + r.b.length}>
+          <span className="gp-mv-n">{r.n}.</span>
+          <span className="gp-mv-cell">
+            {r.w.map((e, i) => (
+              <Entry key={i} e={e} />
+            ))}
+          </span>
+          <span className="gp-mv-cell">
+            {r.b.map((e, i) => (
+              <Entry key={i} e={e} />
+            ))}
+          </span>
+        </li>
       ))}
-    </div>
+    </ol>
   );
 }
 
 function Entry({ e }: { e: LogEntry }) {
-  if (e.k === 'move') return <span className={`mv ${e.undone ? 'undone' : ''}`}>{sanToFrench(e.san)}</span>;
+  if (e.k === 'move') return <span className={`gp-mv ${e.undone ? 'is-undone' : ''}`}>{sanToFrench(e.san)}</span>;
   const def = CARDS[e.card];
+  if (!def) return null;
   return (
-    <span className="mv-card" style={{ '--h': def.hue } as React.CSSProperties} title={describeCardPlay(e.card, e.targets)}>
-      <CardEmblem id={e.card} />
+    <span className="gp-mv-card" style={{ '--h': def.hue } as CSSProperties} title={describeCardPlay(e.card, e.targets)}>
+      <i aria-hidden="true" />
       {def.name}
     </span>
   );
 }
 
-export function EffectsList({ effects, you }: { effects: Effect[]; you: Color | null }) {
+// ---------------------------------------------------------------------------------------------
+// Sorts en cours : Présages annoncés (pas encore actifs), Climats (toute la partie), sorts de Duel
+
+function effectLine(e: Effect, you: Color | null): string {
+  const mine = you ? e.caster === you : false;
+  const who = you ? (mine ? 'Votre sort' : 'Sort adverse') : `Sort des ${colorName(e.caster)}`;
+  if (e.pending) {
+    const when = e.delay && e.delay > 1 ? `arrive dans ${plural(e.delay, 'coup')}` : 'arrive au prochain tour';
+    return `Présage · ${when}`;
+  }
+  if (e.global) return `${who} · encore ${plural(e.remaining, 'coup')}`;
+  if (e.countsOn === e.caster) return `${who} · ce tour`;
+  const side = you ? (e.countsOn === you ? (e.remaining > 1 ? 'à vous' : 'à vous') : e.remaining > 1 ? 'adverses' : 'adverse') : `des ${colorName(e.countsOn)}`;
+  return `${who} · ${plural(e.remaining, 'coup')} ${side}`;
+}
+
+export function EffectsPanel({ effects, you, title = 'Sorts en cours' }: { effects: Effect[]; you: Color | null; title?: string }) {
   if (!effects.length) return null;
+  // Présages d'abord : ce qui va arriver se lit avant ce qui est déjà là
+  const sorted = [...effects].sort((a, b) => Number(!!b.pending) - Number(!!a.pending));
   return (
-    <div className="effects-list">
-      {effects.map(e => {
-        const def = CARDS[e.card];
-        const mine = you ? e.caster === you : e.caster === 'w';
-        const who = you ? (mine ? 'Ton sort' : 'Sort adverse') : e.caster === 'w' ? 'Blancs' : 'Noirs';
-        const unit = e.countsOn === e.caster ? 'ce tour' : `${e.remaining} coup${e.remaining > 1 ? 's' : ''} ${you ? (e.countsOn === you ? 'à toi' : 'adverse' + (e.remaining > 1 ? 's' : '')) : ''}`;
-        return (
-          <div key={e.id} className={`effect-chip ${mine ? 'mine' : 'theirs'}`} style={{ '--h': def.hue } as React.CSSProperties}>
-            <CardEmblem id={e.card} />
-            <div>
-              <b>{def.name}</b>
-              <small>{who} · {unit}</small>
-            </div>
-            <div className="effect-pips">
-              {Array.from({ length: e.total }, (_, i) => <i key={i} className={i < e.remaining ? 'on' : ''} />)}
-            </div>
-          </div>
-        );
-      })}
-    </div>
+    <section className="gp-effects" aria-label={title}>
+      <p className="gp-label">{title}</p>
+      <ul>
+        {sorted.map(e => {
+          const def = CARDS[e.card];
+          if (!def) return null;
+          const mine = you ? e.caster === you : e.caster === 'w';
+          const pips = e.pending ? 0 : Math.min(e.total, 8);
+          return (
+            <li
+              key={e.id}
+              className={`${e.pending ? 'is-pending' : ''} ${e.global ? 'is-global' : ''} ${mine ? 'is-mine' : 'is-theirs'}`}
+              style={{ '--h': def.hue } as CSSProperties}
+              title={def.description}
+            >
+              <span className="gp-effect-mark" aria-hidden="true">
+                <CardEmblem id={e.card} />
+              </span>
+              <span className="gp-effect-txt">
+                <b>{def.name}</b>
+                <small>{effectLine(e, you)}</small>
+              </span>
+              {pips > 0 && (
+                <span className="gp-pips" aria-label={`${e.remaining} sur ${e.total}`}>
+                  {Array.from({ length: pips }, (_, i) => (
+                    <i key={i} className={i < e.remaining ? 'on' : ''} />
+                  ))}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

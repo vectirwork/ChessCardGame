@@ -214,6 +214,8 @@ export function Header() {
               </Link>
             )}
             <UserMenu />
+            {/* Emplacement libre : une page peut y poser une action contextuelle (createPortal vers #header-slot) */}
+            <div className="header-slot" id="header-slot" />
             <button className="menu-btn" onClick={() => setOpen(o => !o)} aria-expanded={open} aria-label={open ? 'Fermer le menu' : 'Ouvrir le menu'}>
               <span className="menu-btn-lines" aria-hidden="true">
                 <span />

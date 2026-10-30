@@ -68,18 +68,17 @@ export function PositionEditor({ initialFen, onDone, onCancel }: { initialFen: s
 
   const place = (sq: number, e: React.PointerEvent) => {
     setError(null);
-    const erase = tool === 'erase' || e.button === 2;
+    const pick = tool === 'erase' || e.button === 2 ? null : tool;
+    const id = nextId;
     setBoard(b => {
       const next = b.slice();
       const cur = next[sq];
-      if (erase || tool === 'erase') next[sq] = null;
+      if (!pick) next[sq] = null;
+      // Un second clic avec la même pièce la retire.
+      else if (cur && cur.c === pick.c && cur.t === pick.t) next[sq] = null;
       else {
-        // Un second clic avec la même pièce la retire.
-        if (cur && cur.c === tool.c && cur.t === tool.t) next[sq] = null;
-        else {
-          if (tool.t === 'k') next.forEach((p, i) => { if (p && p.t === 'k' && p.c === tool.c) next[i] = null; });
-          next[sq] = { id: nextId, c: tool.c, t: tool.t } as Piece;
-        }
+        if (pick.t === 'k') next.forEach((p, i) => { if (p && p.t === 'k' && p.c === pick.c) next[i] = null; });
+        next[sq] = { id, c: pick.c, t: pick.t };
       }
       return next;
     });

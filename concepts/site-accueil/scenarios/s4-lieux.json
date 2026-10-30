@@ -10,7 +10,8 @@
    "eval": "localStorage.clear(), sessionStorage.setItem(\"sm:intro\",\"1\"), \"propre\""
   },
   {
-   "wait": 2500
+   "wait": 11000,
+   "_note": "WebGL logiciel du bac à sable : la scène 3D (préparée au repos ~3,5 s après l'ouverture) y bloque ~7 s"
   },
   {
    "eval": "(document.querySelectorAll(\".o-alt-track li button\")[1].click(), \"lieu 1\")"

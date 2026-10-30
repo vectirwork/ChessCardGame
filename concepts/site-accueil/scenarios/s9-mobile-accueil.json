@@ -1,0 +1,44 @@
+{
+ "url": "http://localhost:3000/",
+ "outDir": "/home/user/ChessCardGame/concepts/site-accueil",
+ "viewport": {
+  "width": 390,
+  "height": 844
+ },
+ "dpr": 1,
+ "steps": [
+  {
+   "eval": "localStorage.clear(), sessionStorage.setItem(\"sm:intro\",\"1\"), \"propre\""
+  },
+  {
+   "eval": "location.reload(), \"rechargement\""
+  },
+  {
+   "wait": 7000
+  },
+  {
+   "shot": "30-mobile-accueil"
+  },
+  {
+   "scrollTo": 420,
+   "settle": 1500
+  },
+  {
+   "shot": "30b-mobile-accueil-options"
+  },
+  {
+   "scrollTo": 900,
+   "settle": 1500
+  },
+  {
+   "shot": "30c-mobile-traversee"
+  },
+  {
+   "scrollToSelector": "#foret",
+   "settle": 2500
+  },
+  {
+   "shot": "30d-mobile-foret"
+  }
+ ]
+}

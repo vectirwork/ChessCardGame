@@ -13,6 +13,9 @@
    "wait": 2500
   },
   {
+   "eval": "// Attend que la scène 3D de la partie soit prête et que le fil principal soit libre (WebGL logiciel du bac à sable :\n// la création de la scène y bloque la page plusieurs secondes ; sur un vrai appareil, c'est l'affaire de 100 ms).\n(async () => {\n  const t0 = performance.now();\n  const pause = ms => new Promise(r => setTimeout(r, ms));\n  while (performance.now() - t0 < 90000) {\n    if (document.querySelector('canvas.o-live-canvas')) {\n      const a = performance.now();\n      await pause(200);\n      if (performance.now() - a < 400) {\n        await pause(600);\n        return 'calme après ' + Math.round((performance.now() - t0) / 1000) + ' s';\n      }\n    } else await pause(300);\n  }\n  return 'délai dépassé';\n})()\n"
+  },
+  {
    "clickSquare": "e2",
    "settle": 700
   },

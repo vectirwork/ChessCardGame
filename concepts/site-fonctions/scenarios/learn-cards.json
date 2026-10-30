@@ -1,0 +1,42 @@
+{
+ "url": "http://localhost:3150/apprendre/presage-rituel",
+ "outDir": "/home/user/ChessCardGame/concepts/site-fonctions",
+ "viewport": {
+  "width": 1440,
+  "height": 900
+ },
+ "steps": [
+  {
+   "wait": 1200
+  },
+  {
+   "click": ".ft-steps li:nth-child(2) button",
+   "settle": 400
+  },
+  {
+   "click": ".ft-hand .ft-card",
+   "settle": 500
+  },
+  {
+   "clickSquare": "d2"
+  },
+  {
+   "clickSquare": "d4",
+   "settle": 2500
+  },
+  {
+   "shot": "learn-05-presage"
+  },
+  {
+   "click": ".ft-steps li:nth-child(4) button",
+   "settle": 400
+  },
+  {
+   "click": ".ft-hand .ft-card",
+   "settle": 2500
+  },
+  {
+   "shot": "learn-06-rituel"
+  }
+ ]
+}

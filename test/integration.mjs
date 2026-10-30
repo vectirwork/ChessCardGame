@@ -45,7 +45,7 @@ class Client {
       if (u) return u;
       await new Promise(r => setTimeout(r, 50));
     }
-    throw new Error('Mise à jour attendue non reçue');
+    throw new Error(`Mise à jour attendue non reçue : ${pred}`);
   }
 }
 

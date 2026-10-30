@@ -1,0 +1,15 @@
+{
+  "url": "http://localhost:3000/apprendre/pat",
+  "outDir": "/home/user/ChessCardGame/concepts/site-fonctions",
+  "viewport": { "width": 1440, "height": 900 },
+  "steps": [
+    { "wait": 1200 },
+    { "click": ".ft-steps li:nth-child(2) button", "settle": 400 },
+    { "clickSquare": "c5" }, { "clickSquare": "c7", "settle": 500 },
+    { "eval": "document.querySelector('.ft-note.bad')?.textContent" },
+    { "shot": "learn-07-pat-refuse" },
+    { "clickSquare": "c5" }, { "clickSquare": "c8", "settle": 800 },
+    { "eval": "document.querySelector('.ft-note.ok')?.textContent" },
+    { "shot": "learn-08-mat" }
+  ]
+}

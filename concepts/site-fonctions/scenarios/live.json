@@ -1,0 +1,9 @@
+{
+  "url": "http://localhost:3150/direct",
+  "outDir": "/home/user/ChessCardGame/concepts/site-fonctions",
+  "viewport": { "width": 1440, "height": 900 },
+  "steps": [
+    { "wait": 2000 },
+    { "shot": "live-01-parties" }
+  ]
+}

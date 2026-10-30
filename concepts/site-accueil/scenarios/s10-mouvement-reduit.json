@@ -1,0 +1,53 @@
+{
+ "url": "http://localhost:3000/",
+ "outDir": "/home/user/ChessCardGame/concepts/site-accueil",
+ "viewport": {
+  "width": 1440,
+  "height": 900
+ },
+ "steps": [
+  {
+   "eval": "localStorage.clear(), sessionStorage.clear(), \"propre\""
+  },
+  {
+   "wait": 3500
+  },
+  {
+   "eval": "({reduit: matchMedia(\"(prefers-reduced-motion: reduce)\").matches, etoile: getComputedStyle(document.querySelector(\".o-falling-star\")).display})"
+  },
+  {
+   "shot": "40-reduit-accueil"
+  },
+  {
+   "clickSquare": "e2",
+   "settle": 500
+  },
+  {
+   "clickSquare": "e2",
+   "settle": 300
+  },
+  {
+   "clickSquare": "e4",
+   "settle": 1200
+  },
+  {
+   "eval": "({immersive: document.documentElement.classList.contains(\"is-immersive\"), status: document.querySelector(\".gs-title\")?.textContent})"
+  },
+  {
+   "shot": "41-reduit-immersif"
+  },
+  {
+   "click": ".gs-back",
+   "settle": 1500
+  },
+  {
+   "eval": "(document.querySelectorAll(\".o-alt-track li button\")[2].click(), \"pics\")"
+  },
+  {
+   "wait": 3000
+  },
+  {
+   "shot": "42-reduit-pics"
+  }
+ ]
+}

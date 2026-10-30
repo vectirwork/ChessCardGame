@@ -1,0 +1,51 @@
+{
+ "url": "http://localhost:3150/analyse",
+ "outDir": "/home/user/ChessCardGame/concepts/site-fonctions",
+ "viewport": {
+  "width": 1440,
+  "height": 900
+ },
+ "steps": [
+  {
+   "wait": 1200
+  },
+  {
+   "click": "button[role=tab]:nth-child(2)",
+   "settle": 300
+  },
+  {
+   "eval": "const t=document.querySelector('.ft-io textarea'); const set=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set; set.call(t, \"[Event \\\"Test\\\"]\\n[White \\\"Alice\\\"]\\n[Black \\\"Bob\\\"]\\n\\n1. e4 e5 2. Cf3 (2. Fc4 Cf6) 2... Cc6 3. Fb5 a6 {La partie espagnole.} 4. Fa4 Cf6 5. O-O Fe7 *\"); t.dispatchEvent(new Event('input',{bubbles:true})); 'ok'"
+  },
+  {
+   "click": ".ft-io .btn-primary",
+   "settle": 600
+  },
+  {
+   "click": "button[aria-label^='Fin']",
+   "settle": 2500
+  },
+  {
+   "shot": "analysis-05-import-pgn"
+  },
+  {
+   "click": ".ft-nav .btn",
+   "settle": 600
+  },
+  {
+   "click": ".ft-palette button[aria-label='dame blanc']"
+  },
+  {
+   "click": ".mb-sq[data-sq='27']"
+  },
+  {
+   "shot": "analysis-06-editeur"
+  },
+  {
+   "click": ".ft-editor .btn-primary",
+   "settle": 2500
+  },
+  {
+   "shot": "analysis-07-apres-editeur"
+  }
+ ]
+}

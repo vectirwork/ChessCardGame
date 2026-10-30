@@ -12,7 +12,7 @@
 
 import {
   Color, F_PROMO, F_RELAXED, Move, Mods, NO_MODS, Piece, PieceType, Position, applyMustCapture, clonePosition,
-  emptyMods, fileOf, fromFen, hasLegalMove, inCheck, initialPosition, isLightSquare, isSlider, kingSquare,
+  emptyMods, fileOf, fromFen, hasLegalMove, inCheck, initialPosition, isCapture, isLightSquare, isSlider, kingSquare,
   legalMoves, makeMove, opposite, rankOf, sqName, toSan,
 } from './chess';
 import { CARDS, CardId, Catalog, RARITY_WEIGHT, cardsOf } from './cards';
@@ -467,11 +467,20 @@ export function checkKind(s: GameState): CheckKind | null {
   const c = s.pos.turn;
   if (!inCheck(s.pos, c, afterMods(s))) return null;
   if (inCheck(s.pos, c, nowMods(s))) return 'now';
+  // La cause : chaque changement à venir est essayé seul, à partir des effets actuels (un Mur sans rapport qui
+  // fond pendant l'arrivée d'une Chevauchée ne fait pas de cet échec un échec « à la fonte »).
   const next = tickEffects(s.effects, c);
-  const gone = s.effects.filter(e => !e.pending && !next.some(x => x.id === e.id));
-  if (gone.some(e => e.card === 'ice_wall')) return 'melt';
-  if (gone.some(e => e.card === 'rift')) return 'close';
-  return 'arrival';
+  const checkWith = (effects: Effect[]) => inCheck(s.pos, c, modsFromEffects(effects));
+  const arrivals = s.effects.filter(e => e.pending && next.some(x => x.id === e.id && !x.pending)).map(e => e.id);
+  const ended = (card: CardId) => s.effects.filter(e => !e.pending && e.card === card && !next.some(x => x.id === e.id)).map(e => e.id);
+  const without = (ids: number[]) => s.effects.filter(e => !ids.includes(e.id));
+  const melted = ended('ice_wall');
+  const closed = ended('rift');
+  if (arrivals.length && checkWith(arrivals.reduce(withArrival, s.effects))) return 'arrival';
+  if (melted.length && checkWith(without(melted))) return 'melt';
+  if (closed.length && checkWith(without(closed))) return 'close';
+  // Échec qui naît de plusieurs changements combinés : ordre de priorité fixe.
+  return arrivals.length ? 'arrival' : melted.length ? 'melt' : closed.length ? 'close' : 'arrival';
 }
 
 export interface MoveInfo {
@@ -782,7 +791,10 @@ function applyCardRaw(s: GameState, color: Color, index: number, targets: number
       break;
     // ----- Événements -----
     case 'tide': {
-      // Rituel : la marée est le coup du lanceur.
+      // Rituel : la marée est le coup du lanceur. Sous la Lune de sang, qui peut prendre doit prendre : la marée,
+      // qui ne prend rien, n'est permise que si aucune capture n'est jouable.
+      const mods = nowMods(s);
+      if (mods.mustCapture && strictMoves(s, mods, afterMods(s)).some(isCapture)) return 'La Lune de sang impose une capture.';
       const pushes = tidePushes(s);
       if (!pushes.length) return 'Aucun pion ne peut avancer.';
       const pieces = pushes.map(x => b[x.from]!);
@@ -903,10 +915,51 @@ function withArrival(effects: Effect[], id: number): Effect[] {
 }
 
 /**
+ * Sonde des garde-fous d'un Présage : la position de `n`, trait à `turn`, avec les effets `effects` (pas de pièce
+ * interdite : elle ne vaut que pour le tour en cours).
+ */
+function probeState(n: GameState, turn: Color, effects: Effect[]): GameState {
+  const pos = clonePosition(n.pos);
+  if (pos.turn !== turn) {
+    pos.turn = turn;
+    pos.ep = -1;
+  }
+  return { ...n, pos, effects, forbidden: null, cardPlayed: false, result: null };
+}
+
+/**
+ * Présage (Climats, Portails) : les garde-fous R4 jugés aussi dans le monde qui arrive, en supposant que les
+ * coups d'ici l'arrivée ne changent rien (comme R4a pour l'échec) :
+ * - pas de pat par magie : à sa réponse, l'adversaire doit déjà mettre son roi à l'abri du monde qui arrive
+ *   (R4d) ; si l'effet lui retire alors tous ses coups, « la magie cède » comprise, la carte est refusée
+ *   (seule la Chevauchée, qui ajoute des attaques, peut le faire) ;
+ * - R4b : à l'arrivée, le lanceur garde un coup légal sous les effets, sauf s'il était déjà bloqué avant la
+ *   carte (sans cela, un camp réduit aux coups de pion annoncerait l'Ère glaciaire pour pousser ensuite ses
+ *   pions par « la magie cède » pendant que ceux de l'adversaire sont gelés).
+ * Chaque sonde compare le même monde avec et sans le nouvel effet : seul l'effet de la carte est jugé.
+ */
+function presageRefusal(s: GameState, n: GameState, color: Color, id: number): string | null {
+  const them = opposite(color);
+  const others = n.effects.filter(e => e.id !== id);
+  // Réponse adverse au Présage (le lanceur « passe ») : l'effet arrivera après ce coup.
+  const reply = (effects: Effect[]) => probeState(n, them, tickEffects(effects, color));
+  if (hasLegal(reply(others)) && !hasLegal(reply(n.effects))) {
+    return 'À son arrivée, cette carte laisserait l’adversaire sans aucun coup.';
+  }
+  // Tour suivant du lanceur (les deux camps « passent ») : l'effet est arrivé.
+  const arrival = (effects: Effect[]) => probeState(n, color, tickEffects(tickEffects(effects, color), them));
+  if (hasStrictLegal(s) && hasStrictLegal(arrival(others)) && !hasStrictLegal(arrival(n.effects))) {
+    return 'À son arrivée, cette carte te laisserait sans aucun coup.';
+  }
+  return null;
+}
+
+/**
  * Garde-fous après une carte (R4) :
  * a) elle ne met jamais le roi adverse en échec (Présage : comme si l'effet était arrivé) ;
  * b) le lanceur garde un coup légal sous les effets (« la magie cède » ne compte pas, sauf s'il était déjà
- *    bloqué) ; un Rituel est un coup : il ne peut pas laisser le roi du lanceur en échec.
+ *    bloqué) ; un Rituel est un coup : il ne peut pas laisser le roi du lanceur en échec ;
+ * Présage : pas de pat par magie de l'adversaire, et R4b à l'arrivée (`presageRefusal`).
  */
 function validateAfterCard(s: GameState, n: GameState, color: Color, card: CardId, info: CardInfo): string | null {
   if (card === 'rewind') {
@@ -926,6 +979,7 @@ function validateAfterCard(s: GameState, n: GameState, color: Color, card: CardI
   }
   if (!hasLegal(n)) return 'Après cette carte, tu n’aurais plus aucun coup légal.';
   if (magicYields(n) && !hasStrictLegal(n) && hasStrictLegal(s)) return 'Cette carte te laisserait sans aucun coup.';
+  if (CARDS[card].presage && info.effectId !== undefined && magicYields(n)) return presageRefusal(s, n, color, info.effectId);
   return null;
 }
 
@@ -994,11 +1048,32 @@ export function positionKey(s: GameState): string {
   return k;
 }
 
-function insufficientMaterial(s: GameState): boolean {
-  for (const c of ['w', 'b'] as Color[]) {
-    const canRevive = s.hands[c].some(h => !h.used && h.card === 'revive') && s.captured[c].some(t => t !== 'q');
-    if (canRevive) return false;
+/**
+ * Une carte ou un effet permet-il à `c` de mater avec ses seules pièces mineures (vérifié par force brute sur
+ * Roi et pièce mineure contre Roi) ?
+ * - Résurrection en main, avec une pièce à ressusciter ;
+ * - Mur de glace en main, ou déjà posé (par l'un ou l'autre camp) : il bouche une case de fuite (Mur g8, puis
+ *   Fd4# ou Cf7# contre Rh8) ;
+ * - Chevauchée en main, annoncée ou active, avec un fou : il attaque aussi en sautant (Ff6# contre Rh8).
+ * La Faille (rangées 4 et 5) ne suffit jamais ; les autres cartes n'ajoutent ni attaque ni case bouchée.
+ */
+function cardMateHelp(s: GameState, c: Color): boolean {
+  const inHand = (card: CardId) => s.hands[c].some(h => !h.used && h.card === card);
+  if (inHand('revive') && s.captured[c].some(t => t !== 'q')) return true;
+  let minor = false;
+  let bishop = false;
+  for (const p of s.pos.board) {
+    if (!p || p.c !== c) continue;
+    if (p.t === 'b') bishop = true;
+    if (p.t === 'b' || p.t === 'n') minor = true;
   }
+  if (!minor) return false;
+  if (inHand('ice_wall') || s.effects.some(e => e.card === 'ice_wall')) return true;
+  return bishop && (inHand('cavalcade') || s.effects.some(e => e.card === 'cavalcade'));
+}
+
+function insufficientMaterial(s: GameState): boolean {
+  if (cardMateHelp(s, 'w') || cardMateHelp(s, 'b')) return false;
   const minors: { t: PieceType; light: boolean }[] = [];
   for (let i = 0; i < 64; i++) {
     const p = s.pos.board[i];
@@ -1029,7 +1104,7 @@ export function evaluateEnd(s: GameState): Result | null {
 
 /** Le camp `c` a-t-il assez de matériel pour mater (utile quand l'autre tombe au temps) ? */
 export function canStillMate(s: GameState, c: Color): boolean {
-  if (s.hands[c].some(h => !h.used && h.card === 'revive') && s.captured[c].some(t => t !== 'q')) return true;
+  if (cardMateHelp(s, c)) return true;
   let minors = 0;
   for (const p of s.pos.board) {
     if (!p || p.c !== c || p.t === 'k') continue;

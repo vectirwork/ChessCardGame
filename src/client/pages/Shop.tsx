@@ -2,25 +2,29 @@
 // L'échiquier de la vitrine lance de vrais sorts avec le skin choisi, sur le plateau choisi. Paiement par Stripe
 // Checkout ; en mode démo, une page simulée (/boutique/demo/:id) le remplace. Rien ne donne d'avantage en partie.
 // Liens utiles : /boutique?objet=skin:inferno présélectionne un objet, /boutique#grimoires mène aux packs.
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { CARDS, CARD_IDS } from '../../shared/cards';
+import type { CardId } from '../../shared/cards';
 import { fromFen } from '../../shared/chess';
 import { ITEMS, Item, PRODUCTS, Product, boardStyle, formatPrice, itemById } from '../../shared/catalog';
 import type { MeUser } from '../../shared/protocol';
 import { api, errMsg } from '../api';
 import { Board } from '../components/Board';
 import { Modal, Spinner } from '../components/Layout';
+import { liveCatalog } from '../odyssee/data';
+import { StageBoard } from '../odyssee/StageBoard';
 import { useApp } from '../store';
 import { PageHead, PlacePage, StarMark, useTitle } from './PageScene';
-
-const DemoBoard = lazy(() => import('../components/DemoBoard').then(m => ({ default: m.DemoBoard })));
 
 const SKINS = ITEMS.filter(i => i.kind === 'skin');
 const BOARDS = ITEMS.filter(i => i.kind === 'board');
 const PACKS = PRODUCTS.filter(p => p.id.startsWith('pack:'));
-/** Même position que l'aperçu de DemoBoard : le passage de l'échiquier immobile au vrai sort ne se voit pas. */
-const PREVIEW_FEN = 'r1bq1rk1/pp2bppp/2n1pn2/3p4/2PP4/2N1PN2/PP2BPPP/2BQK2R w K - 0 9';
+/** Position de départ, comme l'échiquier de démonstration : le passage à la scène des sorts ne se voit pas. */
+const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+/** Sorts montrés par l'aperçu, dans cet ordre, parmi les cartes du catalogue en jeu (les 8 pouvoirs, sinon Duel). */
+const PREVIEW_ORDER = ['ice_wall', 'rift', 'tide', 'blast', 'ice_age', 'blood_moon', 'truce', 'hourglass', 'lightning', 'freeze', 'gravity', 'swap', 'shield'];
 const KIND_LABEL: Record<Item['kind'], string> = { skin: 'Skin d’animation', board: 'Plateau' };
 
 const productOf = (itemId: string) => PRODUCTS.find(p => p.id === itemId) ?? PRODUCTS.find(p => p.items.length === 1 && p.items[0] === itemId);
@@ -40,7 +44,13 @@ export default function Shop() {
   const [reduced] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   // Le vrai sort (scène 3D) n'est créé qu'au repos après l'ouverture, ou au premier choix d'un skin
   const [live, setLive] = useState(false);
-  const [caption, setCaption] = useState('');
+  const [casting, setCasting] = useState<CardId | null>(null);
+  const [playSignal, setPlaySignal] = useState(0);
+  const [visible, setVisible] = useState(true);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const catalog = useMemo(() => liveCatalog(), []);
+  const previewCards = useMemo(() => PREVIEW_ORDER.filter(id => (CARD_IDS as string[]).includes(id) && CARDS[id as CardId].catalog === catalog) as CardId[], [catalog]);
+  const [round, setRound] = useState(0);
   const [equipping, setEquipping] = useState<string | null>(null);
 
   useEffect(() => {
@@ -57,6 +67,15 @@ export default function Shop() {
       if (idle) w.cancelIdleCallback?.(idle);
     };
   }, [reduced]);
+
+  // La démonstration se met en pause quand la vitrine sort de l'écran
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el || !('IntersectionObserver' in window)) return;
+    const io = new IntersectionObserver(([e]) => setVisible(e.isIntersecting), { threshold: 0.05 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
 
   // Retour de Stripe Checkout (?achat=<session>) ou paiement annulé (?annule=1)
   useEffect(() => {
@@ -113,7 +132,10 @@ export default function Shop() {
   const pickSkin = (id: string) => {
     setSkinPick(id);
     setFocus(id);
+    setRound(n => n + 1);
+    setCasting(null);
     setLive(true);
+    if (reduced) setPlaySignal(n => n + 1);
   };
   const pickBoard = (id: string) => {
     setBoardPick(id);
@@ -213,33 +235,51 @@ export default function Shop() {
 
         <div className="bz-stage">
           <div className="bz-stage-glow" style={{ '--p': skin.primary, '--s': skin.secondary } as CSSProperties} />
-          <div className="bz-board">
+          <div className="bz-board" ref={stageRef}>
             {live ? (
-              <Suspense fallback={<StillBoard theme={boardPick} />}>
-                <DemoBoard key={skinPick} mode="preview" skin={skinPick} theme={boardPick} onCaption={setCaption} />
-              </Suspense>
+              <StageBoard
+                act={{ key: `bz:${skinPick}:${round}`, cards: previewCards, skin: skinPick, every: 2 }}
+                catalog={catalog}
+                theme={boardPick}
+                resetSignal={0}
+                paused={!visible}
+                tilt={0}
+                still={reduced}
+                playSignal={playSignal}
+                onCast={card => setCasting(card)}
+              />
             ) : (
               <StillBoard theme={boardPick} />
             )}
-            {!caption && <Sigil key={skinPick} skinId={skinPick} />}
+            {!casting && <Sigil key={skinPick} skinId={skinPick} />}
           </div>
           <div className="bz-caption" aria-live="polite">
-            {live ? (
-              caption ? (
-                <>
-                  <span className="bz-dot" style={{ '--p': skin.primary } as CSSProperties} />
-                  <span className="bz-cap-k">Sort en cours</span>
-                  <b>{caption.split(' · ')[0]}</b>
-                  <span className="bz-cap-skin">skin {itemById(skinPick)?.name}</span>
-                </>
-              ) : (
-                <>
-                  <span className="bz-dot idle" />
-                  <span>Préparation du sort…</span>
-                </>
-              )
+            {live && casting ? (
+              <>
+                <span className="bz-dot" style={{ '--p': skin.primary } as CSSProperties} />
+                <span className="bz-cap-k">Sort en cours</span>
+                <b>{CARDS[casting]?.name}</b>
+                <span className="bz-cap-skin">skin {itemById(skinPick)?.name}</span>
+                {reduced && (
+                  <button type="button" className="bz-cap-again" onClick={() => setPlaySignal(n => n + 1)}>
+                    Rejouer
+                  </button>
+                )}
+              </>
+            ) : live && !reduced ? (
+              <>
+                <span className="bz-dot idle" />
+                <span>Le sort se prépare…</span>
+              </>
             ) : (
-              <button type="button" className="bz-cap-play" onClick={() => setLive(true)}>
+              <button
+                type="button"
+                className="bz-cap-play"
+                onClick={() => {
+                  setLive(true);
+                  setPlaySignal(n => n + 1);
+                }}
+              >
                 <span className="bz-dot" style={{ '--p': skin.primary } as CSSProperties} />
                 Voir un sort avec <b>{itemById(skinPick)?.name}</b>
               </button>
@@ -402,7 +442,7 @@ export default function Shop() {
 
 /** Échiquier immobile (avant que la scène des sorts soit prête), même position que l'aperçu. */
 function StillBoard({ theme }: { theme: string }) {
-  const pos = useMemo(() => fromFen(PREVIEW_FEN).pos, []);
+  const pos = useMemo(() => fromFen(START_FEN).pos, []);
   return <Board pos={pos} orientation="w" theme={theme} locked coords={false} />;
 }
 

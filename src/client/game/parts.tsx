@@ -251,8 +251,9 @@ function effectLine(e: Effect, you: Color | null): string {
   }
   if (e.global) return `${who} · encore ${plural(e.remaining, 'coup')}`;
   if (e.countsOn === e.caster) return `${who} · ce tour`;
-  const side = you ? (e.countsOn === you ? (e.remaining > 1 ? 'à vous' : 'à vous') : e.remaining > 1 ? 'adverses' : 'adverse') : `des ${colorName(e.countsOn)}`;
-  return `${who} · ${plural(e.remaining, 'coup')} ${side}`;
+  if (!you) return `${who} · encore ${plural(e.remaining, 'coup')} des ${colorName(e.countsOn)}`;
+  if (e.countsOn === you) return `${who} · ${e.remaining > 1 ? `encore ${e.remaining} de vos coups` : 'votre prochain coup'}`;
+  return `${who} · encore ${plural(e.remaining, 'coup')} adverse${e.remaining > 1 ? 's' : ''}`;
 }
 
 export function EffectsPanel({ effects, you, title = 'Sorts en cours' }: { effects: Effect[]; you: Color | null; title?: string }) {

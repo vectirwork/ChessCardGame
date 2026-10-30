@@ -472,10 +472,40 @@
 .ft-card.used {
   opacity: 0.4;
 }
-.ft-card.hidden {
-  width: 44px;
-  height: 56px;
+/* Main en lecture seule (main adverse, relecture) : visible, cartes jouées grisées */
+.ft-hand-ro {
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+.ft-hand-ro .ft-hand-row {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ft-card.ro {
+  padding: 5px 12px 5px 5px;
+  gap: 8px;
+  cursor: default;
+}
+.ft-card.ro:hover {
+  transform: none;
+  border-color: hsl(var(--h, 45) 80% 70% / 0.32);
+}
+.ft-card.ro .ft-card-txt b {
+  font-size: 11.5px;
+}
+.ft-card.ro .ft-card-txt small {
+  font-size: 11.5px;
+}
+.ft-card.ro.used {
+  opacity: 0.38;
+  filter: grayscale(0.7);
+}
+.ft-card.retired {
   border-style: dashed;
+}
+.ft-hand-ro.compact .ft-card-txt small {
+  display: none;
 }
 .ft-card-em {
   display: grid;
@@ -1520,4 +1550,14 @@ div.ft-empty .btn {
     padding-bottom: 6px;
     scrollbar-width: thin;
   }
+}
+
+/* Analyse : les deux mains de la partie relue, à la position affichée */
+.ft-an-hands {
+  display: grid;
+  gap: 2px;
+  margin: 14px 0 0;
+}
+.ft-an-hands .ft-hand-ro {
+  margin: 0 10px 8px;
 }

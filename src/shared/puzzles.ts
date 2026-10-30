@@ -1,11 +1,13 @@
 // Problèmes : positions écrites à la main (FEN et solution), vérifiées par le moteur (test/puzzles.test.ts).
-// Une étape de solution est un coup UCI (« e2e4 », « e7e8q ») ou une carte (« @freeze:a5 », « @swap:a1,d1 ») ;
+// Une étape de solution est un coup UCI (« e2e4 », « e7e8q ») ou une carte (« @ice_wall:f3 », « @truce ») ;
 // plusieurs réponses acceptées se séparent par « | ». Le camp au trait du FEN est celui qui résout ;
 // les étapes de l'adversaire sont jouées automatiquement.
+// Problèmes à cartes : les huit pouvoirs (catalogue « Pouvoirs »), mains visibles des deux camps. Un problème peut
+// commencer avec un pouvoir déjà en jeu (`effects` : une carte jouée avant la position).
 
-import { Color, PieceType, sqIndex } from './chess';
-import { CARDS, CardId, Catalog } from './cards';
-import { GameState, createGameFromFen, playCard, playMove } from './game';
+import { Color, PieceType, rankOf, sqIndex } from './chess';
+import { CARDS, CardId, Catalog, isCardId } from './cards';
+import { Effect, GameState, cloneState, createGameFromFen, playCard, playMove, positionKey } from './game';
 
 export type PuzzleTheme =
   | 'mat1' | 'mat2' | 'mat3' | 'fourchette' | 'clouage' | 'enfilade' | 'deviation' | 'decouverte' | 'finale' | 'cartes';
@@ -38,8 +40,58 @@ export interface Puzzle {
   hint: string;
   /** Ce qu'il faut retenir, affiché une fois le problème résolu. */
   moral: string;
-  /** Mains de cartes (problèmes à cartes, catalogue Duel). */
+  /** Mains de cartes (problèmes à cartes, catalogue Pouvoirs), visibles des deux joueurs. */
   hands?: Partial<Record<Color, CardId[]>>;
+  /** Pouvoirs déjà en jeu au début du problème (la carte du lanceur est marquée comme jouée). */
+  effects?: EffectSpec[];
+}
+
+/** Pouvoir déjà en jeu au début d'un problème ou d'une étape de leçon : une carte jouée avant la position. */
+export interface EffectSpec {
+  card: CardId;
+  /** Camp qui l'a lancée. */
+  by: Color;
+  /** Coups restants, des deux camps (par défaut, la durée de la carte ; sans objet pour un Mur, permanent). */
+  remaining?: number;
+  /** Présage pas encore arrivé : coups avant son arrivée (1 : il arrive après le prochain coup). */
+  pending?: 1 | 2;
+  /** Mur de glace : sa case. Faille : une case de sa rangée (4e ou 5e). */
+  square?: string;
+}
+
+/**
+ * Met en jeu des pouvoirs déjà lancés (catalogue Pouvoirs : effets des deux camps). La carte correspondante,
+ * si elle est dans la main du lanceur, y est marquée comme jouée.
+ */
+export function withEffects(s: GameState, specs: EffectSpec[]): GameState {
+  if (!specs.length) return s;
+  const n = cloneState(s);
+  for (const sp of specs) {
+    const def = CARDS[sp.card];
+    const permanent = !!def.permanent;
+    const total = permanent ? 0 : def.coups ?? 1;
+    const e: Effect = {
+      id: n.nextEffectId++, card: sp.card, caster: sp.by, countsOn: sp.by,
+      remaining: permanent ? 0 : sp.remaining ?? total, total, skin: 'skin:arcane', global: true,
+    };
+    if (permanent) e.permanent = true;
+    if (sp.pending) {
+      e.pending = true;
+      e.delay = sp.pending;
+    }
+    if (sp.square) {
+      const q = sqIndex(sp.square);
+      if (sp.card === 'rift') {
+        e.squares = [];
+        for (let f = 0; f < 8; f++) if (!n.pos.board[rankOf(q) * 8 + f]) e.squares.push(rankOf(q) * 8 + f);
+      } else e.square = q;
+    }
+    n.effects.push(e);
+    const h = n.hands[sp.by].find(x => x.card === sp.card && !x.used);
+    if (h) h.used = true;
+  }
+  n.keys = [positionKey(n)];
+  return n;
 }
 
 export const PUZZLES: Puzzle[] = [
@@ -312,47 +364,72 @@ export const PUZZLES: Puzzle[] = [
   },
 
   // ------------------------------------------------------------------------------------------
-  // Cartes (catalogue Duel)
+  // Cartes : les huit pouvoirs (catalogue « Pouvoirs »), mains visibles des deux côtés
   {
-    id: 'carte-foudre', title: 'La foudre ouvre la colonne', themes: ['cartes', 'mat1'], level: 1, mate: 1,
-    fen: '6k1/5ppp/p7/8/8/8/5PPP/R5K1 w - - 0 1', solution: ['@lightning:a6', 'a1a8'],
-    hands: { w: ['lightning', 'freeze', 'ice_wall'] },
-    goal: 'Les Blancs jouent une carte, puis matent.',
-    hint: 'Un seul pion empêche la tour d’atteindre la 8e rangée.',
-    moral: 'Une carte se joue avant le coup : la Foudre dégage la colonne, la tour mate dans la foulée.',
+    id: 'carte-mur-sauve', title: 'Le Mur qui sauve', themes: ['cartes', 'mat1'], level: 1, mate: 1,
+    fen: '6k1/5ppp/4p3/8/4q3/8/7P/3R2BK w - - 0 1', solution: ['@ice_wall:f3', 'd1d8'],
+    hands: { w: ['ice_wall', 'rift', 'tide'], b: ['ice_wall', 'truce', 'ice_age'] },
+    goal: 'Les Blancs sont en échec, sans aucun coup. Une carte, puis le mat.',
+    hint: 'Un Mur se pose entre la 3e et la 6e rangée : une seule case de la diagonale convient.',
+    moral: 'Sans coup légal, on doit jouer une carte qui en redonne un. Et le Mur noir n’y peut rien : on ne mure pas la 8e rangée.',
   },
   {
-    id: 'carte-passe-muraille', title: 'À travers ses propres rangs', themes: ['cartes', 'mat1'], level: 1, mate: 1,
-    fen: '6k1/5ppp/8/8/8/8/P4PPP/R5K1 w - - 0 1', solution: ['@phase:a1', 'a1a8'],
-    hands: { w: ['phase', 'knight_leap', 'lightning'] },
+    id: 'carte-mur-enferme', title: 'Le Mur qui enferme', themes: ['cartes', 'mat1'], level: 2, mate: 1,
+    fen: '6K1/5R2/8/8/1p6/k7/5R2/8 w - - 0 1', solution: ['@ice_wall:b3', 'f7a7'],
+    hands: { w: ['ice_wall', 'rift', 'truce'] },
     goal: 'Les Blancs jouent une carte, puis matent.',
-    hint: 'Cette fois, c’est un pion blanc qui bloque la tour.',
-    moral: 'Le Passe-muraille traverse ses propres pièces, jamais celles de l’adversaire.',
+    hint: 'La tour f2 tient déjà la 2e rangée. Il ne manque qu’une case à fermer.',
+    moral: 'Un Mur de glace ferme une case de fuite jusqu’à la fin de la partie : le roi n’y passera plus.',
   },
   {
-    id: 'carte-cryogenie', title: 'Geler le défenseur', themes: ['cartes', 'mat1'], level: 2, mate: 1,
-    fen: '6k1/5ppp/8/q7/8/8/5PPP/3R2K1 w - - 0 1', solution: ['@freeze:a5', 'd1d8'],
-    hands: { w: ['freeze', 'lightning', 'gravity'] },
+    id: 'carte-faille', title: 'La Faille qui coupe', themes: ['cartes', 'mat1'], level: 2, mate: 1,
+    fen: '6k1/R4ppp/8/8/4b3/8/5PPP/6K1 w - - 0 1', solution: ['@rift:d5', 'a7a8'],
+    hands: { w: ['rift', 'truce', 'tide'] },
     goal: 'Les Blancs jouent une carte, puis matent.',
-    hint: 'Sans la dame noire, Td8 serait mat.',
-    moral: 'Une pièce gelée ne bouge plus, ne prend plus et ne protège plus.',
+    hint: 'Le fou e4 garde a8 par la grande diagonale. Où la couper ?',
+    moral: 'La Faille ouvre un gouffre sur toute une rangée : les lignes qui la traversent sont coupées, pour les deux camps.',
   },
   {
-    id: 'carte-mur', title: 'Le mur qui sauve', themes: ['cartes'], level: 1,
-    fen: '6k1/5ppp/8/8/8/8/5PPP/r5K1 w - - 0 1',
-    solution: ['@ice_wall:f1|@ice_wall:e1|@ice_wall:d1|@ice_wall:c1|@ice_wall:b1'],
-    hands: { w: ['ice_wall', 'shield', 'lightning'] },
-    goal: 'Les Blancs sont en échec, sans aucun coup. Trouvez la carte qui sauve.',
-    hint: 'Une case vide entre la tour et le roi peut devenir infranchissable.',
-    moral: 'Sans coup légal, on doit jouer une carte qui en redonne un : le mat n’était qu’apparent.',
+    id: 'carte-ere-glaciaire', title: 'Le pion gelé', themes: ['cartes', 'mat2'], level: 3, mate: 2,
+    fen: '6k1/pp3pp1/7p/8/8/8/1r2R1PP/4RQK1 w - - 0 1', solution: ['@ice_age', 'e2e8', 'g8h7', 'f1d3'],
+    hands: { w: ['ice_age', 'truce', 'rift'] },
+    goal: 'Les Blancs jouent une carte et matent en 2.',
+    hint: 'Après Te8+ Rh7, le roi noir compte sur un seul défenseur : le pion g7.',
+    moral: 'Annoncée, l’Ère glaciaire arrive au début de votre tour suivant : le pion g7 ne peut plus s’interposer en g6.',
   },
   {
-    id: 'carte-permutation', title: 'Changer de place', themes: ['cartes', 'mat1'], level: 2, mate: 1,
-    fen: '6k1/5ppp/8/8/8/8/P4PPP/R2B2K1 w - - 0 1', solution: ['@swap:a1,d1|@swap:d1,a1', 'd1d8'],
-    hands: { w: ['swap', 'lightning', 'freeze'] },
-    goal: 'Les Blancs jouent une carte, puis matent.',
-    hint: 'La colonne d est ouverte, mais ce n’est pas la tour qui s’y trouve.',
-    moral: 'La Permutation échange deux de vos pièces : ici, la tour prend la place du fou.',
+    id: 'carte-maree', title: 'La marée descend', themes: ['cartes', 'mat2'], level: 2, mate: 2,
+    fen: '6k1/R4pp1/7p/3R4/8/6P1/3B1P1P/7K w - - 0 1', solution: ['@tide', 'g8h8', 'd5d8'],
+    hands: { w: ['tide', 'ice_wall', 'truce'] },
+    goal: 'Les Blancs matent en 2 : une carte tient lieu du premier coup.',
+    hint: 'Les pions f7 et g7 bouchent la 7e rangée. Si tous les pions avançaient d’une case…',
+    moral: 'La Grande Marée remplace votre coup et pousse les pions des deux camps : la 7e rangée s’est vidée, la tour a7 la tient.',
+  },
+  {
+    id: 'carte-lune', title: 'La Lune retournée', themes: ['cartes', 'mat2', 'deviation'], level: 2, mate: 2,
+    fen: '3r2k1/p4ppp/8/3p4/8/1B6/5PPP/R3R1K1 w - - 0 1', solution: ['b3d5', 'd8d5', 'e1e8'],
+    hands: { b: ['blood_moon'] },
+    effects: [{ card: 'blood_moon', by: 'b', remaining: 2 }],
+    goal: 'La Lune de sang des Noirs est levée : qui peut prendre doit prendre. Les Blancs matent en 2.',
+    hint: 'Vous aussi devez prendre. Choisissez la prise qui oblige la tour d8 à quitter la dernière rangée.',
+    moral: 'Un pouvoir touche les deux camps : la Lune lancée par les Noirs force leur tour à prendre, et la 8e rangée tombe.',
+  },
+  {
+    id: 'carte-deflagration', title: 'Une prise, trois pièces', themes: ['cartes'], level: 2,
+    fen: '3qr1k1/pp1n1ppp/2p5/8/8/1QN5/P4PPP/3R2K1 w - - 0 1', solution: ['d1d7'],
+    hands: { w: ['blast'] },
+    effects: [{ card: 'blast', by: 'w', remaining: 4 }],
+    goal: 'Votre Déflagration vient d’arriver. Les Blancs jouent et gagnent du matériel.',
+    hint: 'Toute prise explose : la pièce qui prend saute aussi, avec ses voisines. Cherchez la case entourée de pièces noires.',
+    moral: 'Sous la Déflagration, Dxb7 ferait sauter votre dame. Txd7 ne coûte qu’une tour : le cavalier, la dame et la tour noires partent avec elle.',
+  },
+  {
+    id: 'carte-main-visible', title: 'Lisez sa main', themes: ['cartes', 'mat1'], level: 1, mate: 1,
+    fen: '7k/5Q1p/8/8/8/8/PP3PPP/4B1K1 w - - 0 1', solution: ['f7f8'],
+    hands: { b: ['ice_wall'] },
+    goal: 'Les Noirs gardent un Mur de glace en main. Les Blancs matent en 1 malgré lui.',
+    hint: 'Fc3+ semble mater. Mais où les Noirs poseraient-ils leur Mur ?',
+    moral: 'Les mains sont visibles : un échec à distance qui traverse les rangées 3 à 6 se pare d’un Mur. Sur la 8e rangée, aucun Mur ne peut se poser.',
   },
 ];
 
@@ -367,8 +444,8 @@ export function parseAction(s: string): PuzzleAction | null {
   const t = s.trim();
   const card = /^@([a-z_]+)(?::([a-h][1-8](?:,[a-h][1-8])*))?$/.exec(t);
   if (card) {
-    const id = card[1] as CardId;
-    if (!CARDS[id]) return null;
+    const id = card[1];
+    if (!isCardId(id)) return null;
     return { kind: 'card', card: id, targets: card[2] ? card[2].split(',').map(sqIndex) : [] };
   }
   const mv = /^([a-h][1-8])([a-h][1-8])([qrbn])?$/.exec(t);
@@ -386,16 +463,18 @@ export function sameAction(a: PuzzleAction, b: PuzzleAction): boolean {
     return a.from === b.from && a.to === b.to && (a.promo ?? 'q') === (b.promo ?? 'q');
   }
   if (a.kind === 'card' && b.kind === 'card') {
-    return a.card === b.card && a.targets.length === b.targets.length && a.targets.every((t, i) => t === b.targets[i]);
+    // Faille : la cible désigne une rangée ; n'importe quelle case de la rangée convient.
+    const same = a.card === 'rift' ? (x: number, y: number) => rankOf(x) === rankOf(y) : (x: number, y: number) => x === y;
+    return a.card === b.card && a.targets.length === b.targets.length && a.targets.every((t, i) => same(t, b.targets[i]));
   }
   return false;
 }
 
+/** Position de départ : catalogue Pouvoirs pour un problème à cartes, sans cartes sinon. */
 export function puzzleStart(p: Puzzle): GameState {
-  const catalog: Catalog = p.hands ? 'duel' : 'aucune';
-  const s = createGameFromFen(p.fen, { w: p.hands?.w ?? [], b: p.hands?.b ?? [] }, false);
-  s.catalog = catalog;
-  return s;
+  const catalog: Catalog = p.hands || p.effects ? 'climats' : 'aucune';
+  const s = createGameFromFen(p.fen, { w: p.hands?.w ?? [], b: p.hands?.b ?? [] }, false, catalog);
+  return withEffects(s, p.effects ?? []);
 }
 
 /** Joue une action (coup ou carte) pour le camp au trait. */

@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { CardEmblem } from '../components/CardArt';
-import { CARDS } from '../../shared/cards';
+import { CARDS, isCardId } from '../../shared/cards';
 import { describeCardPlay } from '../../shared/game';
 import type { TreeNode } from '../../shared/pgn';
 import { frSan } from './format';
@@ -34,17 +34,18 @@ export function MoveTree({ root, cur, onSelect, marks, version, empty }: Props) 
     const s = parent.state;
     const on = node === cur;
     if (e.k === 'card') {
-      const def = CARDS[e.card];
+      // Une carte retirée du jeu (ancienne partie) n'a ni teinte ni emblème : son identifiant suffit.
+      const def = isCardId(e.card) ? CARDS[e.card] : null;
       return (
         <button
           key={node.id}
           type="button"
           className={`ft-mv card ${on ? 'on' : ''} ${e.undone ? 'undone' : ''}`}
-          style={{ '--h': def.hue } as CSSProperties}
+          style={def ? ({ '--h': def.hue } as CSSProperties) : undefined}
           onClick={() => onSelect(node)}
-          title={def.description}
+          title={def?.description ?? 'Carte retirée du jeu'}
         >
-          <span className="ft-mv-em"><CardEmblem id={e.card} /></span>
+          {def && <span className="ft-mv-em"><CardEmblem id={e.card} /></span>}
           {describeCardPlay(e.card, e.targets)}
         </button>
       );

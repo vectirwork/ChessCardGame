@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { BoardStage, lastMoveOf } from '../features/BoardStage';
-import { CardHand, EffectsLine, useTargeting } from '../features/CardHand';
+import { CardHand, EffectsLine, HandView, useTargeting } from '../features/CardHand';
 import { MiniBoard } from '../features/MiniBoard';
 import { dayKey, useStored } from '../features/storage';
 import { Check, Crumbs, Level, PageHead, useTitle } from '../features/ui';
@@ -107,7 +107,7 @@ function PuzzleIndex() {
       <PageHead
         kicker="Problèmes"
         title={<>Un regard, <em>un coup juste</em></>}
-        sub="Des positions choisies à la main : mats en un, deux ou trois coups, fourchettes, clouages, enfilades, déviations, et quelques énigmes où la bonne carte fait la différence."
+        sub="Des positions choisies à la main : mats en un, deux ou trois coups, fourchettes, clouages, enfilades, déviations, et des énigmes sur les huit pouvoirs, où la bonne carte (ou celle de l’adversaire, toujours visible) fait la différence."
       />
 
       <section className="ft-daily panel" aria-labelledby="pdj">
@@ -307,13 +307,14 @@ function PuzzleView({ puzzle }: { puzzle: Puzzle }) {
   const glow = hint >= 2 && expectedNow?.kind === 'move' ? expectedNow.from : null;
   const next = nextUnsolved(puzzle, progress.solved) ?? PUZZLES[(PUZZLES.indexOf(puzzle) + 1) % PUZZLES.length];
   const solvedBefore = !!progress.solved[puzzle.id];
-  const hasCards = !!puzzle.hands;
+  const hasCards = !!puzzle.hands || !!puzzle.effects;
 
   return (
     <div className="container page ft-page ft-puzzle">
       <Crumbs items={[{ to: '/problemes', label: 'Problèmes' }, { label: puzzle.title }]} />
       <div className="ft-play">
         <div className="ft-play-board">
+          {hasCards && <HandView state={run.s} color={solver === 'w' ? 'b' : 'w'} />}
           <BoardStage
             state={run.s}
             orientation={solver}

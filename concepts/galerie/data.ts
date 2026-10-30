@@ -196,8 +196,11 @@ export function affinity(a: CardId, b: CardId): number {
   return 0.06 + (h % 19) / 100;
 }
 
-/** À quel coup chaque carte est lancée : premier quartile, médiane, troisième quartile. */
-export const TIMING: Record<CardId, [number, number, number]> = {
+/**
+ * À quel coup chaque carte est lancée : premier quartile, médiane, troisième quartile. Prototype antérieur aux
+ * huit pouvoirs : seules les cartes historiques (Duel) de COLLECTION ont une mesure.
+ */
+export const TIMING = {
   lightning: [6, 11, 19],
   ice_wall: [8, 14, 22],
   knight_leap: [9, 15, 24],
@@ -209,7 +212,7 @@ export const TIMING: Record<CardId, [number, number, number]> = {
   rewind: [15, 27, 38],
   revive: [22, 31, 42],
   time_warp: [25, 34, 44],
-};
+} as Record<CardId, [number, number, number]>;
 
 /** Prochaine exposition : deux pouvoirs « globaux » à l'étude (voir concepts/CARTES-GLOBALES.md). */
 export const UPCOMING = [

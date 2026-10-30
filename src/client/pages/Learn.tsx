@@ -6,7 +6,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { CardEmblem } from '../components/CardArt';
 import { BoardStage, lastMoveOf } from '../features/BoardStage';
 import type { Arrow } from '../features/BoardStage';
-import { CardHand, EffectsLine, useTargeting } from '../features/CardHand';
+import { CardHand, EffectsLine, HandView, useTargeting } from '../features/CardHand';
 import { MiniBoard } from '../features/MiniBoard';
 import { useStored } from '../features/storage';
 import { Check, Crumbs, PageHead, useTitle } from '../features/ui';
@@ -331,6 +331,7 @@ function LessonView({ lesson }: { lesson: Lesson }) {
       <Crumbs items={[{ to: '/apprendre', label: 'Apprendre' }, { label: lesson.group }, { label: lesson.title }]} />
       <div className="ft-play">
         <div className="ft-play-board">
+          <HandView state={run.s} color={student === 'w' ? 'b' : 'w'} />
           <BoardStage
             state={run.s}
             orientation={student}

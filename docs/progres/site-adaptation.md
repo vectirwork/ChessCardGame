@@ -7,10 +7,23 @@ src/client/pages/{Learn,Puzzles,Analysis,MyGames,Live}.tsx, src/shared/{lessons,
 test/{lessons,puzzles,pgn}.test.ts, src/client/components/DemoBoard.tsx, concepts/galerie/data.ts (typage seul).
 
 ## Fait
-- (rien encore) lecture du plan et des journaux.
+- Lecture du plan, du compte rendu de la refonte, des journaux accueil et fonctions classiques.
+- Problèmes (src/shared/puzzles.ts) : les 5 problèmes Duel remplacés par 8 problèmes sur les pouvoirs :
+  carte-mur-sauve, carte-mur-enferme, carte-faille, carte-ere-glaciaire, carte-maree, carte-lune (Lune noire
+  déjà en jeu), carte-deflagration (Déflagration déjà en jeu, gain de matériel), carte-main-visible (Mur noir en main).
+  Nouveautés : `effects` (pouvoir déjà en jeu, EffectSpec + withEffects), catalogue 'climats' pour les problèmes
+  à cartes, Faille acceptée sur n'importe quelle case de la rangée (sameAction). test/puzzles.test.ts : 14 verts
+  (unicité de la carte par énumération de toutes les cartes et cibles, mat confirmé par analyse()).
+  Positions trouvées avec les scripts du scratchpad site/ (lab.ts, gen*.ts, show*.ts).
+
+- Leçons (src/shared/lessons.ts) : groupe « Les cartes » refait : cartes (mains visibles, Mur en e5 permanent, Mur
+  qui sauve sur la colonne h), catalogues (Pouvoirs / Sans cartes, familles), deux-camps (Mur noir qui bloque la
+  tour blanche, Ère glaciaire noire), presage-rituel (textes corrigés), mur-magie (la magie cède, le Mur fond),
+  mains-visibles (Faille noire en main). LessonStep.effects (même EffectSpec que les problèmes).
+  test/lessons.test.ts : 9 verts.
 
 ## En cours
-- Inventaire.
+- Client : CardHand (main adverse visible), Learn, Puzzles.
 
 ## Reste à faire
 1. Leçons des cartes (lessons.ts:438 Mur en 1re rangée, textes « 6 coups », Portails).

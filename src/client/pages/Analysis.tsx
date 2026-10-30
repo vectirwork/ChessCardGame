@@ -8,7 +8,7 @@ import type { Arrow } from '../features/BoardStage';
 import { EvalBar, EvalGraph, evalText } from '../features/EvalViews';
 import { useEngine, reviewStates, REVIEW_DEPTH } from '../features/engine';
 import type { Analysis as EngineAnalysis } from '../features/engine';
-import { EffectsLine } from '../features/CardHand';
+import { EffectsLine, HandView } from '../features/CardHand';
 import { catalogLabel, formatDate, formatEval, frSan, outcomeFor, reasonText, scoreText } from '../features/format';
 import { localGame, rememberView } from '../features/history';
 import { MoveTree } from '../features/MoveTree';
@@ -22,6 +22,7 @@ import { useApp } from '../store';
 import { playSound } from '../sound';
 import type { Color, Move, PieceType } from '../../shared/chess';
 import { opposite } from '../../shared/chess';
+import { isCardId } from '../../shared/cards';
 import { GameState, createGame, legalMovesOf, playMove } from '../../shared/game';
 import {
   PgnError, START_FEN, TreeNode, fenOf, initialStateOf, mainline, makeRoot, normalizeFen, pgnDate, pgnResult, playFrom,
@@ -125,7 +126,9 @@ function AnalysisBoard({ gameId, fen, imported }: { gameId?: string; fen: string
         setProblem('Cette partie locale n’est plus enregistrée sur cet appareil.');
         return;
       }
-      const start = createGame(g.local.hands, g.local.timed, g.local.catalog);
+      // Une carte retirée du jeu depuis (ancienne partie) est écartée de la main : la relecture s'arrête à son tour.
+      const hands = { w: (g.local.hands?.w ?? []).filter(isCardId), b: (g.local.hands?.b ?? []).filter(isCardId) };
+      const start = createGame(hands, !!g.local.timed, g.local.catalog ?? 'duel');
       const { root: r, complete } = treeFromLog(start, g.local.log);
       const final = mainline(r).at(-1)!.state;
       replaceTree(r, {
@@ -390,6 +393,12 @@ function AnalysisBoard({ gameId, fen, imported }: { gameId?: string; fen: string
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => setMode('edit')}>Éditer la position</button>
           </div>
           <EffectsLine effects={cur.state.effects} />
+          {(cur.state.hands.w.length > 0 || cur.state.hands.b.length > 0) && (
+            <div className="ft-an-hands">
+              <HandView state={cur.state} color={opposite(orientation)} compact />
+              <HandView state={cur.state} color={orientation} compact />
+            </div>
+          )}
           {review && (
             <section className="ft-review" aria-label="Relecture de la partie">
               <EvalGraph evals={evalList} current={Math.max(0, curIndex)} flags={flags} onPick={i => go(line[i])} />

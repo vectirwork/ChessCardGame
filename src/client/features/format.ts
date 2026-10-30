@@ -1,6 +1,6 @@
 // Mise en forme partagée par les pages des fonctions classiques.
 import { Color, sanToFrench } from '../../shared/chess';
-import { CARDS, CATALOGS, Catalog } from '../../shared/cards';
+import { CARDS, CATALOGS, Catalog, isCardId } from '../../shared/cards';
 import { RESULT_TEXT, ResultReason, describeCardPlay } from '../../shared/game';
 import type { LogEntry } from '../../shared/game';
 
@@ -12,12 +12,17 @@ export function entryLabel(e: LogEntry): string {
   return describeCardPlay(e.card, e.targets);
 }
 
+/** Nom d'une carte ; une carte retirée du jeu (ancienne partie) garde son identifiant. */
 export function cardName(id: string): string {
-  return CARDS[id as keyof typeof CARDS]?.name ?? id;
+  return isCardId(id) ? CARDS[id].name : id;
 }
 
-export function catalogLabel(c: Catalog | undefined | null): string {
-  return CATALOGS.find(x => x.id === (c ?? 'duel'))?.label ?? 'Duel';
+/**
+ * Libellé du jeu d'une partie : « Pouvoirs » ou « Sans cartes ». Le Duel n'est plus proposé : une partie créée
+ * avant (catalogue absent ou 'duel') est signalée comme telle.
+ */
+export function catalogLabel(c: Catalog | string | undefined | null): string {
+  return CATALOGS.find(x => x.id === c)?.label ?? 'Duel (ancienne formule)';
 }
 
 const MATE_CP = 2000;

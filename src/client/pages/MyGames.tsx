@@ -82,7 +82,7 @@ export default function MyGames() {
       reason: g.reason,
       date: g.at,
       plies: g.plies,
-      tags: [g.local ? 'Sur cet appareil' : g.vsBot ? MODE.bot : 'En ligne', g.catalog ? `Cartes : ${catalogLabel(g.catalog)}` : '', g.timeControl ?? ''].filter(Boolean),
+      tags: [g.local ? 'Sur cet appareil' : g.vsBot ? MODE.bot : 'En ligne', g.catalog ? catalogLabel(g.catalog) : '', g.timeControl ?? ''].filter(Boolean),
     }));
 
   const openLink = (e: FormEvent) => {

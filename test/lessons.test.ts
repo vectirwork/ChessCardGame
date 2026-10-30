@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { fromFen, sqIndex, sqName } from '../src/shared/chess';
-import { GameState, legalMovesOf, playMove } from '../src/shared/game';
+import { cardsOf } from '../src/shared/cards';
+import { F_RELAXED, fromFen, sqIndex, sqName } from '../src/shared/chess';
+import { GameState, legalMovesOf, playMove, sideInCheck } from '../src/shared/game';
 import {
   LESSONS, LESSON_GROUPS, LessonStep, freeMove, lessonById, loneKingReply, matedBy, stepStart, studentOf,
 } from '../src/shared/lessons';
@@ -46,7 +47,7 @@ describe('leçons', () => {
       }
     }
     // Chaque pièce, les coups spéciaux, échec, mat et pat, et les cartes
-    for (const id of ['tour', 'fou', 'dame', 'roi', 'cavalier', 'pion', 'roque', 'prise-en-passant', 'promotion', 'echec', 'mat', 'pat', 'cartes', 'presage-rituel']) {
+    for (const id of ['tour', 'fou', 'dame', 'roi', 'cavalier', 'pion', 'roque', 'prise-en-passant', 'promotion', 'echec', 'mat', 'pat', 'cartes', 'catalogues', 'deux-camps', 'presage-rituel', 'mur-magie', 'mains-visibles']) {
       expect(lessonById(id), id).toBeDefined();
     }
   });
@@ -96,6 +97,56 @@ describe('leçons', () => {
         if (!cardStep) expect(legalMovesOf(s).length, l.id).toBeGreaterThan(0);
       }
     }
+  });
+
+  it('les leçons de cartes n’utilisent que les huit pouvoirs, jamais le Duel', () => {
+    const allowed = cardsOf('climats');
+    for (const l of LESSONS) {
+      for (const step of l.steps) {
+        expect(step.catalog, l.id).not.toBe('duel');
+        const s = stepStart(step);
+        if (step.hands || step.effects) expect(s.catalog, l.id).toBe('climats');
+        for (const h of [...s.hands.w, ...s.hands.b]) expect(allowed, `${l.id} : ${h.card}`).toContain(h.card);
+        for (const e of s.effects) expect(allowed).toContain(e.card);
+        if (step.goal.kind === 'line') {
+          for (const st of step.goal.line) for (const o of stepOptions(st)) if (o.kind === 'card') expect(allowed).toContain(o.card);
+        }
+        expect(step.text, l.id).not.toMatch(/Duel|Portail|Couronnement|Chevauchée|Déjà-vu|cachée/);
+      }
+    }
+  });
+
+  it('pour les deux camps : le Mur noir bloque la tour blanche, l’Ère glaciaire gèle les pions blancs', () => {
+    const l = lessonById('deux-camps')!;
+    const wall = stepStart(l.steps[0]);
+    expect(wall.effects[0]).toMatchObject({ card: 'ice_wall', permanent: true, caster: 'b' });
+    expect(wall.hands.b[0].used).toBe(true);
+    expect(legalMovesOf(wall).some(m => m.to === sqIndex('d5'))).toBe(false);
+    const ice = stepStart(l.steps[1]);
+    const moves = legalMovesOf(ice);
+    expect(moves.length).toBeGreaterThan(0);
+    expect(moves.some(m => ice.pos.board[m.from]?.t === 'p')).toBe(false);
+  });
+
+  it('la magie cède : sans coup ni échec, le roi marche sur un Mur, qui fond', () => {
+    const l = lessonById('mur-magie')!;
+    const s = stepStart(l.steps[0]);
+    expect(sideInCheck(s)).toBe(false);
+    const moves = legalMovesOf(s);
+    expect(moves.length).toBeGreaterThan(0);
+    expect(moves.every(m => m.flags & F_RELAXED)).toBe(true);
+    const n = applyAction(s, stepOptions('h3g4')[0])!;
+    expect(n.effects.filter(e => e.card === 'ice_wall').map(e => sqName(e.square!))).toEqual(['h4']);
+  });
+
+  it('lire la main adverse : la Faille noire pare Ff3+, pas le mat sur la 8e rangée', () => {
+    const l = lessonById('mains-visibles')!;
+    const s = stepStart(l.steps[0]);
+    const fake = applyAction(s, stepOptions('d1f3')[0])!;
+    expect(sideInCheck(fake)).toBe(true);
+    expect(legalMovesOf(fake)).toHaveLength(0);
+    expect(fake.result).toBeNull();
+    expect(matedBy(applyAction(s, stepOptions('c7c8')[0])!, 'w')).toBe(true);
   });
 
   it('la Trêve s’annonce puis arrive ; la Grande Marée remplace le coup', () => {

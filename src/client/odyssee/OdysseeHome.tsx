@@ -6,8 +6,8 @@ import type { CSSProperties, PointerEvent as RPointerEvent, ReactNode } from 're
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import gsap from 'gsap';
-import { CARDS } from '../../shared/cards';
-import type { CardId } from '../../shared/cards';
+import { CARDS, CATALOGS, offeredCatalog } from '../../shared/cards';
+import type { Catalog, CardId } from '../../shared/cards';
 import { DEFAULT_BOARD, DEFAULT_SKIN, FREE_ITEMS, itemById } from '../../shared/catalog';
 import { RESULT_TEXT } from '../../shared/game';
 import type { MeUser } from '../../shared/protocol';
@@ -727,6 +727,18 @@ export default function OdysseeHome() {
                 <span className="o-hand-t">Touchez-en un pour le lancer avant votre coup.</span>
               </div>
             </div>
+            {g.state.hands.b.length > 0 && (
+              <p className="o-hand-opp o-rv" style={{ '--i': 4 } as CSSProperties} aria-label="Cartes de l'Oracle, visibles">
+                <span className="o-hand-opp-k">L'Oracle tient</span>
+                {g.state.hands.b.map((h, i) =>
+                  h.card && h.card in CARDS ? (
+                    <span key={i} className={h.used ? 'is-used' : ''} title={`${CARDS[h.card].name}${h.used ? ' (jouée)' : ''} : ${CARDS[h.card].description}`}>
+                      {CARDS[h.card].name}
+                    </span>
+                  ) : null,
+                )}
+              </p>
+            )}
             <div className="o-opts o-rv" style={{ '--i': 5 } as CSSProperties}>
               <div className="o-opts-line">
                 <span className="o-opts-k">Contre</span>
@@ -1094,10 +1106,12 @@ export default function OdysseeHome() {
 }
 
 /** Première porte : créer une invitation (vraie partie sur le serveur) et partir vers /partie/:id. */
-function FriendSheet({ onClose, catalog, signedIn }: { onClose: () => void; catalog: string; signedIn: boolean }) {
+function FriendSheet({ onClose, catalog: initial, signedIn }: { onClose: () => void; catalog: string; signedIn: boolean }) {
   const navigate = useNavigate();
   const [name, setName] = useState(getGuestName());
   const [tc, setTc] = useState('10+0');
+  // Jeu proposé : « Pouvoirs » (par défaut) ou « Sans cartes » ; le Duel n'est plus proposé.
+  const [catalog, setCatalog] = useState<Catalog>(() => offeredCatalog(initial));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const valid = signedIn || /^[\p{L}\p{N} _.-]{2,20}$/u.test(name.trim());
@@ -1142,6 +1156,16 @@ function FriendSheet({ onClose, catalog, signedIn }: { onClose: () => void; cata
             <input className="input" maxLength={20} value={name} onChange={e => setName(e.target.value)} placeholder="Ex. : Fou du roi" autoComplete="nickname" />
           </label>
         )}
+        <div className="field">
+          <span className="label">Jeu</span>
+          <div className="segmented">
+            {CATALOGS.map(c => (
+              <button key={c.id} type="button" className={catalog === c.id ? 'on' : ''} aria-pressed={catalog === c.id} title={c.description} onClick={() => setCatalog(c.id)}>
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="field">
           <span className="label">Cadence</span>
           <div className="segmented">

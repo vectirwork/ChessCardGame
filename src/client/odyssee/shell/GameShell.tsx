@@ -2,7 +2,7 @@
 //
 // Elle dessine tout ce qui entoure l'échiquier : barre du haut (retour, badge), panneau de statut à gauche
 // (surtitre, titre, consigne, sort en cours de ciblage, résultat, actions), adversaire en haut à droite (nom,
-// sous-titre, main cachée, emplacement libre pour une pendule) et la main du joueur en éventail en bas à gauche.
+// sous-titre, main visible en petit, cartes jouées grisées, emplacement libre pour une pendule) et la main du joueur en éventail en bas à gauche.
 //
 // L'échiquier :
 // - soit l'appelant le fournit (`board`) : la coque le place elle-même à la géométrie de `gameLayout()` ;
@@ -12,9 +12,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import gsap from 'gsap';
-import { CARDS } from '../../../shared/cards';
+import { CARDS, isCardId } from '../../../shared/cards';
 import type { HandCard } from '../../../shared/game';
-import { CardBack, SpellCard } from '../../components/SpellCard';
+import { CardEmblem } from '../../components/CardArt';
+import { SpellCard } from '../../components/SpellCard';
 import { gameLayout } from './layout';
 import './shell.css';
 
@@ -22,7 +23,7 @@ export interface ShellPlayer {
   name: string;
   /** Sous-titre : « IA · niveau Sorcier », « 1 480 Elo », « Invité »… */
   sub?: ReactNode;
-  /** Main du joueur (cartes adverses cachées : `card: null`). */
+  /** Main du joueur, visible des deux côtés (décision du 30 octobre) ; cartes jouées : `used`. */
   hand: HandCard[];
   /** Pastille : l'œil de l'Oracle (IA) par défaut, ou un nœud libre (initiale, avatar). */
   avatar?: ReactNode;
@@ -175,10 +176,26 @@ export function GameShell(p: GameShellProps) {
   const shownActions = !p.result && p.actions ? p.actions.filter(a => !a.hidden) : [];
   const hasMore = !!p.statusExtra || shownActions.length > 0;
 
+  // Main adverse face visible, en petit : emblème et nom de chaque carte, cartes jouées grisées. Une carte retirée
+  // du jeu (ancienne partie) garde son identifiant.
   const backs = (
-    <div className="gs-backs" aria-label={`Cartes de ${p.opponent.name}`}>
-      {p.opponent.hand.map((h, i) => (h.card && h.used ? <SpellCard key={i} id={h.card} size="mini" used tilt={false} /> : <CardBack key={i} size="mini" used={h.used} />))}
-    </div>
+    <ul className="gs-backs" aria-label={`Cartes de ${p.opponent.name}`}>
+      {p.opponent.hand.map((h, i) => {
+        const def = h.card && isCardId(h.card) ? CARDS[h.card] : null;
+        return (
+          <li
+            key={i}
+            className={`gs-opp-card ${h.used ? 'used' : ''}`}
+            style={def ? ({ '--h': def.hue } as CSSProperties) : undefined}
+            title={def ? `${def.name}${h.used ? ' (jouée)' : ''} : ${def.description}` : 'Carte retirée du jeu'}
+          >
+            {def && <span className="gs-opp-em"><CardEmblem id={def.id} /></span>}
+            <span className="gs-opp-name">{def?.name ?? String(h.card ?? '')}</span>
+            {h.used && <span className="gs-opp-used">jouée</span>}
+          </li>
+        );
+      })}
+    </ul>
   );
 
   const stageStyle = {

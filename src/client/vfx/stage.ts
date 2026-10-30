@@ -18,14 +18,19 @@ export interface Fx {
 export interface Marker {
   obj: THREE.Object3D;
   square: number;
-  update(dt: number, t: number): void;
+  /** Signature des cases couvertes (Faille) : un changement reconstruit l'objet. */
+  sig?: string;
+  /** Renvoie true tant que l'objet s'anime (sinon la scène ne le redessine que si le plateau bouge). */
+  update(dt: number, t: number): boolean | void;
   /** Animation de disparition (renvoie l'effet à jouer). */
   despawn(): Fx | null;
 }
 
 export type MarkerFactory = (stage: VfxStage, e: Effect, skin: SkinStyle, square: number) => Marker | null;
+/** Arrivée d'un Présage (effet annoncé qui devient actif). */
+export type ArrivalFactory = (stage: VfxStage, e: Effect, skin: SkinStyle) => void;
 
-interface Cine {
+export interface Cine {
   start: number;
   hold: number;
   tilt: number;
@@ -63,8 +68,17 @@ export class VfxStage {
   private size = { w: 0, h: 0 };
   private perspective = 1400;
   private lastMarkerRender = 0;
+  private lastLayout = '';
+  private applyTilt = '';
+  private pendingIds = new Set<number>();
   reduced = false;
+  /**
+   * Garde-fous en temps réel des sorts (impact et fin forcés si la boucle d'animation s'arrête, onglet caché par
+   * exemple). Le banc d'essai, qui avance la scène image par image, les coupe.
+   */
+  guard = true;
   markerFactory: MarkerFactory | null = null;
+  arrivalFactory: ArrivalFactory | null = null;
 
   constructor(readonly wrap: HTMLElement, public orientation: Color) {
     this.reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
@@ -152,11 +166,36 @@ export class VfxStage {
     });
   }
 
-  /** Inclinaison cinématographique de l'échiquier. */
-  cinematic(hold: number, tilt = 0.5, zoom = 1.04) {
-    if (this.reduced) return;
-    this.cines.push({ start: this.time, hold, tilt, zoom });
+  /** Inclinaison cinématographique de l'échiquier (montée 0,55 s, maintien `hold`, retour à plat 0,7 s). */
+  cinematic(hold: number, tilt = 0.5, zoom = 1.04): Cine | null {
+    if (this.reduced) return null;
+    const c = { start: this.time, hold, tilt, zoom };
+    this.cines.push(c);
     this.kick();
+    return c;
+  }
+
+  /**
+   * Garde-fou : retire une inclinaison qui aurait dû finir. Si plus rien n'incline le plateau, il est remis à plat
+   * tout de suite, même si la boucle d'animation est arrêtée.
+   */
+  release(c: Cine | null) {
+    if (!c) return;
+    this.cines = this.cines.filter(x => x !== c);
+    if (!this.cines.length) {
+      this.tilt = 0;
+      this.zoom = 1;
+      this.setTilt(0, 1);
+    }
+    this.kick();
+  }
+
+  private setTilt(tilt: number, zoom: number) {
+    const key = `${tilt.toFixed(5)}|${zoom.toFixed(5)}`;
+    if (key === this.applyTilt) return;
+    this.applyTilt = key;
+    this.wrap.style.setProperty('--tilt', `${(tilt * 180) / Math.PI}deg`);
+    this.wrap.style.setProperty('--zoom', String(zoom));
   }
 
   shake(amount: number, duration = 0.45) {
@@ -186,8 +225,33 @@ export class VfxStage {
 
   private frame = (now: number) => {
     this.raf = 0;
+    let again = false;
+    try {
+      again = this.step(now);
+    } catch (err) {
+      // Un effet en erreur ne doit jamais figer la scène (ni laisser l'échiquier incliné) : on le jette.
+      console.error('[vfx]', err);
+      this.fx = [];
+      this.cines = [];
+      again = this.markers.size > 0;
+    }
+    if (again) {
+      this.raf = requestAnimationFrame(this.frame);
+    } else {
+      this.renderer?.clear();
+      this.tilt = 0;
+      this.zoom = 1;
+      this.setTilt(0, 1);
+      this.wrap.style.translate = '';
+      this.applied = { x: 0, y: 0 };
+      if (this.canvas) this.canvas.style.display = 'none';
+    }
+  };
+
+  /** Une image. Renvoie true s'il faut continuer la boucle. */
+  private step(now: number): boolean {
     // Plafond de 0,1 s : sur un appareil lent, l’animation saute des images au lieu de ralentir
-    const dt = Math.min(0.1, (now - this.last) / 1000);
+    const dt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
     this.last = now;
     this.time += dt;
 
@@ -220,18 +284,35 @@ export class VfxStage {
     const r = this.wrap.getBoundingClientRect();
     const baseX = r.left - this.applied.x;
     const baseY = r.top - this.applied.y;
-    this.wrap.style.setProperty('--tilt', `${(tilt * 180) / Math.PI}deg`);
-    this.wrap.style.setProperty('--zoom', String(zoom));
-    this.wrap.style.translate = sx || sy ? `${sx}px ${sy}px` : '';
+    this.setTilt(tilt, zoom);
+    if (sx || sy || this.applied.x || this.applied.y) this.wrap.style.translate = sx || sy ? `${sx}px ${sy}px` : '';
     this.applied = { x: sx, y: sy };
     this.syncCamera(baseX + sx, baseY + sy, r.width, r.height);
 
     this.fx = this.fx.filter(f => {
-      const alive = f.update(dt, this.time);
-      if (!alive) f.dispose?.();
+      let alive = false;
+      try {
+        alive = f.update(dt, this.time);
+      } catch (err) {
+        console.error('[vfx]', err);
+      }
+      if (!alive) {
+        try {
+          f.dispose?.();
+        } catch {
+          /* déjà libéré */
+        }
+      }
       return alive;
     });
-    for (const m of this.markers.values()) m.update(dt, this.time);
+    let animating = false;
+    for (const m of this.markers.values()) {
+      try {
+        if (m.update(dt, this.time)) animating = true;
+      } catch (err) {
+        console.error('[vfx]', err);
+      }
+    }
     let particlesAlive = 0;
     for (const ps of this.systems.values()) {
       ps.update(dt);
@@ -239,19 +320,16 @@ export class VfxStage {
     }
 
     const busy = this.fx.length > 0 || this.cines.length > 0 || particlesAlive > 0 || this.shakeAmp > 0;
-    if (busy || now - this.lastMarkerRender > 45) {
+    // Objets persistants immobiles (Mur de glace permanent, Faille) : on ne redessine que si le plateau a bougé
+    const layout = `${Math.round(baseX)},${Math.round(baseY)},${Math.round(r.width)},${Math.round(r.height)},${window.innerWidth},${window.innerHeight}`;
+    const moved = layout !== this.lastLayout;
+    this.lastLayout = layout;
+    if (busy || moved || (animating && now - this.lastMarkerRender > 45) || now - this.lastMarkerRender > 1000) {
       this.renderer!.render(this.scene, this.camera);
       this.lastMarkerRender = now;
     }
-    if (busy || this.markers.size) {
-      this.raf = requestAnimationFrame(this.frame);
-    } else {
-      this.renderer!.clear();
-      this.wrap.style.setProperty('--tilt', '0deg');
-      this.wrap.style.setProperty('--zoom', '1');
-      if (this.canvas) this.canvas.style.display = 'none';
-    }
-  };
+    return busy || this.markers.size > 0;
+  }
 
   private syncCamera(left: number, top: number, w: number, h: number) {
     const W = window.innerWidth;
@@ -277,28 +355,56 @@ export class VfxStage {
     for (const ps of this.systems.values()) ps.material.uniforms.uScale.value = scale;
   }
 
-  /** Synchronise les objets persistants (cristaux, blocs de glace, boucliers) avec les effets actifs. */
+  /**
+   * Synchronise les objets persistants (Mur de glace, Faille, blocs et boucliers du Duel) avec les effets actifs,
+   * et joue l'arrivée d'un Présage (effet annoncé qui devient actif).
+   */
   syncMarkers(effects: Effect[], pos: Position) {
     if (!this.ok || !this.markerFactory) return;
     const seen = new Set<number>();
+    const pending = new Set<number>();
     for (const e of effects) {
-      const square = e.square ?? (e.pieceId !== undefined ? pieceSquare(pos, e.pieceId) : -1);
+      if (e.pending) {
+        pending.add(e.id);
+        continue;
+      }
+      if (this.pendingIds.has(e.id) && this.arrivalFactory) {
+        try {
+          this.arrivalFactory(this, e, skinStyle(e.skin));
+        } catch (err) {
+          console.error('[vfx]', err);
+        }
+      }
+      const square = e.squares?.length ? e.squares[0] : e.square ?? (e.pieceId !== undefined ? pieceSquare(pos, e.pieceId) : -1);
       if (square < 0) continue;
+      const sig = e.squares ? e.squares.join(',') : undefined;
       const existing = this.markers.get(e.id);
-      if (existing) {
+      if (existing && existing.sig === sig) {
         seen.add(e.id);
-        if (existing.square !== square) {
+        if (!sig && existing.square !== square) {
           existing.square = square;
           existing.obj.position.copy(this.local(square));
         }
         continue;
       }
-      const m = this.markerFactory(this, e, skinStyle(e.skin), square);
+      if (existing) {
+        // Faille rétrécie (« la magie cède ») : on reconstruit
+        this.markers.delete(e.id);
+        disposeObject(existing.obj);
+      }
+      let m: Marker | null = null;
+      try {
+        m = this.markerFactory(this, e, skinStyle(e.skin), square);
+      } catch (err) {
+        console.error('[vfx]', err);
+      }
       if (!m) continue;
+      m.sig = sig;
       seen.add(e.id);
       this.markers.set(e.id, m);
       this.board.add(m.obj);
     }
+    this.pendingIds = pending;
     for (const [id, m] of this.markers) {
       if (seen.has(id)) continue;
       this.markers.delete(id);
@@ -309,13 +415,20 @@ export class VfxStage {
         disposeObject(m.obj);
       }
     }
+    this.lastLayout = '';
     this.kick();
   }
 
   setOrientation(o: Color, effects: Effect[], pos: Position) {
     if (o === this.orientation) return;
     this.orientation = o;
-    for (const m of this.markers.values()) m.obj.position.copy(this.local(m.square));
+    // Les objets à plusieurs cases (Faille) sont reconstruits ; les autres sont simplement replacés
+    for (const [id, m] of this.markers) {
+      if (m.sig) {
+        this.markers.delete(id);
+        disposeObject(m.obj);
+      } else m.obj.position.copy(this.local(m.square));
+    }
     this.syncMarkers(effects, pos);
   }
 
@@ -331,6 +444,7 @@ export class VfxStage {
     this.wrap.style.translate = '';
     this.wrap.style.setProperty('--tilt', '0deg');
     this.wrap.style.setProperty('--zoom', '1');
+    this.applyTilt = '';
   }
 }
 

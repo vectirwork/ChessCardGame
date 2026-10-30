@@ -1,11 +1,11 @@
 // Échiquier de la descente : il joue seul et lance, à la demande, le sort du lieu traversé.
 // À la différence de DemoBoard, le sort est piloté par le défilement (prop `act`).
 // Le parent le remonte (key) à chaque changement de lieu : sort en attente, effets et position repartent de zéro.
-// Il fonctionne avec n'importe quel catalogue : il distribue toutes les cartes du catalogue aux deux camps.
+// Il distribue les huit pouvoirs (catalogue « climats ») aux deux camps ; un autre catalogue reste accepté.
 import { useEffect, useRef, useState } from 'react';
 import { Board } from '../components/Board';
 import type { BoardHandle } from '../components/Board';
-import { CARDS, CARD_IDS } from '../../shared/cards';
+import { CARDS, cardsOf, isCardId } from '../../shared/cards';
 import type { CardId, Catalog } from '../../shared/cards';
 import { VALUE, fileOf, rankOf } from '../../shared/chess';
 import type { Color } from '../../shared/chess';
@@ -26,11 +26,11 @@ export interface Act {
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-let demoCatalog: Exclude<Catalog, 'aucune'> = 'duel';
+let demoCatalog: Exclude<Catalog, 'aucune'> = 'climats';
 
 /** Position de départ de la démonstration : toutes les cartes du catalogue, dans les deux camps. */
 const fresh = (): GameState => {
-  const ids = CARD_IDS.filter(id => CARDS[id].catalog === demoCatalog);
+  const ids = cardsOf(demoCatalog);
   return createGame({ w: [...ids], b: [...ids] }, true, demoCatalog);
 };
 
@@ -62,7 +62,9 @@ function pickMove(s: GameState) {
 
 /** Cibles lisibles : près du centre. */
 function targetsFor(s: GameState, color: Color, index: number): number[] | null {
-  const need = CARDS[s.hands[color][index].card!].targets;
+  const id = s.hands[color][index].card;
+  if (!isCardId(id)) return null;
+  const need = CARDS[id].targets;
   const out: number[] = [];
   for (let k = 0; k < need; k++) {
     const opts = cardOptions(s, color, index, out);
@@ -85,7 +87,6 @@ function prepareCast(card: CardId, skin: string) {
   const color = s.pos.turn;
   const index = s.hands[color].findIndex(h => h.card === card);
   if (index < 0) return null;
-  if ((card as string) === 'revive' && !cardPlayable(s, color, index)) s = { ...s, captured: { ...s.captured, [color]: [...s.captured[color], 'n'] } };
   if (!cardPlayable(s, color, index)) return null;
   const targets = targetsFor(s, color, index);
   if (!targets) return null;
@@ -95,7 +96,7 @@ function prepareCast(card: CardId, skin: string) {
 
 interface Props {
   act: Act;
-  /** Catalogue des cartes montrées (« climats » dès qu'il existe). */
+  /** Catalogue des cartes montrées : les Pouvoirs (« climats »). */
   catalog: Exclude<Catalog, 'aucune'>;
   theme: string;
   /** Incrémenté pour ramener les pièces en position de départ (avant une partie). */
@@ -257,12 +258,9 @@ export function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, sti
         const color = s.pos.turn;
         const index = s.hands[color].findIndex(h => h.card === card);
         if (index < 0) continue;
-        if ((card as string) === 'revive' && !cardPlayable(s, color, index)) {
-          // Pour la démonstration : une pièce est déjà tombée
-          s = { ...s, captured: { ...s.captured, [color]: [...s.captured[color], 'n'] } };
-        }
         if (!cardPlayable(s, color, index) && tries === 0) {
-          // Carte pas encore jouable (Retour arrière, Déjà-vu… demandent un historique) : on joue un coup et on réessaie
+          // Carte pas encore jouable (un Climat déjà annoncé, une Grande Marée sans pion à pousser…) : on joue un coup
+          // et on réessaie
           const m = pickMove(s);
           const r0 = m && playMove(s, m.from, m.to, m.promo);
           if (r0 && r0.ok) {

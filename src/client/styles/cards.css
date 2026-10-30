@@ -49,8 +49,16 @@
   cursor: not-allowed;
 }
 .spell-card.used {
-  filter: grayscale(1) brightness(0.45);
   transform: none;
+  background: linear-gradient(160deg, #5b5a66, #2a2933 50%, #4a4955);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+.spell-card.used .sc-body,
+.spell-card.used .cb-pattern {
+  filter: grayscale(1) brightness(0.5);
+}
+.spell-card.used .sc-foil {
+  display: none;
 }
 .sc-body {
   position: relative;
@@ -98,7 +106,16 @@
 .r-legendaire .sc-rarity {
   color: var(--gold);
 }
+.sc-rarity {
+  flex: none;
+}
 .sc-dur {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-left: 0.5em;
+  font-size: 0.92em;
   padding: 0.15em 0.6em;
   border-radius: 99px;
   background: rgba(0, 0, 0, 0.35);
@@ -110,7 +127,7 @@
 .sc-art {
   position: relative;
   flex: 0 0 auto;
-  width: 66%;
+  width: 48%;
   aspect-ratio: 1;
   margin: calc(var(--w) * 0.035) 0 calc(var(--w) * 0.02);
   display: grid;
@@ -147,6 +164,27 @@
   text-shadow: 0 0 14px hsl(var(--h) 100% 60% / 0.7);
   letter-spacing: 0.02em;
 }
+.sc-kicker {
+  position: relative;
+  margin-top: 0.35em;
+  font-size: max(8.5px, calc(var(--w) * 0.044));
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: hsl(var(--h) 75% 82%);
+  white-space: nowrap;
+}
+.sc-kicker::before,
+.sc-kicker::after {
+  content: '';
+  display: inline-block;
+  width: 1.4em;
+  height: 1px;
+  margin: 0 0.5em;
+  vertical-align: middle;
+  background: currentColor;
+  opacity: 0.45;
+}
 .sc-tag {
   position: relative;
   margin-top: 0.3em;
@@ -157,8 +195,8 @@
 .sc-desc {
   position: relative;
   margin-top: auto;
-  font-size: calc(var(--w) * 0.052);
-  line-height: 1.38;
+  font-size: calc(var(--w) * 0.046);
+  line-height: 1.3;
   color: #d8d6ee;
   padding-top: 0.6em;
   border-top: 1px solid hsl(var(--h) 60% 70% / 0.2);
@@ -187,17 +225,31 @@
 }
 .sc-used {
   position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
+  left: 8%;
+  right: 8%;
+  top: 50%;
+  translate: 0 -50%;
+  padding: 0.3em 0;
+  text-align: center;
   font-family: var(--font-display);
   font-weight: 800;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  font-size: calc(var(--w) * 0.075);
-  color: rgba(255, 255, 255, 0.85);
-  transform: rotate(-14deg);
+  font-size: max(8px, calc(var(--w) * 0.08));
+  color: #fff;
+  background: rgba(10, 10, 20, 0.72);
+  border-top: 1px solid rgba(255, 255, 255, 0.35);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.35);
+  rotate: -12deg;
   pointer-events: none;
+}
+.sc-mini .sc-used {
+  font-size: 0;
+  padding: 0;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 0;
+  rotate: -35deg;
 }
 
 /* Tailles */
@@ -207,11 +259,21 @@
 .sc-hand .sc-name {
   font-size: calc(var(--w) * 0.1);
   margin-top: auto;
+}
+.sc-hand .sc-kicker {
   margin-bottom: auto;
+  letter-spacing: 0.1em;
+}
+.sc-hand .sc-kicker::before,
+.sc-hand .sc-kicker::after {
+  display: none;
 }
 .sc-hand .sc-art {
   width: 72%;
   margin-bottom: 0;
+}
+.sc-hand .sc-dur {
+  display: none;
 }
 .sc-mini {
   --w: 62px;
@@ -248,4 +310,126 @@
 .card-back svg {
   width: 100%;
   height: 100%;
+}
+
+/* Bandeau compact (main adverse, listes) : nom lisible même sur mobile */
+.spell-chip {
+  --h: 200;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px 12px 4px 4px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, hsl(var(--h) 55% 22% / 0.94), hsl(var(--h) 40% 11% / 0.94));
+  border: 1px solid hsl(var(--h) 80% 70% / 0.45);
+  box-shadow: 0 6px 16px -8px hsl(var(--h) 80% 40% / 0.7);
+  color: #f4f2ff;
+  line-height: 1.15;
+  text-align: left;
+  user-select: none;
+  transition: filter 0.25s, opacity 0.25s, box-shadow 0.25s;
+}
+.spell-chip.clickable {
+  cursor: pointer;
+}
+.spell-chip.clickable:hover,
+.spell-chip.selected {
+  box-shadow: 0 0 0 1px hsl(var(--h) 90% 72% / 0.8), 0 0 18px hsl(var(--h) 95% 60% / 0.45);
+}
+.spell-chip:focus-visible {
+  outline: 2px solid hsl(var(--h) 95% 75%);
+  outline-offset: 2px;
+}
+.sch-em {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: radial-gradient(circle, hsl(var(--h) 90% 60% / 0.6), hsl(var(--h) 70% 22% / 0.95) 72%);
+  box-shadow: inset 0 0 0 1px hsl(var(--h) 90% 78% / 0.6);
+}
+.sch-em svg {
+  width: 22px;
+  height: 22px;
+  filter: drop-shadow(0 0 3px hsl(var(--h) 100% 70%));
+}
+.sch-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.sch-name {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sch-kicker {
+  margin-top: 1px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: hsl(var(--h) 70% 80%);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.spell-chip.used {
+  filter: grayscale(1);
+  opacity: 0.55;
+  border-style: dashed;
+  box-shadow: none;
+}
+.spell-chip.used .sch-name {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: rgba(255, 255, 255, 0.6);
+}
+.spell-chip.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+@media (max-width: 560px) {
+  .spell-chip {
+    gap: 6px;
+    padding: 3px 8px 3px 3px;
+  }
+  .sch-em {
+    width: 24px;
+    height: 24px;
+  }
+  .sch-em svg {
+    width: 18px;
+    height: 18px;
+  }
+  .sch-name {
+    font-size: 12px;
+    white-space: normal;
+    line-height: 1.1;
+    hyphens: auto;
+    overflow-wrap: anywhere;
+  }
+  .sch-kicker {
+    font-size: 8.5px;
+    letter-spacing: 0.1em;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spell-card,
+  .spell-chip {
+    transition: none;
+  }
+  .sc-halo,
+  .spell-card.selected {
+    animation: none;
+  }
 }

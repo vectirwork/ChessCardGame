@@ -1,7 +1,9 @@
-// Échiquier de démonstration : joue seul et lance des sorts en boucle (accueil, aperçu des skins).
+// Échiquier de démonstration : joue seul et lance des sorts en boucle (aperçu des skins).
+// Il n'est plus monté que par SkinPreview (pages/Home.tsx), que rien n'importe : la boutique et l'accueil passent
+// par odyssee/StageBoard. Il montre les huit pouvoirs (catalogue « climats »).
 import { useEffect, useRef, useState } from 'react';
 import { Color, VALUE, fileOf, rankOf } from '../../shared/chess';
-import { CARDS, CARD_IDS, CardId } from '../../shared/cards';
+import { CARDS, CardId, cardsOf, isCardId } from '../../shared/cards';
 import { ITEMS, itemById, skinStyle } from '../../shared/catalog';
 import {
   GameState, cardOptions, createGame, createGameFromFen, legalMovesOf, playCard, playMove,
@@ -10,18 +12,19 @@ import { useVfx } from '../vfx/useVfx';
 import { Board, BoardHandle } from './Board';
 
 const SKINS = ITEMS.filter(i => i.kind === 'skin').map(i => i.id);
-const HERO_ORDER: CardId[] = ['lightning', 'ice_wall', 'shield', 'freeze', 'rewind', 'gravity', 'swap', 'knight_leap', 'time_warp', 'phase', 'revive'];
-const PREVIEW_ORDER: CardId[] = ['lightning', 'ice_wall', 'shield', 'freeze', 'gravity', 'swap', 'revive', 'time_warp', 'knight_leap', 'phase'];
+const HERO_ORDER: CardId[] = ['blast', 'ice_wall', 'ice_age', 'rift', 'blood_moon', 'truce', 'tide', 'hourglass'];
+const PREVIEW_ORDER: CardId[] = ['blast', 'ice_wall', 'rift', 'ice_age', 'blood_moon', 'tide'];
+const POWERS = cardsOf('climats');
 const PREVIEW_FEN = 'r1bq1rk1/pp2bppp/2n1pn2/3p4/2PP4/2N1PN2/PP2BPPP/2BQK2R w K - 0 9';
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 function freshHero(): GameState {
-  return createGame({ w: [...CARD_IDS], b: [...CARD_IDS] }, true);
+  return createGame({ w: [...POWERS], b: [...POWERS] }, true, 'climats');
 }
 
 function freshPreview(): GameState {
-  const s = createGameFromFen(PREVIEW_FEN, { w: [...CARD_IDS], b: [...CARD_IDS] }, true);
+  const s = createGameFromFen(PREVIEW_FEN, { w: [...POWERS], b: [...POWERS] }, true, 'climats');
   s.captured = { w: ['r'], b: ['p'] };
   return s;
 }
@@ -49,7 +52,9 @@ function demoMove(s: GameState) {
 
 /** Choisit des cibles valides au hasard pour une carte. */
 function randomTargets(s: GameState, color: Color, index: number): number[] | null {
-  const need = CARDS[s.hands[color][index].card!].targets;
+  const id = s.hands[color][index]?.card;
+  if (!isCardId(id)) return null;
+  const need = CARDS[id].targets;
   const out: number[] = [];
   for (let k = 0; k < need; k++) {
     const opts = cardOptions(s, color, index, out);

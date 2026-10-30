@@ -2,8 +2,10 @@
 import * as THREE from 'three';
 import type { CardInfo, Effect } from '../../shared/game';
 import type { SkinStyle } from '../../shared/catalog';
-import { Fx, Marker, VfxStage, disposeObject, ease } from './stage';
-import { beamTexture, flourishTexture } from './textures';
+import { CARDS } from '../../shared/cards';
+import type { CardId } from '../../shared/cards';
+import { Cine, Fx, Marker, VfxStage, disposeObject, ease } from './stage';
+import { bandTexture, beamTexture, flourishTexture, softDiskTexture } from './textures';
 
 const C = (hex: string) => new THREE.Color(hex);
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
@@ -238,6 +240,27 @@ function crystalCluster(skin: SkinStyle, scale = 1) {
   return { group: g, mats };
 }
 
+/** Massif compact et droit (Mur de glace posé) : lisible vu de dessus comme plateau incliné, sans déborder. */
+function wallCluster(skin: SkinStyle) {
+  const g = new THREE.Group();
+  const mats: THREE.MeshStandardMaterial[] = [];
+  const specs: [number, number, number, number, number, number][] = [
+    [0, 0.02, 1.05, 0.2, 0, 0],
+    [0.2, 0.14, 0.7, 0.13, -0.18, 0.12],
+    [-0.21, 0.12, 0.66, 0.13, -0.15, -0.14],
+    [0.14, -0.2, 0.58, 0.12, 0.16, 0.12],
+    [-0.17, -0.18, 0.5, 0.11, 0.15, -0.12],
+  ];
+  for (const [x, y, h, r, rx, ry] of specs) {
+    const c = crystal(h, r, skin);
+    c.group.position.set(x, y, 0);
+    c.group.rotation.set(rx, ry, 0);
+    g.add(c.group);
+    mats.push(c.mat);
+  }
+  return { group: g, mats };
+}
+
 function iceCube(skin: SkinStyle) {
   const g = new THREE.Group();
   const geo = new THREE.BoxGeometry(0.84, 0.84, 0.95);
@@ -328,38 +351,149 @@ export interface CastHooks {
   victimAtBottom?: boolean;
 }
 
-/** Joue la mise en scène d'une carte. Résout la promesse peu après l'impact. */
+/** Moment de l'impact (secondes) : l'état de la partie change à cet instant. */
+const IMPACT_AT: Partial<Record<CardId, number>> = {
+  time_warp: 1.15,
+  hourglass: 1.05,
+  blood_moon: 1.05,
+  blast: 1,
+  tide: 1,
+  ice_age: 0.95,
+  truce: 0.95,
+};
+/** Inclinaison du plateau pendant le sort (radians). */
+const TILT: Partial<Record<CardId, number>> = { time_warp: 0.62, gravity: 0.62, hourglass: 0.6, blast: 0.6, blood_moon: 0.58 };
+/** Secousse à l'impact (multiplie celle du skin). */
+const SHAKE: Partial<Record<CardId, number>> = { lightning: 1.4, ice_wall: 1.4, gravity: 1.4, blast: 1.8, rift: 1.5, tide: 0.9, truce: 0.25, hourglass: 0.5 };
+/** Flash à l'impact (multiplie celui du skin). */
+const FLASH: Partial<Record<CardId, number>> = { lightning: 1, blast: 1.1, blood_moon: 0.9, truce: 0.45, tide: 0.5 };
+
+/** Contexte d'une mise en scène. */
+interface Scene {
+  stage: VfxStage;
+  info: CardInfo;
+  skin: SkinStyle;
+  pal: Palette;
+  hooks: CastHooks;
+  impactAt: number;
+  /** Première cible (ou centre du plateau). */
+  t0: THREE.Vector3;
+  center: THREE.Vector3;
+  /** Exécute `fn` à l'impact, puis applique l'état (toujours, même si `fn` échoue). */
+  onImpact: (fn: () => void) => void;
+  /** Classe temporaire sur le plateau (retirée en temps réel, quoi qu'il arrive). */
+  mood: (cls: string, ms: number) => void;
+}
+
+/**
+ * Joue la mise en scène d'une carte. Garanties, quelle que soit la carte (même inconnue) et même si la boucle
+ * d'animation s'arrête (onglet caché) ou qu'un effet échoue :
+ * - `hooks.impact` est appelé une fois, au plus tard ~1,2 s après l'instant prévu ;
+ * - la promesse est résolue peu après l'impact ;
+ * - l'inclinaison du sort est retirée et le plateau revient à plat ;
+ * - les pièces masquées (`hooks.hide`) sont réaffichées.
+ */
 export function playCast(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks: CastHooks): Promise<void> {
   const reduced = stage.reduced || !stage.ok;
-  const impactAt = reduced ? 0.15 : info.card === 'time_warp' ? 1.15 : 0.85;
+  const impactAt = reduced ? 0.15 : IMPACT_AT[info.card] ?? 0.85;
   return new Promise(resolve => {
     let fired = false;
+    let ended = false;
+    let hidden: number[] | null = null;
+    const timers: number[] = [];
+    const later = (fn: () => void, ms: number) => timers.push(window.setTimeout(fn, ms));
+    let cine: Cine | null = null;
+    const safeHooks: CastHooks = {
+      ...hooks,
+      hide: ids => {
+        hidden = ids;
+        hooks.hide?.(ids);
+      },
+      show: ids => {
+        hidden = null;
+        hooks.show?.(ids);
+      },
+    };
+    const end = () => {
+      if (ended) return;
+      ended = true;
+      if (hidden) safeHooks.show?.(hidden);
+      for (const t of timers) clearTimeout(t);
+      // L'inclinaison finit d'elle-même (≈ 2,5 s) ; ce garde-fou la retire si la boucle s'est arrêtée
+      const c = cine;
+      if (c) window.setTimeout(() => stage.release(c), 2600);
+      resolve();
+    };
     const fire = () => {
       if (fired) return;
       fired = true;
-      hooks.impact();
-      setTimeout(resolve, reduced ? 50 : 450);
+      try {
+        hooks.impact();
+      } catch (err) {
+        console.error('[vfx] impact', err);
+      }
+      later(end, reduced ? 50 : 450);
     };
-    if (!stage.ok) {
-      setTimeout(fire, 150);
-      return;
+    if (stage.guard || !stage.ok) {
+      later(fire, stage.ok ? (impactAt + 1.2) * 1000 : 150);
+      later(() => {
+        fire();
+        end();
+      }, (impactAt + 2.5) * 1000);
     }
-    stage.cinematic(1.25, info.card === 'time_warp' || info.card === 'gravity' ? 0.62 : 0.52);
-    const pal = palette(skin);
-    const t0 = info.targets[0] !== undefined ? stage.local(info.targets[0]) : new THREE.Vector3(0, 0, 0);
-    const center = new THREE.Vector3(0, 0, 0);
-    const onImpact = (fn: () => void) => stage.wait(impactAt).then(() => {
-      fn();
-      fire();
-      stage.flash(skin.primary, skin.flash * (info.card === 'lightning' ? 1 : 0.6));
-      stage.shake(skin.shake * (info.card === 'lightning' || info.card === 'ice_wall' || info.card === 'gravity' ? 1.4 : 0.7));
-    });
+    if (!stage.ok) return;
 
+    try {
+      cine = stage.cinematic(1.25, TILT[info.card] ?? 0.52);
+      const t0 = info.targets[0] !== undefined ? stage.local(info.targets[0]) : new THREE.Vector3(0, 0, 0);
+      const sc: Scene = {
+        stage, info, skin, pal: palette(skin), hooks: safeHooks, impactAt, t0, center: new THREE.Vector3(0, 0, 0),
+        onImpact: fn => {
+          void stage.wait(impactAt).then(() => {
+            try {
+              fn();
+            } catch (err) {
+              console.error('[vfx]', err);
+            }
+            fire();
+            stage.flash(skin.primary, skin.flash * (FLASH[info.card] ?? 0.6));
+            stage.shake(skin.shake * (SHAKE[info.card] ?? 0.7));
+          });
+        },
+        mood: (cls, ms) => {
+          stage.wrap.classList.add(cls);
+          window.setTimeout(() => stage.wrap.classList.remove(cls), ms);
+        },
+      };
+      (SCENES[info.card] ?? genericScene)(sc);
+    } catch (err) {
+      console.error('[vfx]', err);
+      fire();
+    }
+  });
+}
+
+/** Carte sans mise en scène dédiée : sceau, convergence, éclat. */
+function genericScene({ stage, skin, t0, impactAt, onImpact }: Scene) {
+  flourishDisk(stage, skin, t0, 1.2, 2.2);
+  converge(stage, skin, t0, 60, 1.6, impactAt);
+  onImpact(() => {
+    burst(stage, skin, t0, 80, 2.6, 1, 0.14, { up: 0.8 });
+    shockwave(stage, glowColor(skin), t0, 2.4, 0.8);
+  });
+}
+
+type SceneFn = (sc: Scene) => void;
+
+/** Cartes historiques (catalogue Duel), gardées pour relire les anciennes parties. */
+function duelScene(sc: Scene) {
+  const { stage, info, skin, pal, hooks, impactAt, t0, center } = sc;
+  const onImpact = sc.onImpact;
     switch (info.card) {
       case 'ice_wall': {
         flourishDisk(stage, skin, t0, 1.1, 2.4);
         converge(stage, skin, t0, 70, 1.6, impactAt);
-        void onImpact(() => {
+        onImpact(() => {
           const { group, mats } = crystalCluster(skin);
           group.position.copy(t0);
           spawn(stage, group, 1.6, k => {
@@ -374,7 +508,7 @@ export function playCast(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks
       case 'freeze': {
         flourishDisk(stage, skin, t0, 0.9, 2.2);
         converge(stage, skin, t0, 90, 1.8, impactAt);
-        void onImpact(() => {
+        onImpact(() => {
           const { group, mat } = iceCube(skin);
           group.position.copy(t0);
           spawn(stage, group, 1.5, k => {
@@ -388,7 +522,7 @@ export function playCast(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks
       case 'shield': {
         flourishDisk(stage, skin, t0, 1, 2.3, 0, -0.6);
         converge(stage, skin, t0, 50, 1.4, impactAt);
-        void onImpact(() => {
+        onImpact(() => {
           const { group, mat } = shieldDome(skin);
           group.position.copy(t0);
           spawn(stage, group, 1.4, (k, t) => {
@@ -406,7 +540,7 @@ export function playCast(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks
         setTimeout(() => stage.wrap.classList.remove('vfx-storm'), 1700);
         flourishDisk(stage, skin, t0, 0.9, 1.9);
         converge(stage, skin, t0, 40, 1.2, impactAt);
-        void onImpact(() => {
+        onImpact(() => {
           lightning(stage, skin, t0);
           setTimeout(() => lightning(stage, skin, t0, 0.25), 140);
           scorch(stage, skin, t0);
@@ -419,7 +553,7 @@ export function playCast(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks
         flourishDisk(stage, skin, t0, 1.15, 2.6, 0, 1.2);
         beam(stage, glowColor(skin), t0, 7, 0.38, 1.9, 0.15);
         converge(stage, skin, t0, 60, 1.3, impactAt);
-        void onImpact(() => {
+        onImpact(() => {
           burst(stage, skin, t0, 80, 2.2, 1.4, 0.14, { up: 1, gravity: 2.5 });
           shockwave(stage, glowColor(skin), t0, 1.6, 0.7);
         });
@@ -436,7 +570,7 @@ export function playCast(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks
         burst(stage, skin, t1.clone().setZ(0.4), 40, 1.4, 0.7, 0.12, { up: 1 });
         arcStream(stage, skin, t0, t1, impactAt);
         arcStream(stage, skin, t1, t0, impactAt);
-        void onImpact(() => {
+        onImpact(() => {
           setTimeout(() => hooks.show?.(info.pieces), 280);
           burst(stage, skin, t0, 30, 1.6, 0.8, 0.12);
           burst(stage, skin, t1, 30, 1.6, 0.8, 0.12);
@@ -459,7 +593,7 @@ export function playCast(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks
         });
         arcStream(stage, skin, a, b, impactAt + 0.5, 1.4);
         flourishDisk(stage, skin, a, 0.8, 2, 0, 3);
-        void onImpact(() => {
+        onImpact(() => {
           flourishDisk(stage, skin, b, 0.9, 1.4, 0, 3);
           burst(stage, skin, b, 60, 2, 0.9, 0.13);
         });
@@ -485,7 +619,7 @@ export function playCast(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks
         });
         orbit(stage, skin, new THREE.Vector3(0, 0, 2.2), 1.9, impactAt);
         flourishDisk(stage, skin, center, 3.4, 2.4, 0, 0.6);
-        void onImpact(() => {
+        onImpact(() => {
           burst(stage, skin, new THREE.Vector3(0, dir * 4.5, 1.5), 60, 2.5, 0.9, 0.14);
         });
         break;
@@ -513,7 +647,7 @@ export function playCast(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks
             color: pick(pal), size: rnd(0.08, 0.2), life: rnd(0.6, impactAt + 0.1), attract: { x: 0, y: 0, z: 1, k: 9 }, drag: 0.8, fadeIn: 0.2,
           });
         }
-        void onImpact(() => {
+        onImpact(() => {
           for (let i = 0; i < 3; i++) shockwave(stage, i === 1 ? C(skin.accent) : glowColor(skin), center, 7, 1, i * 0.12, 0.05);
           burst(stage, skin, new THREE.Vector3(0, 0, 0.8), 120, 6, 1, 0.14, { up: 0.3 });
         });
@@ -522,7 +656,7 @@ export function playCast(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks
       case 'knight_leap': {
         flourishDisk(stage, skin, t0, 1, 2.3, 0, 1.6);
         converge(stage, skin, t0, 40, 1.2, impactAt * 0.8);
-        void onImpact(() => {
+        onImpact(() => {
           const sq = info.targets[0];
           const f = sq & 7, r = sq >> 3;
           for (const [df, dr] of [[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]]) {
@@ -546,11 +680,347 @@ export function playCast(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks
           }, 0.2 + i * 0.22);
         }
         converge(stage, skin, t0, 40, 1.2, impactAt);
-        void onImpact(() => burst(stage, skin, t0, 50, 1.4, 1.1, 0.14, { up: 1, gravity: 1.5 }));
+        onImpact(() => burst(stage, skin, t0, 50, 1.4, 1.1, 0.14, { up: 1, gravity: 1.5 }));
         break;
       }
     }
+}
+
+const SCENES: Partial<Record<CardId, SceneFn>> = {
+  // Duel
+  time_warp: duelScene, gravity: duelScene, freeze: duelScene, shield: duelScene, swap: duelScene,
+  rewind: duelScene, revive: duelScene, knight_leap: duelScene, lightning: duelScene, phase: duelScene,
+  // Pouvoirs
+  ice_wall: duelScene,
+  hourglass: hourglassScene,
+  truce: truceScene,
+  blood_moon: bloodMoonScene,
+  ice_age: iceAgeScene,
+  blast: blastScene,
+  rift: riftScene,
+  tide: tideScene,
+};
+
+// ---------------------------------------------------------------------------------------------
+// Pouvoirs : une mise en scène courte par carte, aux couleurs du skin du lanceur, avec un signe propre à la carte.
+
+/** Teinte propre à la carte (lune rouge, glace, braise…), mêlée au skin. */
+const cardColor = (card: CardId, l = 0.62) => new THREE.Color().setHSL(CARDS[card].hue / 360, 0.9, l);
+/** Skin du lanceur teinté par la carte : les particules gardent leur forme, la couleur dit la carte. */
+const tinted = (skin: SkinStyle, color: string, mix = 0.55): SkinStyle => ({
+  ...skin,
+  primary: '#' + C(skin.primary).lerp(C(color), mix).getHexString(),
+  accent: '#' + C(skin.accent).lerp(C(color), mix * 0.5).getHexString(),
+});
+
+/** Bande lumineuse qui traverse le plateau (y : de `y0` à `y1`). */
+function sweep(stage: VfxStage, color: THREE.Color, y0: number, y1: number, life: number, delay = 0, height = 1.2, opacity = 0.85) {
+  const mat = additive(color, { map: bandTexture(), opacity: 0 });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(8.6, height), mat);
+  m.position.set(0, y0, 0.04);
+  spawn(stage, m, life, k => {
+    m.position.y = y0 + (y1 - y0) * ease.inOutCubic(k);
+    mat.opacity = Math.sin(Math.PI * k) * opacity;
+  }, delay);
+  return m;
+}
+
+/** Nappe d'eau translucide (mélange normal : visible aussi sur les cases claires) qui avance avec la vague. */
+function water(stage: VfxStage, color: THREE.Color, y0: number, y1: number, life: number) {
+  const mat = new THREE.MeshBasicMaterial({ color, map: bandTexture(), transparent: true, opacity: 0, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(8.6, 2.2), mat);
+  m.position.set(0, y0, 0.03);
+  m.renderOrder = 1;
+  spawn(stage, m, life, k => {
+    m.position.y = y0 + (y1 - y0) * ease.inOutCubic(k);
+    mat.opacity = Math.sin(Math.PI * k) * 0.5;
   });
+}
+
+/** Neige ou poussière qui tombe sur tout le plateau. */
+function fall(stage: VfxStage, skin: SkinStyle, n: number, duration: number, size = 0.12) {
+  const ps = stage.particles(skin);
+  const pal = palette(skin);
+  let emitted = 0;
+  let t = 0;
+  stage.add({
+    update(dt) {
+      t += dt;
+      const target = Math.min(n, Math.floor((t / duration) * n));
+      for (; emitted < target; emitted++) {
+        ps.emit({
+          x: rnd(-4.2, 4.2), y: rnd(-4.2, 4.2), z: rnd(2.5, 4.5), vx: rnd(-0.3, 0.3), vy: rnd(-0.3, 0.3), vz: -rnd(1.5, 3),
+          color: pick(pal), size: size * rnd(0.6, 1.4), life: rnd(0.9, 1.5), drag: 0.4, spin: rnd(-2, 2), fadeIn: 0.15,
+        });
+      }
+      return t < duration;
+    },
+  });
+}
+
+/** Cases des pions affichés (classe posée par l'échiquier) : l'Ère glaciaire les givre au lancement. */
+function pawnSquares(stage: VfxStage): number[] {
+  const out: number[] = [];
+  stage.wrap.querySelectorAll<HTMLElement>('.piece.pawn[data-at]').forEach(el => {
+    if (el.classList.contains('vanish')) return;
+    const sq = Number(el.dataset.at);
+    if (sq >= 0 && sq < 64) out.push(sq);
+  });
+  return out;
+}
+
+/** Sablier fou : une horloge s'emballe au-dessus du plateau, puis éclate en onde. */
+function hourglassScene({ stage, skin, impactAt, center, onImpact }: Scene) {
+  const { group, hour, minute } = clockFace(skin);
+  group.position.set(0, 0, 2.2);
+  const life = impactAt + 0.5;
+  spawn(stage, group, life, (k, t) => {
+    faceCamera(stage, group);
+    const ki = impactAt / life;
+    if (k < ki) {
+      group.scale.setScalar(Math.max(0.01, ease.outBack(Math.min(1, k / 0.3))));
+      minute.rotation.z = -t * t * 16;
+      hour.rotation.z = -t * t * 4;
+    } else {
+      const q = (k - ki) / (1 - ki);
+      group.scale.setScalar(Math.max(0.01, 1 + q * 0.6));
+      group.traverse(o => {
+        const m = (o as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined;
+        if (m && 'opacity' in m) m.opacity = Math.min(m.opacity, 1 - q);
+      });
+    }
+  });
+  orbit(stage, skin, new THREE.Vector3(0, 0, 2.2), 1.9, impactAt);
+  flourishDisk(stage, skin, center, 3.4, impactAt + 1.2, 0, 2.4);
+  onImpact(() => {
+    for (let i = 0; i < 2; i++) shockwave(stage, i ? C(skin.accent) : glowColor(skin), center, 6.5, 0.9, i * 0.12, 0.05);
+    burst(stage, skin, new THREE.Vector3(0, 0, 2.2), 90, 3.2, 0.9, 0.13, { up: 0.4, gravity: -1 });
+  });
+}
+
+/** Trêve : deux lignes de lumière avancent depuis chaque camp et se rejoignent au centre ; tout s'apaise. */
+function truceScene({ stage, skin, impactAt, center, onImpact, mood }: Scene) {
+  const calm = tinted(skin, '#f4f1dc', 0.45);
+  const color = glowColor(calm);
+  mood('vfx-calm', (impactAt + 1.4) * 1000);
+  flourishDisk(stage, calm, center, 3.2, impactAt + 1.3, 0, 0.35);
+  sweep(stage, color, -4.4, 0, impactAt + 0.1, 0, 1.1);
+  sweep(stage, color, 4.4, 0, impactAt + 0.1, 0, 1.1);
+  onImpact(() => {
+    // Ligne de paix au milieu du plateau, qui s'efface doucement
+    const mat = additive(color, { map: bandTexture(), opacity: 0.9 });
+    const line = new THREE.Mesh(new THREE.PlaneGeometry(8.4, 0.7), mat);
+    line.position.set(0, 0, 0.05);
+    spawn(stage, line, 1.4, k => {
+      line.scale.set(1, 1 - k * 0.6, 1);
+      mat.opacity = 0.9 * (1 - k);
+    });
+    shockwave(stage, color, center, 5.5, 1.1, 0, 0.04);
+    const ps = stage.particles(calm);
+    const pal = palette(calm);
+    for (let i = 0; i < 70; i++) {
+      ps.emit({
+        x: rnd(-4, 4), y: rnd(-0.4, 0.4), z: 0.1, vx: rnd(-0.2, 0.2), vy: rnd(-0.4, 0.4), vz: rnd(0.6, 1.6),
+        color: pick(pal), size: rnd(0.07, 0.16), life: rnd(0.9, 1.5), drag: 0.6, fadeIn: 0.1,
+      });
+    }
+  });
+}
+
+/** Lune de sang : une éclipse se retire et révèle une lune rouge au-dessus du plateau. */
+function bloodMoonScene({ stage, skin, impactAt, center, onImpact, mood }: Scene) {
+  const red = '#ff2a3d';
+  const blood = tinted(skin, red, 0.7);
+  mood('vfx-blood', (impactAt + 1.5) * 1000);
+  const g = new THREE.Group();
+  const halo = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 4.2), additive(C(red), { map: softDiskTexture(), opacity: 0 }));
+  const moonMat = new THREE.MeshBasicMaterial({ color: C('#ff4a4f').lerp(C(skin.primary), 0.12), transparent: true, opacity: 0, depthTest: false, depthWrite: false });
+  const moon = new THREE.Mesh(new THREE.CircleGeometry(0.95, 64), moonMat);
+  const shadeMat = new THREE.MeshBasicMaterial({ color: C('#12020a'), transparent: true, opacity: 0, depthTest: false, depthWrite: false });
+  const shade = new THREE.Mesh(new THREE.CircleGeometry(0.97, 64), shadeMat);
+  const ringMat = additive(glowColor(blood), { map: flourishTexture(skin.flourish), opacity: 0 });
+  const ring = new THREE.Mesh(new THREE.PlaneGeometry(3.3, 3.3), ringMat);
+  halo.renderOrder = 3;
+  ring.renderOrder = 4;
+  moon.renderOrder = 5;
+  shade.renderOrder = 6;
+  ring.position.z = -0.01;
+  shade.position.z = 0.01;
+  g.add(halo, ring, moon, shade);
+  const life = impactAt + 1.1;
+  spawn(stage, g, life, (k, t) => {
+    faceCamera(stage, g);
+    const ki = impactAt / life;
+    const rise = ease.outCubic(Math.min(1, k / ki));
+    g.position.set(0, 0.6, 0.6 + rise * 2.1);
+    const fadeOut = k > 0.78 ? 1 - (k - 0.78) / 0.22 : 1;
+    moonMat.opacity = Math.min(1, k * 5) * fadeOut;
+    // L'ombre glisse et révèle la lune rouge à l'impact, en s'effaçant hors du disque
+    const slide = ease.inOutCubic(Math.min(1, Math.max(0, (k - ki * 0.35) / (ki * 0.65))));
+    shade.position.x = -slide * 1.6;
+    shadeMat.opacity = Math.min(1, k * 5) * (1 - slide) * fadeOut;
+    (halo.material as THREE.MeshBasicMaterial).opacity = (k < ki ? 0.25 * rise : 0.25 + 0.5 * Math.sin(Math.min(1, (k - ki) / 0.2) * Math.PI / 2)) * fadeOut;
+    ringMat.opacity = (k > ki ? 0.9 : 0.3 * rise) * fadeOut;
+    ring.rotation.z = t * 0.8;
+  });
+  converge(stage, blood, new THREE.Vector3(0, 0.6, 2.7), 50, 2.2, impactAt);
+  onImpact(() => {
+    shockwave(stage, C(red), center, 6.5, 1.1, 0, 0.06);
+    shockwave(stage, glowColor(skin), center, 5, 0.9, 0.1, 0.04);
+    burst(stage, blood, new THREE.Vector3(0, 0.6, 2.7), 70, 2.6, 1, 0.14, { up: 0.3, gravity: -3 });
+  });
+}
+
+/** Ère glaciaire : la neige tombe, le givre gagne le plateau, chaque pion se couvre un instant de cristaux. */
+function iceAgeScene({ stage, skin, impactAt, center, onImpact, mood }: Scene) {
+  const frost = tinted(skin, '#cfefff', 0.6);
+  mood('vfx-frost', (impactAt + 1.6) * 1000);
+  fall(stage, frost, 160, impactAt + 0.6, 0.11);
+  flourishDisk(stage, frost, center, 3.6, impactAt + 1.2, 0, 0.5);
+  onImpact(() => {
+    shockwave(stage, glowColor(frost), center, 6.5, 1, 0, 0.05);
+    shockwave(stage, C(frost.accent), center, 5.2, 0.9, 0.1, 0.03);
+    for (const sq of pawnSquares(stage).slice(0, 16)) {
+      const at = stage.local(sq);
+      const { group, mat } = crystal(0.55, 0.13, frost);
+      const shards = new THREE.Group();
+      shards.add(group);
+      const g2 = crystal(0.38, 0.09, frost);
+      g2.group.position.set(0.16, -0.08, 0);
+      g2.group.rotation.set(0.25, 0.35, 0);
+      shards.add(g2.group);
+      shards.position.copy(at);
+      spawn(stage, shards, 1.3, k => {
+        shards.scale.set(1, 1, Math.max(0.01, ease.outBack(Math.min(1, k * 4))));
+        const o = k > 0.6 ? 0.86 * (1 - (k - 0.6) / 0.4) : 0.86;
+        mat.opacity = o;
+        g2.mat.opacity = o;
+      }, Math.random() * 0.15);
+    }
+  });
+}
+
+/** Déflagration : l'énergie se concentre au centre puis souffle tout le plateau. */
+function blastScene({ stage, skin, impactAt, center, onImpact, mood }: Scene) {
+  const fire = tinted(skin, '#ff8a2a', 0.5);
+  mood('vfx-blast', (impactAt + 1.2) * 1000);
+  flourishDisk(stage, fire, center, 2.6, impactAt + 0.4, 0, -2.5);
+  converge(stage, fire, new THREE.Vector3(0, 0, 0.4), 120, 3.6, impactAt);
+  const coreMat = additive(C('#ffd08a').lerp(C(skin.primary), 0.3), { map: softDiskTexture(), opacity: 0 });
+  const core = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), coreMat);
+  core.position.set(0, 0, 0.6);
+  core.renderOrder = 5;
+  spawn(stage, core, impactAt + 0.45, k => {
+    faceCamera(stage, core);
+    const ki = impactAt / (impactAt + 0.45);
+    if (k < ki) {
+      const q = k / ki;
+      core.scale.setScalar(0.2 + q * 0.6 + Math.sin(q * 40) * 0.04 * q);
+      coreMat.opacity = q;
+    } else {
+      const q = (k - ki) / (1 - ki);
+      core.scale.setScalar(0.8 + ease.outCubic(q) * 4.5);
+      coreMat.opacity = 1 - q;
+    }
+  });
+  onImpact(() => {
+    for (let i = 0; i < 3; i++) shockwave(stage, i === 1 ? C(fire.accent) : glowColor(fire), center, 7.5, 1, i * 0.1, 0.06);
+    burst(stage, fire, new THREE.Vector3(0, 0, 0.5), 170, 6.5, 1.1, 0.16, { up: 0.5, gravity: -5 });
+    scorch(stage, fire, center);
+    // Quelques cases soufflées à travers le plateau
+    for (let i = 0; i < 5; i++) {
+      const at = new THREE.Vector3(Math.floor(rnd(0, 8)) - 3.5, Math.floor(rnd(0, 8)) - 3.5, 0.1);
+      window.setTimeout(() => burst(stage, fire, at, 24, 2.4, 0.6, 0.12, { up: 0.9 }), 120 + i * 90);
+    }
+  });
+}
+
+/** Faille : une fissure court le long de la rangée choisie, la poussière tombe dans le gouffre. */
+function riftScene({ stage, skin, info, impactAt, onImpact }: Scene) {
+  const abyss = tinted(skin, '#b46bff', 0.35);
+  const color = glowColor(abyss);
+  const sq = info.targets[0] ?? 28;
+  const y = stage.local(sq).y;
+  const left = new THREE.Vector3(-4.1, y, 0.06);
+  const right = new THREE.Vector3(4.1, y, 0.06);
+  const crack = boltMesh(lightningPath(left, right, 22, 0.22), color, 0.03);
+  crack.position.set(0, 0, 0);
+  // La fissure se dessine de gauche à droite (échelle ancrée au bord gauche)
+  const pivot = new THREE.Group();
+  pivot.position.set(-4.1, 0, 0);
+  crack.position.set(4.1, 0, 0);
+  pivot.add(crack);
+  spawn(stage, pivot, impactAt + 0.9, k => {
+    const ki = impactAt / (impactAt + 0.9);
+    pivot.scale.x = Math.max(0.01, ease.inOutCubic(Math.min(1, k / ki)));
+    const o = k > ki ? 1 - (k - ki) / (1 - ki) : 1;
+    crack.traverse(c => {
+      const m = (c as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined;
+      if (m) m.opacity = (m.color.getHex() === 0xffffff ? 1 : 0.45) * o;
+    });
+  });
+  // Étincelles qui suivent la pointe de la fissure
+  const ps = stage.particles(abyss);
+  const pal = palette(abyss);
+  let t = 0;
+  stage.add({
+    update(dt) {
+      t += dt;
+      const x = -4.1 + 8.2 * ease.inOutCubic(Math.min(1, t / impactAt));
+      for (let i = 0; i < 3; i++) {
+        ps.emit({ x, y: y + rnd(-0.15, 0.15), z: 0.1, vx: rnd(-0.6, 0.6), vy: rnd(-0.6, 0.6), vz: rnd(0.4, 1.4), color: pick(pal), size: rnd(0.07, 0.15), life: rnd(0.3, 0.6), gravity: -3 });
+      }
+      return t < impactAt;
+    },
+  });
+  onImpact(() => {
+    for (let f = 0; f < 8; f++) {
+      const at = new THREE.Vector3(f - 3.5, y, 0.2);
+      burst(stage, abyss, at, 14, 1.4, 0.7, 0.11, { up: 0.6, gravity: -6 });
+    }
+    shockwave(stage, color, new THREE.Vector3(0, y, 0), 4.8, 0.7, 0, 0.05);
+  });
+}
+
+/** Grande Marée : deux vagues partent de chaque camp ; les pions avancent avec elles. */
+function tideScene({ stage, skin, info, impactAt, onImpact, mood }: Scene) {
+  const sea = tinted(skin, '#3fe0d0', 0.7);
+  const color = glowColor(sea);
+  mood('vfx-tide', (impactAt + 1.2) * 1000);
+  // Les Blancs avancent vers le haut de leur écran, les Noirs vers le bas : une vague par camp
+  const up = stage.orientation === 'w' ? 1 : -1;
+  for (const dir of [1, -1]) {
+    water(stage, C('#0f6f9a').lerp(C(skin.primary), 0.2), -4.6 * up * dir, 0.9 * up * dir, impactAt + 0.3);
+    sweep(stage, color, -4.6 * up * dir, 1.2 * up * dir, impactAt + 0.35, 0, 0.9, 0.95);
+  }
+  flourishDisk(stage, sea, new THREE.Vector3(0, 0, 0), 3.4, impactAt + 1, 0, 0.6);
+  onImpact(() => {
+    for (const mv of (info.moves ?? []).slice(0, 16)) {
+      const a = stage.local(mv.from), b = stage.local(mv.to);
+      arcStream(stage, sea, a, b, 0.35, 0.45);
+      burst(stage, sea, b, 10, 1.2, 0.6, 0.1, { up: 1, gravity: -4 });
+    }
+    shockwave(stage, color, new THREE.Vector3(0, 0, 0), 5.5, 0.9, 0, 0.05);
+  });
+}
+
+/**
+ * Arrivée d'un Présage (l'effet annoncé devient actif au début du tour du lanceur) : une onde parcourt le
+ * plateau, sans incliner l'échiquier ni bloquer la partie.
+ */
+export function playArrival(stage: VfxStage, e: Effect, skin: SkinStyle) {
+  if (!stage.ok) return;
+  const col = cardColor(e.card, 0.66);
+  const s2 = tinted(skin, '#' + col.getHexString(), 0.6);
+  const center = new THREE.Vector3(0, 0, 0);
+  // L'onde part du camp du lanceur
+  const fromY = (e.caster === stage.orientation ? -1 : 1) * 3.6;
+  sweep(stage, glowColor(s2), fromY, -fromY, 1.1, 0, 1.4, 0.7);
+  shockwave(stage, glowColor(s2), center, 6.5, 1.1, 0.2, 0.04);
+  flourishDisk(stage, s2, center, 3, 1.5, 0.1, 0.5);
+  if (e.card === 'ice_age') fall(stage, s2, 70, 0.9, 0.1);
+  else burst(stage, s2, new THREE.Vector3(0, 0, 0.4), 50, 3, 0.9, 0.12, { up: 0.5 });
+  stage.flash('#' + col.getHexString(), skin.flash * 0.4);
 }
 
 /** Flot de particules qui s'élève en arc d'une case à l'autre. */
@@ -602,20 +1072,32 @@ function orbit(stage: VfxStage, skin: SkinStyle, at: THREE.Vector3, radius: numb
 export function createMarker(stage: VfxStage, e: Effect, skin: SkinStyle, square: number): Marker | null {
   const at = stage.local(square);
   if (e.card === 'ice_wall') {
-    const { group, mats } = crystalCluster(skin, 0.85);
+    // Mur de glace (permanent dans les Pouvoirs) : massif de cristaux sur un socle de givre. Immobile une fois
+    // dressé, pour que la scène ne redessine rien tant que le plateau ne bouge pas.
+    const { group, mats } = wallCluster(skin);
+    const base = new THREE.Mesh(new THREE.CircleGeometry(0.47, 6), additive(C(skin.accent).lerp(C('#bfefff'), 0.5), { opacity: 0.32 }));
+    base.rotation.z = Math.PI / 6;
+    base.position.z = 0.01;
+    const rim = new THREE.Mesh(new THREE.RingGeometry(0.44, 0.49, 6), additive(glowColor(skin), { opacity: 0.85 }));
+    rim.rotation.z = Math.PI / 6;
+    rim.position.z = 0.012;
+    group.add(base, rim);
     group.position.copy(at);
     let k = 0;
+    for (const m of mats) m.emissiveIntensity = 0.5;
     return {
       obj: group,
       square,
-      update(dt, t) {
+      update(dt) {
+        if (k >= 1) return false;
         k = Math.min(1, k + dt * 3);
         group.scale.set(1, 1, Math.max(0.01, ease.outCubic(k)));
-        for (const m of mats) m.emissiveIntensity = 0.45 + Math.sin(t * 2.2) * 0.15;
+        return true;
       },
       despawn: () => shatter(stage, skin, group, at),
     };
   }
+  if (e.card === 'rift') return riftMarker(stage, e, skin, square);
   if (e.card === 'freeze') {
     const { group, mat } = iceCube(skin);
     group.position.copy(at);
@@ -627,6 +1109,7 @@ export function createMarker(stage: VfxStage, e: Effect, skin: SkinStyle, square
         k = Math.min(1, k + dt * 3);
         group.scale.set(1, 1, Math.max(0.01, ease.outCubic(k)));
         mat.emissiveIntensity = 0.22 + Math.sin(t * 1.8) * 0.08;
+        return true;
       },
       despawn: () => shatter(stage, skin, group, at),
     };
@@ -643,6 +1126,7 @@ export function createMarker(stage: VfxStage, e: Effect, skin: SkinStyle, square
         group.scale.setScalar(Math.max(0.01, ease.outCubic(k)));
         mat.uniforms.uTime.value = t;
         mat.uniforms.uAlpha.value = 0.65 + Math.sin(t * 2.5) * 0.15;
+        return true;
       },
       despawn: () => {
         let t = 0;
@@ -673,5 +1157,69 @@ function shatter(stage: VfxStage, skin: SkinStyle, group: THREE.Object3D, at: TH
       return k < 1;
     },
     dispose: () => disposeObject(group),
+  };
+}
+
+/**
+ * Faille : chaque case du gouffre devient un puits sombre bordé de lumière, traversé par une fissure. Les cases
+ * peuvent être discontinues (pièces présentes au lancement) ; l'objet est reconstruit quand la Faille rétrécit.
+ */
+function riftMarker(stage: VfxStage, e: Effect, skin: SkinStyle, square: number): Marker {
+  const squares = e.squares?.length ? e.squares : [square];
+  const g = new THREE.Group();
+  const color = glowColor(tinted(skin, '#b46bff', 0.35));
+  const pitMat = new THREE.MeshBasicMaterial({ color: C('#05010c'), transparent: true, opacity: 0.82, depthTest: false, depthWrite: false });
+  const glowMat = additive(color, { map: softDiskTexture(), opacity: 0.35 });
+  const edgePts: THREE.Vector3[] = [];
+  const pits: THREE.Object3D[] = [];
+  for (const q of squares) {
+    const c = stage.local(q);
+    const pit = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.86), pitMat);
+    pit.position.set(c.x, c.y, 0.01);
+    pit.renderOrder = 1;
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.5), glowMat);
+    glow.position.set(c.x, c.y, 0.015);
+    glow.renderOrder = 2;
+    pits.push(pit, glow);
+    g.add(pit, glow);
+    for (const dy of [-0.43, 0.43]) edgePts.push(new THREE.Vector3(c.x - 0.5, c.y + dy, 0.02), new THREE.Vector3(c.x + 0.5, c.y + dy, 0.02));
+  }
+  const edges = new THREE.LineSegments(
+    new THREE.BufferGeometry().setFromPoints(edgePts),
+    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false }),
+  );
+  edges.renderOrder = 3;
+  g.add(edges);
+  const xs = squares.map(q => stage.local(q).x);
+  const y = stage.local(squares[0]).y;
+  const crack = boltMesh(lightningPath(new THREE.Vector3(Math.min(...xs) - 0.45, y, 0.03), new THREE.Vector3(Math.max(...xs) + 0.45, y, 0.03), 6 + squares.length * 3, 0.12), color, 0.018);
+  crack.renderOrder = 4;
+  g.add(crack);
+  let k = 0;
+  return {
+    obj: g,
+    square,
+    update(dt) {
+      if (k >= 1) return false;
+      k = Math.min(1, k + dt * 2.5);
+      const s = Math.max(0.01, ease.outCubic(k));
+      for (const p of pits) p.scale.set(1, s, 1);
+      return true;
+    },
+    despawn: () => {
+      let t = 0;
+      burst(stage, skin, new THREE.Vector3((Math.min(...xs) + Math.max(...xs)) / 2, y, 0.2), 30, 2.4, 0.7, 0.1, { up: 0.7 });
+      return {
+        update(dt) {
+          t += dt;
+          const q = Math.min(1, t / 0.5);
+          for (const p of pits) p.scale.set(1, Math.max(0.01, 1 - q), 1);
+          (edges.material as THREE.LineBasicMaterial).opacity = 0.95 * (1 - q);
+          crack.visible = q < 0.5;
+          return q < 1;
+        },
+        dispose: () => disposeObject(g),
+      };
+    },
   };
 }

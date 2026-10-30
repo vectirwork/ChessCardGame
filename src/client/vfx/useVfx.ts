@@ -19,6 +19,7 @@ export function useVfx(wrap: HTMLElement | null, orientation: Color): Vfx | null
       if (dead) return;
       stage = new m.VfxStage(wrap, orientation);
       stage.markerFactory = m.createMarker;
+      stage.arrivalFactory = m.playArrival;
       setVfx({ stage, m });
     });
     return () => {

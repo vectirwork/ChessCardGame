@@ -1,10 +1,10 @@
 // L'Odyssée : les lieux traversés pendant la descente, et ce que l'échiquier y joue.
-// Les cartes présentées dépendent du catalogue disponible : les cartes « climats » dès qu'elles existent,
-// sinon les cartes historiques (« duel »). Rien n'est figé : tout est relu dans CARDS au chargement.
-import { CARDS, CARD_IDS, isCardId } from '../../shared/cards';
+// Les cartes présentées sont les huit pouvoirs (catalogue « climats », libellé « Pouvoirs ») : chaque pouvoir touche
+// les deux camps et les mains sont visibles des deux côtés (décision du fondateur du 30 octobre). Le Duel n'est plus
+// proposé nulle part.
+import { cardsOf, isCardId } from '../../shared/cards';
 import type { CardDef, CardId, Catalog } from '../../shared/cards';
 import { ITEMS, PRODUCTS, formatPrice } from '../../shared/catalog';
-import { dealHands } from '../../shared/game';
 
 export type PoseKey = 'hero' | 'foret' | 'pics' | 'sablier' | 'bazar' | 'seuil';
 
@@ -33,40 +33,30 @@ export const PLACES: Place[] = [
 // ---------------------------------------------------------------------------------------------
 // Catalogue de cartes
 
-/** Catalogue des parties locales : « climats » dès que le moteur en distribue, sinon « duel ». */
-export function liveCatalog(): Exclude<Catalog, 'aucune'> {
-  try {
-    return dealHands(false, false, Math.random, 'climats').w.length > 0 ? 'climats' : 'duel';
-  } catch {
-    return 'duel';
-  }
+/**
+ * Catalogue des parties locales et des démonstrations : toujours les Pouvoirs. Le type garde la forme d'origine
+ * (`Exclude<Catalog, 'aucune'>`) pour les appelants (boutique, démonstrations).
+ */
+export function liveCatalog(): 'climats' {
+  return 'climats';
 }
-
-const cardsOf = (catalog: Catalog) => CARD_IDS.filter(id => CARDS[id].catalog === catalog);
 
 type StoryPlace = 'foret' | 'pics' | 'sablier';
 
-/** Répartition des cartes par lieu, selon le catalogue. Les identifiants inconnus sont ignorés. */
-const LAYOUT: Record<Exclude<Catalog, 'aucune'>, Record<StoryPlace, string[]>> = {
-  duel: {
-    foret: ['ice_wall', 'freeze', 'phase'],
-    pics: ['lightning', 'gravity', 'shield', 'knight_leap'],
-    sablier: ['time_warp', 'rewind', 'revive', 'swap'],
-  },
-  climats: {
-    foret: ['ice_age', 'ice_wall', 'truce', 'rift'],
-    pics: ['blast', 'blood_moon', 'cavalcade', 'portals'],
-    sablier: ['hourglass', 'deja_vu', 'tide', 'coronation'],
-  },
+/** Répartition des huit pouvoirs par lieu. Les identifiants inconnus sont ignorés. */
+const LAYOUT: Record<StoryPlace, string[]> = {
+  foret: ['ice_age', 'ice_wall', 'rift'],
+  pics: ['blast', 'blood_moon', 'truce'],
+  sablier: ['hourglass', 'tide'],
 };
 
 /** Cartes racontées dans chaque lieu (toutes les cartes du catalogue, chacune une fois). */
-export function placeCards(catalog: Exclude<Catalog, 'aucune'>): Record<StoryPlace, CardId[]> {
+export function placeCards(catalog: Exclude<Catalog, 'aucune'> = 'climats'): Record<StoryPlace, CardId[]> {
   const pool = cardsOf(catalog);
   const used = new Set<CardId>();
   const out: Record<StoryPlace, CardId[]> = { foret: [], pics: [], sablier: [] };
   for (const k of ['foret', 'pics', 'sablier'] as StoryPlace[]) {
-    for (const id of LAYOUT[catalog][k]) {
+    for (const id of LAYOUT[k]) {
       if (isCardId(id) && pool.includes(id) && !used.has(id)) {
         out[k].push(id);
         used.add(id);
@@ -116,49 +106,31 @@ export interface Copy {
   text: string;
 }
 
-export const PLACE_COPY: Record<Exclude<Catalog, 'aucune'>, Record<StoryPlace, Copy>> = {
-  duel: {
-    foret: {
-      title: ['Ici, le froid', 'est une arme.'],
-      text: 'Sous les pins gelés, on apprend à fermer le jeu : figer une case, immobiliser une pièce, passer à travers ses propres rangs.',
-    },
-    pics: {
-      title: ['Là-haut,', 'le ciel tranche.'],
-      text: "Des sorts de force brute, nés dans l'orage : frapper, alourdir, protéger, bondir.",
-    },
-    sablier: {
-      title: ['Le temps,', 'retourné.'],
-      text: 'Au cœur du désert, le grand sablier obéit aux audacieux : affoler la pendule, effacer un coup, relever une pièce tombée.',
-    },
-  },
+export const PLACE_COPY: Record<'climats', Record<StoryPlace, Copy>> = {
   climats: {
     foret: {
       title: ['Ici, le froid', 'gagne la partie.'],
-      text: 'Sous les pins gelés, on apprend à fermer le jeu : figer tous les pions, murer une case, imposer la trêve, fendre le plateau.',
+      text: 'Sous les pins gelés, on apprend à fermer le jeu : figer tous les pions, murer une case pour toute la partie, fendre le plateau. Le froid tient les deux camps.',
     },
     pics: {
       title: ['Là-haut,', 'le ciel tranche.'],
-      text: "Des climats nés dans l'orage : chaque prise qui explose, des captures forcées, des pièces longues qui sautent, des portails.",
+      text: "Des climats nés dans l'orage : chaque prise qui explose, des captures forcées, une trêve où plus personne ne prend. Pour les deux camps, toujours.",
     },
     sablier: {
       title: ['Le temps,', 'retourné.'],
-      text: 'Au cœur du désert, le grand sablier obéit aux audacieux : affoler les pendules, revivre le dernier tour, lever la marée, couronner un pion.',
+      text: 'Au cœur du désert, le grand sablier obéit aux audacieux : affoler les deux pendules, lever la marée qui pousse tous les pions.',
     },
   },
 };
 
-export const INTERLUDE: Record<Exclude<Catalog, 'aucune'>, Copy> = {
-  duel: {
-    title: ['Trois sorts.', 'Un seul par tour.'],
-    text: 'Chaque carte ne sert qu’une fois. Tout l’art est de choisir le moment.',
-  },
+export const INTERLUDE: Record<'climats', Copy> = {
   climats: {
     title: ['Le monde change.', 'Pour les deux camps.'],
-    text: 'Une carte ne vous donne pas un pouvoir : elle change la partie pour tout le monde. Vous gagnez parce que vous avez choisi le moment.',
+    text: 'Une carte ne vous donne pas un pouvoir : elle change la partie pour tout le monde. Vos cartes et celles de l’adversaire sont visibles : vous gagnez parce que vous avez choisi le moment.',
   },
 };
 
-export function principle(catalog: Exclude<Catalog, 'aucune'>) {
+export function principle(_catalog: Exclude<Catalog, 'aucune'> = 'climats') {
   return [
     {
       n: '01',
@@ -167,16 +139,13 @@ export function principle(catalog: Exclude<Catalog, 'aucune'>) {
     },
     {
       n: '02',
-      title: 'Trois cartes en main.',
-      text: "Distribuées au hasard, cachées à l'adversaire. Chacune ne sert qu'une seule fois par partie.",
+      title: 'Trois cartes, visibles.',
+      text: "Distribuées au hasard parmi huit pouvoirs, visibles des deux joueurs. Chacune ne sert qu'une seule fois par partie.",
     },
     {
       n: '03',
       title: 'Un sort par tour.',
-      text:
-        catalog === 'climats'
-          ? 'Avant votre coup, lancez une carte : elle change la partie pour les deux camps. Certaines s’annoncent un tour à l’avance.'
-          : 'Avant votre coup, lancez une carte. Elle ne remplace pas votre coup : elle le prépare.',
+      text: 'Avant votre coup, lancez une carte : elle change la partie pour les deux camps. Certaines s’annoncent un tour à l’avance.',
     },
   ];
 }

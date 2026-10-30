@@ -31,7 +31,9 @@ Pas de commit, pas de npm install, pas de redémarrage du serveur du port 3000.
 - fin : compte rendu rendu à l'orchestrateur.
 
 ## En cours
-- rien.
+- (19 h 40) REPRISE par une nouvelle session (workflow relancé, agents arrêtés) : relecture du fichier de tests,
+  relance, vérification que les 3 ÉCARTS tiennent toujours (moteur inchangé depuis 4116dee, HEAD d55777c), puis
+  nouveaux tests adverses sur les angles peu couverts.
 
 ## Reste à faire
 - (pour le flux A) corriger terrainMate : table des ensembles d'évasion minimaux (force brute scratchpad/verif/sets.ts :

@@ -22,20 +22,41 @@ test/{lessons,puzzles,pgn}.test.ts, src/client/components/DemoBoard.tsx, concept
   mains-visibles (Faille noire en main). LessonStep.effects (même EffectSpec que les problèmes).
   test/lessons.test.ts : 9 verts.
 
-## En cours
-- Client : CardHand (main adverse visible), Learn, Puzzles.
+- Client des fonctions classiques (commit d55777c) : CardHand (HandView : main adverse visible, cartes jouées grisées,
+  carte retirée tolérée), EffectsLine (Mur « jusqu'à la fin de la partie », case), MoveTree, format.catalogLabel
+  (« Pouvoirs » / « Sans cartes » / « Duel (ancienne formule) »), Analysis (deux mains, cartes retirées écartées),
+  Learn et Puzzles (main adverse visible), MyGames (libellé).
+- Reprise (2e agent, 30 oct. soir) : accueil.
+  - shell/GameShell.tsx + shell.css : main adverse face visible (emblème + nom, jouées grisées et barrées), mobile en
+    pastilles.
+  - data.ts : liveCatalog() = 'climats' ; LAYOUT des 8 pouvoirs (forêt : Ère glaciaire, Mur, Faille ; pics :
+    Déflagration, Lune, Trêve ; sablier : Sablier fou, Grande Marée) ; textes des lieux, interlude, principe 02
+    (« Trois cartes, visibles »).
+  - StageBoard.tsx : démo aux Pouvoirs (cardsOf), plus de branche 'revive'.
+  - OdysseeHome.tsx : ligne « L'Oracle tient … » (main IA visible) sous la main du joueur ; FriendSheet : choix
+    « Pouvoirs » / « Sans cartes ».
+  - useLiveGame.ts : rememberLocalGame à la fin de partie ; sauvegarde non 'climats' rejetée.
+  - DemoBoard : seulement monté par SkinPreview (Home.tsx), importé nulle part ; passé aux 8 pouvoirs quand même.
 
-## Reste à faire
-1. Leçons des cartes (lessons.ts:438 Mur en 1re rangée, textes « 6 coups », Portails).
-2. Problèmes à cartes : >= 6 sur les 8 pouvoirs, vérifiés par le moteur.
-3. Accueil : main IA visible, textes des lieux, démos 8 pouvoirs, feuille « Défier un ami », rememberLocalGame,
-   mobile 390x844.
-4. Fonctions classiques : mains visibles, Mur permanent, cartes retirées tolérées, libellés.
-5. DemoBoard.
-6. Recherche coronation/cavalcade/portals/deja_vu/Duel/cachées dans src/client.
+- pgn.ts : commentaires (Duel, cartes retirées) ; le repli `h.card === null` reste pour les anciennes parties Duel.
+- Captures concepts/site-adaptation/ : 01 accueil bureau, 02 partie bureau (main de l'Oracle visible en haut à droite),
+  10/12/13 accueil mobile 390x844, 11 partie mobile (main de l'Oracle en pastilles).
+- Mobile : premier écran correct (titre sous l'échiquier, rien ne le recouvre). La capture blanche
+  concepts/site-accueil/30-mobile-accueil.png (s9-mobile-accueil.json) n'est pas reproduite avec le même scénario
+  (12-mobile-accueil-apres-rechargement.png est normale) : artefact de capture (prise pendant le rechargement /
+  une reconstruction du serveur de dev), pas un défaut du site.
+
+## Terminé (30 oct., 19 h 58)
+- tsc vert ; vitest lessons+puzzles+pgn : 35/35 ; npm test complet : 206/209, les 3 échecs sont dans
+  test/pouvoirs-adverse.test.ts (tests « ÉCART » de la contre-vérification, hors de mes fichiers ; matériel
+  insuffisant avec Murs et Faille).
 
 ## Décisions
+- Accueil : une ancienne sauvegarde locale (catalogue autre que 'climats') repart sur une partie neuve.
+- DemoBoard gardé (SkinPreview l'utilise, mais rien n'importe SkinPreview) et passé aux 8 pouvoirs.
 
 ## Commandes de vérification
 - npx tsc --noEmit -p .
+- npx vitest run test/lessons.test.ts test/puzzles.test.ts test/pgn.test.ts
 - npm test
+- node concepts/_tools/shoot.cjs <scénario> (scénarios et play.cjs dans le scratchpad shots/)

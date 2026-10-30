@@ -3,6 +3,8 @@ import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo,
 import type { CSSProperties } from 'react';
 import { Color, F_CAPTURE, Move, Piece, PieceType, Position, isSlider, kingSquare } from '../../shared/chess';
 import type { Effect } from '../../shared/game';
+import { CARDS } from '../../shared/cards';
+import type { CardId } from '../../shared/cards';
 import { boardStyle } from '../../shared/catalog';
 import { pieceUrl } from './pieces';
 
@@ -103,7 +105,12 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
     const leap = new Set<number>();
     const phase = new Set<number>();
     const weighted = new Set<Color>();
+    const rift = new Set<number>();
+    let climate: CardId | null = null;
     for (const e of effects) {
+      if (e.pending) continue;
+      if (CARDS[e.card]?.family === 'climat') climate = e.card;
+      if (e.card === 'rift') for (const q of e.squares ?? []) rift.add(q);
       if (e.card === 'ice_wall') iced.add(e.square!);
       if (e.card === 'freeze') frozen.add(e.pieceId!);
       if (e.card === 'shield') shielded.add(e.pieceId!);
@@ -111,7 +118,7 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
       if (e.card === 'phase') phase.add(e.pieceId!);
       if (e.card === 'gravity') weighted.add(e.countsOn);
     }
-    return { iced, frozen, shielded, leap, phase, weighted };
+    return { iced, frozen, shielded, leap, phase, weighted, rift, climate };
   }, [effects]);
 
   const targetSet = useMemo(() => new Set(targets ?? []), [targets]);
@@ -198,6 +205,7 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
       if (sel === sq) cls.push('sel');
       if (check === sq) cls.push('check');
       if (fx.iced.has(sq)) cls.push('iced');
+      if (fx.rift.has(sq)) cls.push('rift');
       if (targeting && targetSet.has(sq)) cls.push('target');
       if (chosen.includes(sq)) cls.push('chosen');
       if (drag?.moved && hover === sq && dests.has(sq)) cls.push('hover');
@@ -220,7 +228,7 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
   })();
 
   return (
-    <div ref={wrapRef} className={`board-wrap ${textureClass(theme)}`} style={style}>
+    <div ref={wrapRef} className={`board-wrap ${textureClass(theme)}${fx.climate ? ` clim clim-${fx.climate}` : ''}`} style={style}>
       <div
         ref={boardRef}
         className={`board ${interactive ? 'interactive' : ''} ${targeting ? 'targeting' : ''}`}
@@ -237,6 +245,8 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
             const { x, y } = xy(sq, orientation);
             const dragging = drag?.moved && drag.sq === sq && state === 'idle';
             const cls = ['piece', state];
+            if (p.t === 'p') cls.push('pawn');
+            if (p.t === 'p' && fx.climate === 'ice_age') cls.push('chilled');
             if (fx.frozen.has(p.id)) cls.push('frozen');
             if (fx.shielded.has(p.id)) cls.push('shielded');
             if (fx.leap.has(p.id)) cls.push('leaping');
@@ -247,7 +257,7 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
               ? `translate(${dragOffset.x}px, ${dragOffset.y}px)`
               : `translate(${x * 100}%, ${y * 100}%)`;
             return (
-              <div key={p.id} className={cls.join(' ')} style={{ transform }} data-piece={p.id}>
+              <div key={p.id} className={cls.join(' ')} style={{ transform }} data-piece={p.id} data-at={sq}>
                 <div className="pi" style={{ backgroundImage: pieceUrl(p.c, p.t) }} />
               </div>
             );

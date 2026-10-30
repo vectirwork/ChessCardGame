@@ -4,7 +4,8 @@
     <meta charset="UTF-8" />
     <title>Banc d'essai des effets</title>
     <script>
-      // Animation pilotée image par image par le script de capture
+      // Animation pilotée image par image par le script de capture (sauf avec ?live)
+      if (!location.search.includes('live')) {
       window.__t = 0;
       const queue = [];
       window.requestAnimationFrame = cb => (queue.push(cb), queue.length);
@@ -14,6 +15,7 @@
         window.__t += ms;
         queue.splice(0).forEach(cb => cb(window.__t));
       };
+      }
     </script>
   </head>
   <body style="margin:0">

@@ -294,6 +294,48 @@ export function beamTexture(): THREE.Texture {
   return t;
 }
 
+/** Bande horizontale douce (transparente en haut et en bas) : vagues, balayages, lignes de Trêve. */
+export function bandTexture(): THREE.Texture {
+  const hit = cache.get('band');
+  if (hit) return hit;
+  const [c, g] = canvas(64);
+  const gr = g.createLinearGradient(0, 0, 0, 64);
+  gr.addColorStop(0, 'rgba(255,255,255,0)');
+  gr.addColorStop(0.42, 'rgba(255,255,255,0.55)');
+  gr.addColorStop(0.5, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.58, 'rgba(255,255,255,0.55)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 64, 64);
+  const h = g.createLinearGradient(0, 0, 64, 0);
+  h.addColorStop(0, 'rgba(0,0,0,1)');
+  h.addColorStop(0.12, 'rgba(0,0,0,0)');
+  h.addColorStop(0.88, 'rgba(0,0,0,0)');
+  h.addColorStop(1, 'rgba(0,0,0,1)');
+  g.globalCompositeOperation = 'destination-out';
+  g.fillStyle = h;
+  g.fillRect(0, 0, 64, 64);
+  const t = finish(c);
+  cache.set('band', t);
+  return t;
+}
+
+/** Disque doux (halo) : lune, cœur d'explosion, lueur d'un gouffre. */
+export function softDiskTexture(): THREE.Texture {
+  const hit = cache.get('soft');
+  if (hit) return hit;
+  const [c, g] = canvas(128);
+  const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.35, 'rgba(255,255,255,0.75)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 128, 128);
+  const t = finish(c);
+  cache.set('soft', t);
+  return t;
+}
+
 export function mulberry(seed: number) {
   let a = seed >>> 0;
   return () => {

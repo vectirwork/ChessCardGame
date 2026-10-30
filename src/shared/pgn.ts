@@ -192,6 +192,7 @@ export function playFrom(node: TreeNode, from: number, to: number, promo?: Piece
 function ensureCard(s: GameState, c: Color, card: CardId): { state: GameState; index: number } {
   const i = s.hands[c].findIndex(h => h.card === card && !h.used);
   if (i >= 0) return { state: s, index: i };
+  // Ancienne partie du Duel servie avec une main masquée : la carte prend la place d'une carte inconnue
   const hidden = s.hands[c].findIndex(h => h.card === null && !h.used);
   const hands = { w: s.hands.w.map(h => ({ ...h })), b: s.hands.b.map(h => ({ ...h })) };
   if (hidden >= 0) {
@@ -202,7 +203,8 @@ function ensureCard(s: GameState, c: Color, card: CardId): { state: GameState; i
   return { state: { ...s, hands }, index: hands[c].length - 1 };
 }
 
-/** Joue une carte (les cibles du journal peuvent différer de celles attendues : Retour arrière, Déjà-vu…). */
+/** Joue une carte (les cibles du journal peuvent différer de celles attendues dans une ancienne partie du Duel :
+ *  Retour arrière…). Une carte retirée du jeu (Couronnement, Portails…) n'est pas rejouée : `null`. */
 export function applyCard(s: GameState, c: Color, card: CardId, targets: number[]): GameState | null {
   if (!CARDS[card]) return null;
   const { state, index } = ensureCard(s, c, card);
@@ -236,7 +238,7 @@ export function treeFromLog(start: GameState, log: LogEntry[]): { root: TreeNode
   return { root, complete: true };
 }
 
-/** État initial d'une partie du site (mains révélées en fin de partie). */
+/** État initial d'une partie du site (mains visibles ; une carte retirée du jeu est écartée). */
 export function initialStateOf(final: Pick<GameState, 'hands' | 'timed' | 'catalog'>): GameState {
   const hands = {
     w: final.hands.w.map(h => h.card).filter((c): c is CardId => !!c && isCardId(c)),

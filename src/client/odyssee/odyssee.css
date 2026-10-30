@@ -2532,6 +2532,37 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
   color: var(--faint);
   text-decoration: line-through;
 }
+/* Main de l'Oracle, visible (décision du 30 octobre) : une ligne discrète, cartes jouées barrées */
+.ody .o-hand-opp {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 0;
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--soft, #c9c4d8);
+}
+.ody .o-hand-opp-k {
+  margin-right: 10px;
+  font-family: var(--caps);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.ody .o-hand-opp > span + span:not(.o-hand-opp-k)::before {
+  content: '·';
+  margin: 0 8px;
+  color: var(--gold);
+  opacity: 0.5;
+}
+.ody .o-hand-opp-k + span::before {
+  content: none !important;
+}
+.ody .o-hand-opp .is-used {
+  color: var(--faint);
+  text-decoration: line-through;
+}
 /* Accueil : composition resserrée (titre, consigne, main, options) */
 .ody .o-hero .o-kicker {
   margin-bottom: 22px;

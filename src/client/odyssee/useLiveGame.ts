@@ -10,7 +10,8 @@
 // l'IA attend, et la scène 3D est vidée (aucun rendu WebGL pour un échiquier qu'on ne regarde pas).
 // La scène 3D n'est créée qu'à la première intention de jouer (`warm`) ou au passage en mode immersif.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { askBot } from '../ai';
+import { BOT_PROFILES, askBot } from '../ai';
+import { rememberLocalGame } from '../features/history';
 import type { BotLevel } from '../ai';
 import { CARDS, isCardId } from '../../shared/cards';
 import type { CardDef, Catalog } from '../../shared/cards';
@@ -49,7 +50,9 @@ function validState(x: unknown): x is GameState {
   if (!s || typeof s !== 'object' || !s.pos || !Array.isArray(s.pos.board) || s.pos.board.length !== 64) return false;
   if (s.pos.turn !== 'w' && s.pos.turn !== 'b') return false;
   if (!s.hands || !Array.isArray(s.hands.w) || !Array.isArray(s.hands.b)) return false;
-  if (![...s.hands.w, ...s.hands.b].every(h => h && (h.card === null || isCardId(h.card)))) return false;
+  // Une sauvegarde d'avant les huit pouvoirs (Duel, ou carte retirée : Couronnement, Portails…) repart de zéro
+  if (s.catalog !== 'climats') return false;
+  if (![...s.hands.w, ...s.hands.b].every(h => h && isCardId(h.card))) return false;
   if (!Array.isArray(s.effects) || !s.effects.every(e => e && isCardId(e.card))) return false;
   if (!Array.isArray(s.log) || !Array.isArray(s.keys) || !Array.isArray(s.snaps) || !s.captured) return false;
   return true;
@@ -152,6 +155,14 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
 
   const apply = useCallback(
     (n: GameState) => {
+      // Partie terminée : elle rejoint « Mes parties » (journal compris, pour la relire dans l'Analyse)
+      if (n.result && !stateRef.current.result && n.result.reason !== 'aborted') {
+        try {
+          rememberLocalGame(n, { white: 'Vous', black: `L'Oracle (${BOT_PROFILES[levelRef.current].name})`, you: PLAYER, vsBot: true });
+        } catch {
+          // stockage indisponible : la partie n'est simplement pas gardée
+        }
+      }
       stateRef.current = n;
       setState(n);
       syncScene(n);
@@ -352,6 +363,7 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
     playSound('end');
   }, [apply]);
 
+  // Catalogue absent : ancienne sauvegarde (Duel) ; les nouvelles parties sont toujours aux Pouvoirs
   const catalog: Catalog = state.catalog ?? 'duel';
 
   return {

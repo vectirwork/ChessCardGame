@@ -186,7 +186,8 @@ export class VfxStage {
 
   private frame = (now: number) => {
     this.raf = 0;
-    const dt = Math.min(0.05, (now - this.last) / 1000);
+    // Plafond de 0,1 s : sur un appareil lent, l’animation saute des images au lieu de ralentir
+    const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
     this.time += dt;
 

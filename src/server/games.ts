@@ -174,8 +174,9 @@ function viewFor(room: Room, you: Color | null): GameView {
     clock: ck && {
       initial: ck.initial,
       increment: ck.increment,
-      w: ck.w,
-      b: ck.b,
+      // Temps restant à l'instant de l'envoi (le temps écoulé depuis le début du tour est déjà déduit)
+      w: Math.max(0, remaining(room, 'w')),
+      b: Math.max(0, remaining(room, 'b')),
       running: ck.running,
       serverNow: now(),
       rate: { w: rate(room, 'w'), b: rate(room, 'b') },

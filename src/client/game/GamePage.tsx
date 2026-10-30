@@ -49,7 +49,7 @@ export default function GamePage() {
   const boardRef = useRef<BoardHandle>(null);
   const [wrapEl, setWrapEl] = useState<HTMLDivElement | null>(null);
   const serverView = useRef<GameView | null>(null);
-  const queue = useRef<GameUpdate[]>([]);
+  const queue = useRef<(GameUpdate & { at: number })[]>([]);
   const busy = useRef(false);
   const viewRef = useRef<GameView | null>(null);
   viewRef.current = view;
@@ -64,9 +64,9 @@ export default function GamePage() {
     setWrapEl(boardRef.current?.wrap ?? null);
   }, [view !== null]);
 
-  const applyView = useCallback((v: GameView) => {
+  const applyView = useCallback((v: GameView, at = Date.now()) => {
     setView(v);
-    setReceivedAt(Date.now());
+    setReceivedAt(at);
     vfxRef.current?.stage.syncMarkers(v.state.effects, v.state.pos);
   }, []);
 
@@ -93,7 +93,7 @@ export default function GamePage() {
         if (ev.type === 'card' && !skipFx) {
           await playCardEvent(u, ev.info, prev);
         } else {
-          applyView(u.view);
+          applyView(u.view, u.at);
           if (ev.type === 'card') playCardSound(ev.info.card);
           if (ev.type === 'move') {
             const mine = prev?.you === ev.color;
@@ -113,7 +113,7 @@ export default function GamePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applyView]);
 
-  const playCardEvent = async (u: GameUpdate, info: CardInfo, prev: GameView | null) => {
+  const playCardEvent = async (u: GameUpdate & { at: number }, info: CardInfo, prev: GameView | null) => {
     const seat = u.view.seats[info.caster];
     const mine = u.view.you === info.caster;
     setCasting({ card: info.card, by: seat?.name ?? '', mine, key: Date.now() });
@@ -124,14 +124,14 @@ export default function GamePage() {
     const bottom = (prev?.you ?? 'w') === victim ? !flippedRef.current : flippedRef.current;
     if (stage && vfxRef.current) {
       await vfxRef.current.m.playCast(stage, info, skinStyle(info.skin), {
-        impact: () => applyView(u.view),
+        impact: () => applyView(u.view, u.at),
         hide: ids => setHidden(new Set(ids)),
         show: () => setHidden(new Set()),
         victimAtBottom: bottom,
       });
     } else {
       await new Promise(r => setTimeout(r, 600));
-      applyView(u.view);
+      applyView(u.view, u.at);
     }
     setHidden(new Set());
     setTimeout(() => setCasting(c => (c && Date.now() - c.key > 1500 ? null : c)), 1600);
@@ -168,7 +168,7 @@ export default function GamePage() {
     setSelCard(null);
     const onUpdate = (u: GameUpdate) => {
       if (u.view.id !== id) return;
-      queue.current.push(u);
+      queue.current.push({ ...u, at: Date.now() });
       void process();
     };
     const onRedirect = (p: { from: string; to: string }) => {
@@ -249,7 +249,8 @@ export default function GamePage() {
     // Coup affiché immédiatement, confirmé par le serveur ensuite
     const r = playMove(state, from, to, promo);
     if (r.ok) {
-      applyView({ ...view, state: r.state });
+      // Même horodatage que la vue affichée : la pendule ne saute pas en attendant le serveur
+      applyView({ ...view, state: r.state }, receivedAt);
       playSound(r.info.check ? 'check' : r.info.capturedId !== null ? 'capture' : 'move');
     }
     void send('game:move', { from, to, promo });

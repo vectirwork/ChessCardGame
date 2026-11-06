@@ -162,14 +162,14 @@ function validClimatsHand(hand: CardId[]): boolean {
  *   seule la contrainte des Climats compte ; sans le Sablier fou (contre l'IA, sans pendule), il en reste 7,
  *   dont 3 qui ne sont pas des Climats : une main valide existe toujours.
  * - Duel (anciennes parties, tests) : tirage uniforme, sans remise.
- * Les cartes `timedOnly` sont exclues sans pendule, les cartes `humanOnly` contre l'IA. En mode miroir, les deux
- * joueurs reçoivent la même main.
+ * Les cartes `timedOnly` sont exclues sans pendule, les cartes `humanOnly` contre l'IA (`cardPool`). En mode miroir
+ * (anciennes parties, tests ; plus proposé), les deux joueurs reçoivent la même main.
  */
 export function dealHands(
   timed: boolean, mirror: boolean, rand: () => number = Math.random, catalog: Catalog = 'duel', opts: DealOptions = {},
 ): Record<Color, CardId[]> {
   if (catalog === 'aucune') return { w: [], b: [] };
-  const pool = cardsOf(catalog).filter(id => (timed || !CARDS[id].timedOnly) && !(opts.vsBot && CARDS[id].humanOnly));
+  const pool = cardPool(catalog, timed, opts);
   const uniform = () => {
     const a = pool.slice();
     for (let i = a.length - 1; i > 0; i--) {
@@ -205,6 +205,64 @@ export function dealHands(
   };
   const w = draw();
   return { w, b: mirror ? w.slice() : draw() };
+}
+
+/**
+ * Réserve d'une partie : les cartes du catalogue, sans les cartes `timedOnly` dans une partie sans pendule ni les
+ * cartes `humanOnly` contre l'IA (Sablier fou). Vide pour « Sans cartes ». Sert au tirage et au choix des cartes.
+ */
+export function cardPool(catalog: Catalog, timed: boolean, opts: DealOptions = {}): CardId[] {
+  return cardsOf(catalog).filter(id => (timed || !CARDS[id].timedOnly) && !(opts.vsBot && CARDS[id].humanOnly));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Choix des cartes (décision D5 du plan V2, docs/PLAN-V2.md)
+// Au début d'une vraie partie (invitation, file amicale ou classée, IA lancée depuis la page Jouer, revanche),
+// chaque joueur choisit CARDS_PER_PLAYER cartes différentes dans la réserve de la partie, sans autre contrainte
+// (la règle R9 du tirage ne s'applique pas). Le serveur garde les choix secrets jusqu'à ce que les deux joueurs
+// aient choisi, puis donne les mains avec `withHands`. La partie de l'accueil garde le tirage (`dealHands`).
+
+/** Durée du choix des cartes (ms) ; à l'échéance, le serveur complète au hasard ce qui manque. */
+export const DRAFT_MS = 45_000;
+
+/**
+ * Refus d'un choix de cartes, ou null s'il est valide : des cartes de la réserve, toutes différentes, exactement
+ * CARDS_PER_PLAYER (`partial` : de 0 à CARDS_PER_PLAYER, pour une sélection provisoire).
+ */
+export function draftRefusal(pool: readonly CardId[], cards: readonly unknown[], partial = false): string | null {
+  if (!Array.isArray(cards)) return 'Choix de cartes invalide.';
+  if (partial ? cards.length > CARDS_PER_PLAYER : cards.length !== CARDS_PER_PLAYER) {
+    return `Choisissez ${CARDS_PER_PLAYER} cartes.`;
+  }
+  if (!cards.every(c => isCardId(c) && pool.includes(c))) return 'Cette carte n’est pas proposée dans cette partie.';
+  if (new Set(cards).size !== cards.length) return 'Choisissez des cartes différentes.';
+  return null;
+}
+
+/**
+ * Complète au hasard une sélection (valide, éventuellement vide) jusqu'à CARDS_PER_PLAYER cartes différentes de la
+ * réserve, uniformément. Les cartes déjà choisies gardent leur place, en tête.
+ */
+export function completeDraft(pool: readonly CardId[], partial: readonly CardId[], rand: () => number = Math.random): CardId[] {
+  const hand = partial.filter((c, i) => pool.includes(c) && partial.indexOf(c) === i).slice(0, CARDS_PER_PLAYER);
+  const rest = pool.filter(c => !hand.includes(c));
+  while (hand.length < CARDS_PER_PLAYER && rest.length) {
+    const k = Math.min(rest.length - 1, Math.floor(rand() * rest.length));
+    hand.push(rest[k]);
+    rest.splice(k, 1);
+  }
+  return hand;
+}
+
+/**
+ * Donne les mains choisies à une partie qui n'a pas encore commencé (créée avec des mains vides pendant le choix).
+ * La clé de la position de départ est recalculée : elle compte les cartes des mains.
+ */
+export function withHands(s: GameState, hands: Record<Color, CardId[]>): GameState {
+  const n = cloneState(s);
+  n.hands = { w: hands.w.map(card => ({ card, used: false })), b: hands.b.map(card => ({ card, used: false })) };
+  if (n.ply === 0 && n.keys.length <= 1) n.keys = [positionKey(n)];
+  return n;
 }
 
 export function createGame(hands: Record<Color, CardId[]>, timed: boolean, catalog: Catalog = 'duel'): GameState {

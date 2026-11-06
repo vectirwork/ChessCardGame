@@ -1,6 +1,7 @@
 // Page Jouer (/jouer), au style Odyssée : quatre portes (IA, ami, partie amicale, partie classée), les options de la
-// porte choisie (niveau, cartes, cadence, couleur, miroir, pseudo) et les parties en cours à reprendre.
-// La partie elle-même s'ouvre sur /partie/:id, dans la coque immersive de l'accueil.
+// porte choisie (niveau, cartes, cadence, couleur, pseudo) et les parties en cours à reprendre.
+// La partie elle-même s'ouvre sur /partie/:id, dans la coque immersive de l'accueil ; avec cartes, elle commence par
+// le choix des trois cartes de chaque joueur (décision D5, src/client/game/CardDraft.tsx). Le mode miroir n'existe plus.
 import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -36,9 +37,9 @@ const DOORS: { mode: Mode; num: string; title: string; badge: string; text: stri
 ];
 
 const HEADS: Record<Mode, { kicker: string; title: ReactNode; text: string }> = {
-  bot: { kicker: "Porte I · contre l'IA", title: <>Affronter <em>l'Oracle</em>.</>, text: 'La partie commence tout de suite. Vous pouvez la quitter et la reprendre.' },
+  bot: { kicker: "Porte I · contre l'IA", title: <>Affronter <em>l'Oracle</em>.</>, text: 'Elle commence dès que vous êtes prêt. Vous pouvez la quitter et la reprendre.' },
   invite: { kicker: 'Porte II · entre amis', title: <>Défier un <em>ami</em>.</>, text: 'Vous recevez un lien à envoyer. La partie commence dès qu’il l’ouvre.' },
-  friendly: { kicker: 'Porte III · file amicale', title: <>Un adversaire <em>au hasard</em>.</>, text: 'Le premier joueur disponible à la même cadence, avec les mêmes cartes.' },
+  friendly: { kicker: 'Porte III · file amicale', title: <>Un adversaire <em>au hasard</em>.</>, text: 'Le premier joueur disponible, à la même cadence et avec les mêmes règles de cartes.' },
   ranked: { kicker: 'Porte IV · classement Elo', title: <>Partie <em>classée</em>.</>, text: 'Adversaire de votre niveau ; la tolérance s’élargit avec l’attente.' },
 };
 
@@ -70,7 +71,6 @@ export default function Play() {
   const [tc, setTc] = useState('10+0');
   const [color, setColor] = useState<'w' | 'random' | 'b'>('random');
   const [level, setLevel] = useState<1 | 2 | 3>(2);
-  const [mirror, setMirror] = useState(false);
   const [catalog, setCatalog] = useState<Catalog>('climats');
   const [name, setName] = useState(getGuestName());
   const [busy, setBusy] = useState(false);
@@ -162,7 +162,7 @@ export default function Play() {
     try {
       if (!me) setGuestName(name.trim());
       const r = await api<{ id: string }>('/games', {
-        body: { mode, tc, color, level, mirror: mirror && catalog !== 'aucune', catalog, name: me ? undefined : name.trim() },
+        body: { mode, tc, color, level, catalog, name: me ? undefined : name.trim() },
       });
       navigate(`/partie/${r.id}`);
     } catch (e) {
@@ -196,7 +196,7 @@ export default function Play() {
             <h1 className="title-xl">
               Choisissez votre <em>adversaire</em>.
             </h1>
-            <p className="lede">Les échecs, plus trois cartes de pouvoir chacun. Une IA, un ami, ou le premier joueur venu : la partie s’ouvre en plein écran.</p>
+            <p className="lede">Les échecs, plus trois cartes de pouvoir chacun, que vous choisissez au début de la partie. Une IA, un ami, ou le premier joueur venu : la partie s’ouvre en plein écran.</p>
           </header>
 
           <ul className="pl-doors" aria-label="Type de partie">
@@ -285,6 +285,12 @@ export default function Play() {
                     </button>
                   ))}
                 </div>
+                {catalog !== 'aucune' && (
+                  <span className="pl-help">
+                    Vous choisirez vos trois cartes au début de la partie, en 45 secondes : votre choix reste secret jusqu’à ce que votre adversaire ait choisi
+                    aussi.
+                  </span>
+                )}
               </fieldset>
 
               <fieldset className="pl-field">
@@ -297,7 +303,7 @@ export default function Play() {
                     </button>
                   ))}
                 </div>
-                {tc === 'none' && catalog !== 'aucune' && <span className="pl-help">Sans pendule, les cartes liées au temps ne sont pas distribuées.</span>}
+                {tc === 'none' && catalog !== 'aucune' && <span className="pl-help">Sans pendule, les cartes liées au temps ne sont pas proposées.</span>}
               </fieldset>
 
               {!quick && (
@@ -315,15 +321,6 @@ export default function Play() {
                     </button>
                   </div>
                 </fieldset>
-              )}
-
-              {mode === 'invite' && catalog !== 'aucune' && (
-                <label className="check">
-                  <input type="checkbox" checked={mirror} onChange={e => setMirror(e.target.checked)} />
-                  <span>
-                    <b>Mode miroir</b> : vous recevez tous les deux les mêmes trois cartes.
-                  </span>
-                </label>
               )}
 
               {!me && mode !== 'ranked' && (
@@ -396,7 +393,7 @@ function QueueWaiting({ tc, since, players, ranked, catalog, onCancel }: { tc: s
         </span>
       </p>
       <p className="pl-help">
-        {ranked ? 'Nous cherchons un joueur de votre niveau ; la tolérance s’élargit avec l’attente.' : 'Le premier joueur disponible à cette cadence, avec les mêmes cartes, vous rejoint.'}
+        {ranked ? 'Nous cherchons un joueur de votre niveau ; la tolérance s’élargit avec l’attente.' : 'Le premier joueur disponible à cette cadence, avec les mêmes règles de cartes, vous rejoint.'}
         {players > 1 ? ` ${players} joueurs en file.` : ''}
       </p>
       <button type="button" className="btn-line" onClick={onCancel}>

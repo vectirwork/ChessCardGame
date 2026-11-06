@@ -1,12 +1,18 @@
 // Carte de pouvoir : cadre type tarot, emblème, effet holographique et inclinaison 3D au survol.
-// Tailles : 'full' (carte entière, règle comprise), 'hand' (main du joueur), 'mini' (vignette sans texte) et
-// 'compact' (bandeau horizontal lisible : emblème, nom, famille ; pour la main adverse, aussi sur mobile).
-import { useRef } from 'react';
-import type { CSSProperties, PointerEvent as RPointerEvent, ReactNode } from 'react';
-import { CARDS, CardDef, CardId, FAMILY_LABEL, RARITY_LABEL } from '../../shared/cards';
+//
+// Face épurée (décision D1 du plan V2) : l'emblème, le nom et une seule pastille qui dit l'effet sur le tour,
+// « + votre coup » (on lance la carte, puis on joue son coup) ou « Remplace votre coup » (Rituel). La règle, la
+// famille, la durée et le moment où la carte agit sont dans la bulle (CardBubble), ouverte au survol, au focus ou au
+// toucher. Une carte jouée reste visible, grisée, avec « Jouée ».
+//
+// Tailles : 'hand' (mains), 'full' (la même face en grand : annonce d'un sort, chapitres de l'accueil, dont la règle
+// est écrite à côté), 'mini' (vignette : emblème seul) et 'compact' (bandeau : emblème, nom, pastille).
+import { forwardRef, useRef } from 'react';
+import type { CSSProperties, FocusEvent as RFocusEvent, PointerEvent as RPointerEvent, ReactNode, Ref } from 'react';
+import { CARDS, CardDef, CardId, FAMILY_LABEL } from '../../shared/cards';
 import { CardEmblem } from './CardArt';
 
-/** Durée courte pour la pastille de la carte (le détail « vous, lui, vous » reste dans la règle). */
+/** Durée courte (le détail « vous, lui, vous » reste dans la règle). */
 export function shortDuration(def: CardDef): string {
   if (def.permanent && def.family === 'terrain') return 'Toute la partie';
   return def.duration.replace(/\s*\(.*\)\s*$/, '');
@@ -18,22 +24,103 @@ export function cardKicker(def: CardDef): string {
   return key ? `${FAMILY_LABEL[def.family]} · ${key}` : FAMILY_LABEL[def.family];
 }
 
+/**
+ * Effet de la carte sur le tour : elle s'ajoute au coup, ou elle le remplace (Rituel). `owner` 'opponent' : formulé
+ * pour la carte de votre adversaire (« + son coup »), dans sa bulle.
+ */
+export function turnEffect(def: CardDef, owner: 'self' | 'opponent' = 'self'): { kind: 'plus' | 'replace'; label: string; who: string } {
+  const who = owner === 'self' ? 'votre coup' : 'son coup';
+  return def.ritual ? { kind: 'replace', label: `Remplace ${who}`, who } : { kind: 'plus', label: `+ ${who}`, who };
+}
+
+/** Moment où la carte agit, en une phrase. `owner` : la carte est à vous, ou à votre adversaire. */
+export function cardTiming(def: CardDef, owner: 'self' | 'opponent' = 'self'): string {
+  const self = owner === 'self';
+  if (def.presage) {
+    return self
+      ? 'Présage : annoncée maintenant, elle arrive au début de votre prochain tour. Vous jouez votre coup juste après l’annonce.'
+      : 'Présage : annoncée, elle arrive au début du tour suivant de votre adversaire.';
+  }
+  if (def.ritual) {
+    return self ? 'Rituel : la carte remplace votre coup.' : 'Rituel : la carte remplace son coup.';
+  }
+  if (def.targets) return self ? 'Effet immédiat sur la case choisie, puis vous jouez votre coup.' : 'Effet immédiat sur la case choisie, puis il joue son coup.';
+  return self ? 'Effet immédiat, puis vous jouez votre coup.' : 'Effet immédiat, puis il joue son coup.';
+}
+
+/**
+ * Règle sans sa phrase d'arrivée (« Annoncée, elle arrive… », « Rituel : la carte remplace votre coup. ») : dans la
+ * bulle, le moment d'action a sa propre ligne.
+ */
+export function ruleBody(def: CardDef): string {
+  return def.description
+    .replace(/^Annoncée?, (?:il|elle) arrive au début de votre prochain tour\.\s*/u, '')
+    .replace(/^Rituel : la carte remplace votre coup\.\s*/u, '');
+}
+
+/** Pastille de tour : « + votre coup » ou « Remplace votre coup ». */
+export function TurnPill({ def, owner = 'self', className = '' }: { def: CardDef; owner?: 'self' | 'opponent'; className?: string }) {
+  const t = turnEffect(def, owner);
+  return (
+    <span className={`sc-turn is-${t.kind} ${className}`}>
+      {t.kind === 'plus' ? (
+        <>
+          <i className="sc-turn-sign">+</i> {t.who}
+        </>
+      ) : (
+        <>
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M3 6h8.5l-2.4-2.4M13 10H4.5l2.4 2.4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          {t.label}
+        </>
+      )}
+    </span>
+  );
+}
+
+/** Libellé accessible d'une carte : nom, effet sur le tour, état. La règle est lue par la bulle (aria-describedby). */
+export function cardAriaLabel(def: CardDef, used?: boolean): string {
+  return `${def.name}, ${turnEffect(def).label}${used ? ', jouée' : ''}`;
+}
+
 interface Props {
   id: CardId;
   size?: 'full' | 'hand' | 'mini' | 'compact';
   used?: boolean;
   selected?: boolean;
+  /** Carte inactive : grisée et sans clic. */
   disabled?: boolean;
-  onClick?: () => void;
+  /** Carte pas jouable maintenant mais lisible : grisée, le clic reste permis (il ouvre la bulle). */
+  dim?: boolean;
+  /** `how` : 'key' quand la carte est activée au clavier (Entrée, Espace). */
+  onClick?: (how: 'pointer' | 'key') => void;
+  /** Survol à la souris (le doigt passe par onClick). */
+  onHover?: (on: boolean) => void;
+  /** Focus au clavier (focus visible seulement). */
+  onFocusChange?: (on: boolean) => void;
+  /** Bulle associée (aria-describedby) et état ouvert (aria-expanded). */
+  describedBy?: string;
+  expanded?: boolean;
+  /** Libellé accessible ; par défaut le nom, l'effet sur le tour, l'état et la règle. */
+  label?: string;
   children?: ReactNode;
   tilt?: boolean;
   className?: string;
 }
 
-export function SpellCard({ id, size = 'full', used, selected, disabled, onClick, children, tilt = true, className = '' }: Props) {
+export const SpellCard = forwardRef(function SpellCard(
+  { id, size = 'full', used, selected, disabled, dim, onClick, onHover, onFocusChange, describedBy, expanded, label, children, tilt = true, className = '' }: Props,
+  outer: Ref<HTMLDivElement>,
+) {
   const def = CARDS[id];
-  const ref = useRef<HTMLDivElement>(null);
-  if (size === 'compact') return <CompactCard def={def} used={used} selected={selected} disabled={disabled} onClick={onClick} className={className} />;
+  const ref = useRef<HTMLDivElement | null>(null);
+  const setRef = (el: HTMLDivElement | null) => {
+    ref.current = el;
+    if (typeof outer === 'function') outer(el);
+    else if (outer) outer.current = el;
+  };
+  if (size === 'compact') return <CompactCard def={def} used={used} selected={selected} disabled={disabled} onClick={onClick ? () => onClick('pointer') : undefined} className={className} />;
   const move = (e: RPointerEvent) => {
     if (!tilt || !ref.current || e.pointerType === 'touch') return;
     const r = ref.current.getBoundingClientRect();
@@ -44,52 +131,59 @@ export function SpellCard({ id, size = 'full', used, selected, disabled, onClick
     ref.current.style.setProperty('--rx', `${(0.5 - y) * 14}deg`);
     ref.current.style.setProperty('--ry', `${(x - 0.5) * 18}deg`);
   };
-  const leave = () => {
+  const leave = (e: RPointerEvent) => {
     ref.current?.style.setProperty('--rx', '0deg');
     ref.current?.style.setProperty('--ry', '0deg');
+    if (e.pointerType === 'mouse') onHover?.(false);
   };
+  const active = !!onClick && !disabled;
   const cls = ['spell-card', `sc-${size}`, `r-${def.rarity === 'épique' ? 'epique' : def.rarity === 'légendaire' ? 'legendaire' : def.rarity}`,
-    used ? 'used' : '', selected ? 'selected' : '', disabled ? 'disabled' : '', onClick ? 'clickable' : '', className].join(' ');
+    used ? 'used' : '', selected ? 'selected' : '', disabled || dim ? 'disabled' : '', active ? 'clickable' : '', className].join(' ');
+  const focusChange = (e: RFocusEvent<HTMLDivElement>, on: boolean) => {
+    if (!onFocusChange) return;
+    if (!on) onFocusChange(false);
+    else if (e.currentTarget.matches(':focus-visible')) onFocusChange(true);
+  };
   return (
     <div
-      ref={ref}
+      ref={setRef}
       className={cls}
       style={{ '--h': def.hue } as CSSProperties}
       onPointerMove={move}
+      onPointerEnter={e => e.pointerType === 'mouse' && onHover?.(true)}
       onPointerLeave={leave}
-      onClick={disabled ? undefined : onClick}
+      onFocus={e => focusChange(e, true)}
+      onBlur={e => focusChange(e, false)}
+      onClick={active ? () => onClick!('pointer') : undefined}
       role={onClick ? 'button' : undefined}
-      tabIndex={onClick && !disabled ? 0 : undefined}
+      tabIndex={active ? 0 : undefined}
+      aria-disabled={onClick && (disabled || dim) ? true : undefined}
+      aria-expanded={expanded}
+      aria-describedby={describedBy}
       onKeyDown={e => {
-        if (onClick && !disabled && (e.key === 'Enter' || e.key === ' ')) {
+        if (active && (e.key === 'Enter' || e.key === ' ')) {
           e.preventDefault();
-          onClick();
+          onClick!('key');
         }
       }}
-      aria-label={`${def.name}${used ? ' (jouée)' : ''} : ${def.description}`}
+      aria-label={label ?? `${cardAriaLabel(def, used)}${describedBy ? '' : ` : ${def.description}`}`}
     >
       <div className="sc-body">
-        <div className="sc-top">
-          <span className="sc-rarity">{RARITY_LABEL[def.rarity]}</span>
-          {size !== 'mini' && <span className="sc-dur" title={def.duration}>{shortDuration(def)}</span>}
-        </div>
         <div className="sc-art">
           <div className="sc-halo" />
           <CardEmblem id={id} className="sc-emblem" />
         </div>
-        <div className="sc-name">{def.name}</div>
-        {size !== 'mini' && <div className={`sc-kicker fam-${def.family}`}>{cardKicker(def)}</div>}
-        {size === 'full' && <div className="sc-tag">{def.tagline}</div>}
-        {size === 'full' && <div className="sc-desc">{def.description}</div>}
+        {size !== 'mini' && <div className="sc-name">{def.name}</div>}
+        {size !== 'mini' && <TurnPill def={def} />}
         {children}
       </div>
       <div className="sc-foil" />
       {used && <div className="sc-used">Jouée</div>}
     </div>
   );
-}
+});
 
-/** Bandeau compact : emblème dans sa pastille, nom lisible, famille et mot-clé ; grisé une fois jouée. */
+/** Bandeau compact : emblème dans sa pastille, nom lisible, effet sur le tour ; grisé une fois jouée. */
 function CompactCard({ def, used, selected, disabled, onClick, className = '' }: {
   def: CardDef; used?: boolean; selected?: boolean; disabled?: boolean; onClick?: () => void; className?: string;
 }) {
@@ -109,15 +203,96 @@ function CompactCard({ def, used, selected, disabled, onClick, className = '' }:
         }
       }}
       title={`${def.name}${used ? ' (jouée)' : ''} : ${def.description}`}
-      aria-label={`${def.name}${used ? ' (jouée)' : ''} : ${def.description}`}
+      aria-label={`${cardAriaLabel(def, used)} : ${def.description}`}
     >
       <span className="sch-em" aria-hidden="true">
         <CardEmblem id={def.id} />
       </span>
       <span className="sch-text">
         <span className="sch-name">{def.name}</span>
-        <span className="sch-kicker">{used ? 'Jouée' : cardKicker(def)}</span>
+        <span className="sch-kicker">{used ? 'Jouée' : turnEffect(def).label}</span>
       </span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Bulle d'une carte (décision D2) : règle, famille, durée, moment où elle agit, puis, ouverte au toucher ou au
+// clic, « Lancer ce sort » et « Annuler » (ou la consigne de ciblage). Son emplacement est choisi par la main qui
+// l'affiche (au-dessus de l'éventail, sous la main adverse…).
+
+export interface CardBubbleProps {
+  id: CardId;
+  /** Identifiant DOM (aria-describedby de la carte). */
+  domId?: string;
+  /** 'read' : survol ou focus, lecture seule ; 'open' : ouverte au toucher (actions) ; 'aim' : ciblage en cours. */
+  mode: 'read' | 'open' | 'aim';
+  used?: boolean;
+  /** Carte de votre adversaire (formulations à la troisième personne, jamais d'action). */
+  owner?: 'self' | 'opponent';
+  /** Pourquoi la carte n'est pas jouable maintenant (rien : jouable ou sans objet). */
+  note?: string | null;
+  /** Consigne de ciblage (mode 'aim'). */
+  aim?: ReactNode;
+  /** Lance la carte (mode 'open', carte jouable). */
+  onCast?: () => void;
+  /** Annuler (mode 'open' ou 'aim') ; en lecture, « Fermer ». */
+  onCancel?: () => void;
+  primaryRef?: Ref<HTMLButtonElement>;
+  className?: string;
+  style?: CSSProperties;
+}
+
+export function CardBubble({ id, domId, mode, used, owner = 'self', note, aim, onCast, onCancel, primaryRef, className = '', style }: CardBubbleProps) {
+  const def = CARDS[id];
+  if (!def) return null;
+  const interactive = mode !== 'read';
+  return (
+    <div
+      id={domId}
+      className={`card-bubble is-${mode} ${owner === 'opponent' ? 'is-opp' : ''} ${className}`}
+      style={{ '--h': def.hue, ...style } as CSSProperties}
+      role={interactive ? 'dialog' : 'tooltip'}
+      aria-label={interactive ? def.name : undefined}
+    >
+      <div className="cbub-in">
+        <div className="cbub-head">
+          <span className="cbub-em" aria-hidden="true">
+            <CardEmblem id={id} />
+          </span>
+          <span className="cbub-title">
+            <b>{def.name}</b>
+            <small>
+              {cardKicker(def)} · {def.duration}
+            </small>
+          </span>
+        </div>
+        {mode === 'aim' && aim && (
+          <p className="cbub-aim" role="status">
+            {aim}
+          </p>
+        )}
+        <p className="cbub-rule">{ruleBody(def)}</p>
+        <p className="cbub-when">
+          <TurnPill def={def} owner={owner} />
+          <span>{cardTiming(def, owner)}</span>
+        </p>
+        {(used || note) && mode !== 'aim' && <p className="cbub-note">{used ? 'Déjà jouée.' : note}</p>}
+      </div>
+      {interactive && (onCast || onCancel) && (
+        <div className="cbub-actions">
+          {mode === 'open' && onCast && (
+            <button ref={primaryRef} type="button" className="btn-gold sm cbub-cast" onClick={onCast}>
+              Lancer ce sort
+            </button>
+          )}
+          {onCancel && (
+            <button ref={mode === 'open' && onCast ? undefined : primaryRef} type="button" className="btn-line cbub-cancel" onClick={onCancel}>
+              {mode === 'open' && !onCast ? 'Fermer' : 'Annuler'}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

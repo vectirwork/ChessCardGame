@@ -140,7 +140,7 @@ export function principle(_catalog: Exclude<Catalog, 'aucune'> = 'climats') {
     {
       n: '02',
       title: 'Trois cartes, visibles.',
-      text: "Distribuées au hasard parmi huit pouvoirs, visibles des deux joueurs. Chacune ne sert qu'une seule fois par partie.",
+      text: "Au début d'une partie, vous choisissez vos trois cartes ; sur l'accueil, elles sont tirées au hasard. Visibles des deux joueurs, chacune ne sert qu'une fois.",
     },
     {
       n: '03',

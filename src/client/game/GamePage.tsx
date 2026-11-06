@@ -20,16 +20,17 @@ import { Board, BoardHandle, checkSquare } from '../components/Board';
 import { Modal, Spinner } from '../components/Layout';
 import { rememberView } from '../features/history';
 import { castSafely } from '../odyssee/castSafely';
-import { GameShell, gameLayout } from '../odyssee/shell';
+import { GameShell, castMessage, castThisTurn, gameLayout, handNotes } from '../odyssee/shell';
 import type { ShellAction, ShellPrompt } from '../odyssee/shell';
 import { emitAck, getSocket } from '../socket';
 import { playCardSound, playSound, setSoundEnabled, soundEnabled } from '../sound';
 import { getGuestName, setGuestName, useApp } from '../store';
 import { useVfx } from '../vfx/useVfx';
 import { AwayNotice, CastBanner, DrawOffer, EndCard, FirstMoveCountdown, JoinSheet, WaitingCard, rematchLabel, resultTitle } from './overlays';
+import { CardDraft } from './CardDraft';
 import type { Casting } from './overlays';
 import {
-  Avatar, Captured, Clock, EffectsPanel, EmoteBubble, HandRow, MoveList, SeatName, catalogDescription, catalogTag, colorName,
+  Avatar, Captured, Clock, EffectsPanel, EmoteBubble, MoveList, SeatName, catalogDescription, catalogTag, colorName,
   modeLabel, seatSub, tcLabel,
 } from './parts';
 
@@ -283,7 +284,8 @@ export default function GamePage() {
 
   // ----- Dérivés -----
   const state: GameState | null = view?.state ?? null;
-  const myTurn = !!view && !!state && view.status === 'active' && you === state.pos.turn && !state.result;
+  // Pendant le choix des cartes (view.draft), personne n'a le trait : l'échiquier reste verrouillé.
+  const myTurn = !!view && !!state && view.status === 'active' && !view.draft && you === state.pos.turn && !state.result;
   const legal = useMemo(() => (myTurn && state && !animating ? legalMovesOf(state) : []), [myTurn, state, animating]);
   const lastMove = useMemo(() => {
     if (!state) return null;
@@ -307,6 +309,9 @@ export default function GamePage() {
       }),
     [myHand, myTurn, state, you],
   );
+  // Pourquoi une carte n'est pas jouable maintenant : dit par sa bulle
+  const notes = useMemo(() => (you && state ? handNotes(state, you, myTurn, playable) : []), [state, you, myTurn, playable]);
+  const castNow = you && state && myTurn ? castThisTurn(state, you) : null;
   const selectedDef = selCard !== null && myHand[selCard]?.card ? CARDS[myHand[selCard].card!] : null;
   const options = useMemo(() => {
     if (selCard === null || !state || !you || !selectedDef || selectedDef.targets === 0) return null;
@@ -459,7 +464,7 @@ export default function GamePage() {
   // Colonne droite (ordinateur) : liste des coups si la place le permet, sinon action « Coups joués »
   const boardBottom = layout.y + layout.G / 2;
   const railLeft = layout.x + layout.G / 2 + 28;
-  // Avec cartes, la main adverse (trois bandeaux empilés) occupe le haut de la colonne.
+  // Avec cartes, la main adverse (éventail retourné, sous la pendule) occupe le haut de la colonne.
   const railTop = hasCards ? 300 : 178;
   const selfBottom = Math.max(28, layout.vh - boardBottom);
   const railBottom = selfBottom + (spectator && hasCards ? 250 : 184);
@@ -503,7 +508,9 @@ export default function GamePage() {
     const line = mustPlayCard
       ? 'Aucun coup légal : seule une carte peut vous sauver.'
       : state.cardPlayed
-        ? 'Sort lancé : jouez maintenant votre coup.'
+        ? castNow
+          ? castMessage(castNow)
+          : 'Sort lancé : jouez maintenant votre coup.'
         : hasCards && playable.some(Boolean)
           ? layout.mobile
             ? 'Une carte avant le coup, ou jouez directement.'
@@ -589,12 +596,6 @@ export default function GamePage() {
       {oppAway && view.status === 'active' && <AwayNotice since={oppAway} claimAfter={view.claimAfterMs} onClaim={() => void send('game:claim', {})} />}
       {ended && view.rematch.next === null && you && view.rematch[opposite(you)] && !view.rematch[you] && <p className="gp-note">Votre adversaire propose une revanche.</p>}
       {!ended && <EffectsPanel effects={state.effects} you={you} />}
-      {hasCards && layout.mobile && view.status !== 'waiting' && (
-        <div className="gp-opp-hand-m">
-          <span>Main de {oppSeat?.name ?? colorName(top)}</span>
-          <HandRow hand={state.hands[top]} label={`Cartes de ${oppSeat?.name ?? colorName(top)}`} />
-        </div>
-      )}
     </>
   );
 
@@ -624,7 +625,6 @@ export default function GamePage() {
       style={layout.mobile ? { top: boardBottom + 14 } : { bottom: selfBottom }}
       aria-label={`${colorName(bottom)} : ${selfSeat?.name ?? 'en attente'}`}
     >
-      {spectator && hasCards && !layout.mobile && <HandRow hand={state.hands[bottom]} label={`Cartes de ${selfSeat?.name ?? colorName(bottom)}`} className="gp-self-hand" />}
       <div className="gp-self-clock">
         <Captured state={state} color={bottom} />
         <Clock clock={view.clock} color={bottom} receivedAt={receivedAt} active={isActive(bottom)} compact={layout.mobile} />
@@ -700,7 +700,7 @@ export default function GamePage() {
       <GameShell
         active
         backdrop
-        className={`gp ${!spectator && view.status === 'active' && !myTurn && !ended ? 'their-turn' : ''} ${spectator ? 'is-spectator' : ''} ${!hasCards ? 'no-cards' : ''} ${!hasCards || spectator ? 'no-hand' : ''} ${showRail ? 'has-rail' : ''}`}
+        className={`gp ${!spectator && view.status === 'active' && !myTurn && !ended ? 'their-turn' : ''} ${spectator ? 'is-spectator' : ''} ${!hasCards ? 'no-cards' : ''} ${!hasCards ? 'no-hand' : ''} ${showRail ? 'has-rail' : ''}`}
         board={board}
         onBack={leave}
         backLabel="Retour"
@@ -719,8 +719,9 @@ export default function GamePage() {
         opponent={{
           name: oppSeat?.name ?? 'En attente…',
           sub: seatSub(oppSeat, top, view.ratingDiff?.[top] ?? null),
-          // Main dessinée ici (faces visibles quand le serveur les montre) plutôt que par la coque (dos seulement)
-          hand: [],
+          // Main visible, en éventail retourné en haut à droite (coque)
+          hand: hasCards && view.status !== 'waiting' ? known(state.hands[top]) : [],
+          handLabel: you ? 'Cartes de votre adversaire' : `Cartes de ${oppSeat?.name ?? `des ${colorName(top)}`}`,
           avatar: <Avatar seat={oppSeat} color={top} />,
           extra: (
             <>
@@ -729,15 +730,17 @@ export default function GamePage() {
                 <Clock clock={view.clock} color={top} receivedAt={receivedAt} active={isActive(top)} compact={layout.mobile} />
                 <EmoteBubble text={emotes[top]} />
               </div>
-              {hasCards && !layout.mobile && <HandRow hand={state.hands[top]} label={`Cartes de ${oppSeat?.name ?? colorName(top)}`} />}
             </>
           ),
         }}
-        hand={hasCards && you ? myHand : []}
+        hand={hasCards && view.status !== 'waiting' ? (you ? myHand : known(state.hands[bottom])) : []}
         playable={playable}
+        notes={notes}
         selected={selCard}
         onPickCard={pickCard}
-        handLabel={state.cardPlayed && myTurn ? 'Sort lancé · jouez votre coup' : 'Votre main · un sort par tour'}
+        cast={castNow}
+        readOnlyHand={!you}
+        handLabel={you ? 'Votre main · un sort par tour' : `Cartes de ${selfSeat?.name ?? `des ${colorName(bottom)}`}`}
         toast={announce}
         onEscape={() => {
           if (selCard !== null) cancelCard();
@@ -746,6 +749,8 @@ export default function GamePage() {
         }}
       />
       {selfBlock}
+      {/* Choix des cartes au début de la partie (D5), puis mains révélées : plein écran, rien en dehors de ces moments. */}
+      <CardDraft view={view} receivedAt={receivedAt} onAbort={() => void send('game:abort', {})} />
       {showRail && (
         <aside className="gp-rail" style={{ left: railLeft, top: railTop, bottom: railBottom } as CSSProperties} aria-label="Coups joués">
           <p className="gp-label">Coups</p>

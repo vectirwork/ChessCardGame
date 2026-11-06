@@ -5,17 +5,17 @@ import { z } from 'zod';
 import { Color, PieceType, opposite } from '../shared/chess';
 import { DEFAULT_SKIN } from '../shared/catalog';
 import {
-  CardInfo, GameState, MoveInfo, Result, canStillMate, catalogOf, clockRate, createGame, dealHands, incrementSuspended,
-  playCard, playMove, viewState,
+  CARDS_PER_PLAYER, CardInfo, DRAFT_MS, GameState, MoveInfo, Result, canStillMate, cardPool, catalogOf, clockRate,
+  completeDraft, createGame, dealHands, draftRefusal, incrementSuspended, playCard, playMove, viewState, withHands,
 } from '../shared/game';
 import type {
-  ClientToServer, GameEvent, GameMode, GameStatus, GameView, JoinReply, SeatView, ServerToClient,
+  ClientToServer, DraftView, GameEvent, GameMode, GameStatus, GameView, JoinReply, SeatView, ServerToClient,
 } from '../shared/protocol';
 import { EMOTES, QUICK_CONTROLS, TIME_CONTROLS, tcFromId } from '../shared/protocol';
-import { Catalog, isCardId, offeredCatalog } from '../shared/cards';
+import { CardId, Catalog, isCardId, offeredCatalog } from '../shared/cards';
 import rateLimit from 'express-rate-limit';
 import { Identity, identityFromCookies, userById } from './auth';
-import { BOT_PROFILES, BotLevel } from '../shared/bot';
+import { BOT_PROFILES, BotLevel, chooseBotDraft } from '../shared/bot';
 import { botPool } from './bot-pool';
 import { DbClient, one, q, tx } from './db';
 import { gameId, randomToken } from './security';
@@ -46,12 +46,28 @@ export interface Clock {
   since: number;
 }
 
+/**
+ * Phase de choix des cartes (décision D5, voir DraftView dans protocol.ts). Secrète : seul `draftView` la montre,
+ * à chaque joueur ses propres cartes. Présente dès la création d'une partie avec cartes, armée (échéance) quand la
+ * partie devient active, retirée quand les mains sont données.
+ */
+export interface DraftData {
+  pool: CardId[];
+  /** Échéance (horodatage, ms) ; null tant que la partie attend son deuxième joueur. */
+  deadline: number | null;
+  /** Choix validés, secrets jusqu'à la révélation. */
+  picks: Record<Color, CardId[] | null>;
+  /** Sélections provisoires, secrètes, complétées au hasard à l'échéance si le joueur n'a pas validé. */
+  tentative: Record<Color, CardId[]>;
+}
+
 export interface RoomData {
   id: string;
   mode: GameMode;
   rated: boolean;
   status: GameStatus;
   tc: string;
+  /** Anciennes parties : mains identiques. Le mode miroir n'est plus proposé : les nouvelles parties ont faux. */
   mirror: boolean;
   /** Catalogue de cartes : 'climats' (Pouvoirs) ou 'aucune' ; 'duel' pour les parties créées avant. */
   catalog?: Catalog;
@@ -66,6 +82,11 @@ export interface RoomData {
   createdAt: number;
   /** Les deux joueurs ont joué leur premier coup (ne redevient jamais faux, même après un Retour arrière). */
   started?: boolean;
+  /**
+   * Choix des cartes en cours ou à venir ; absent (anciennes parties, mains tirées) ou null (choix terminé, sans
+   * cartes). Pendant le choix, `state.hands` est vide pour les deux camps.
+   */
+  draft?: DraftData | null;
   lastActivity?: number;
   /**
    * Heure de la dernière sauvegarde : après un arrêt brutal, le temps écoulé jusqu'à elle depuis le début du
@@ -74,11 +95,13 @@ export interface RoomData {
   savedAt?: number;
 }
 
-class Room {
+/** Salle de jeu (exportée pour les tests du choix des cartes, test/server-draft.test.ts). */
+export class Room {
   sockets = new Set<Sock>();
   away: Record<Color, number | null> = { w: null, b: null };
   flagTimer: NodeJS.Timeout | null = null;
   abortTimer: NodeJS.Timeout | null = null;
+  draftTimer: NodeJS.Timeout | null = null;
   saveTimer: NodeJS.Timeout | null = null;
   botBusy = false;
   rematchPending = false;
@@ -159,8 +182,11 @@ export function hasRetiredCard(s: GameState): boolean {
   return [...s.hands.w, ...s.hands.b].some(h => !isCardId(h.card)) || s.effects.some(e => !isCardId(e.card));
 }
 
-/** Reprise après redémarrage : la pendule ne décompte pas le temps où le serveur était arrêté. */
-function resumeRoom(room: Room) {
+/**
+ * Reprise après redémarrage : la pendule ne décompte pas le temps où le serveur était arrêté ; un choix des cartes
+ * en cours repart avec une échéance entière. Exportée pour les tests.
+ */
+export function resumeRoom(room: Room) {
   // Les états enregistrés sans catalogue sont des parties Duel (catalogOf), toujours jouables. Une partie qui
   // garde une carte retirée est annulée, sans effet sur le classement (une partie terminée reste lisible telle
   // quelle : elle n'est jamais rejouée par le moteur).
@@ -175,7 +201,9 @@ function resumeRoom(room: Room) {
     for (const c of ['w', 'b'] as Color[]) if (room.d.seats[c] && room.d.seats[c]!.kind !== 'bot') room.away[c] = now();
   }
   if (room.d.firstMoveDeadline) room.d.firstMoveDeadline = now() + FIRST_MOVE_MS;
+  const both = resumeDraft(room.d);
   armTimers(room);
+  if (both) closeDraftRoom(room);
   maybeBot(room);
 }
 
@@ -233,6 +261,7 @@ function viewFor(room: Room, you: Color | null): GameView {
     createdAt: d.createdAt,
     mirror: d.mirror,
     started: !!d.started,
+    draft: draftView(d, you),
   };
 }
 
@@ -357,11 +386,128 @@ export function commitCard(d: RoomData, color: Color, state: GameState, info: Ca
   return turnChanges;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Choix des cartes (décision D5)
+// Fonctions sur les données de la salle seules (sans sockets ni minuteries) : testées dans
+// test/server-draft.test.ts. Les choix restent dans `RoomData.draft` jusqu'à la révélation ; la vue n'en montre
+// que ce que `draftView` laisse passer.
+
+const COLORS: Color[] = ['w', 'b'];
+
+/** Choix des cartes d'une nouvelle partie avec cartes (null : sans cartes, ou réserve trop petite pour choisir). */
+export function newDraft(catalog: Catalog, timed: boolean, vsBot: boolean): DraftData | null {
+  const pool = cardPool(catalog, timed, { vsBot });
+  if (pool.length < CARDS_PER_PLAYER) return null;
+  return { pool, deadline: null, picks: { w: null, b: null }, tentative: { w: [], b: [] } };
+}
+
+/**
+ * Ouvre (ou rouvre, après un redémarrage) le choix d'une partie active : échéance entière à partir de maintenant,
+ * l'IA choisit aussitôt. Renvoie vrai si les deux camps ont déjà choisi.
+ */
+export function openDraft(d: RoomData): boolean {
+  const dr = d.draft;
+  if (!dr || d.status !== 'active') return false;
+  dr.deadline = now() + DRAFT_MS;
+  for (const c of COLORS) {
+    const seat = d.seats[c];
+    if (seat?.kind === 'bot' && !dr.picks[c]) dr.picks[c] = chooseBotDraft(dr.pool, seat.level ?? 2);
+  }
+  return !!(dr.picks.w && dr.picks.b);
+}
+
+/** Reprise après un redémarrage : le choix en cours repart avec une échéance entière. */
+export const resumeDraft = openDraft;
+
+export type DraftOutcome = { ok: false; error: string } | { ok: true; validated: boolean; complete: boolean };
+
+/**
+ * Choix de `color` : validé (`confirm`, exactement 3 cartes, définitif, idempotent) ou provisoire (0 à 3 cartes).
+ * `validated` : un nouveau choix vient d'être validé ; `complete` : les deux camps ont validé.
+ */
+export function submitDraft(d: RoomData, color: Color, cards: readonly unknown[], confirm: boolean): DraftOutcome {
+  const dr = d.draft;
+  if (d.status !== 'active' || !dr?.deadline) return { ok: false, error: 'Aucun choix de cartes en cours.' };
+  const err = draftRefusal(dr.pool, cards, !confirm);
+  if (err) return { ok: false, error: err };
+  const chosen = cards.slice() as CardId[];
+  const done = dr.picks[color];
+  if (done) {
+    // Idempotent : le même choix, dans n'importe quel ordre, est accepté sans rien changer.
+    if (confirm && chosen.every(c => done.includes(c))) return { ok: true, validated: false, complete: false };
+    return { ok: false, error: 'Vos cartes sont déjà choisies.' };
+  }
+  dr.tentative[color] = chosen;
+  if (!confirm) return { ok: true, validated: false, complete: false };
+  dr.picks[color] = chosen.slice();
+  d.lastActivity = now();
+  return { ok: true, validated: true, complete: !!(dr.picks.w && dr.picks.b) };
+}
+
+/**
+ * Fin du choix : chaque camp reçoit ses cartes validées, ou sa sélection provisoire complétée au hasard. Les mains
+ * sont données à l'état (révélées), le choix est retiré. Renvoie les camps complétés au hasard.
+ */
+export function closeDraft(d: RoomData, rand: () => number = Math.random): Color[] {
+  const dr = d.draft;
+  if (!dr) return [];
+  const auto: Color[] = [];
+  const hands: Record<Color, CardId[]> = { w: [], b: [] };
+  for (const c of COLORS) {
+    const picked = dr.picks[c];
+    if (!picked) auto.push(c);
+    hands[c] = picked ?? completeDraft(dr.pool, dr.tentative[c], rand);
+  }
+  d.state = withHands(d.state, hands);
+  d.draft = null;
+  d.lastActivity = now();
+  return auto;
+}
+
+/** Ce qu'un joueur (ou un spectateur, `you` null) voit du choix en cours : jamais les cartes de l'adversaire. */
+export function draftView(d: RoomData, you: Color | null): DraftView | null {
+  const dr = d.draft;
+  if (!dr || d.status !== 'active' || !dr.deadline) return null;
+  return {
+    pool: dr.pool.slice(),
+    count: CARDS_PER_PLAYER,
+    deadline: dr.deadline,
+    msLeft: Math.max(0, dr.deadline - now()),
+    chosen: { w: !!dr.picks.w, b: !!dr.picks.b },
+    mine: you ? (dr.picks[you] ?? dr.tentative[you]).slice() : [],
+  };
+}
+
+/** Fin du choix dans la salle : mains révélées, puis délai du premier coup, pendules et IA comme avant. */
+function closeDraftRoom(room: Room) {
+  const d = room.d;
+  if (!d.draft || d.status !== 'active') return;
+  const auto = closeDraft(d);
+  updateFirstMoveDeadline(room);
+  startClock(d);
+  armTimers(room);
+  broadcast(room, { type: 'reveal', auto });
+  maybeBot(room);
+}
+
+/** Choix reçu d'un joueur (exporté pour les tests). */
+export function applyDraft(room: Room, color: Color, cards: readonly unknown[], confirm: boolean): Ack {
+  const r = submitDraft(room.d, color, cards, confirm);
+  if (!r.ok) return r;
+  if (r.complete) closeDraftRoom(room);
+  else if (r.validated) broadcast(room, { type: 'draft', color });
+  else scheduleSave(room);
+  return { ok: true };
+}
+
 function armTimers(room: Room) {
   if (room.flagTimer) clearTimeout(room.flagTimer);
   if (room.abortTimer) clearTimeout(room.abortTimer);
-  room.flagTimer = room.abortTimer = null;
+  if (room.draftTimer) clearTimeout(room.draftTimer);
+  room.flagTimer = room.abortTimer = room.draftTimer = null;
   if (room.d.status !== 'active') return;
+  const deadline = room.d.draft?.deadline;
+  if (deadline) room.draftTimer = setTimeout(() => closeDraftRoom(room), Math.max(0, deadline - now()));
   const ck = room.d.clock;
   if (ck?.running) {
     const c = ck.running;
@@ -394,7 +540,9 @@ function checkFlag(room: Room): boolean {
 function updateFirstMoveDeadline(room: Room) {
   const s = room.d.state;
   const turnSeat = room.d.seats[s.pos.turn];
-  room.d.firstMoveDeadline = room.d.status === 'active' && !room.d.started && turnSeat?.kind !== 'bot' ? now() + FIRST_MOVE_MS : null;
+  // Pendant le choix des cartes, pas de délai : il commence à la révélation des mains.
+  room.d.firstMoveDeadline =
+    room.d.status === 'active' && !room.d.draft && !room.d.started && turnSeat?.kind !== 'bot' ? now() + FIRST_MOVE_MS : null;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -424,22 +572,29 @@ function botSeat(level: BotLevel): Seat {
   };
 }
 
-function newRoom(opts: { mode: GameMode; rated: boolean; tc: string; mirror: boolean; catalog: Catalog; creator: string; seats: Record<Color, Seat | null> }): Room {
+/**
+ * Nouvelle partie. Avec cartes, elle commence par le choix des cartes (D5) : mains vides jusqu'à la révélation.
+ * Le mode miroir n'existe plus (le paramètre `mirror` des anciens clients est ignoré). Exportée pour les tests.
+ */
+export function newRoom(opts: { mode: GameMode; rated: boolean; tc: string; catalog: Catalog; creator: string; seats: Record<Color, Seat | null> }): Room {
   const tc = tcFromId(opts.tc) ?? null;
   let id = gameId();
   while (rooms.has(id)) id = gameId();
+  // Réserve : contre l'IA, pas de Sablier fou (il ne pénaliserait que l'humain) ; sans pendule non plus.
+  const vsBot = opts.mode === 'bot';
+  const draft = newDraft(opts.catalog, !!tc, vsBot);
   const room = new Room({
     id,
     mode: opts.mode,
     rated: opts.rated,
     status: opts.seats.w && opts.seats.b ? 'active' : 'waiting',
     tc: opts.tc,
-    mirror: opts.mirror,
+    mirror: false,
     catalog: opts.catalog,
     creator: opts.creator,
     seats: opts.seats,
-    // Contre l'IA, le Sablier fou n'est pas distribué (il ne pénaliserait que l'humain).
-    state: createGame(dealHands(!!tc, opts.mirror, Math.random, opts.catalog, { vsBot: opts.mode === 'bot' }), !!tc, opts.catalog),
+    state: createGame(draft ? { w: [], b: [] } : dealHands(!!tc, false, Math.random, opts.catalog, { vsBot }), !!tc, opts.catalog),
+    draft,
     clock: tc ? { initial: tc.initial, increment: tc.increment, w: tc.initial * 1000, b: tc.initial * 1000, running: null, since: now() } : null,
     drawOffer: null,
     rematch: { w: false, b: false, next: null },
@@ -455,11 +610,14 @@ function newRoom(opts: { mode: GameMode; rated: boolean; tc: string; mirror: boo
   return room;
 }
 
+/** La partie devient active : choix des cartes s'il y a lieu (l'IA choisit aussitôt), sinon délai du premier coup. */
 function begin(room: Room) {
   room.d.status = 'active';
+  const chosen = openDraft(room.d);
   updateFirstMoveDeadline(room);
   startClock(room.d);
   armTimers(room);
+  if (chosen) closeDraftRoom(room);
   maybeBot(room);
 }
 
@@ -477,6 +635,8 @@ function endGame(room: Room, result?: Result) {
   d.status = 'ended';
   d.drawOffer = null;
   d.firstMoveDeadline = null;
+  // Partie terminée pendant le choix (abandon, annulation) : les choix secrets disparaissent avec lui.
+  d.draft = null;
   room.endedAt = now();
   armTimers(room);
   const { w, b } = d.seats;
@@ -521,7 +681,7 @@ async function persistResult(room: Room) {
 
 function maybeBot(room: Room) {
   const d = room.d;
-  if (d.status !== 'active' || room.botBusy) return;
+  if (d.status !== 'active' || room.botBusy || d.draft) return;
   const seat = d.seats[d.state.pos.turn];
   if (seat?.kind !== 'bot') return;
   room.botBusy = true;
@@ -560,9 +720,11 @@ function maybeBot(room: Room) {
 
 type Ack = { ok: boolean; error?: string };
 
-function applyMove(room: Room, color: Color, from: number, to: number, promo?: PieceType): Ack {
+/** Coup reçu d'un joueur ou de l'IA (exporté pour les tests). */
+export function applyMove(room: Room, color: Color, from: number, to: number, promo?: PieceType): Ack {
   const d = room.d;
   if (d.status !== 'active') return { ok: false, error: 'La partie n’est pas en cours.' };
+  if (d.draft) return { ok: false, error: 'Choisissez d’abord vos cartes.' };
   if (d.state.pos.turn !== color) return { ok: false, error: "Ce n'est pas votre tour." };
   if (checkFlag(room)) return { ok: false, error: 'Temps écoulé.' };
   const r = playMove(d.state, from, to, promo);
@@ -579,6 +741,7 @@ function applyMove(room: Room, color: Color, from: number, to: number, promo?: P
 function applyCard(room: Room, color: Color, index: number, targets: number[]): Ack {
   const d = room.d;
   if (d.status !== 'active') return { ok: false, error: 'La partie n’est pas en cours.' };
+  if (d.draft) return { ok: false, error: 'Choisissez d’abord vos cartes.' };
   if (checkFlag(room)) return { ok: false, error: 'Temps écoulé.' };
   const skin = d.seats[color]?.skin ?? DEFAULT_SKIN;
   const r = playCard(d.state, color, index, targets, skin);
@@ -589,6 +752,28 @@ function applyCard(room: Room, color: Color, index: number, targets: number[]): 
   broadcast(room, { type: 'card', info: r.info });
   if (d.state.result) endGame(room);
   else if (turnChanges) maybeBot(room);
+  return { ok: true };
+}
+
+/**
+ * Abandon. Avant l'arrivée de l'adversaire ou pendant le choix des cartes : la partie est annulée, sans effet sur
+ * le classement. Exportée pour les tests.
+ */
+export function resignRoom(room: Room, color: Color): Ack {
+  if (room.d.status === 'waiting' || (room.d.status === 'active' && room.d.draft)) {
+    endGame(room, { winner: null, reason: 'aborted' });
+    return { ok: true };
+  }
+  if (room.d.status !== 'active') return { ok: false, error: 'Partie terminée.' };
+  endGame(room, { winner: opposite(color), reason: 'resign' });
+  return { ok: true };
+}
+
+/** Annulation, permise jusqu'au premier coup de chacun (choix des cartes compris). Exportée pour les tests. */
+export function abortRoom(room: Room): Ack {
+  if (room.d.status === 'ended') return { ok: false, error: 'Partie terminée.' };
+  if (room.d.status === 'active' && room.d.started) return { ok: false, error: 'Trop tard pour annuler : vous pouvez abandonner.' };
+  endGame(room, { winner: null, reason: 'aborted' });
   return { ok: true };
 }
 
@@ -616,7 +801,7 @@ async function createRematch(room: Room): Promise<void> {
   }
   // Revanche d'une ancienne partie Duel : le Duel n'est plus proposé, elle se joue avec les Pouvoirs.
   const catalog = offeredCatalog(d.catalog ?? d.state.catalog);
-  const next = newRoom({ mode: d.mode, rated: d.rated, tc: d.tc, mirror: d.mirror, catalog, creator: d.creator, seats });
+  const next = newRoom({ mode: d.mode, rated: d.rated, tc: d.tc, catalog, creator: d.creator, seats });
   d.rematch.next = next.d.id;
   for (const s of room.sockets) s.emit('game:redirect', { from: d.id, to: next.d.id });
   broadcast(room, { type: 'sync' });
@@ -681,7 +866,7 @@ async function joinQueue(sock: Sock, tc: string, rated: boolean, guestName?: str
   queues.set(pool, list.filter(e => e !== opp));
   const [a, b] = await Promise.all([seatFor(identity, name), seatFor(opp.identity, opp.name)]);
   const white = Math.random() < 0.5;
-  const room = newRoom({ mode: 'quick', rated, tc, mirror: false, catalog, creator: key, seats: white ? { w: a, b } : { w: b, b: a } });
+  const room = newRoom({ mode: 'quick', rated, tc, catalog, creator: key, seats: white ? { w: a, b } : { w: b, b: a } });
   io.to(`id:${key}`).to(`id:${opp.key}`).emit('queue:matched', { gameId: room.d.id });
   return { ok: true };
 }
@@ -695,6 +880,13 @@ setInterval(() => {
 // Socket.IO
 
 const guestNameSchema = z.string().trim().min(2).max(20).regex(/^[\p{L}\p{N} _.-]+$/u);
+
+/** Choix des cartes (`game:draft`) : le contenu des cartes est vérifié ensuite contre la réserve (draftRefusal). */
+const draftSchema = z.object({
+  id: z.string().max(32),
+  cards: z.array(z.string().max(32)).max(CARDS_PER_PLAYER),
+  confirm: z.boolean().optional(),
+});
 
 function limiter() {
   let tokens = 20;
@@ -812,24 +1004,19 @@ export function attachSockets(server: IO) {
         return applyCard(room, color, Number(p.index), targets);
       }));
 
-    sock.on('game:resign', (p, ack) =>
-      withRoom(p?.id, ack, (room, color) => {
-        if (room.d.status === 'waiting') {
-          endGame(room, { winner: null, reason: 'aborted' });
-          return { ok: true };
-        }
-        if (room.d.status !== 'active') return { ok: false, error: 'Partie terminée.' };
-        endGame(room, { winner: opposite(color), reason: 'resign' });
-        return { ok: true };
-      }));
+    sock.on('game:draft', (p, ack) => {
+      const parsed = draftSchema.safeParse(p);
+      if (!parsed.success) {
+        if (typeof ack === 'function') ack({ ok: false, error: 'Choix de cartes invalide.' });
+        return;
+      }
+      const { id, cards, confirm } = parsed.data;
+      return withRoom(id, ack, (room, color) => applyDraft(room, color, cards, confirm !== false));
+    });
 
-    sock.on('game:abort', (p, ack) =>
-      withRoom(p?.id, ack, room => {
-        if (room.d.status === 'ended') return { ok: false, error: 'Partie terminée.' };
-        if (room.d.status === 'active' && room.d.started) return { ok: false, error: 'Trop tard pour annuler : vous pouvez abandonner.' };
-        endGame(room, { winner: null, reason: 'aborted' });
-        return { ok: true };
-      }));
+    sock.on('game:resign', (p, ack) => withRoom(p?.id, ack, (room, color) => resignRoom(room, color)));
+
+    sock.on('game:abort', (p, ack) => withRoom(p?.id, ack, room => abortRoom(room)));
 
     sock.on('game:draw', (p, ack) =>
       withRoom(p?.id, ack, (room, color) => {
@@ -858,6 +1045,11 @@ export function attachSockets(server: IO) {
         const since = room.away[opp];
         if (room.d.status !== 'active' || since === null || now() - since < CLAIM_AFTER_MS) {
           return { ok: false, error: "Votre adversaire peut encore revenir." };
+        }
+        // Départ pendant le choix des cartes ou avant le premier coup : la partie sera annulée (délai du premier coup),
+        // pas gagnée.
+        if (room.d.draft || !room.d.started) {
+          return { ok: false, error: 'La partie n’a pas commencé : elle sera annulée si votre adversaire ne revient pas.' };
         }
         endGame(room, { winner: color, reason: 'abandon' });
         return { ok: true };
@@ -942,8 +1134,9 @@ export async function detachUser(userId: string) {
     for (const c of ['w', 'b'] as Color[]) {
       const seat = room.d.seats[c];
       if (seat?.userId !== userId) continue;
-      if (room.d.status === 'active') endGame(room, { winner: opposite(c), reason: 'abandon' });
-      else if (room.d.status === 'waiting') endGame(room, { winner: null, reason: 'aborted' });
+      // Pendant le choix des cartes, la partie est annulée (sans effet sur le classement).
+      if (room.d.status === 'active' && !room.d.draft) endGame(room, { winner: opposite(c), reason: 'abandon' });
+      else if (room.d.status !== 'ended') endGame(room, { winner: null, reason: 'aborted' });
       room.d.seats[c] = { ...seat, kind: 'guest', userId: null, username: null, name: 'Compte supprimé' };
       scheduleSave(room);
     }
@@ -993,7 +1186,8 @@ gamesRouter.post('/', createLimiter, async (req, res) => {
       tc: z.string().refine(id => TIME_CONTROLS.some(t => t.id === id), 'Cadence inconnue.'),
       color: z.enum(['w', 'b', 'random']).default('random'),
       level: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
-      mirror: z.boolean().default(false),
+      // Mode miroir : plus proposé (chacun choisit ses cartes) ; accepté des anciens clients et ignoré.
+      mirror: z.boolean().optional(),
       // Le Duel n'est plus proposé : une demande Duel (ancien client) est ramenée aux Pouvoirs ; une valeur
       // inconnue est refusée.
       catalog: z
@@ -1020,7 +1214,7 @@ gamesRouter.post('/', createLimiter, async (req, res) => {
   const color: Color = o.color === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : o.color;
   const other = o.mode === 'bot' ? botSeat(o.level ?? 2) : null;
   const seats = color === 'w' ? { w: me, b: other } : { w: other, b: me };
-  const room = newRoom({ mode: o.mode, rated: false, tc: o.tc, mirror: o.mirror, catalog: o.catalog, creator: keyOf(identity), seats });
+  const room = newRoom({ mode: o.mode, rated: false, tc: o.tc, catalog: o.catalog, creator: keyOf(identity), seats });
   await saveRoom(room);
   res.json({ id: room.d.id });
 });

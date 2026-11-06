@@ -1,7 +1,9 @@
 // Test d'intégration du serveur en marche : node test/integration.mjs [http://localhost:3000]
-// Parcourt : inscription, invitation sans compte, coups, mains visibles, carte jouée (catalogue Pouvoirs, identifiant
-// 'climats', par défaut), choix du catalogue (Sans cartes ; Duel ramené aux Pouvoirs ; file amicale), abandon,
-// revanche, IA, boutique (mode démo).
+// Parcourt : inscription, invitation sans compte, choix des cartes (décision D5 : réserve, secret jusqu'à la
+// révélation, refus, idempotence, échéance de 45 s et complément au hasard), coups, mains visibles, carte jouée
+// (catalogue Pouvoirs, identifiant 'climats', par défaut), choix du catalogue (Sans cartes ; Duel ramené aux Pouvoirs ;
+// file amicale), abandon pendant le choix (annulation), revanche, IA, boutique (mode démo).
+// Durée : au moins 47 s (l'échéance du choix est attendue en parallèle des autres étapes).
 import { io } from 'socket.io-client';
 import assert from 'node:assert/strict';
 
@@ -51,10 +53,35 @@ class Client {
 
 const step = (name) => console.log('✓', name);
 const stamp = Date.now().toString(36);
+const DRAFT_MS = 45_000;
+const sameSet = (a, b) => a.length === b.length && a.every(x => b.includes(x));
+const validHand = (cards, pool) => cards.length === 3 && new Set(cards).size === 3 && cards.every(c => pool.includes(c));
+
+// 0. Échéance du choix, lancée d'abord et vérifiée à la fin : Eve valide, Frank n'envoie qu'une sélection provisoire
+const eve = new Client();
+const frank = new Client();
+await eve.api('/me');
+await frank.api('/me');
+let r = await eve.api('/games', { mode: 'invite', tc: '3+2', color: 'w', name: 'Eve' });
+assert.equal(r.status, 200, JSON.stringify(r.data));
+const lateId = r.data.id;
+await eve.connect();
+await frank.connect();
+await eve.emit('game:join', { id: lateId, name: 'Eve' });
+const lateJoin = await frank.emit('game:join', { id: lateId, name: 'Frank' });
+const lateStart = Date.now();
+assert.ok(lateJoin.view.draft, 'choix ouvert');
+const EVE = ['hourglass', 'ice_age', 'rift'];
+assert.ok((await eve.emit('game:draft', { id: lateId, cards: EVE })).ok);
+assert.ok((await frank.emit('game:draft', { id: lateId, cards: ['tide', 'blast'], confirm: false })).ok, 'sélection provisoire');
+const lateMine = await frank.emit('game:join', { id: lateId });
+assert.deepEqual(lateMine.view.draft.mine, ['tide', 'blast'], 'la sélection provisoire est gardée (reconnexion)');
+assert.deepEqual(lateMine.view.draft.chosen, { w: true, b: false });
+step('échéance : partie lancée, un joueur valide, l’autre garde une sélection provisoire (vérifiée à la fin)');
 
 // 1. Inscription d'Alice
 const alice = new Client();
-let r = await alice.api('/auth/register', { email: `alice-${stamp}@test.fr`, username: `alice_${stamp}`, password: 'motdepasse123', acceptTerms: true });
+r = await alice.api('/auth/register', { email: `alice-${stamp}@test.fr`, username: `alice_${stamp}`, password: 'motdepasse123', acceptTerms: true });
 assert.equal(r.status, 200, JSON.stringify(r.data));
 assert.equal(r.data.user.rating, 1200);
 r = await alice.api('/auth/register', { email: `alice-${stamp}@test.fr`, username: `autre_${stamp}`, password: 'motdepasse123', acceptTerms: true });
@@ -63,13 +90,15 @@ r = await alice.api('/me');
 assert.ok(r.data.user, 'session active après inscription');
 step('inscription, doublon refusé, session');
 
-// 2. Alice crée une invitation, Bob (invité sans compte) la rejoint
-r = await alice.api('/games', { mode: 'invite', tc: '5+0', color: 'w' });
+// 2. Alice crée une invitation (mode miroir demandé par un ancien client : ignoré), Bob (invité sans compte) la rejoint
+r = await alice.api('/games', { mode: 'invite', tc: '5+0', color: 'w', mirror: true });
 const gameId = r.data.id;
 await alice.connect();
 let j = await alice.emit('game:join', { id: gameId });
 assert.equal(j.view.status, 'waiting');
 assert.equal(j.view.you, 'w');
+assert.equal(j.view.draft, null, 'pas de choix avant l’arrivée de l’adversaire');
+assert.equal(j.view.mirror, false, 'mode miroir ignoré');
 const bob = new Client();
 await bob.api('/me');
 await bob.connect();
@@ -79,22 +108,68 @@ j = await bob.emit('game:join', { id: gameId, name: 'Bob le Fou' });
 assert.equal(j.view.status, 'active');
 assert.equal(j.view.you, 'b');
 assert.equal(j.view.state.catalog, 'climats', 'catalogue Pouvoirs par défaut');
-for (const c of ['w', 'b']) {
-  assert.equal(j.view.state.hands[c].length, 3);
-  assert.ok(j.view.state.hands[c].every(h => POUVOIRS.includes(h.card)), `main ${c} visible et faite de Pouvoirs`);
-}
+assert.ok(j.view.draft, 'phase de choix ouverte');
+assert.deepEqual(j.view.draft.pool, POUVOIRS, 'réserve : les huit pouvoirs');
+assert.equal(j.view.draft.count, 3);
+assert.ok(j.view.draft.msLeft > DRAFT_MS - 3000 && j.view.draft.msLeft <= DRAFT_MS, `échéance de 45 s (${j.view.draft.msLeft})`);
+assert.deepEqual(j.view.draft.chosen, { w: false, b: false });
+assert.deepEqual(j.view.state.hands, { w: [], b: [] }, 'mains vides pendant le choix');
+assert.equal(j.view.firstMoveDeadline, null, 'pas de délai du premier coup pendant le choix');
+assert.equal(j.view.clock.running, null, 'pendules à l’arrêt');
 const start = await alice.waitFor(u => u.event.type === 'start');
-assert.deepEqual(start.view.state.hands, j.view.state.hands, 'les deux joueurs voient les mêmes mains');
+assert.ok(start.view.draft, 'Alice voit le choix s’ouvrir');
 const spectator = new Client();
 await spectator.api('/me');
 await spectator.connect();
 const js = await spectator.emit('game:join', { id: gameId, sit: false });
 assert.equal(js.view.you, null);
-assert.deepEqual(js.view.state.hands, j.view.state.hands, 'le spectateur voit les deux mains');
-step('invitation par lien, invité avec pseudo, mains visibles (joueurs et spectateur), catalogue Pouvoirs');
+assert.deepEqual(js.view.draft.mine, [], 'le spectateur ne voit aucun choix');
+step('invitation par lien, invité avec pseudo, choix des cartes ouvert (8 pouvoirs, 45 s, mains vides, pendules à l’arrêt)');
+
+// 2 bis. Choix des cartes : refus, secret jusqu'à la révélation, idempotence, révélation
+let a = await alice.emit('game:move', { id: gameId, from: sq('e2'), to: sq('e4') });
+assert.equal(a.ok, false, 'aucun coup pendant le choix');
+for (const cards of [['ice_wall', 'rift'], ['ice_wall', 'ice_wall', 'tide'], ['ice_wall', 'rift', 'freeze'], ['ice_wall', 'rift', 'tide', 'truce'], 'tide', [1, 2, 3]]) {
+  a = await alice.emit('game:draft', { id: gameId, cards });
+  assert.equal(a.ok, false, `choix invalide refusé : ${JSON.stringify(cards)}`);
+}
+a = await spectator.emit('game:draft', { id: gameId, cards: ['ice_wall', 'rift', 'tide'] });
+assert.equal(a.ok, false, 'un spectateur ne choisit pas');
+assert.ok((await alice.emit('game:draft', { id: gameId, cards: ['truce'], confirm: false })).ok, 'sélection provisoire');
+const ALICE = ['ice_wall', 'blood_moon', 'tide'];
+assert.ok((await alice.emit('game:draft', { id: gameId, cards: ALICE })).ok);
+const bobSees = await bob.waitFor(u => u.event.type === 'draft');
+assert.equal(bobSees.event.color, 'w');
+assert.deepEqual(bobSees.view.draft.chosen, { w: true, b: false }, 'Bob sait qu’Alice a choisi');
+assert.deepEqual(bobSees.view.draft.mine, [], 'Bob ne voit pas les cartes d’Alice');
+assert.deepEqual(bobSees.view.state.hands, { w: [], b: [] }, 'mains toujours vides');
+const specSees = await spectator.waitFor(u => u.event.type === 'draft');
+assert.deepEqual(specSees.view.draft.mine, []);
+assert.deepEqual(specSees.view.state.hands, { w: [], b: [] });
+const aliceSees = await alice.waitFor(u => u.event.type === 'draft');
+assert.deepEqual(aliceSees.view.draft.mine, ALICE, 'Alice voit ses cartes');
+assert.ok((await alice.emit('game:draft', { id: gameId, cards: ALICE })).ok, 'même choix renvoyé : accepté (idempotent)');
+assert.ok((await alice.emit('game:draft', { id: gameId, cards: [ALICE[2], ALICE[0], ALICE[1]] })).ok, 'même choix dans un autre ordre');
+a = await alice.emit('game:draft', { id: gameId, cards: ['rift', 'truce', 'blast'] });
+assert.equal(a.ok, false, 'un autre choix après validation est refusé');
+const BOB = ['rift', 'truce', 'blast'];
+assert.ok((await bob.emit('game:draft', { id: gameId, cards: BOB })).ok);
+const rev = await alice.waitFor(u => u.event.type === 'reveal');
+assert.deepEqual(rev.event.auto, [], 'aucun complément au hasard');
+assert.equal(rev.view.draft, null, 'choix terminé');
+assert.deepEqual(rev.view.state.hands.w, ALICE.map(card => ({ card, used: false })), 'main blanche révélée, dans l’ordre choisi');
+assert.deepEqual(rev.view.state.hands.b, BOB.map(card => ({ card, used: false })), 'main noire révélée');
+assert.ok(rev.view.firstMoveDeadline, 'le délai du premier coup démarre à la révélation');
+const specRev = await spectator.waitFor(u => u.event.type === 'reveal');
+assert.deepEqual(specRev.view.state.hands, rev.view.state.hands, 'le spectateur voit les deux mains');
+const bobRev = await bob.waitFor(u => u.event.type === 'reveal');
+assert.deepEqual(bobRev.view.state.hands, rev.view.state.hands, 'les deux joueurs voient les mêmes mains');
+a = await bob.emit('game:draft', { id: gameId, cards: BOB });
+assert.equal(a.ok, false, 'plus de choix après la révélation');
+step('choix : refus (cartes invalides, spectateur, coups), secret jusqu’à la révélation, idempotence, mains révélées');
 
 // 3. Coups
-let a = await alice.emit('game:move', { id: gameId, from: sq('e2'), to: sq('e5') });
+a = await alice.emit('game:move', { id: gameId, from: sq('e2'), to: sq('e5') });
 assert.equal(a.ok, false, 'coup illégal refusé');
 a = await bob.emit('game:move', { id: gameId, from: sq('e7'), to: sq('e5') });
 assert.equal(a.ok, false, 'pas son tour');
@@ -148,10 +223,18 @@ for (const [catalog, expected] of [['aucune', 'aucune'], ['duel', 'climats']]) {
   let jb = await bob.emit('game:join', { id });
   if (jb.needName) jb = await bob.emit('game:join', { id, name: 'Bob le Fou' });
   assert.equal(jb.view.state.catalog, expected);
-  const mine = jb.view.state.hands.b.map(h => h.card);
-  if (expected === 'climats') assert.ok(mine.length === 3 && mine.every(c => POUVOIRS.includes(c)), `main Pouvoirs : ${mine}`);
-  else assert.deepEqual(mine, [], 'pas de cartes');
+  assert.deepEqual(jb.view.state.hands, { w: [], b: [] });
+  if (expected === 'climats') assert.deepEqual(jb.view.draft?.pool, POUVOIRS, 'choix parmi les Pouvoirs');
+  else {
+    assert.equal(jb.view.draft, null, 'sans cartes : pas de choix');
+    assert.ok(jb.view.firstMoveDeadline, 'sans cartes : délai du premier coup tout de suite');
+  }
+  bob.updates = [];
   assert.ok((await bob.emit('game:resign', { id })).ok);
+  const ended = await bob.waitFor(u => u.event.type === 'end' && u.view.id === id);
+  // Pendant le choix, l'abandon annule la partie (sans effet sur le classement) ; sans cartes, avant le premier coup,
+  // c'est un abandon ordinaire.
+  if (expected === 'climats') assert.deepEqual(ended.view.state.result, { winner: null, reason: 'aborted' }, 'abandon pendant le choix : annulation');
 }
 r = await alice.api('/games', { mode: 'invite', tc: '5+0', catalog: 'inconnu' });
 assert.equal(r.status, 400, 'catalogue inconnu refusé');
@@ -170,7 +253,7 @@ const [gc, gd] = await Promise.all([mc, md]);
 assert.equal(gc.gameId, gd.gameId);
 const jc = await carol.emit('game:join', { id: gc.gameId });
 assert.equal(jc.view.state.catalog, 'climats', 'le Duel est ramené aux Pouvoirs dans la file');
-for (const c of ['w', 'b']) assert.ok(jc.view.state.hands[c].every(h => POUVOIRS.includes(h.card)));
+assert.deepEqual(jc.view.draft?.pool, POUVOIRS, 'file amicale : choix des cartes parmi les Pouvoirs');
 assert.ok((await carol.emit('game:resign', { id: gc.gameId })).ok);
 carol.socket.close();
 dave.socket.close();
@@ -179,7 +262,7 @@ step('Sans cartes ; Duel ramené aux Pouvoirs (création et file amicale) ; cata
 // 5. Abandon et revanche
 a = await bob.emit('game:resign', { id: gameId });
 assert.ok(a.ok);
-const end = await alice.waitFor(u => u.event.type === 'end');
+const end = await alice.waitFor(u => u.event.type === 'end' && u.view.id === gameId);
 assert.deepEqual(end.view.state.result, { winner: 'w', reason: 'resign' });
 assert.ok(end.view.state.hands.b.every(h => POUVOIRS.includes(h.card)), 'les mains restent visibles en fin de partie');
 const redirect = new Promise(res => alice.socket.on('game:redirect', res));
@@ -189,30 +272,47 @@ const rd = await redirect;
 assert.equal(rd.from, gameId);
 j = await alice.emit('game:join', { id: rd.to });
 assert.equal(j.view.you, 'b', 'les couleurs sont inversées à la revanche');
-step('abandon, mains visibles, revanche avec couleurs inversées');
+assert.ok(j.view.draft, 'la revanche commence par un nouveau choix des cartes');
+assert.deepEqual(j.view.draft.mine, [], 'rien n’est repris de la partie précédente');
+assert.deepEqual(j.view.state.hands, { w: [], b: [] });
+step('abandon, mains visibles, revanche avec couleurs inversées et nouveau choix des cartes');
 
-// 6. Partie contre l'IA : elle répond seule
+// 6. Partie contre l'IA : elle a choisi aussitôt ; le choix du joueur révèle les mains, puis elle répond seule
 r = await alice.api('/games', { mode: 'bot', tc: 'none', color: 'w', level: 1 });
 const botGame = r.data.id;
 alice.updates = [];
-await alice.emit('game:join', { id: botGame });
+let jbot = await alice.emit('game:join', { id: botGame });
+assert.deepEqual(jbot.view.draft.chosen, { w: false, b: true }, "l'IA a déjà choisi");
+assert.deepEqual(jbot.view.draft.pool, POUVOIRS.filter(c => c !== 'hourglass'), 'pas de Sablier fou contre l’IA ni sans pendule');
+assert.equal((await alice.emit('game:move', { id: botGame, from: sq('d2'), to: sq('d4') })).ok, false, 'pas de coup avant le choix');
+assert.ok((await alice.emit('game:draft', { id: botGame, cards: ['tide', 'rift', 'truce'] })).ok);
+const botRev = await alice.waitFor(u => u.event.type === 'reveal' && u.view.id === botGame);
+assert.ok(validHand(botRev.view.state.hands.b.map(h => h.card), jbot.view.draft.pool), "main de l'IA révélée");
 await alice.emit('game:move', { id: botGame, from: sq('d2'), to: sq('d4') });
 const botReply = await alice.waitFor(u => u.event.type === 'move' && u.event.color === 'b', 15000);
 assert.ok(botReply);
-step("partie contre l'IA : réponse reçue");
+step("partie contre l'IA : elle choisit aussitôt, mains révélées au choix du joueur, réponse reçue");
 
-// 6 bis. Contre l'IA, avec pendule : le Sablier fou n'est jamais distribué (ni à l'humain ni à l'IA)
+// 6 bis. Contre l'IA, avec pendule : le Sablier fou n'est jamais proposé (ni à l'humain ni à l'IA) ; l'IA varie
+const botHands = new Set();
 for (let k = 0; k < 4; k++) {
-  r = await alice.api('/games', { mode: 'bot', tc: '3+2', color: 'w', level: 1, catalog: 'climats' });
+  r = await alice.api('/games', { mode: 'bot', tc: '3+2', color: 'b', level: 2, catalog: 'climats' });
   const id = r.data.id;
-  await alice.emit('game:join', { id });
-  assert.ok((await alice.emit('game:resign', { id })).ok);
-  const done = await alice.emit('game:join', { id });
-  const cards = [...done.view.state.hands.w, ...done.view.state.hands.b].map(h => h.card);
-  assert.equal(cards.length, 6);
-  assert.ok(!cards.includes('hourglass'), `Sablier fou distribué contre l'IA : ${cards}`);
+  alice.updates = [];
+  jbot = await alice.emit('game:join', { id });
+  assert.ok(!jbot.view.draft.pool.includes('hourglass'), 'réserve sans Sablier fou');
+  a = await alice.emit('game:draft', { id, cards: ['hourglass', 'rift', 'tide'] });
+  assert.equal(a.ok, false, 'Sablier fou refusé contre l’IA');
+  assert.ok((await alice.emit('game:draft', { id, cards: ['ice_wall', 'rift', 'tide'] })).ok);
+  const done = await alice.waitFor(u => u.event.type === 'reveal' && u.view.id === id);
+  const cards = done.view.state.hands.w.map(h => h.card);
+  assert.ok(validHand(cards, jbot.view.draft.pool), `main de l'IA : ${cards}`);
+  botHands.add([...cards].sort().join());
+  a = await alice.emit('game:resign', { id });
+  assert.ok(a.ok, `abandon refusé : ${a.error}`);
+  await new Promise(res => setTimeout(res, 500)); // limiteur par socket (20 actions, 8 par seconde)
 }
-step("contre l'IA : pas de Sablier fou dans les mains");
+step(`contre l'IA : pas de Sablier fou, mains de l'IA valides (${botHands.size} différentes sur 4)`);
 
 // 7. Boutique en mode démo
 r = await alice.api('/shop/checkout', { productId: 'skin:inferno', waiver: false });
@@ -251,6 +351,24 @@ if (r.status === 200) {
   await mallory.api('/account', { password: 'motdepasse123' }, 'DELETE');
 }
 step('émote piégée ignorée, administration réservée aux e-mails vérifiés');
+
+// 8 bis. Échéance (partie lancée à l'étape 0) : le serveur complète au hasard ce qui manque
+const waitLeft = Math.max(0, lateStart + DRAFT_MS - Date.now());
+console.log(`  … échéance du choix dans ${Math.round(waitLeft / 1000)} s`);
+const late = await eve.waitFor(u => u.event.type === 'reveal' && u.view.id === lateId, waitLeft + 6000);
+assert.ok(Date.now() - lateStart >= DRAFT_MS - 1000, 'révélation à l’échéance, pas avant');
+assert.deepEqual(late.event.auto, ['b'], 'seul Frank a été complété au hasard');
+assert.deepEqual(late.view.state.hands.w.map(h => h.card), EVE, 'le choix validé est gardé');
+const fh = late.view.state.hands.b.map(h => h.card);
+assert.deepEqual(fh.slice(0, 2), ['tide', 'blast'], 'la sélection provisoire est gardée');
+assert.ok(validHand(fh, POUVOIRS), `main complétée valide : ${fh}`);
+assert.ok(late.view.firstMoveDeadline > Date.now() + 30_000, 'délai du premier coup à partir de la révélation');
+const frankLate = await frank.waitFor(u => u.event.type === 'reveal' && u.view.id === lateId);
+assert.deepEqual(frankLate.view.state.hands, late.view.state.hands);
+assert.ok((await eve.emit('game:abort', { id: lateId })).ok, 'annulation possible avant le premier coup');
+eve.socket.close();
+frank.socket.close();
+step('échéance de 45 s : choix validé gardé, sélection provisoire complétée au hasard, délai du premier coup ensuite');
 
 // 9. Compte : profil public, export, suppression
 r = await alice.api(`/users/alice_${stamp}`);

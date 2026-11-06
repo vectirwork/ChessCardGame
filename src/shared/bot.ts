@@ -7,7 +7,7 @@ import {
 } from './chess';
 import { CARDS, CardId } from './cards';
 import {
-  GameState, cardOptions, cardPlayable, legalMovesOf, magicYields, modsSequence, playCard,
+  CARDS_PER_PLAYER, GameState, cardOptions, cardPlayable, legalMovesOf, magicYields, modsSequence, playCard,
 } from './game';
 
 export type BotLevel = 1 | 2 | 3;
@@ -379,6 +379,54 @@ export function chooseBotCard(s: GameState, level: BotLevel): { index: number; t
   const keep = profile.cardThreshold + Math.max(0, 30 - s.ply) * 6;
   if (mustPlay || best.gain >= keep) return { index: best.index, targets: best.targets };
   return null;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Choix des cartes (décision D5) : l'IA choisit tout de suite, avec une heuristique simple et un peu de hasard.
+
+/**
+ * Valeur de départ d'une carte pour l'IA : le Mur (permanent, utile en attaque comme en défense) d'abord, puis les
+ * pouvoirs tactiques que sa recherche exploite bien (Lune de sang, Déflagration, Grande Marée). Le Sablier fou,
+ * qui ne pénalise que l'humain, n'est jamais proposé contre l'IA ; il est classé en dernier par prudence.
+ */
+const DRAFT_VALUE: Partial<Record<CardId, number>> = {
+  ice_wall: 5,
+  blood_moon: 4.5,
+  blast: 4.4,
+  tide: 4,
+  rift: 3.6,
+  truce: 3.4,
+  ice_age: 3.1,
+  hourglass: 1,
+};
+/** Part de hasard du choix, selon le niveau : l'Apprenti choisit presque au hasard, l'Archimage varie peu. */
+const DRAFT_NOISE: Record<BotLevel, number> = { 1: 3, 2: 1.6, 3: 1 };
+
+/**
+ * Cartes de l'IA pour la phase de choix : CARDS_PER_PLAYER cartes différentes de la réserve, classées par valeur
+ * plus un bruit qui dépend du niveau (pas toujours les mêmes cartes), avec au plus deux Climats (un seul Climat
+ * agit à la fois : un troisième serait gaspillé). Toutes les cartes de la réserve sont jouables par l'IA.
+ */
+export function chooseBotDraft(pool: readonly CardId[], level: BotLevel, rand: () => number = Math.random): CardId[] {
+  const noise = DRAFT_NOISE[level] ?? 1.6;
+  const ranked = pool
+    .filter(id => !CARDS[id].humanOnly || pool.length <= CARDS_PER_PLAYER)
+    .map(id => ({ id, v: (DRAFT_VALUE[id] ?? 3) + (rand() * 2 - 1) * noise }))
+    .sort((a, b) => b.v - a.v)
+    .map(x => x.id);
+  const hand: CardId[] = [];
+  const climates = () => hand.filter(id => CARDS[id].family === 'climat').length;
+  for (const id of ranked) {
+    if (hand.length >= CARDS_PER_PLAYER) break;
+    if (CARDS[id].family === 'climat' && climates() >= 2) continue;
+    hand.push(id);
+  }
+  // Réserve trop petite pour respecter la limite des Climats : on complète avec ce qui reste.
+  for (const id of [...ranked, ...pool]) {
+    if (hand.length >= CARDS_PER_PLAYER) break;
+    if (!hand.includes(id)) hand.push(id);
+  }
+  return hand;
 }
 
 /**

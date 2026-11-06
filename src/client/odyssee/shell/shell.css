@@ -110,7 +110,7 @@
   top: clamp(96px, 19vh, 180px);
   width: min(25vw, 360px);
   /* Jamais sur l'éventail : au-delà, le panneau défile discrètement */
-  max-height: calc(100vh - clamp(96px, 19vh, 180px) - 330px);
+  max-height: calc(100vh - clamp(96px, 19vh, 180px) - 300px);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
@@ -149,24 +149,6 @@
   margin-top: 6px;
   font-size: 12.5px;
   color: var(--faint);
-}
-.gs-prompt {
-  margin-top: 18px;
-  padding: 16px 18px;
-  border-radius: 14px;
-  border: 1px solid hsl(var(--h) 80% 70% / 0.4);
-  background: linear-gradient(160deg, hsl(var(--h) 80% 30% / 0.35), rgba(8, 8, 22, 0.6));
-}
-.gs-prompt p {
-  margin: 0;
-  font-size: 14.5px;
-  color: var(--dim);
-}
-.gs-prompt .gs-spell {
-  margin-bottom: 4px;
-  font-family: var(--serif);
-  font-size: 24px;
-  color: var(--text);
 }
 .gs-actions {
   display: flex;
@@ -239,6 +221,7 @@
   top: 26px;
   display: grid;
   justify-items: end;
+  grid-template-columns: minmax(0, auto);
   gap: 14px;
 }
 .gs-opp-id {
@@ -271,59 +254,70 @@
     radial-gradient(circle, rgba(140, 100, 255, 0.4), transparent 72%);
   box-shadow: 0 0 22px rgba(140, 100, 255, 0.5);
 }
-/* Main adverse, face visible et lisible : une ligne par carte (emblème, nom), cartes jouées grisées */
-.gs-backs {
+/* Main adverse (décision D3) : éventail retourné de 180°, comme tenu par l'adversaire en face ; plus petit que
+   votre main, faces visibles, cartes jouées grisées. La bulle (portail, .card-bubble.is-floating) se lit à l'endroit. */
+.gs-opp-fan {
+  --w: var(--ow, 64px);
   display: grid;
-  gap: 5px;
   justify-items: end;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  gap: 6px;
+  pointer-events: none;
+}
+.gs-opp-fan-label {
+  max-width: 100%;
+  font-family: var(--caps);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  line-height: 1.5;
+  text-align: right;
+  text-transform: uppercase;
+  color: var(--soft);
+}
+.gs-opp-cards {
+  display: flex;
+  align-items: flex-start;
+  margin-top: 12px;
+  padding: 0 4px 6px;
+}
+.gs-opp-slot + .gs-opp-slot {
+  margin-left: calc(var(--w) * -0.16);
+}
+.gs-opp-slot.is-retired {
+  width: var(--w);
+  aspect-ratio: 5 / 7.2;
+  border-radius: 6px;
+  border: 1px dashed var(--hair);
 }
 .gs-opp-card {
-  --h: 42;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 10px 4px 5px;
-  border: 1px solid hsl(var(--h) 70% 62% / 0.35);
-  border-radius: 999px;
-  background: hsl(var(--h) 50% 14% / 0.55);
-  font-size: 12.5px;
-  line-height: 1.2;
-  color: var(--text, #f3efe6);
+  transform: translateY(calc(var(--fy) * -0.6)) rotate(calc(180deg - var(--fr)));
+  transition: transform 0.5s var(--ease);
 }
-.gs-opp-em {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: hsl(var(--h) 60% 22% / 0.9);
-  color: hsl(var(--h) 85% 72%);
+.gs-opp-slot:hover .gs-opp-card,
+.gs-opp-card.is-on {
+  position: relative;
+  z-index: 2;
+  transform: translateY(12px) rotate(180deg);
 }
-.gs-opp-em svg {
-  width: 17px;
-  height: 17px;
+.gs-opp-fan .sc-hand {
+  --w: var(--ow, 64px);
+  pointer-events: auto;
 }
-.gs-opp-card.used {
-  opacity: 0.45;
-  filter: grayscale(0.85);
+.gs-opp-fan .sc-hand .sc-name {
+  font-size: max(8px, calc(var(--w) * 0.11));
 }
-.gs-opp-card.used .gs-opp-name {
-  text-decoration: line-through;
-  text-decoration-color: rgba(255, 255, 255, 0.45);
+.gs-opp-fan .sc-hand .sc-turn {
+  font-size: max(7.5px, calc(var(--w) * 0.1));
+  padding: 0.25em 0.55em 0.27em 0.35em;
 }
-.gs-opp-used {
-  font-family: var(--caps);
-  font-size: 9px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--faint);
-}
-.gs-opp-hand-m {
+.gs-opp-fan .sc-foil {
   display: none;
+}
+.gs-opp-fan .sc-halo {
+  animation: none;
+}
+/* « Jouée » se lit à l'endroit sur une carte retournée */
+.gs-opp-fan .sc-used {
+  rotate: 168deg;
 }
 
 /* Main en éventail */
@@ -346,6 +340,69 @@
   color: var(--soft);
   white-space: nowrap;
 }
+/* Au-dessus de la main : invite (tant qu'aucune carte n'a été ouverte) ou message après un lancement */
+.gs-fan-note {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 34px);
+  width: max-content;
+  max-width: min(400px, calc(100vw - 80px));
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  line-height: 1.4;
+  pointer-events: none;
+  animation: gs-note-in 0.5s var(--ease) both;
+}
+.gs-fan-note.is-invite {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  background: rgba(10, 10, 26, 0.78);
+  color: var(--text);
+}
+.gs-invite-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gold);
+  animation: gs-invite-dot 1.6s ease-in-out 4;
+}
+@keyframes gs-invite-dot {
+  50% {
+    transform: scale(1.6);
+    opacity: 0.45;
+  }
+}
+.gs-fan-note.is-cast {
+  border: 1px solid hsl(var(--h) 80% 70% / 0.55);
+  background: linear-gradient(160deg, hsl(var(--h) 60% 22% / 0.95), rgba(8, 9, 24, 0.92));
+  color: var(--text);
+}
+.gs-fan-note.is-cast b {
+  margin-right: 8px;
+  font-family: var(--serif);
+  font-size: 19px;
+  font-weight: 500;
+}
+@keyframes gs-note-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.gs-fan .spell-card.disabled.clickable {
+  cursor: pointer;
+}
+/* Bulle d'une carte, posée au-dessus de tout le HUD (portail) */
+.card-bubble.is-floating {
+  position: fixed;
+  z-index: 45;
+}
+
 .gs-self-extra {
   position: absolute;
   left: 4px;
@@ -424,9 +481,6 @@
 .gs.is-mobile .gs-opp-id span {
   font-size: 10.5px;
 }
-.gs.is-mobile .gs-opponent .gs-backs {
-  display: none;
-}
 .gs.is-mobile .gs-status {
   left: 16px;
   right: 16px;
@@ -447,17 +501,6 @@
 }
 .gs.is-mobile .gs-hint small {
   display: none;
-}
-.gs.is-mobile .gs-prompt {
-  margin-top: 8px;
-  padding: 9px 12px;
-}
-.gs.is-mobile .gs-prompt p {
-  font-size: 13px;
-}
-.gs.is-mobile .gs-prompt .gs-spell {
-  font-size: 18px;
-  margin-bottom: 0;
 }
 .gs.is-mobile .gs-actions {
   margin-top: 8px;
@@ -486,47 +529,13 @@
 .gs.is-mobile .gs-fan .sc-hand {
   --w: 88px;
 }
+.gs.is-mobile .gs-fan .sc-turn {
+  gap: 0.25em;
+  padding: 0.28em 0.5em 0.3em 0.3em;
+  font-size: 8.5px;
+}
 .gs.is-mobile .gs-fan-slot + .gs-fan-slot {
   margin-left: -12px;
-}
-.gs.is-mobile .gs-opp-hand-m {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 10px;
-  font-family: var(--caps);
-  font-size: 10.5px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--soft);
-}
-.gs.is-mobile .gs-opp-hand-m {
-  flex-wrap: wrap;
-  gap: 6px 10px;
-}
-.gs.is-mobile .gs-opp-hand-m .gs-backs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-.gs.is-mobile .gs-opp-hand-m .gs-opp-card {
-  padding: 2px 8px 2px 3px;
-  gap: 5px;
-  font-family: var(--sans, inherit);
-  font-size: 11px;
-  letter-spacing: 0;
-  text-transform: none;
-}
-.gs.is-mobile .gs-opp-hand-m .gs-opp-em {
-  width: 18px;
-  height: 18px;
-}
-.gs.is-mobile .gs-opp-hand-m .gs-opp-em svg {
-  width: 14px;
-  height: 14px;
-}
-.gs.is-mobile .gs-opp-hand-m .gs-opp-used {
-  display: none;
 }
 .gs.is-mobile .gs-self-extra {
   position: fixed;
@@ -538,9 +547,6 @@
 @media (max-height: 700px) {
   .gs.is-mobile .gs-fan .sc-hand {
     --w: 72px;
-  }
-  .gs.is-mobile .gs-opp-hand-m {
-    display: none;
   }
 }
 
@@ -624,38 +630,85 @@
   border-bottom-color: var(--gold);
 }
 
-/* Mobile, pendant le ciblage : le sort prend la place du titre, ses boutons restent toujours à portée */
-.gs.is-mobile.has-prompt .gs-kicker,
-.gs.is-mobile.has-prompt .gs-title {
+.gs.is-mobile.more-open .gs-hint {
   display: none;
 }
-.gs.is-mobile .gs-prompt {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  grid-template-areas: 'name actions' 'text text';
+
+/* Mobile : la main adverse, en petit, sur une bande en haut à droite, entre la barre du haut et l'échiquier
+   (gameLayout descend l'échiquier d'autant) ; emblèmes seuls, la bulle donne le reste. */
+.gs.is-mobile .gs-opp-strip {
+  position: absolute;
+  top: 50px;
+  right: 12px;
+  left: 12px;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+.gs.is-mobile .gs-opp-fan {
+  grid-auto-flow: column;
   align-items: center;
-  column-gap: 12px;
+  gap: 10px;
+}
+.gs.is-mobile .gs-opp-fan-label {
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+}
+.gs.is-mobile .gs-opp-cards {
   margin-top: 0;
+  padding: 0 2px;
 }
-.gs.is-mobile .gs-prompt .gs-spell {
-  grid-area: name;
-}
-.gs.is-mobile .gs-prompt .gs-prompt-text {
-  grid-area: text;
-  margin-top: 6px;
-  font-size: 12.5px;
-  line-height: 1.5;
-}
-.gs.is-mobile .gs-prompt .gs-actions {
-  grid-area: actions;
-  margin-top: 0;
-  gap: 12px;
-  flex-wrap: nowrap;
-}
-.gs.is-mobile .gs-prompt .btn-line {
-  font-size: 12.5px;
-}
-.gs.is-mobile.more-open .gs-hint,
-.gs.is-mobile.more-open .gs-opp-hand-m {
+.gs.is-mobile .gs-opp-fan .sc-name,
+.gs.is-mobile .gs-opp-fan .sc-turn {
   display: none;
+}
+.gs.is-mobile .gs-opp-fan .sc-art {
+  width: 92%;
+  margin: 30% 0 0;
+}
+.gs.is-mobile .gs-opp-card {
+  transform: translateY(calc(var(--fy) * -0.25)) rotate(calc(180deg - var(--fr)));
+}
+.gs.is-mobile .gs-opp-slot:hover .gs-opp-card,
+.gs.is-mobile .gs-opp-card.is-on {
+  transform: translateY(3px) rotate(180deg);
+}
+.gs.is-mobile .gs-opp-fan .sc-used {
+  font-size: 0;
+  padding: 0;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 0;
+  rotate: 145deg;
+}
+/* Mobile : invite et message centrés au-dessus de l'éventail ; le statut leur laisse la place */
+.gs.is-mobile .gs-fan-note {
+  left: 50%;
+  bottom: calc(100% + 24px);
+  translate: -50% 0;
+  justify-content: center;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  padding: 7px 12px;
+  font-size: 12.5px;
+  text-align: center;
+}
+.gs.is-mobile .gs-fan-note.is-cast b {
+  font-size: 16px;
+}
+/* Mobile : le message au-dessus de la main suffit, la consigne du statut (même message) s'efface */
+.gs.is-mobile.has-cast .gs-hint {
+  display: none;
+}
+.gs.is-mobile.has-fan-note .gs-status {
+  max-height: calc(100vh - var(--gs-top) - var(--gs-g) - 12px - 205px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .gs-opp-card,
+  .gs-fan-note,
+  .gs-invite-dot {
+    transition: none;
+    animation: none;
+  }
 }

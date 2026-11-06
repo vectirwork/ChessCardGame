@@ -37,6 +37,13 @@ const jb = await b.emit('game:join', { id: gameId });
 assert.equal(ja.view.rated, true);
 const white = ja.view.you === 'w' ? a : b;
 const black = white === a ? b : a;
+// Choix des cartes (décision D5) : chacun valide trois cartes, puis les mains sont révélées.
+assert.ok(ja.view.draft && jb.view.draft, 'la partie classée commence par le choix des cartes');
+const revealed = new Promise(r => white.socket.on('game:update', u => u.event.type === 'reveal' && r(u)));
+assert.ok((await white.emit('game:draft', { id: gameId, cards: ['ice_wall', 'rift', 'tide'] })).ok);
+assert.ok((await black.emit('game:draft', { id: gameId, cards: ['truce', 'blood_moon', 'ice_age'] })).ok);
+const rv = await revealed;
+assert.equal(rv.view.state.hands.w.length, 3);
 assert.ok((await white.emit('game:move', { id: gameId, from: sq('d2'), to: sq('d4') })).ok);
 assert.ok((await black.emit('game:move', { id: gameId, from: sq('d7'), to: sq('d5') })).ok);
 assert.equal((await black.emit('game:abort', { id: gameId })).ok, false, 'plus d’annulation après le premier coup de chacun');

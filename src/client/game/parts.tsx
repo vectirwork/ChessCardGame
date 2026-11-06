@@ -7,12 +7,11 @@ import { Color, PieceType, VALUE, sanToFrench } from '../../shared/chess';
 import { CARDS, CATALOGS } from '../../shared/cards';
 import type { Catalog } from '../../shared/cards';
 import { BOT_PROFILES } from '../../shared/bot';
-import type { Effect, GameState, HandCard, LogEntry } from '../../shared/game';
+import type { Effect, GameState, LogEntry } from '../../shared/game';
 import { describeCardPlay } from '../../shared/game';
 import type { ClockView, GameView, SeatView } from '../../shared/protocol';
 import { TIME_CONTROLS } from '../../shared/protocol';
 import { pieceUrl } from '../components/pieces';
-import { CardBack, SpellCard } from '../components/SpellCard';
 import { OracleEye } from '../odyssee/shell';
 import { playSound } from '../sound';
 
@@ -184,27 +183,6 @@ export function EmoteBubble({ text }: { text: string | null }) {
     <span className="gp-emote" role="status">
       {text}
     </span>
-  );
-}
-
-/**
- * Main d'un joueur, faces visibles (mains visibles) : bandeaux compacts lisibles (emblème, nom, famille, « Jouée »)
- * ou petites cartes (`mini`). Le dos ne sert plus qu'à une carte inconnue (ancienne partie).
- */
-export function HandRow({ hand, label, className = '', mini = false }: { hand: HandCard[]; label: string; className?: string; mini?: boolean }) {
-  if (!hand.length) return null;
-  return (
-    <div className={`gp-hand-row ${mini ? '' : 'is-compact'} ${className}`} aria-label={label}>
-      {hand.map((h, i) => {
-        const def = h.card ? CARDS[h.card] : undefined;
-        if (!def) return <CardBack key={i} size="mini" used={h.used} />;
-        return (
-          <span key={i} className="gp-hand-card" title={`${def.name}${h.used ? ' (utilisée)' : ''} : ${def.description}`}>
-            <SpellCard id={def.id} size={mini ? 'mini' : 'compact'} used={h.used} tilt={false} />
-          </span>
-        );
-      })}
-    </div>
   );
 }
 

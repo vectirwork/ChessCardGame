@@ -93,6 +93,57 @@
 .sq.hover {
   box-shadow: inset 0 0 0 4px rgba(255, 255, 255, 0.75);
 }
+/* Glisser sur une pièce prenable : la case s'allume et la pièce visée s'efface à moitié (décision D4) */
+.sq.hover-cap {
+  box-shadow: inset 0 0 0 4px rgba(255, 214, 120, 0.95), inset 0 0 22px rgba(255, 120, 80, 0.55);
+}
+.piece.is-prey .pi {
+  opacity: 0.5;
+  scale: 0.86;
+  transition: opacity 0.15s, scale 0.15s;
+}
+/* Lâcher refusé : une ligne d'explication en haut de l'échiquier */
+.board-note {
+  position: absolute;
+  left: 50%;
+  top: 6%;
+  z-index: 12;
+  max-width: 86%;
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 214, 120, 0.55);
+  background: rgba(10, 10, 26, 0.92);
+  color: #fff3d6;
+  font-size: 13.5px;
+  line-height: 1.35;
+  text-align: center;
+  pointer-events: none;
+  translate: -50% 0;
+  animation: board-note 2.6s ease both;
+}
+@keyframes board-note {
+  0% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  10%,
+  80% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .piece.is-prey .pi {
+    transition: none;
+  }
+  .board-note {
+    animation: none;
+  }
+}
 .sq.check::before {
   content: '';
   position: absolute;

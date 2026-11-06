@@ -1,13 +1,20 @@
 // Mains de cartes des leçons, des problèmes et de l'analyse (les deux mains sont visibles : la sienne, jouable,
 // et celle de l'adversaire, en lecture seule, cartes jouées grisées), ciblage compris, et liste sobre des effets
 // en cours. Une carte retirée du jeu (ancienne partie relue) s'affiche par son identifiant, sans planter.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+//
+// Comme dans la coque de partie (décisions D1 et D2 du plan V2) : une carte montre son emblème, son nom et
+// l'effet sur le tour ; la toucher ouvre sa bulle (règle, famille, durée, moment d'action) avec « Lancer ce sort »
+// et « Annuler » ; le survol et le focus clavier montrent la même bulle en lecture seule.
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import { CardEmblem } from '../components/CardArt';
+import { CardBubble, TurnPill, cardAriaLabel } from '../components/SpellCard';
 import { CARDS, CardId, FAMILY_LABEL, isCardId } from '../../shared/cards';
 import { rankOf, sqName } from '../../shared/chess';
 import type { Color } from '../../shared/chess';
 import { Effect, GameState, cardOptions, cardPlayable } from '../../shared/game';
+import { handNotes } from '../odyssee/shell/cards';
 
 export interface Targeting {
   index: number | null;
@@ -74,6 +81,124 @@ export function useTargeting(state: GameState, color: Color, enabled: boolean, o
 
 export const sideName = (c: Color) => (c === 'w' ? 'Blancs' : 'Noirs');
 
+/** Invite « Touchez une carte… » (même mémoire que la coque de partie). */
+const SEEN_KEY = 'sm:cartes:lues';
+const readSeen = () => {
+  try {
+    return localStorage.getItem(SEEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+const writeSeen = () => {
+  try {
+    localStorage.setItem(SEEN_KEY, '1');
+  } catch {
+    // stockage indisponible
+  }
+};
+
+/**
+ * Place d'une bulle accrochée à une carte : sous la carte si la place le permet (`prefer`), sinon au-dessus ; suit
+ * le défilement de la page.
+ */
+function useAnchoredBubble(el: HTMLElement | null, prefer: 'above' | 'below'): { style: CSSProperties; below: boolean } | null {
+  const [pos, setPos] = useState<{ style: CSSProperties; below: boolean } | null>(null);
+  useLayoutEffect(() => {
+    if (!el) {
+      setPos(null);
+      return;
+    }
+    const place = () => {
+      const r = el.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const w = Math.min(340, vw - 24);
+      const left = Math.max(12, Math.min(r.left + r.width / 2 - w / 2, vw - w - 12));
+      const ax = `${r.left + r.width / 2 - left}px`;
+      const roomBelow = vh - r.bottom;
+      const roomAbove = r.top;
+      const below = prefer === 'below' ? roomBelow >= 230 || roomBelow > roomAbove : roomAbove < 230 && roomBelow > roomAbove;
+      setPos(
+        below
+          ? { below, style: { left, width: w, top: r.bottom + 12, '--cbub-ax': ax, '--cbub-max': `${Math.max(120, roomBelow - 28)}px` } as CSSProperties }
+          : { below, style: { left, width: w, bottom: vh - r.top + 12, '--cbub-ax': ax, '--cbub-max': `${Math.max(120, roomAbove - 28)}px` } as CSSProperties },
+      );
+    };
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [el, prefer]);
+  return pos;
+}
+
+/** Ouverture d'une bulle au toucher, aperçu au survol et au focus ; Échap et toucher ailleurs la referment. */
+function useCardBubbles(resetKey: unknown) {
+  const [open, setOpen] = useState<number | null>(null);
+  const [peek, setPeek] = useState<number | null>(null);
+  const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  const primary = useRef<HTMLButtonElement>(null);
+  const keyOpen = useRef(false);
+  useEffect(() => {
+    setOpen(null);
+    setPeek(null);
+  }, [resetKey]);
+  const close = useCallback(() => {
+    setOpen(cur => {
+      if (cur !== null && document.activeElement?.closest('.card-bubble')) requestAnimationFrame(() => refs.current[cur]?.focus({ preventScroll: true }));
+      return null;
+    });
+  }, []);
+  useEffect(() => {
+    if (open === null) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Element | null;
+      if (t?.closest('.card-bubble, .ft-card')) return;
+      setOpen(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      e.preventDefault();
+      close();
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open, close]);
+  /** Bulle ouverte au clavier : son premier bouton reçoit le focus dès qu'elle est posée (`ready`). */
+  const useKeyFocus = (ready: boolean) =>
+    useEffect(() => {
+      if (!ready || !keyOpen.current || !primary.current) return;
+      keyOpen.current = false;
+      primary.current.focus({ preventScroll: true });
+    }, [ready, open]);
+  /** Props d'une carte : clic (bascule), survol à la souris, focus clavier. */
+  const cardProps = (i: number, onOpen?: () => void) => ({
+    ref: (el: HTMLButtonElement | null) => {
+      refs.current[i] = el;
+    },
+    'aria-expanded': open === i,
+    onClick: (e: React.MouseEvent) => {
+      keyOpen.current = e.detail === 0;
+      setPeek(null);
+      setOpen(cur => (cur === i ? null : i));
+      onOpen?.();
+    },
+    onPointerEnter: (e: React.PointerEvent) => e.pointerType === 'mouse' && setPeek(i),
+    onPointerLeave: () => setPeek(cur => (cur === i ? null : cur)),
+    onFocus: (e: React.FocusEvent<HTMLButtonElement>) => e.currentTarget.matches(':focus-visible') && setPeek(i),
+    onBlur: () => setPeek(cur => (cur === i ? null : cur)),
+  });
+  return { open, setOpen, peek, refs, primary, close, cardProps, useKeyFocus };
+}
+
 /** Carte retirée du jeu (ancienne partie) : un emplacement neutre, nommé par son identifiant. */
 function RetiredCard({ id, used }: { id: string; used: boolean }) {
   return (
@@ -89,8 +214,14 @@ function RetiredCard({ id, used }: { id: string; used: boolean }) {
 /** Main adverse (ou des deux camps en relecture) : visible, en lecture seule, cartes jouées grisées. */
 export function HandView({ state, color, title = `Cartes des ${sideName(color)}`, compact }: { state: GameState; color: Color; title?: string; compact?: boolean }) {
   const hand = state.hands[color];
+  const b = useCardBubbles(state);
+  const shown = b.open ?? b.peek;
+  const pos = useAnchoredBubble(shown !== null ? b.refs.current[shown] ?? null : null, 'above');
+  b.useKeyFocus(!!pos);
   if (!hand.length) return null;
   const left = hand.filter(h => !h.used).length;
+  const shownCard = shown !== null && isCardId(hand[shown]?.card) ? hand[shown].card : null;
+  const id = `ft-bubble-ro-${color}`;
   return (
     <div className={`ft-hand ft-hand-ro ${compact ? 'compact' : ''}`} aria-label={title}>
       <div className="ft-hand-k">{title} · {left ? `${left} en main` : 'toutes jouées'}</div>
@@ -100,50 +231,102 @@ export function HandView({ state, color, title = `Cartes des ${sideName(color)}`
           const def = CARDS[h.card];
           return (
             <li key={i}>
-              <div className={`ft-card ro ${h.used ? 'used' : ''}`} style={{ '--h': def.hue } as CSSProperties} title={`${def.name}${h.used ? ' (jouée)' : ''} : ${def.description}`}>
+              <button
+                type="button"
+                className={`ft-card ro ${h.used ? 'used' : ''} ${shown === i ? 'is-peek' : ''}`}
+                style={{ '--h': def.hue } as CSSProperties}
+                aria-label={cardAriaLabel(def, h.used)}
+                aria-describedby={shown === i ? id : undefined}
+                {...b.cardProps(i)}
+              >
                 <span className="ft-card-em sm"><CardEmblem id={h.card} /></span>
                 <span className="ft-card-txt">
                   <b>{def.name}</b>
-                  <small>{h.used ? 'Jouée' : def.tagline}</small>
+                  {!compact && <TurnPill def={def} className="ft-turn" />}
                 </span>
-              </div>
+              </button>
             </li>
           );
         })}
       </ul>
+      {shownCard && pos && createPortal(
+        <CardBubble
+          id={shownCard}
+          domId={id}
+          mode={b.open === shown ? 'open' : 'read'}
+          owner="opponent"
+          used={hand[shown!].used}
+          onCancel={b.open === shown ? b.close : undefined}
+          primaryRef={b.primary}
+          className={`is-floating ${pos.below ? 'is-below' : ''}`}
+          style={pos.style}
+        />,
+        document.body,
+      )}
     </div>
   );
 }
 
 export function CardHand({ state, color, targeting, disabled, title = 'Vos cartes' }: { state: GameState; color: Color; targeting: Targeting; disabled?: boolean; title?: string }) {
   const hand = state.hands[color];
+  const b = useCardBubbles(state);
+  const [seen, setSeen] = useState(readSeen);
+  const playable = useMemo(
+    () => hand.map((h, i) => !disabled && !h.used && !state.cardPlayed && isCardId(h.card) && cardPlayable(state, color, i)),
+    [hand, disabled, state, color],
+  );
+  const notes = useMemo(() => handNotes(state, color, !disabled, playable), [state, color, disabled, playable]);
+  const shown = targeting.index === null ? b.open ?? b.peek : null;
+  const pos = useAnchoredBubble(shown !== null ? b.refs.current[shown] ?? null : null, 'below');
+  b.useKeyFocus(!!pos);
   if (!hand.length) return null;
+  const markSeen = () => {
+    if (seen) return;
+    setSeen(true);
+    writeSeen();
+  };
+  const shownCard = shown !== null && isCardId(hand[shown]?.card) ? hand[shown].card : null;
+  const id = `ft-bubble-${color}`;
+  const showInvite = !seen && hand.some(h => !h.used);
   return (
     <div className="ft-hand" aria-label={title}>
-      <div className="ft-hand-k">{title}{state.cardPlayed ? ' · carte jouée ce tour' : ''}</div>
+      <div className="ft-hand-k">
+        {title}
+        {state.cardPlayed ? ' · carte jouée ce tour' : ''}
+      </div>
+      {showInvite && <p className="ft-hand-invite">Touchez une carte pour la lire et la lancer.</p>}
       <div className="ft-hand-row">
         {hand.map((h, i) => {
           if (!isCardId(h.card)) return <RetiredCard key={i} id={String(h.card)} used={h.used} />;
           const def = CARDS[h.card];
-          const playable = !disabled && !h.used && !state.cardPlayed && cardPlayable(state, color, i);
           const on = targeting.index === i;
+          const props = b.cardProps(i, () => {
+            markSeen();
+            // Toucher la carte en cours de ciblage l'annule ; une autre carte annule le ciblage en cours
+            if (targeting.index !== null) targeting.cancel();
+          });
           return (
             <button
               key={i}
               type="button"
-              className={`ft-card ${on ? 'on' : ''} ${h.used ? 'used' : ''}`}
+              className={`ft-card ${on ? 'on' : ''} ${h.used ? 'used' : ''} ${!h.used && !playable[i] ? 'dim' : ''} ${shown === i ? 'is-peek' : ''}`}
               style={{ '--h': def.hue } as CSSProperties}
-              disabled={!playable && !on}
-              aria-pressed={on}
-              onClick={() => targeting.select(i)}
-              title={def.description}
+              aria-label={cardAriaLabel(def, h.used)}
+              aria-describedby={shown === i ? id : undefined}
+              {...props}
+              onClick={e => {
+                if (on) {
+                  targeting.cancel();
+                  return;
+                }
+                props.onClick(e);
+              }}
             >
               <span className="ft-card-em"><CardEmblem id={h.card} /></span>
               <span className="ft-card-txt">
                 <b>{def.name}</b>
-                <small>{h.used ? 'Utilisée' : def.tagline}</small>
+                <TurnPill def={def} className="ft-turn" />
               </span>
-              {(def.presage || def.ritual) && <span className="ft-card-tag">{def.presage ? 'Présage' : 'Rituel'}</span>}
             </button>
           );
         })}
@@ -153,6 +336,30 @@ export function CardHand({ state, color, targeting, disabled, title = 'Vos carte
           <span>{targeting.prompt ?? 'Choisissez une case.'}</span>
           <button type="button" className="btn btn-sm btn-ghost" onClick={targeting.cancel}>Annuler</button>
         </div>
+      )}
+      {shownCard && pos && createPortal(
+        <CardBubble
+          id={shownCard}
+          domId={id}
+          mode={b.open === shown ? 'open' : 'read'}
+          used={hand[shown!].used}
+          note={notes[shown!]}
+          onCast={
+            b.open === shown && playable[shown!]
+              ? () => {
+                  const i = shown!;
+                  b.setOpen(null);
+                  markSeen();
+                  targeting.select(i);
+                }
+              : undefined
+          }
+          onCancel={b.open === shown ? b.close : undefined}
+          primaryRef={b.primary}
+          className={`is-floating ${pos.below ? 'is-below' : ''}`}
+          style={pos.style}
+        />,
+        document.body,
       )}
     </div>
   );

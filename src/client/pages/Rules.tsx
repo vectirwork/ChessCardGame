@@ -18,7 +18,13 @@ const ESSENTIALS: { title: string; text: ReactNode }[] = [
   },
   {
     title: 'Trois cartes chacun, à découvert',
-    text: 'Elles sont tirées au hasard en début de partie : les plus rares sortent moins souvent, et une main compte au plus une Légendaire et deux Climats. Les deux mains restent visibles de tous jusqu’à la fin ; une carte jouée reste à sa place, grisée.',
+    text: (
+      <>
+        Au début d’une partie, vous choisissez vos trois cartes ; sur l’accueil, elles sont tirées au hasard. Votre choix reste secret
+        jusqu’à ce que votre adversaire ait choisi, puis les deux mains restent visibles de tous jusqu’à la fin ; une carte jouée reste à
+        sa place, grisée.
+      </>
+    ),
   },
   {
     title: 'Un sort par tour, avant votre coup',
@@ -94,7 +100,7 @@ const FAMILIES: { id: Exclude<Family, 'duel'>; title: string; when: string; text
 
 const FORMULA_POINTS: Partial<Record<Catalog, string[]>> = {
   climats: [
-    'Trois cartes chacun, tirées parmi les huit pouvoirs.',
+    'Trois cartes chacun, choisies parmi les huit pouvoirs au début de la partie.',
     'Les deux mains visibles, du premier au dernier coup.',
     'Un sort par tour au plus, toujours facultatif.',
   ],
@@ -105,10 +111,11 @@ const DETAILS: ReactNode[] = [
   'Le roi est hors d’atteinte des pouvoirs : aucun effet ne le déplace, ne le gèle ni ne le détruit.',
   'Votre roi doit être à l’abri après votre coup, avec les effets tels qu’ils seront alors : l’arrivée d’un Climat ou la fermeture d’une Faille comptent déjà. Celui qui répond à un Présage se prépare donc au monde qui arrive.',
   'Un Climat ne sauve jamais du mat : il arrive trop tard. Le Mur de glace, la Faille ou la Grande Marée le peuvent.',
-  'Le Sablier fou n’est distribué qu’entre humains, dans les parties avec pendule.',
+  'Le Sablier fou n’est proposé qu’entre humains, dans les parties avec pendule.',
+  'Le choix des cartes dure 45 secondes : trois cartes différentes parmi les huit pouvoirs, sans autre contrainte. Si le temps s’écoule, celles qui vous manquent sont tirées au hasard. Sur l’accueil, le tirage favorise les cartes les moins rares, avec au plus une Légendaire et deux Climats par main.',
   'Les animations des sorts ne vous coûtent pas de temps à la pendule.',
   <>
-    Mode miroir : sur la page <Link to="/jouer">Jouer</Link>, vous pouvez recevoir tous les deux les mêmes trois cartes.
+    Pour choisir vos cartes et votre adversaire, passez par la page <Link to="/jouer">Jouer</Link>.
   </>,
 ];
 

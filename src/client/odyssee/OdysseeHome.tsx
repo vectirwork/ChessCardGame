@@ -23,7 +23,7 @@ import {
 import { Engine, isMobile } from './engine';
 import { Chapter, EQ, EqRing, Kicker, Lines, Mark, OrbitRings, Sheet, Slot } from './parts';
 import { SCENES } from './scenery';
-import { EffectChips, GameShell, cardName } from './shell';
+import { EffectChips, GameShell, cardName, castMessage, castThisTurn, handNotes } from './shell';
 import type { ShellAction } from './shell';
 import { StageBoard } from './StageBoard';
 import type { Act } from './StageBoard';
@@ -1026,7 +1026,7 @@ export default function OdysseeHome() {
         hint={
           g.state.cardPlayed && g.myTurn ? (
             <>
-              Sort lancé : jouez maintenant votre coup.
+              {castMessage(castThisTurn(g.state, 'w') ?? 'tide')}
               <small>Une seule carte par tour. Revenez à la page quand vous voulez : la partie vous attend.</small>
             </>
           ) : (
@@ -1062,11 +1062,13 @@ export default function OdysseeHome() {
             <HumanOption q={q} compact={mobile} />
           </div>
         }
-        opponent={{ name: "L'Oracle", sub: `IA · niveau ${levelName(g.level)}`, hand: g.state.hands.b }}
+        opponent={{ name: "L'Oracle", sub: `IA · niveau ${levelName(g.level)}`, hand: g.state.hands.b, handLabel: "Cartes de l'Oracle" }}
         hand={g.hand}
         playable={g.playable}
         selected={g.selected}
         onPickCard={g.pickCard}
+        notes={mode === 'game' ? handNotes(g.state, 'w', g.myTurn, g.playable) : undefined}
+        cast={g.myTurn ? castThisTurn(g.state, 'w') : null}
         toast={toast}
       />
 

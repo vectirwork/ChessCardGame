@@ -62,12 +62,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* La page dessine elle-même les mains (faces visibles) : celles de la coque s'effacent. shell.css est chargé après
-   game.css, d'où une spécificité un cran au-dessus de ses règles mobiles (.gs.is-mobile .gs-opp-hand-m). */
-.gs.gp.is-spectator .gs-fan,
-.gs.gp.no-hand .gs-fan-label,
-.gs.gp .gs-status > .gs-opp-hand-m,
-.gs.gp .gs-hud .gs-opponent > .gs-backs {
+/* Partie sans cartes : pas d'intitulé de main */
+.gs.gp.no-hand .gs-fan-label {
   display: none;
 }
 /* Le panneau de statut défile quand il déborde : une fine barre le signale */
@@ -83,10 +79,6 @@
   border-radius: 4px;
   background: rgba(243, 201, 105, 0.28);
 }
-/* Spectateur : pas d'éventail, le statut prend la hauteur */
-.gs.gp.is-spectator:not(.is-mobile) .gs-status {
-  max-height: calc(100vh - clamp(96px, 19vh, 180px) - 48px);
-}
 /* Mobile, au tour de l'adversaire : le titre suffit */
 .gs.gp.is-mobile.their-turn .gs-hint {
   display: none;
@@ -95,6 +87,14 @@
 .gs.gp.is-mobile .gs-status {
   top: calc(var(--gs-top) + var(--gs-g) + 56px);
   max-height: calc(100vh - var(--gs-top) - var(--gs-g) - 56px - 146px);
+}
+/* Invite ou message au-dessus de l'éventail : le statut s'arrête plus haut */
+.gs.gp.is-mobile.has-fan-note .gs-status {
+  max-height: calc(100vh - var(--gs-top) - var(--gs-g) - 56px - 200px);
+}
+/* Partie sans cartes ou salle d'attente : pas de bande de cartes adverses */
+.gs.gp.is-mobile.no-cards .gs-opp-strip {
+  display: none;
 }
 .gs.gp.is-mobile .gs-opponent {
   display: flex;
@@ -320,50 +320,6 @@
   white-space: nowrap;
   font-size: 12px;
   color: var(--faint);
-}
-/* Mains en petites cartes (faces visibles ou dos) */
-.gp-hand-row {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-}
-.gp-hand-row .spell-card {
-  --w: 38px;
-}
-.gp-hand-card {
-  display: block;
-}
-/* Bandeaux compacts : empilés sous la pendule adverse, en ligne qui passe à la ligne sur mobile */
-.gp-hand-row.is-compact {
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 5px;
-}
-.gp-opp-hand-m .gp-hand-row.is-compact {
-  flex-direction: row;
-  flex-wrap: wrap;
-  justify-content: flex-start;
-  min-width: 0;
-}
-.gp-opp-hand-m {
-  flex-wrap: wrap;
-}
-.gp-opp-hand-m {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 10px;
-  font-family: var(--caps);
-  font-size: 10.5px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--soft);
-}
-.gp-opp-hand-m .gp-hand-row .spell-card {
-  --w: 23px;
-}
-.gs.is-mobile .gp-opp-hand-m {
-  margin-top: 8px;
 }
 .gp-self.is-mobile {
   left: 14px;

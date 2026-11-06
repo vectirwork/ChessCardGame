@@ -1,4 +1,7 @@
 // Échiquier interactif : glisser-déposer, clic-clic, promotion, effets visibles, ciblage des cartes.
+// Capturer en glissant (décision D4 du plan V2) : lâcher une pièce sur une pièce adverse la prend si le coup est
+// légal ; pendant le glisser, la case et la pièce qui seront prises se signalent. Un lâcher refusé sur une pièce
+// adverse (Trêve, Lune de sang, roi en échec…) s'explique en une ligne au lieu d'un retour muet.
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Color, F_CAPTURE, Move, Piece, PieceType, Position, isSlider, kingSquare } from '../../shared/chess';
@@ -60,6 +63,13 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
   const [drag, setDrag] = useState<{ sq: number; x: number; y: number; moved: boolean } | null>(null);
   const [hover, setHover] = useState<number | null>(null);
   const [promo, setPromo] = useState<{ from: number; to: number } | null>(null);
+  /** Explication brève d'un lâcher refusé (Trêve, Lune de sang…) ; `key` la rejoue. */
+  const [note, setNote] = useState<{ text: string; key: number } | null>(null);
+  useEffect(() => {
+    if (!note) return;
+    const t = setTimeout(() => setNote(null), 2600);
+    return () => clearTimeout(t);
+  }, [note]);
 
   // Pièces affichées, avec fondu de sortie pour les pièces capturées
   const [shown, setShown] = useState<Shown[]>(() => pos.board.flatMap((p, sq) => (p ? [{ p, sq, state: 'idle' as const }] : [])));
@@ -86,6 +96,8 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
   useEffect(() => {
     setSelected(null);
     setPromo(null);
+    setDrag(null);
+    setHover(null);
   }, [pos, locked]);
 
   const movesFrom = useMemo(() => {
@@ -147,6 +159,30 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
     return true;
   }, [movesFrom, onMove]);
 
+  /** Pourquoi la pièce de `from` ne peut pas aller en `to` (lâcher refusé sur une pièce adverse, pièce bloquée). */
+  const refusal = (from: number, to: number | null): string | null => {
+    const mover = pos.board[from];
+    if (!mover) return null;
+    const victim = to !== null ? pos.board[to] : null;
+    const capture = !!victim && victim.c !== mover.c;
+    if (to !== null && !capture) {
+      // Lune de sang : un coup tranquille alors qu'une prise existe
+      if (fx.climate === 'blood_moon' && legal.some(m => m.flags & F_CAPTURE)) return 'Lune de sang : vous devez capturer.';
+      return null;
+    }
+    if (to === null) {
+      if (mover.t === 'p' && fx.climate === 'ice_age') return 'Ère glaciaire : les pions sont gelés.';
+      if (fx.frozen.has(mover.id)) return 'Cette pièce est gelée.';
+      return null;
+    }
+    if (fx.climate === 'truce') return 'Trêve : aucune capture pendant ce Climat.';
+    if (mover.t === 'p' && fx.climate === 'ice_age') return 'Ère glaciaire : les pions ne capturent pas.';
+    if (fx.climate === 'blood_moon') return 'Lune de sang : choisissez une des prises possibles.';
+    if (victim && fx.shielded.has(victim.id)) return 'Cette pièce est protégée.';
+    if (victim?.t === 'k') return null;
+    return legal.length ? 'Cette prise n’est pas permise ici.' : null;
+  };
+
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     const sq = sqFromPoint(e.clientX, e.clientY);
@@ -162,6 +198,10 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
       setDrag({ sq, x: e.clientX, y: e.clientY, moved: false });
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     } else {
+      // Pièce du camp au trait sans aucun coup (gelée…) : on dit pourquoi
+      const p = pos.board[sq];
+      const why = p && p.c === pos.turn && legal.length ? refusal(sq, null) : null;
+      if (why) setNote({ text: why, key: Date.now() });
       setSelected(null);
     }
   };
@@ -176,7 +216,10 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
   const onPointerUp = (e: React.PointerEvent) => {
     if (!drag) return;
     const sq = sqFromPoint(e.clientX, e.clientY);
-    if (drag.moved && sq !== null && sq !== drag.sq) tryMove(drag.sq, sq);
+    if (drag.moved && sq !== null && sq !== drag.sq && !tryMove(drag.sq, sq)) {
+      const why = refusal(drag.sq, sq);
+      if (why) setNote({ text: why, key: Date.now() });
+    }
     setDrag(null);
     setHover(null);
   };
@@ -208,7 +251,7 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
       if (fx.rift.has(sq)) cls.push('rift');
       if (targeting && targetSet.has(sq)) cls.push('target');
       if (chosen.includes(sq)) cls.push('chosen');
-      if (drag?.moved && hover === sq && dests.has(sq)) cls.push('hover');
+      if (drag?.moved && hover === sq && dests.has(sq)) cls.push(dests.get(sq) ? 'hover hover-cap' : 'hover');
       squares.push(
         <div key={sq} className={cls.join(' ')} data-sq={sq}>
           {dests.has(sq) && <span className={dests.get(sq) ? 'hint cap' : 'hint'} />}
@@ -253,6 +296,8 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
             if (fx.phase.has(p.id)) cls.push('phasing');
             if (fx.weighted.has(p.c) && isSlider(p.t)) cls.push('weighted');
             if (dragging) cls.push('dragging');
+            // Pièce qui sera prise si l'on lâche ici
+            if (drag?.moved && hover === sq && !dragging && state === 'idle' && dests.get(sq)) cls.push('is-prey');
             const transform = dragging && dragOffset
               ? `translate(${dragOffset.x}px, ${dragOffset.y}px)`
               : `translate(${x * 100}%, ${y * 100}%)`;
@@ -263,6 +308,11 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
             );
           })}
         </div>
+        {note && (
+          <p key={note.key} className="board-note" role="status">
+            {note.text}
+          </p>
+        )}
         {promo && (
           <PromotionPicker
             color={pos.board[promo.from]?.c ?? 'w'}

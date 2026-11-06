@@ -432,7 +432,7 @@ export const LESSONS: Lesson[] = [
       {
         fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', goal: { kind: 'info' },
         hands: { w: ['ice_wall', 'truce', 'tide'], b: ['ice_age', 'rift', 'blood_moon'] },
-        text: 'Spellmate, ce sont les échecs, plus trois cartes de pouvoir par joueur, tirées au hasard. Les deux mains sont visibles : vous voyez les cartes de l’adversaire, il voit les vôtres, et une carte jouée reste grisée à sa place. À votre tour, vous pouvez jouer une carte avant votre coup : une seule par tour, et chaque carte ne sert qu’une fois.',
+        text: 'Spellmate, ce sont les échecs, plus trois cartes de pouvoir par joueur. Au début d’une partie, vous choisissez vos trois cartes ; sur l’accueil, elles sont tirées au hasard. Les deux mains sont visibles : vous voyez les cartes de l’adversaire, il voit les vôtres, et une carte jouée reste grisée à sa place. À votre tour, vous pouvez jouer une carte avant votre coup : une seule par tour, et chaque carte ne sert qu’une fois.',
       },
       {
         fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', goal: { kind: 'line', line: ['@ice_wall:e5', '*'] },

@@ -7,7 +7,8 @@
 //             IA_GAMES (nombre de parties contre l'IA, 4 par défaut), IA_PLIES (120), THINK_MS (réflexion avant
 //             l'arrêt du serveur, 2000).
 // Chaque mise à jour reçue passe par un audit des mains visibles : les deux mains, exactes et complètes, pour les
-// joueurs comme pour les spectateurs, et aucun instantané hors Duel.
+// joueurs comme pour les spectateurs, et aucun instantané hors Duel. Pendant le choix des cartes (décision D5), l'audit
+// vérifie le secret : mains vides, et seulement ses propres cartes dans la vue du choix.
 import { io } from 'socket.io-client';
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
@@ -77,9 +78,24 @@ class Client {
   close() { this.socket?.close(); }
 }
 
+/** Cartes choisies par chaque joueur, connues du script (pour vérifier le secret pendant le choix). */
+const picked = new Map(); // gameId -> { w?: string[], b?: string[] }
+
 /** Audit des mains visibles d'une vue reçue par `client`. */
 function audit(client, view, where) {
   const s = view.state;
+  if (view.draft) {
+    if (s.hands.w.length || s.hands.b.length) problem(`${client.label} ${where} : mains visibles pendant le choix des cartes`);
+    const mine = view.draft.mine ?? [];
+    if (!view.you && mine.length) problem(`${client.label} ${where} : un spectateur voit des cartes choisies`);
+    const other = view.you ? picked.get(view.id)?.[view.you === 'w' ? 'b' : 'w'] : null;
+    if (other && !view.draft.chosen[view.you] && JSON.stringify(mine) === JSON.stringify(other)) {
+      problem(`${client.label} ${where} : la vue du choix montre les cartes adverses`);
+    }
+    return;
+  }
+  // Invitation en attente : les mains seront choisies à l'arrivée de l'adversaire.
+  if (view.status === 'waiting') return;
   const hands = { w: s.hands.w.map(h => h.card), b: s.hands.b.map(h => h.card) };
   if (!truth.has(view.id)) truth.set(view.id, hands);
   const t = truth.get(view.id);
@@ -105,22 +121,57 @@ async function guest() {
   return c;
 }
 
-/** Crée des invitations jusqu'à obtenir une main blanche qui vérifie `pred` (mains au hasard, R9). */
+const shuffle = a => { const b = a.slice(); for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; };
+/** Mains possibles (3 cartes différentes) d'une réserve, dans un ordre au hasard. */
+function handsOf(pool) {
+  const out = [];
+  for (let i = 0; i < pool.length; i++) for (let j = i + 1; j < pool.length; j++) for (let k = j + 1; k < pool.length; k++) out.push(shuffle([pool[i], pool[j], pool[k]]));
+  return shuffle(out);
+}
+const POOL = { timed: Object.keys(CARDS).filter(id => CARDS[id].catalogs.includes('climats')) };
+POOL.untimed = POOL.timed.filter(id => !CARDS[id].timedOnly);
+
+/** Choix prévus pour une invitation : le créateur prend `hand`, l'invité la même main (`mirror`) ou trois cartes au hasard. */
+const planned = new Map();
+
+/** Crée une invitation où les Blancs choisiront une main qui vérifie `pred` (décision D5 : chacun choisit ses cartes). */
 async function inviteWith(creator, pred, opts = {}) {
-  for (let k = 0; k < 30; k++) {
-    const r = await creator.api('/games', { mode: 'invite', tc: opts.tc ?? '3+2', color: 'w', catalog: 'climats', mirror: !!opts.mirror, name: 'Alice' });
-    if (r.status !== 200) throw new Error(`création refusée : ${r.status} ${JSON.stringify(r.data)}`);
-    const id = r.data.id;
-    const j = await creator.join(id);
-    assert.equal(j.ok, true);
-    const hand = j.view.state.hands.w.map(h => h.card);
-    if (pred(hand)) return { id, hand };
-    const a = await creator.emit('game:resign', { id });
-    assert.equal(a.ok, true, `annulation de l’invitation : ${a.error}`);
-    creator.emit('game:leave', { id });
-    await sleep(400); // limiteur par socket (20 actions, 8 par seconde)
-  }
-  throw new Error('main voulue introuvable en 30 essais');
+  const tc = opts.tc ?? '3+2';
+  const r = await creator.api('/games', { mode: 'invite', tc, color: 'w', catalog: 'climats', name: 'Alice' });
+  if (r.status !== 200) throw new Error(`création refusée : ${r.status} ${JSON.stringify(r.data)}`);
+  const id = r.data.id;
+  const j = await creator.join(id);
+  assert.equal(j.ok, true);
+  const hand = handsOf(tc === 'none' ? POOL.untimed : POOL.timed).find(pred);
+  if (!hand) throw new Error('aucune main ne vérifie la condition');
+  planned.set(id, { creator, hand, mirror: !!opts.mirror, pool: tc === 'none' ? POOL.untimed : POOL.timed });
+  return { id, hand };
+}
+
+/** Phase de choix d'une partie entre deux joueurs : chacun valide, puis la révélation arrive aux deux. */
+async function draftBoth(id, white, black, wHand, bHand) {
+  picked.set(id, { w: wHand, b: bHand });
+  let a = await white.emit('game:draft', { id, cards: wHand });
+  assert.equal(a.ok, true, `choix blanc refusé : ${a.error}`);
+  const d = await black.next(x => x.event.type === 'draft' || x.event.type === 'reveal', 8000, 'choix blanc signalé');
+  if (d.event.type === 'draft') assert.equal(d.view.draft.chosen.w, true);
+  a = await black.emit('game:draft', { id, cards: bHand });
+  assert.equal(a.ok, true, `choix noir refusé : ${a.error}`);
+  const u = await black.next(x => x.event.type === 'reveal', 8000, 'révélation (Noirs)');
+  await white.next(x => x.event.type === 'reveal', 8000, 'révélation (Blancs)');
+  assert.deepEqual(u.view.state.hands.w.map(h => h.card), wHand);
+  assert.deepEqual(u.view.state.hands.b.map(h => h.card), bHand);
+  return u;
+}
+
+/** Choix seul (contre l'IA, qui a déjà choisi) : trois cartes au hasard dans la réserve, puis la révélation. */
+async function draftAlone(client, id, view) {
+  if (!view.draft) return view;
+  const cards = shuffle(view.draft.pool).slice(0, 3);
+  const a = await client.emit('game:draft', { id, cards });
+  assert.equal(a.ok, true, `choix refusé : ${a.error}`);
+  const u = await client.next(x => x.event.type === 'reveal', 15000, 'révélation');
+  return u.view;
 }
 
 async function seatBob(bob, id) {
@@ -128,7 +179,11 @@ async function seatBob(bob, id) {
   if (j.needName) j = await bob.join(id, 'Bob');
   assert.equal(j.view.status, 'active');
   assert.equal(j.view.you, 'b');
-  return j;
+  const plan = planned.get(id);
+  if (!plan || !j.view.draft) return j;
+  const other = handsOf(plan.pool)[0];
+  const u = await draftBoth(id, plan.creator, bob, plan.hand, plan.mirror ? plan.hand.slice() : other);
+  return { ok: true, view: u.view };
 }
 
 /** Joue un coup et attend que les deux joueurs l'aient reçu. Renvoie la mise à jour de `a`. */
@@ -312,7 +367,8 @@ async function botGame(level, tc, maxPlies) {
   const you = j.view.you;
   const bot = you === 'w' ? 'b' : 'w';
   const stats = { id, level, tc, you, botCards: [], humanCards: [], botMs: [], plies: 0, result: null, errors: [], relaxed: 0 };
-  let view = j.view;
+  if (j.view.draft?.pool.includes('hourglass')) problem(`partie IA ${id} : Sablier fou proposé`);
+  let view = await draftAlone(me, id, j.view);
   const t0 = Date.now();
   while (view.status === 'active' && !view.state.result && view.state.ply < maxPlies) {
     const s = view.state;
@@ -408,6 +464,7 @@ async function redemarrage() {
   log('\n== Redémarrage du serveur en cours de partie ==');
   const cmd = process.env.RESTART_CMD;
   assert.ok(cmd, 'RESTART_CMD manquant');
+  await redemarrageChoix(cmd);
   let alice = await guest(); alice.label = 'Alice';
   let bob = await guest(); bob.label = 'Bob';
   const terr = h => h.includes('ice_wall') || h.includes('rift');
@@ -487,7 +544,8 @@ async function redemarrage() {
   const me = await guest(); me.label = 'Humain-redém';
   const r = await me.api('/games', { mode: 'bot', tc: '10+0', color: 'b', level: 2, catalog: 'climats', name: 'Humain' });
   const bid = r.data.id;
-  await me.join(bid);
+  const jb0 = await me.join(bid);
+  await draftAlone(me, bid, jb0.view);
   await me.next(x => x.event.type === 'move', 20000, 'premier coup IA');
   const v = me.last().view.state;
   const m = legalMovesOf(v)[0];
@@ -504,6 +562,48 @@ async function redemarrage() {
   step('partie contre l’IA reprise après redémarrage');
   await me.emit('game:resign', { id: bid });
   me.close();
+}
+
+/**
+ * Redémarrage pendant le choix des cartes (décision D5) : le choix validé et la sélection provisoire sont gardés,
+ * l'échéance repart entière, puis le choix se termine normalement.
+ */
+async function redemarrageChoix(cmd) {
+  let alice = await guest(); alice.label = 'Alice';
+  let bob = await guest(); bob.label = 'Bob';
+  const r = await alice.api('/games', { mode: 'invite', tc: '5+0', color: 'w', catalog: 'climats', name: 'Alice' });
+  const id = r.data.id;
+  await alice.join(id);
+  let jb = await bob.join(id);
+  if (jb.needName) jb = await bob.join(id, 'Bob');
+  assert.ok(jb.view.draft, 'choix ouvert');
+  const W = ['ice_wall', 'blast', 'truce'];
+  picked.set(id, { w: W });
+  assert.ok((await alice.emit('game:draft', { id, cards: W })).ok);
+  assert.ok((await bob.emit('game:draft', { id, cards: ['rift'], confirm: false })).ok);
+  await sleep(5000); // une partie de l'échéance s'écoule avant l'arrêt
+  alice.close(); bob.close();
+  const tStop = Date.now();
+  execSync(cmd, { stdio: 'inherit' });
+  log(`   serveur redémarré pendant le choix en ${Date.now() - tStop} ms`);
+  await alice.connect(); await bob.connect();
+  alice.updates = []; alice.cursor = 0; bob.updates = []; bob.cursor = 0;
+  const ja = await alice.join(id);
+  jb = await bob.join(id);
+  assert.ok(ja.view.draft && jb.view.draft, 'le choix survit au redémarrage');
+  assert.deepEqual(ja.view.draft.mine, W, 'choix validé gardé');
+  assert.deepEqual(jb.view.draft.mine, ['rift'], 'sélection provisoire gardée');
+  assert.deepEqual(jb.view.draft.chosen, { w: true, b: false });
+  assert.deepEqual(jb.view.state.hands, { w: [], b: [] }, 'toujours secret');
+  if (jb.view.draft.msLeft < 44_000) problem(`redémarrage pendant le choix : échéance pas relancée (${jb.view.draft.msLeft} ms)`);
+  else step(`choix des cartes repris après redémarrage, échéance relancée (${jb.view.draft.msLeft} ms)`);
+  assert.ok((await bob.emit('game:draft', { id, cards: ['rift', 'tide', 'ice_age'] })).ok);
+  const u = await alice.next(x => x.event.type === 'reveal', 8000, 'révélation après redémarrage');
+  assert.deepEqual(u.view.state.hands.w.map(h => h.card), W);
+  assert.deepEqual(u.view.state.hands.b.map(h => h.card), ['rift', 'tide', 'ice_age']);
+  step('mains révélées après le redémarrage');
+  await alice.emit('game:abort', { id });
+  alice.close(); bob.close();
 }
 
 // 5. Chute du drapeau sous le Sablier (1+0) : la pendule à ×2 tombe deux fois plus tôt, au bon moment.

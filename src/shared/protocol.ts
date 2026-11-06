@@ -1,6 +1,7 @@
 // Messages échangés entre le navigateur et le serveur (Socket.IO et API).
 
 import type { Color, PieceType } from './chess';
+import type { CardId } from './cards';
 import type { CardInfo, GameState, MoveInfo } from './game';
 
 /** Cadence en secondes ; null = sans pendule. */
@@ -51,6 +52,41 @@ export interface ClockView {
   noIncrement?: boolean;
 }
 
+/**
+ * Phase de choix des cartes (décision D5, docs/PLAN-V2.md), avant le premier coup des parties avec cartes créées
+ * par le serveur (invitation, file amicale ou classée, IA lancée depuis la page Jouer, revanche).
+ *
+ * Déroulement :
+ * 1. La partie devient active (deuxième joueur assis) : `GameView.draft` apparaît, `state.hands` est vide pour les
+ *    deux camps. Aucun coup ni aucune carte n'est accepté ; pendules et délai du premier coup sont à l'arrêt.
+ * 2. Chaque joueur envoie `game:draft` avec CARDS_PER_PLAYER cartes différentes de `pool`. Une sélection provisoire
+ *    (`confirm: false`) peut être envoyée avant : elle reste secrète et sert seulement à l'échéance.
+ * 3. Secret : la vue d'un joueur ne contient que SES cartes (`mine`) ; de l'adversaire, elle ne dit que s'il a
+ *    validé (`chosen`). Un spectateur ne voit aucune carte. Événement `draft` à chaque validation.
+ * 4. Les deux ont validé, ou l'échéance est passée (le serveur complète au hasard ce qui manque, sélection
+ *    provisoire comprise) : `draft` redevient null, les deux mains sont révélées dans `state.hands` (événement
+ *    `reveal`), puis la partie se joue comme avant (délai du premier coup, puis pendules).
+ * L'IA choisit dès le début de la phase. Abandon ou annulation pendant le choix : partie annulée, sans effet sur
+ * le classement. Après un redémarrage du serveur, l'échéance repart de DRAFT_MS.
+ */
+export interface DraftView {
+  /** Réserve, la même pour les deux joueurs, dans l'ordre du catalogue (sans le Sablier fou contre l'IA ou sans pendule). */
+  pool: CardId[];
+  /** Nombre de cartes à choisir (CARDS_PER_PLAYER, 3). */
+  count: number;
+  /** Échéance, horodatage du serveur (ms). */
+  deadline: number;
+  /** Temps restant avant l'échéance au moment de l'envoi (ms) : le client y ajoute l'heure de réception. */
+  msLeft: number;
+  /** Qui a déjà validé son choix. Jamais les cartes de l'adversaire. */
+  chosen: Record<Color, boolean>;
+  /**
+   * Vos cartes, dans l'ordre choisi : validées si `chosen[you]`, sinon votre sélection provisoire (complétée au
+   * hasard à l'échéance). Vide pour un spectateur.
+   */
+  mine: CardId[];
+}
+
 export interface GameView {
   id: string;
   mode: GameMode;
@@ -71,16 +107,22 @@ export interface GameView {
   away: Record<Color, number | null>;
   claimAfterMs: number;
   createdAt: number;
-  /** Les deux joueurs ont la même main. */
+  /** Les deux joueurs ont la même main (anciennes parties : le mode miroir n'est plus proposé, le serveur l'ignore). */
   mirror: boolean;
   /** Chaque joueur a joué son premier coup : la partie ne peut plus être annulée. */
   started: boolean;
+  /** Phase de choix des cartes en cours (voir DraftView), sinon null (choix terminé, sans cartes, ancienne partie). */
+  draft: DraftView | null;
 }
 
 export type GameEvent =
   | { type: 'move'; color: Color; info: MoveInfo }
   | { type: 'card'; info: CardInfo }
   | { type: 'start' }
+  /** Phase de choix : un joueur a validé ses cartes (`color`) ; ses cartes restent secrètes. */
+  | { type: 'draft'; color: Color }
+  /** Fin du choix : les deux mains sont révélées ; `auto` : camps complétés au hasard à l'échéance. */
+  | { type: 'reveal'; auto: Color[] }
   | { type: 'end' }
   | { type: 'sync' };
 
@@ -123,6 +165,15 @@ export interface ClientToServer {
   'game:leave': (p: { id: string }) => void;
   'game:move': (p: { id: string; from: number; to: number; promo?: PieceType }, ack: (r: Ack) => void) => void;
   'game:card': (p: { id: string; index: number; targets: number[] }, ack: (r: Ack) => void) => void;
+  /**
+   * Choix des cartes (phase de choix, voir DraftView). `cards` : identifiants de cartes de la réserve, différents.
+   * - `confirm` absent ou vrai : exactement 3 cartes, choix définitif. Idempotent : renvoyer les mêmes cartes répond
+   *   ok ; un autre choix après validation est refusé.
+   * - `confirm: false` : sélection provisoire de 0 à 3 cartes, secrète, complétée au hasard à l'échéance si le
+   *   joueur n'a pas validé.
+   * Refusé hors phase de choix, pour un spectateur, ou si les cartes sont invalides.
+   */
+  'game:draft': (p: { id: string; cards: string[]; confirm?: boolean }, ack: (r: Ack) => void) => void;
   'game:resign': (p: { id: string }, ack: (r: Ack) => void) => void;
   'game:abort': (p: { id: string }, ack: (r: Ack) => void) => void;
   'game:draw': (p: { id: string; action: 'offer' | 'accept' | 'decline' }, ack: (r: Ack) => void) => void;

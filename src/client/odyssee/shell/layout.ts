@@ -15,11 +15,14 @@ export interface GameLayout {
   mobile: boolean;
 }
 
+/** Mobile : haut de l'échiquier, sous la barre du haut et la bande des cartes adverses (coque, .gs-opp-strip). */
+export const MOBILE_BOARD_TOP = 112;
+
 /** Disposition du mode jeu : taille de l'échiquier et centre. Une marge basse absorbe l'inclinaison des sorts. */
 export function gameLayout(vw: number, vh: number): GameLayout {
   if (isMobile(vw)) {
     const G = Math.max(200, Math.min(vw - 16, vh * 0.5));
-    return { G, x: vw / 2, y: 76 + G / 2, mobile: true };
+    return { G, x: vw / 2, y: MOBILE_BOARD_TOP + G / 2, mobile: true };
   }
   const left = Math.max(400, vw * 0.3);
   const right = Math.max(150, vw * 0.11);

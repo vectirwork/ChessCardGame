@@ -89,41 +89,6 @@
   mask: radial-gradient(circle at 50% 36%, #000 0 44%, transparent 46%);
   pointer-events: none;
 }
-.sc-top {
-  position: relative;
-  width: 100%;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: calc(var(--w) * 0.048);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.sc-rarity {
-  color: var(--c1);
-}
-.r-legendaire .sc-rarity {
-  color: var(--gold);
-}
-.sc-rarity {
-  flex: none;
-}
-.sc-dur {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-left: 0.5em;
-  font-size: 0.92em;
-  padding: 0.15em 0.6em;
-  border-radius: 99px;
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid hsl(var(--h) 80% 70% / 0.3);
-  color: #dfe6ff;
-  letter-spacing: 0.02em;
-  text-transform: none;
-}
 .sc-art {
   position: relative;
   flex: 0 0 auto;
@@ -163,44 +128,6 @@
   color: #fff;
   text-shadow: 0 0 14px hsl(var(--h) 100% 60% / 0.7);
   letter-spacing: 0.02em;
-}
-.sc-kicker {
-  position: relative;
-  margin-top: 0.35em;
-  font-size: max(8.5px, calc(var(--w) * 0.044));
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: hsl(var(--h) 75% 82%);
-  white-space: nowrap;
-}
-.sc-kicker::before,
-.sc-kicker::after {
-  content: '';
-  display: inline-block;
-  width: 1.4em;
-  height: 1px;
-  margin: 0 0.5em;
-  vertical-align: middle;
-  background: currentColor;
-  opacity: 0.45;
-}
-.sc-tag {
-  position: relative;
-  margin-top: 0.3em;
-  font-size: calc(var(--w) * 0.05);
-  font-style: italic;
-  color: hsl(var(--h) 60% 82%);
-}
-.sc-desc {
-  position: relative;
-  margin-top: auto;
-  font-size: calc(var(--w) * 0.046);
-  line-height: 1.3;
-  color: #d8d6ee;
-  padding-top: 0.6em;
-  border-top: 1px solid hsl(var(--h) 60% 70% / 0.2);
-  width: 100%;
 }
 .sc-foil {
   position: absolute;
@@ -252,41 +179,87 @@
   rotate: -35deg;
 }
 
+/* Pastille de tour (décision D1) : « + votre coup » (calme) ou « Remplace votre coup » (or, l'exception) */
+.sc-turn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35em;
+  max-width: 100%;
+  margin-top: 0.55em;
+  padding: 0.3em 0.75em 0.32em 0.4em;
+  border-radius: 99px;
+  border: 1px solid hsl(var(--h) 80% 72% / 0.5);
+  background: rgba(4, 6, 20, 0.62);
+  color: #eef1ff;
+  font-family: var(--sans);
+  font-size: max(9px, calc(var(--w) * 0.074));
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: 0.01em;
+  text-align: center;
+  text-wrap: balance;
+}
+.sc-turn-sign {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 1.3em;
+  height: 1.3em;
+  border-radius: 50%;
+  background: hsl(var(--h) 85% 66%);
+  color: #071021;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1;
+}
+.sc-turn.is-replace {
+  padding-left: 0.6em;
+  border-color: rgba(255, 241, 196, 0.95);
+  background: linear-gradient(180deg, #ffe7ad, #f0c25e);
+  color: #2b1a05;
+}
+.sc-turn svg {
+  flex: none;
+  width: 1.25em;
+  height: 1.25em;
+}
+
 /* Tailles */
 .sc-hand {
   --w: 128px;
 }
-.sc-hand .sc-name {
-  font-size: calc(var(--w) * 0.1);
-  margin-top: auto;
-}
-.sc-hand .sc-kicker {
-  margin-bottom: auto;
-  letter-spacing: 0.1em;
-}
-.sc-hand .sc-kicker::before,
-.sc-hand .sc-kicker::after {
-  display: none;
-}
 .sc-hand .sc-art {
-  width: 72%;
-  margin-bottom: 0;
+  width: 74%;
+  margin: 9% 0 0;
 }
-.sc-hand .sc-dur {
-  display: none;
+.sc-hand .sc-name {
+  margin-top: auto;
+  font-size: calc(var(--w) * 0.094);
+  line-height: 1.08;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.sc-hand .sc-turn {
+  margin-bottom: 3%;
+}
+.sc-full .sc-body {
+  justify-content: center;
+}
+.sc-full .sc-art {
+  width: 70%;
+  margin: 0 0 4%;
+}
+.sc-full .sc-name {
+  font-size: calc(var(--w) * 0.1);
+}
+.sc-full .sc-turn {
+  margin-top: 0.7em;
+  font-size: calc(var(--w) * 0.062);
 }
 .sc-mini {
   --w: 62px;
-}
-.sc-mini .sc-top {
-  display: none;
-}
-.sc-mini .sc-art {
-  width: 86%;
-  margin-top: 6%;
-}
-.sc-mini .sc-name {
-  display: none;
 }
 .sc-mini .sc-art {
   width: 92%;
@@ -423,13 +396,241 @@
     letter-spacing: 0.1em;
   }
 }
+/* Bulle d'une carte (décision D2) : règle, famille, durée, moment d'action ; actions quand elle est ouverte.
+   Sa place est fixée par la main qui l'affiche (coque de partie, leçons). Animation : transform et opacity. */
+.card-bubble {
+  --h: 200;
+  --w: 150px;
+  position: absolute;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  width: min(340px, calc(100vw - 24px));
+  max-height: var(--cbub-max, none);
+  border-radius: 16px;
+  border: 1px solid hsl(var(--h) 80% 72% / 0.45);
+  background: linear-gradient(170deg, hsl(var(--h) 42% 15%) 0%, #0a0b1d 62%);
+  box-shadow: 0 26px 60px -18px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+  pointer-events: auto;
+  animation: cbub-in 0.22s var(--ease) both;
+}
+.card-bubble.is-read {
+  pointer-events: none;
+}
+/* Contenu : défile si la place manque (--cbub-max), la pointe reste dehors */
+.cbub-in {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px 16px 15px;
+  scrollbar-width: thin;
+}
+@keyframes cbub-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.cbub-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.cbub-em {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: #fff;
+  background: radial-gradient(circle, hsl(var(--h) 90% 60% / 0.55), hsl(var(--h) 70% 20% / 0.95) 72%);
+  box-shadow: inset 0 0 0 1px hsl(var(--h) 90% 78% / 0.55);
+}
+.cbub-em svg {
+  width: 29px;
+  height: 29px;
+}
+.cbub-title {
+  min-width: 0;
+}
+.cbub-title b {
+  display: block;
+  font-family: var(--serif);
+  font-size: 23px;
+  font-weight: 500;
+  line-height: 1.05;
+}
+.cbub-title small {
+  display: block;
+  margin-top: 3px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: hsl(var(--h) 55% 80%);
+}
+.cbub-aim {
+  margin: 12px 0 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid hsl(var(--h) 85% 70% / 0.5);
+  background: hsl(var(--h) 70% 45% / 0.18);
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: #fff;
+}
+.cbub-rule {
+  margin: 10px 0 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--dim);
+}
+.cbub-when {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--soft);
+}
+.cbub-when .sc-turn {
+  flex: none;
+  margin-top: 0;
+  white-space: nowrap;
+}
+.cbub-note {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #ffd690;
+}
+/* Actions hors de la zone qui défile : toujours visibles */
+.cbub-actions {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+  padding: 2px 16px 15px;
+}
+.card-bubble .cbub-cast {
+  min-height: 44px;
+  padding: 11px 24px;
+  font-size: 15px;
+}
+.card-bubble .cbub-cancel {
+  min-height: 40px;
+}
+/* Ciblage : la consigne d'abord, la règle en deux lignes */
+.card-bubble.is-aim .cbub-rule {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.card-bubble.is-aim .cbub-when {
+  display: none;
+}
+/* Petits écrans : pendant le ciblage, la consigne seule (la bulle ne couvre pas l'échiquier) */
+@media (max-width: 819px) {
+  .card-bubble.is-aim .cbub-rule,
+  .card-bubble.is-aim .cbub-title small {
+    display: none;
+  }
+  .card-bubble.is-aim .cbub-in {
+    padding: 10px 14px 8px;
+  }
+  .card-bubble.is-aim .cbub-em {
+    width: 30px;
+    height: 30px;
+  }
+  .card-bubble.is-aim .cbub-em svg {
+    width: 22px;
+    height: 22px;
+  }
+  .card-bubble.is-aim .cbub-title b {
+    font-size: 19px;
+  }
+  .card-bubble.is-aim .cbub-aim {
+    margin-top: 8px;
+    padding: 7px 10px;
+    font-size: 14px;
+  }
+  .card-bubble.is-aim .cbub-actions {
+    padding-bottom: 10px;
+  }
+}
+/* Pointe vers la carte : --cbub-ax (position horizontale), en bas par défaut, en haut sous la main adverse */
+.card-bubble::after {
+  content: '';
+  position: absolute;
+  left: clamp(18px, var(--cbub-ax, 40px), calc(100% - 18px));
+  bottom: -7px;
+  width: 12px;
+  height: 12px;
+  translate: -50% 0;
+  rotate: 45deg;
+  background: #0a0b1d;
+  border-right: 1px solid hsl(var(--h) 80% 72% / 0.45);
+  border-bottom: 1px solid hsl(var(--h) 80% 72% / 0.45);
+}
+.card-bubble.is-below::after {
+  top: -7px;
+  bottom: auto;
+  background: hsl(var(--h) 42% 15%);
+  border: 0;
+  border-left: 1px solid hsl(var(--h) 80% 72% / 0.45);
+  border-top: 1px solid hsl(var(--h) 80% 72% / 0.45);
+}
+.card-bubble.no-arrow::after {
+  display: none;
+}
+/* Mains des leçons, problèmes et analyse (features/CardHand) : même face (emblème, nom, pastille de tour) */
+.ft-card .ft-turn {
+  --w: 128px;
+  align-self: flex-start;
+  margin-top: 4px;
+  font-size: 10.5px;
+}
+.ft-card.ro .ft-turn {
+  font-size: 9.5px;
+}
+.ft-card {
+  cursor: pointer;
+}
+.ft-card.dim {
+  opacity: 0.6;
+}
+.ft-card.dim:hover {
+  transform: none;
+}
+.ft-card.is-peek {
+  border-color: hsl(var(--h, 45) 90% 72% / 0.7);
+}
+.ft-card:focus-visible {
+  outline: 2px solid hsl(var(--h, 45) 95% 75%);
+  outline-offset: 2px;
+}
+.ft-hand-invite {
+  margin: -2px 0 8px;
+  font-size: 12.5px;
+  color: var(--gold);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .spell-card,
   .spell-chip {
     transition: none;
   }
   .sc-halo,
-  .spell-card.selected {
+  .spell-card.selected,
+  .card-bubble {
     animation: none;
   }
 }

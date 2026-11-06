@@ -1,0 +1,739 @@
+/* Choix des cartes (CardDraft.tsx, décision D5) : plein écran au-dessus de la partie, au style Odyssée.
+   Jetons : styles/global.css (--gold, --serif, --caps, --ease…). Animations : transform et opacity seulement,
+   aucune animation continue (le halo des cartes est figé ici) ; prefers-reduced-motion les fige toutes.
+   Couches : au-dessus de la coque et de la partie (z-index 120), sous les modales (200) et les notifications (300). */
+
+.cd {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  color: var(--text);
+  /* Opaque : la partie, en dessous, ne doit pas brouiller la lecture des règles. */
+  background:
+    radial-gradient(80% 60% at 50% -10%, rgb(var(--tint) / 0.2), transparent 70%),
+    radial-gradient(60% 50% at 100% 100%, rgba(243, 201, 105, 0.06), transparent 70%),
+    #05060f;
+  animation: cd-in 0.45s var(--ease) both;
+}
+@keyframes cd-in {
+  from {
+    opacity: 0;
+  }
+}
+.cd .sc-halo {
+  animation: none;
+}
+
+.cd-inner {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: clamp(18px, 3.6vh, 40px) clamp(16px, 3.6vw, 52px) 0;
+}
+
+/* ---------- En-tête ---------- */
+.cd-head {
+  margin-bottom: clamp(14px, 2.6vh, 26px);
+  animation: cd-rise 0.6s var(--ease) both;
+}
+.cd-kick {
+  margin: 0 0 10px;
+  font-family: var(--caps);
+  font-size: 11px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.cd-title {
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 300;
+  font-size: clamp(30px, 3.2vw, 46px);
+  line-height: 1.02;
+  outline: none;
+}
+.cd-title em {
+  font-style: italic;
+  color: var(--gold-hi);
+}
+.cd-sub {
+  max-width: 78ch;
+  margin: 10px 0 0;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--dim);
+}
+.cd-keys {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+/* ---------- Réserve ---------- */
+.cd-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cd-grid > li {
+  display: flex;
+  flex: 0 0 calc((100% - 3 * 14px) / 4);
+  min-width: 0;
+  animation: cd-rise 0.55s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 45ms + 80ms);
+}
+@keyframes cd-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+.cd-tile {
+  --h: 200;
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--hair);
+  border-radius: 18px;
+  background:
+    radial-gradient(90% 55% at 50% 0%, hsl(var(--h) 70% 45% / 0.14), transparent 70%),
+    linear-gradient(180deg, rgba(20, 21, 50, 0.92), rgba(9, 10, 27, 0.92));
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 0.25s var(--ease),
+    border-color 0.2s,
+    box-shadow 0.25s,
+    opacity 0.25s;
+  -webkit-tap-highlight-color: transparent;
+}
+.cd-tile.is-static {
+  cursor: default;
+}
+@media (hover: hover) {
+  .cd-tile:not(.is-static):not([aria-disabled='true']):hover {
+    transform: translateY(-3px);
+    border-color: hsl(var(--h) 75% 70% / 0.55);
+  }
+}
+.cd-tile:focus-visible {
+  outline: 2px solid var(--gold-hi);
+  outline-offset: 3px;
+}
+.cd-tile.is-on {
+  border-color: hsl(var(--h) 85% 70%);
+  background:
+    radial-gradient(100% 70% at 50% 0%, hsl(var(--h) 80% 50% / 0.3), transparent 72%),
+    linear-gradient(180deg, rgba(24, 24, 58, 0.96), rgba(11, 11, 30, 0.96));
+  box-shadow:
+    inset 0 0 0 1px hsl(var(--h) 85% 70% / 0.45),
+    0 22px 46px -24px hsl(var(--h) 85% 55% / 0.9);
+}
+.cd-tile[aria-disabled='true'] {
+  cursor: default;
+}
+.cd-tile.is-off {
+  opacity: 0.42;
+}
+
+.cd-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.cd-art {
+  display: grid;
+  place-items: center;
+  flex: none;
+  pointer-events: none;
+}
+.cd .cd-sc {
+  --w: 60px;
+  transform: none;
+}
+.cd-tile.is-on .cd-sc {
+  transform: scale(1.05);
+}
+.cd-id {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  min-width: 0;
+  padding-right: 26px;
+}
+.cd-name {
+  font-family: var(--serif);
+  font-size: 23px;
+  font-weight: 500;
+  line-height: 1.05;
+  color: var(--text);
+}
+.cd-meta {
+  font-family: var(--caps);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  line-height: 1.35;
+  text-transform: uppercase;
+  color: hsl(var(--h) 75% 78%);
+}
+/* Effet sur le tour (décision D1) : la carte s'ajoute au coup, ou le remplace (Rituel). */
+.cd-turn {
+  padding: 2px 8px;
+  border: 1px solid hsl(var(--h) 60% 70% / 0.35);
+  border-radius: 99px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--soft);
+}
+.cd-turn.is-replace {
+  border-color: rgba(243, 201, 105, 0.6);
+  background: rgba(243, 201, 105, 0.12);
+  color: var(--gold-hi);
+}
+.cd-rule {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--dim);
+}
+.cd-tile.is-on .cd-rule {
+  color: var(--text);
+}
+.cd-mark {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 50%;
+  font: 600 12px/1 var(--sans);
+  color: var(--faint);
+  transition:
+    transform 0.25s var(--ease),
+    opacity 0.2s;
+}
+.cd-tile.is-on .cd-mark {
+  border-color: transparent;
+  background: var(--gold);
+  color: #1b1405;
+  transform: scale(1.08);
+}
+.cd-key {
+  font-size: 11px;
+}
+
+/* ---------- Barre du bas : temps, vos cartes, validation ---------- */
+.cd-foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px 26px;
+  margin-top: auto;
+  padding: 26px 0 calc(16px + env(safe-area-inset-bottom));
+  isolation: isolate;
+}
+/* Fond de la barre sur toute la largeur de l'écran (le contenu, lui, reste dans la colonne). */
+.cd-foot::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 50%;
+  z-index: -1;
+  width: 100vw;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg, rgba(5, 6, 15, 0), rgba(5, 6, 15, 0.97) 24px);
+  pointer-events: none;
+}
+.cd-grid + .cd-foot {
+  margin-top: auto;
+}
+.cd-inner > .cd-grid {
+  margin-bottom: 8px;
+}
+
+.cd-timer {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto;
+  min-width: 112px;
+}
+.cd-bar {
+  position: relative;
+  display: block;
+  height: 2px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+}
+.cd-bar > span {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  background: linear-gradient(90deg, var(--gold-deep), var(--gold-hi));
+  transition: transform 1s linear;
+}
+.cd-digits {
+  font-family: var(--sans);
+  font-size: 30px;
+  font-weight: 300;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+.cd-timer-cap {
+  margin-top: 4px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--faint);
+}
+.cd-timer.is-low .cd-digits {
+  color: #ffb27a;
+}
+.cd-timer.is-low .cd-bar > span {
+  background: linear-gradient(90deg, #c2410c, #ffb27a);
+}
+
+.cd-picked {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.cd-slots {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cd-slots li {
+  --h: 45;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px 0 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.cd-slots li > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cd-slots li.is-full {
+  border-style: solid;
+  border-color: hsl(var(--h) 80% 68% / 0.65);
+  background: hsl(var(--h) 70% 40% / 0.16);
+  animation: cd-pop 0.35s var(--ease) both;
+}
+@keyframes cd-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+.cd-slot-em {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  color: #fff;
+}
+.cd-slot-empty {
+  padding-left: 4px;
+  color: var(--faint);
+}
+.cd-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+.cd-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--soft);
+}
+.cd-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+}
+.cd-status.is-done .cd-dot {
+  background: var(--success);
+}
+
+.cd-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.cd-validate {
+  min-width: 240px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 26px;
+}
+.cd-validate .btn-sub {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+}
+.cd-abort {
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--faint);
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.2);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.cd-abort:hover,
+.cd-abort:focus-visible {
+  color: var(--text);
+}
+.cd-abort.is-armed {
+  color: var(--danger);
+  text-decoration-color: currentColor;
+}
+.cd-wait {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 300px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--gold-hi);
+}
+.cd-orbit {
+  position: relative;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+}
+.cd-orbit::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: calc(50% - 3px);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gold-hi);
+}
+.cd-orbit {
+  animation: spin 2.6s linear infinite;
+}
+.cd-live {
+  grid-column: 1 / -1;
+  min-height: 0;
+  margin: 0;
+  font-size: 13px;
+  color: var(--gold-hi);
+}
+.cd-live:empty {
+  display: none;
+}
+.cd-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------- Mains révélées ---------- */
+.cd-reveal {
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  /* La partie se devine derrière : on y entre. */
+  background: rgba(5, 6, 15, 0.97);
+}
+.cd-reveal-in {
+  width: min(980px, 100%);
+  text-align: center;
+  animation: cd-rise 0.5s var(--ease) both;
+}
+.cd-reveal .cd-title {
+  margin-bottom: clamp(18px, 4vh, 36px);
+}
+.cd-hands {
+  display: flex;
+  justify-content: center;
+  gap: clamp(20px, 5vw, 72px);
+}
+.cd-hand-label {
+  margin: 0 0 14px;
+  font-family: var(--caps);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--soft);
+}
+.cd-hand-cards {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  perspective: 900px;
+}
+.cd-deal {
+  animation: cd-deal 0.6s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 110ms + 150ms);
+}
+@keyframes cd-deal {
+  from {
+    opacity: 0;
+    transform: translateY(26px) rotateY(70deg);
+  }
+}
+.cd.cd-reveal .cd-sc {
+  --w: clamp(96px, 10vw, 128px);
+}
+.cd-note {
+  margin: 22px 0 0;
+  font-size: 13.5px;
+  color: #ffcf9e;
+}
+.cd-lead {
+  margin: 24px auto 18px;
+  max-width: 60ch;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text);
+}
+.cd-lead span {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--faint);
+}
+
+/* ---------- Écrans peu hauts (portables) : tout tient sans défiler à 1280 × 720 ---------- */
+@media (min-width: 1180px) and (max-height: 820px) {
+  .cd-inner {
+    padding-top: 16px;
+  }
+  .cd-head {
+    margin-bottom: 12px;
+  }
+  .cd-kick {
+    margin-bottom: 6px;
+  }
+  .cd-title {
+    font-size: 34px;
+  }
+  .cd-sub {
+    margin-top: 6px;
+    font-size: 13.5px;
+  }
+  .cd-keys {
+    display: none;
+  }
+  .cd-grid {
+    gap: 12px;
+  }
+  .cd-grid > li {
+    flex-basis: calc((100% - 3 * 12px) / 4);
+  }
+  .cd-tile {
+    gap: 8px;
+    padding: 12px 14px 13px;
+  }
+  .cd .cd-sc {
+    --w: 48px;
+  }
+  .cd-name {
+    font-size: 20px;
+  }
+  .cd-rule {
+    font-size: 12.5px;
+    line-height: 1.45;
+  }
+  .cd-foot {
+    padding-top: 20px;
+    padding-bottom: 12px;
+  }
+}
+
+/* ---------- Écrans moyens : deux colonnes ---------- */
+@media (max-width: 1179px) {
+  .cd-grid > li {
+    flex-basis: calc((100% - 14px) / 2);
+  }
+}
+
+/* ---------- Mobile : une colonne, barre de validation collée en bas ---------- */
+@media (max-width: 720px) {
+  .cd-inner {
+    padding-top: max(16px, env(safe-area-inset-top));
+  }
+  .cd-title {
+    font-size: 30px;
+  }
+  .cd-sub {
+    font-size: 13.5px;
+  }
+  .cd-keys {
+    display: none;
+  }
+  .cd-grid {
+    gap: 10px;
+  }
+  .cd-grid > li {
+    flex-basis: 100%;
+  }
+  .cd-tile {
+    gap: 9px;
+    padding: 12px 12px 13px;
+    border-radius: 16px;
+  }
+  .cd .cd-sc {
+    --w: 50px;
+  }
+  .cd-top {
+    gap: 12px;
+  }
+  .cd-name {
+    font-size: 21px;
+  }
+  .cd-meta {
+    font-size: 9px;
+  }
+  .cd-rule {
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .cd-mark {
+    top: 10px;
+    right: 10px;
+    width: 24px;
+    height: 24px;
+  }
+  .cd-key {
+    display: none;
+  }
+  .cd-foot {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 10px 14px;
+    padding-top: 22px;
+  }
+  .cd-timer {
+    min-width: 0;
+  }
+  .cd-digits {
+    font-size: 24px;
+  }
+  .cd-timer-cap {
+    display: none;
+  }
+  /* Emblèmes seuls : les noms sont sur les cartes (et restent lus par les lecteurs d'écran). */
+  .cd-slots li {
+    justify-content: center;
+    height: 36px;
+    padding: 0;
+    font-size: 11.5px;
+  }
+  .cd-slot-em {
+    width: 24px;
+    height: 24px;
+  }
+  .cd-slot-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .cd-slot-empty {
+    padding-left: 0;
+  }
+  .cd-actions {
+    grid-column: 1 / -1;
+    align-items: stretch;
+  }
+  .cd-validate {
+    min-width: 0;
+    justify-items: center;
+    padding: 11px 16px;
+  }
+  .cd-wait {
+    max-width: none;
+    font-size: 13px;
+  }
+  .cd-status-row {
+    gap: 2px 12px;
+  }
+  .cd-hands {
+    flex-direction: column;
+    gap: 22px;
+  }
+  .cd.cd-reveal .cd-sc {
+    --w: 92px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cd,
+  .cd-head,
+  .cd-grid > li,
+  .cd-slots li.is-full,
+  .cd-reveal-in,
+  .cd-deal,
+  .cd-orbit {
+    animation: none;
+  }
+  .cd-tile,
+  .cd-mark,
+  .cd-bar > span,
+  .cd .cd-sc {
+    transition: none;
+  }
+}
+.cd-validate:disabled {
+  cursor: not-allowed;
+}

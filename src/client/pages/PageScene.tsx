@@ -3,6 +3,7 @@
 // s'anime qu'en transform et opacity (coupé par prefers-reduced-motion dans global.css).
 import { useEffect, useId, useMemo } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
+import '../styles/pages.css';
 
 export type PlaceKey = 'bazar' | 'seuil' | 'observatoire' | 'hall' | 'cabinet' | 'archives' | 'nuees' | 'atelier';
 

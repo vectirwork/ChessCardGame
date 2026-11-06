@@ -2,6 +2,9 @@
 // À la différence de DemoBoard, le sort est piloté par le défilement (prop `act`).
 // Le parent le remonte (key) à chaque changement de lieu : sort en attente, effets et position repartent de zéro.
 // Il distribue les huit pouvoirs (catalogue « climats ») aux deux camps ; un autre catalogue reste accepté.
+// Sobriété (D6) : la scène 3D est partagée d'un lieu à l'autre (un seul contexte WebGL, gardé par useVfx) ; la
+// démonstration se met en pause quand l'onglet est caché, pendant les traversées, et quand le visiteur ne fait plus
+// rien depuis IDLE_MS (elle reprend au premier geste).
 import { useEffect, useRef, useState } from 'react';
 import { Board } from '../components/Board';
 import type { BoardHandle } from '../components/Board';
@@ -26,6 +29,14 @@ export interface Act {
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
+/** Sans défilement, souris, toucher ni clavier depuis ce délai, la démonstration s'arrête après son geste en cours. */
+const IDLE_MS = 30000;
+let lastInput = performance.now();
+const onInput = () => {
+  lastInput = performance.now();
+};
+const idle = () => performance.now() - lastInput > IDLE_MS;
+
 let demoCatalog: Exclude<Catalog, 'aucune'> = 'climats';
 
 /** Position de départ de la démonstration : toutes les cartes du catalogue, dans les deux camps. */
@@ -34,11 +45,10 @@ const fresh = (): GameState => {
   return createGame({ w: [...ids], b: [...ids] }, true, demoCatalog);
 };
 
-/** Accès aux champs internes de la scène d'effets (perspective, calque, rendu) sans modifier le module partagé. */
+/** Accès aux champs internes de la scène d'effets (perspective, calque) sans modifier le module partagé. */
 interface StageInternals {
   perspective: number;
   canvas: HTMLCanvasElement | null;
-  renderer: { forceContextLoss: () => void } | null;
 }
 
 function pickMove(s: GameState) {
@@ -118,7 +128,7 @@ export function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, sti
   const [wrap, setWrap] = useState<HTMLDivElement | null>(null);
   const [state, setState] = useState<GameState>(fresh);
   const [hidden, setHidden] = useState<Set<number>>(new Set());
-  const vfx = useVfx(wrap, 'w');
+  const vfx = useVfx(wrap, 'w', 'odyssee-stage');
   const actRef = useRef(act);
   const pausedRef = useRef(paused);
   const castRef = useRef(onCast);
@@ -128,13 +138,25 @@ export function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, sti
   const tiltRef = useRef(tilt);
   const tiltUntil = useRef(0);
   const castingRef = useRef(false);
+  const holdRef = useRef(0);
   pausedRef.current = paused;
   castRef.current = onCast;
   tiltRef.current = tilt;
 
   useEffect(() => setWrap(ref.current?.wrap ?? null), []);
 
-  // Calque WebGL : signalé au moteur (il suit l'opacité de l'échiquier) et libéré au démontage
+  // Activité du visiteur : la démonstration ne joue que pour quelqu'un qui est là
+  useEffect(() => {
+    lastInput = performance.now();
+    const evs = ['pointermove', 'pointerdown', 'wheel', 'scroll', 'keydown', 'touchstart'] as const;
+    for (const e of evs) window.addEventListener(e, onInput, { passive: true });
+    return () => {
+      for (const e of evs) window.removeEventListener(e, onInput);
+    };
+  }, []);
+
+  // Calque WebGL : signalé au moteur (il suit l'opacité de l'échiquier). La scène est rendue à useVfx au démontage
+  // (gardée pour le lieu suivant, puis libérée)
   useEffect(() => {
     if (!vfx) return;
     const st = vfx.stage as unknown as StageInternals;
@@ -142,11 +164,7 @@ export function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, sti
     onCanvas?.(st.canvas);
     return () => {
       onCanvas?.(null);
-      try {
-        st.renderer?.forceContextLoss();
-      } catch {
-        /* contexte déjà perdu */
-      }
+      window.clearInterval(holdRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vfx]);
@@ -184,14 +202,12 @@ export function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, sti
     if (!covered) await sleep(620);
   };
 
-  useEffect(() => {
-    if (!vfx || still) return;
-    const id = window.setInterval(() => {
-      if (castingRef.current) void holdTilt(2200);
-    }, 900);
-    return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vfx, still]);
+  /** Pendant un sort, l'inclinaison de la scène 3D est entretenue (une minuterie qui n'existe que pendant le sort). */
+  const casting = (on: boolean) => {
+    castingRef.current = on;
+    window.clearInterval(holdRef.current);
+    holdRef.current = on ? window.setInterval(() => void holdTilt(2200), 900) : 0;
+  };
 
   // Mouvement réduit : image fixe du sort du chapitre, et lecture animée à la demande
   useEffect(() => {
@@ -277,10 +293,10 @@ export function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, sti
         if (!r.ok) continue;
         r.state.hands[color] = r.state.hands[color].map(h => ({ ...h, used: false }));
         const epoch = epochRef.current;
-        castingRef.current = true;
+        casting(true);
         await holdTilt(2600);
         if (dead || epoch !== epochRef.current || actRef.current.key !== a.key) {
-          castingRef.current = false;
+          casting(false);
           return false;
         }
         // La légende annonce le sort au moment où il part, avec la carte réellement lancée
@@ -298,7 +314,7 @@ export function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, sti
           apply({ ...sRef.current, effects: [] }, epoch);
           await sleep(500);
         }
-        castingRef.current = false;
+        casting(false);
         return true;
       }
       return false;
@@ -306,7 +322,7 @@ export function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, sti
     const loop = async () => {
       await sleep(700);
       while (!dead) {
-        if (document.hidden || pausedRef.current) {
+        if (document.hidden || pausedRef.current || idle()) {
           await sleep(300);
           continue;
         }
@@ -349,6 +365,7 @@ export function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, sti
     void loop();
     return () => {
       dead = true;
+      casting(false);
       wakeRef.current();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

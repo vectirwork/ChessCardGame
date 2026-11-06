@@ -3,6 +3,8 @@ import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import './features.css';
+// Ciel des pages ft- (#contenu:has(> .ft-page)) ; après features.css, comme dans la construction (feuille partagée)
+import '../styles/pages.css';
 
 export function PageHead({ kicker, title, sub, children }: { kicker: string; title: ReactNode; sub?: ReactNode; children?: ReactNode }) {
   return (

@@ -1,6 +1,9 @@
 // Moteur de la descente : un seul calcul par image pour tous les calques, l'échiquier et l'altimètre.
 // Uniquement des transform et des opacity ; rien n'est lu dans le DOM pendant le défilement
 // (toutes les positions sont relevées dans measure(), au chargement et au redimensionnement).
+// Sobriété (D6) : la boucle d'images ne tourne que pendant un mouvement (défilement, souris, éveil, transition) et
+// s'arrête d'elle-même au repos ; les décors cachés ou sortis de l'écran ont leurs animations CSS en pause
+// (classe `o-paused`), et les nuées ne chargent leur image qu'à l'approche de leur lieu.
 import gsap from 'gsap';
 import Lenis from 'lenis';
 import { PLACES } from './data';
@@ -82,11 +85,21 @@ interface Section {
 
 interface SceneRec {
   els: HTMLElement[];
-  layers: { el: HTMLElement; d: number }[];
+  /** État appliqué à chaque conteneur : visible et animé (true), masqué et en pause (false), à écrire (null). */
+  live: (boolean | null)[];
+  /** `clip` : calque qui coupe son contenu (overflow: hidden) ; hors de l'écran, ses animations sont en pause. */
+  layers: { el: HTMLElement; d: number; clip: boolean; off: boolean }[];
   start: number;
   end: number;
   shown: boolean;
+  /** Images des nuées déjà demandées. */
+  loaded: boolean;
 }
+
+/** Les images d'un lieu (nuées) sont demandées quand il reste moins de ce nombre d'écrans à parcourir. */
+const PRELOAD_SCREENS = 2.4;
+/** Boucle d'images arrêtée après ce temps sans aucun changement (ms). */
+const SLEEP_AFTER = 250;
 
 interface Chapter {
   el: HTMLElement;
@@ -146,9 +159,24 @@ export class Engine {
   private awakeTarget = 0;
   private gameFrom: Pose | null = null;
   private lastT = 0;
+  /** Boucle d'images branchée sur gsap.ticker (seulement pendant un mouvement). */
+  private running = false;
+  /** La prochaine image recale l'horloge de Lenis (sinon son premier pas après un arrêt sauterait au but). */
+  private resync = false;
+  private quietSince = 0;
+  /** Nuées autorisées : après le premier affichage (chargement terminé) ou dès que le visiteur défile. */
+  private imagesOk = false;
+  private imagesTimer = 0;
   private tick = (time: number) => {
-    this.lenis?.raf(time * 1000);
-    this.frame();
+    if (this.lenis) {
+      if (this.resync) this.lenis.time = time * 1000;
+      this.lenis.raf(time * 1000);
+    }
+    this.resync = false;
+    const busy = this.frame() || this.lenis?.isScrolling === 'smooth';
+    const now = performance.now();
+    if (busy || !this.quietSince) this.quietSince = now;
+    else if (now - this.quietSince > SLEEP_AFTER) this.sleep();
   };
   private ro: ResizeObserver;
 
@@ -166,20 +194,64 @@ export class Engine {
     private hooks: EngineHooks,
   ) {
     this.reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (!this.reduced) this.lenis = new Lenis({ lerp: 0.085, wheelMultiplier: 1, smoothWheel: true });
-    gsap.ticker.add(this.tick);
+    // autoResize: false : Lenis ne relit plus la hauteur de la page à chaque changement de taille du contenu (mise
+    // en page forcée, ≈ 120 ms au chargement) ; measure() la lui donne, au moment où la mise en page est déjà faite
+    if (!this.reduced) this.lenis = new Lenis({ lerp: 0.085, wheelMultiplier: 1, smoothWheel: true, autoResize: false });
     gsap.ticker.lagSmoothing(0);
     window.addEventListener('pointermove', this.onPointer, { passive: true });
     window.addEventListener('resize', this.measure);
+    // Tout ce qui peut faire défiler la page réveille la boucle : la molette (Lenis anime alors le défilement), et le
+    // défilement natif (doigt, clavier, barre de défilement, ancre)
+    window.addEventListener('scroll', this.onScroll, { passive: true });
+    window.addEventListener('wheel', this.onScroll, { passive: true });
+    if (document.readyState === 'complete') this.onLoad();
+    else window.addEventListener('load', this.onLoad);
     this.ro = new ResizeObserver(() => this.measure());
     this.ro.observe(root);
     this.measure();
   }
 
-  destroy() {
+  private onScroll = () => {
+    this.imagesOk = true;
+    this.wake();
+  };
+
+  /** Les nuées du lieu suivant ne passent qu'après le premier affichage (elles ne servent qu'à la descente). */
+  private onLoad = () => {
+    this.imagesTimer = window.setTimeout(() => {
+      this.imagesOk = true;
+      this.markDirty();
+    }, 1200);
+  };
+
+  /** Réveille la boucle d'images (elle se rendort seule quand plus rien ne bouge). */
+  wake = () => {
+    this.quietSince = 0;
+    if (this.running) return;
+    this.running = true;
+    this.resync = true;
+    // Premier pas après un arrêt : durée nulle (pas de saut de la parallaxe ni de l'éveil)
+    this.lastT = 0;
+    gsap.ticker.add(this.tick);
+  };
+
+  private sleep() {
+    if (!this.running) return;
+    this.running = false;
     gsap.ticker.remove(this.tick);
+    // gsap ne s'endort de lui-même qu'après 120 images sans animation : s'il n'a plus rien à jouer (aucune animation
+    // en cours ni en attente), on l'endort tout de suite ; il se réveille seul à la prochaine animation
+    if (!gsap.globalTimeline.getChildren(false).some(c => !c.paused())) gsap.ticker.sleep();
+  }
+
+  destroy() {
+    this.sleep();
     window.removeEventListener('pointermove', this.onPointer);
     window.removeEventListener('resize', this.measure);
+    window.removeEventListener('scroll', this.onScroll);
+    window.removeEventListener('wheel', this.onScroll);
+    window.removeEventListener('load', this.onLoad);
+    window.clearTimeout(this.imagesTimer);
     this.ro.disconnect();
     this.lenis?.destroy();
     this.els.header?.classList.remove('is-hidden', 'is-scrolled');
@@ -189,20 +261,20 @@ export class Engine {
   setCanvas(c: HTMLCanvasElement | null) {
     this.canvas = c;
     this.applied.co = -1;
-    this.dirty = true;
+    this.markDirty();
   }
 
   /** Survol de l'échiquier : la légende devient une invitation. */
   setHover(on: boolean) {
     this.hover = on;
-    this.dirty = true;
+    this.markDirty();
   }
 
   /** Échiquier jouable éveillé : il se redresse (plus d'inclinaison) pour que le geste tombe juste. */
   setAwake(on: boolean, instant = false) {
     this.awakeTarget = on ? 1 : 0;
     if (instant || this.reduced) this.awake = this.awakeTarget;
-    this.dirty = true;
+    this.markDirty();
   }
 
   /** L'échiquier est-il assez redressé pour qu'un clic tombe sur la bonne case ? */
@@ -211,9 +283,11 @@ export class Engine {
   }
 
   private onPointer = (e: PointerEvent) => {
-    if (e.pointerType === 'touch') return;
+    // Parallaxe à la souris : ni au doigt, ni sur mobile, ni en mouvement réduit, ni pendant la partie (décor caché)
+    if (e.pointerType === 'touch' || this.reduced || isMobile(this.vw) || this.gameMix >= 1) return;
     this.mouse.tx = (e.clientX / window.innerWidth - 0.5) * 2;
     this.mouse.ty = (e.clientY / window.innerHeight - 0.5) * 2;
+    this.wake();
   };
 
   /** Pose d'un lieu, bornée pour que l'échiquier (inclinaison et perspective comprises) reste à 40 px de la colonne de texte. */
@@ -274,12 +348,21 @@ export class Engine {
     this.scenes = Array.from({ length: sceneCount }, (_, i) => {
       const own = this.sections.filter(s => s.scene === i);
       const containers = sceneEls.filter(e => Number(e.dataset.sceneLayer) === i);
+      const prev = this.scenes[i];
       return {
         els: containers,
-        layers: containers.flatMap(c => Array.from(c.querySelectorAll<HTMLElement>(':scope > .o-layer')).map(el => ({ el, d: Number(el.dataset.d) }))),
+        // Remesure : l'état déjà appliqué est oublié, la prochaine image le réécrit
+        live: containers.map(() => null),
+        layers: containers.flatMap(c =>
+          Array.from(c.querySelectorAll<HTMLElement>(':scope > .o-layer')).map(el => {
+            el.classList.remove('o-paused');
+            return { el, d: Number(el.dataset.d), clip: getComputedStyle(el).overflow !== 'visible', off: false };
+          }),
+        ),
         start: own.length ? Math.min(...own.map(s => s.start)) : 0,
         end: own.length ? Math.max(...own.map(s => s.end)) : 0,
         shown: true,
+        loaded: prev?.loaded ?? false,
       };
     });
     this.skies = Array.from(this.root.querySelectorAll<HTMLElement>('.o-sky-layer'));
@@ -305,15 +388,18 @@ export class Engine {
         return { top: r.top + y, h: r.height, cx: r.left + r.width / 2, w: r.width };
       })
       .filter(s => s.h > 0);
+    this.lenis?.resize();
     this.astre.style.width = `${this.G}px`;
     this.astre.style.height = `${this.G}px`;
     this.applied = { o: -1, co: -1, orb: -1, front: -1, tilt: -99, cap: -1, k: -1 };
-    this.dirty = true;
+    this.markDirty();
   };
 
   scrollTo(target: string | number, done?: () => void) {
     const el = typeof target === 'string' ? this.root.querySelector<HTMLElement>(target) : null;
     if (this.lenis) {
+      // Défilement animé par Lenis : il a besoin de la boucle d'images
+      this.wake();
       this.lenis.scrollTo(el ?? (typeof target === 'number' ? target : 0), { duration: 2.2, easing: (t: number) => 1 - Math.pow(1 - t, 4), onComplete: () => done?.() });
     } else {
       if (typeof target === 'number') window.scrollTo(0, target);
@@ -334,6 +420,21 @@ export class Engine {
 
   markDirty() {
     this.dirty = true;
+    this.wake();
+  }
+
+  /** Nuées d'un lieu : l'image n'est demandée qu'à l'approche du lieu (et tout de suite : la scène encore cachée
+   *  n'est pas rendue, son fond ne serait pas chargé avant qu'elle apparaisse). */
+  private loadImages(sc: SceneRec) {
+    sc.loaded = true;
+    for (const c of sc.els) {
+      c.querySelectorAll<HTMLElement>('[data-bg]').forEach(el => {
+        const url = el.dataset.bg!;
+        new Image().src = url;
+        el.style.backgroundImage = `url(${url})`;
+        el.removeAttribute('data-bg');
+      });
+    }
   }
 
   private travel(y: number, start: number, end: number, d: number) {
@@ -436,23 +537,32 @@ export class Engine {
     return p;
   }
 
-  private frame() {
-    const y = window.scrollY;
-    const m = this.mouse;
-    const mdx = m.tx - m.x, mdy = m.ty - m.y;
-    const moving = Math.abs(mdx) > 0.001 || Math.abs(mdy) > 0.001;
-    if (moving) {
-      m.x += mdx * 0.06;
-      m.y += mdy * 0.06;
-    }
-    // Éveil : approche exponentielle indépendante de la cadence (≈ 0,35 s pour se redresser)
+  /** Une image ; renvoie false quand rien n'a changé (la boucle peut alors s'arrêter). */
+  private frame(): boolean {
+    // Position de défilement : celle que Lenis vient d'appliquer (lue sans forcer de mise en page) ; sans Lenis
+    // (mouvement réduit), celle de la fenêtre
+    const y = this.lenis ? this.lenis.scroll : window.scrollY;
     const now = performance.now();
     const dt = Math.min(0.1, Math.max(0, (now - (this.lastT || now)) / 1000));
     this.lastT = now;
+    // Parallaxe : le décor rattrape la souris (constante de temps 0,27 s, soit 6 % par image à 60 Hz) ; à moins d'un
+    // vingtième de pixel du but, il s'y pose et la boucle peut s'arrêter
+    const m = this.mouse;
+    const mdx = m.tx - m.x, mdy = m.ty - m.y;
+    const moving = Math.abs(mdx) > 0.002 || Math.abs(mdy) > 0.002;
+    if (moving) {
+      const f = 1 - Math.exp(-dt / 0.27);
+      m.x += mdx * f;
+      m.y += mdy * f;
+    } else if (mdx || mdy) {
+      m.x = m.tx;
+      m.y = m.ty;
+    }
+    // Éveil : approche exponentielle indépendante de la cadence (≈ 0,35 s pour se redresser)
     const da = this.awakeTarget - this.awake;
     const waking = Math.abs(da) > 0.001;
     if (waking) this.awake = Math.abs(da) < 0.01 ? this.awakeTarget : this.awake + da * (1 - Math.exp(-dt / 0.1));
-    if (y === this.lastY && !moving && !waking && !this.dirty) return;
+    if (y === this.lastY && !moving && !waking && !this.dirty) return false;
     if (this.els.header && this.gameMix === 0) {
       const dy = y - this.lastY;
       if (dy > 3 && y > 240) this.els.header.classList.add('is-hidden');
@@ -466,28 +576,40 @@ export class Engine {
     const mx = this.reduced || mobile ? 0 : m.x;
     const my = this.reduced || mobile ? 0 : m.y;
 
-    // Calques des lieux
+    // Calques des lieux (en partie, le décor est caché sous le rideau : rien à recalculer)
     for (const sc of this.scenes) {
+      if (this.gameMix >= 1) break;
+      if (!sc.loaded && this.imagesOk && y > sc.start - vh * PRELOAD_SCREENS && y < sc.end + vh * PRELOAD_SCREENS) this.loadImages(sc);
       const visible = y > sc.start - vh * 1.6 && y < sc.end + vh * 1.6;
-      if (visible !== sc.shown) {
-        sc.shown = visible;
-        for (const el of sc.els) el.style.visibility = visible ? 'visible' : 'hidden';
-      }
-      if (!visible) continue;
+      if (visible !== sc.shown) sc.shown = visible;
       // Mobile : le premier écran est plus haut que la fenêtre ; le lieu suivant n'arrive qu'une fois le texte lu
       const fadeIn = mobile ? smooth(clamp01((y - (sc.start - vh * 0.6)) / (vh * 0.5))) : smooth(clamp01((y - (sc.start - vh * 1.05)) / (vh * 0.75)));
       const fadeOut = 1 - smooth(clamp01((y - (sc.end + vh * 0.2)) / (vh * 0.5)));
       const op = sc.start === 0 ? fadeOut : fadeIn * fadeOut;
-      for (const el of sc.els) {
-        if (el.dataset.part !== 'back') continue;
-        el.style.opacity = op.toFixed(3);
-        // Un décor transparent n'est pas peint (ses animations ne coûtent rien)
-        el.style.visibility = op < 0.004 ? 'hidden' : 'visible';
+      for (let i = 0; i < sc.els.length; i++) {
+        const el = sc.els[i];
+        const back = el.dataset.part === 'back';
+        if (visible && back) el.style.opacity = op.toFixed(3);
+        // Un décor transparent ou lointain n'est pas peint, et ses animations sont en pause : elles ne coûtent rien
+        const live = visible && (!back || op >= 0.004);
+        if (live !== sc.live[i]) {
+          sc.live[i] = live;
+          el.style.visibility = live ? 'visible' : 'hidden';
+          el.classList.toggle('o-paused', !live);
+        }
       }
+      if (!visible) continue;
       for (const l of sc.layers) {
         const ty = this.travel(y, sc.start, sc.end, l.d);
         const k = Math.min(l.d, 1.2);
-        l.el.style.transform = `translate3d(${(-mx * k * 18).toFixed(2)}px, ${(ty - my * k * 10).toFixed(2)}px, 0)`;
+        const dy = ty - my * k * 10;
+        l.el.style.transform = `translate3d(${(-mx * k * 18).toFixed(2)}px, ${dy.toFixed(2)}px, 0)`;
+        // Calque qui coupe son contenu, entièrement hors de l'écran : neige, pluie, sable, lanternes en pause
+        const off = l.clip && Math.abs(dy) > vh + 24;
+        if (off !== l.off) {
+          l.off = off;
+          l.el.classList.toggle('o-paused', off);
+        }
       }
     }
 
@@ -595,5 +717,6 @@ export class Engine {
       const total = firsts[firsts.length - 1] || 1;
       this.els.altRoot?.style.setProperty('--descent', clamp01(y / total).toFixed(4));
     }
+    return true;
   }
 }

@@ -16,6 +16,7 @@ import { config } from './config';
 import { connectDb, db, migrate } from './db';
 import { attachSockets, flushRooms, gamesRouter, restoreRooms } from './games';
 import { shopRouter, stripeWebhook } from './shop';
+import { serveBuiltSite } from './site';
 
 async function main() {
   const dbLabel = await connectDb();
@@ -81,15 +82,8 @@ async function main() {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
   const clientDist = path.join(root, 'dist/client');
   if (config.isProd || existsSync(path.join(clientDist, 'index.html')) && process.env.SERVE_BUILD === 'true') {
-    app.use(
-      express.static(clientDist, {
-        index: false,
-        setHeaders(res, file) {
-          if (file.includes(`${path.sep}assets${path.sep}`)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-        },
-      }),
-    );
-    app.get(/^(?!\/api\/|\/socket\.io\/).*/, (_req, res) => res.sendFile(path.join(clientDist, 'index.html')));
+    // Fichiers précompressés, cache long des fichiers à empreinte, HTML de chaque page avec son code préchargé
+    serveBuiltSite(app, clientDist);
   } else {
     const { createServer: createVite } = await import('vite');
     const vite = await createVite({ root, server: { middlewareMode: true, hmr: { port: config.port + 1 } }, appType: 'spa' });

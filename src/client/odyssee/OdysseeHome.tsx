@@ -146,22 +146,11 @@ export default function OdysseeHome() {
 
   const mySkin = me?.equippedSkin ?? DEFAULT_SKIN;
   const myBoard = me?.equippedBoard ?? DEFAULT_BOARD;
-  // Scène 3D de la partie : préparée à la première intention de jouer (survol d'une pièce, toucher, carte) ou, à
-  // défaut, quand le navigateur est inoccupé après l'ouverture ; jamais pendant le premier affichage
+  // Scène 3D de la partie (three.js et un contexte WebGL) : préparée seulement à la première intention de jouer
+  // (survol d'une pièce jouable, toucher de l'échiquier, survol ou focus des cartes, bouton Jouer). Jamais à la simple
+  // ouverture de la page (D6) : un visiteur qui ne fait que lire ne la télécharge pas.
   const [intent, setIntent] = useState(false);
-  useEffect(() => {
-    type IdleWin = Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
-    const w = window as IdleWin;
-    let idle = 0;
-    const t = window.setTimeout(() => {
-      if (w.requestIdleCallback) idle = w.requestIdleCallback(() => setIntent(true), { timeout: 2500 });
-      else setIntent(true);
-    }, 3400);
-    return () => {
-      window.clearTimeout(t);
-      if (idle) w.cancelIdleCallback?.(idle);
-    };
-  }, []);
+  const wantPlay = useCallback(() => setIntent(true), []);
   const g = useLiveGame({ skin: mySkin, theme: myBoard, active: mode === 'game', warm: intent });
   const q = useHumanQueue(catalog);
   const gRef = useRef(g);
@@ -211,6 +200,17 @@ export default function OdysseeHome() {
       if (!el.closest('.o-hero') && !el.closest('.o-place-head')) io.observe(el);
     });
 
+    // Lieux et chapitres hors de l'écran : leurs animations (halos des cartes, sceau du Bazar, flèche de défilement…)
+    // sont en pause ; elles reprennent un peu avant d'entrer à l'écran
+    const offscreen = new IntersectionObserver(
+      entries => {
+        // Un attribut plutôt qu'une classe : React réécrit className quand un chapitre devient actif
+        for (const e of entries) e.target.toggleAttribute('data-offscreen', !e.isIntersecting);
+      },
+      { rootMargin: '25% 0px 25% 0px' },
+    );
+    root.querySelectorAll('.o-place, .o-chapter').forEach(el => offscreen.observe(el));
+
     // Ouverture : une étoile tombe dans l'astrolabe, éclair doré, l'échiquier s'éveille (une fois par visite)
     let seen = false;
     try {
@@ -248,6 +248,7 @@ export default function OdysseeHome() {
     return () => {
       ctx.revert();
       io.disconnect();
+      offscreen.disconnect();
       window.removeEventListener('resize', onResize);
       engine.destroy();
       engineRef.current = null;
@@ -544,7 +545,7 @@ export default function OdysseeHome() {
   const playLabel = resume ? 'Reprendre' : 'Jouer';
 
   return (
-    <div className={`ody ${mode !== 'page' ? 'is-playing' : ''}`} ref={rootRef}>
+    <div className={`ody ${mode !== 'page' ? 'is-playing' : ''} ${mode === 'game' ? 'is-game' : ''}`} ref={rootRef}>
       <div className="o-falling-star" aria-hidden="true">
         <span className="o-fs-tail" />
         <span className="o-fs-head" />
@@ -559,8 +560,9 @@ export default function OdysseeHome() {
 
       <div className="o-world-shift">
         <div className="o-world" aria-hidden="true">
+          {/* Lieux suivants : pas rendus au premier affichage (o-paused) ; le moteur les montre à l'approche */}
           {SCENES.map((Scene, i) => (
-            <div key={i} className={`o-scene o-scene-${i}`} data-scene-layer={i} data-part="back">
+            <div key={i} className={`o-scene o-scene-${i}${i ? ' o-paused' : ''}`} data-scene-layer={i} data-part="back">
               <Scene part="back" />
             </div>
           ))}
@@ -649,7 +651,7 @@ export default function OdysseeHome() {
       <div className="o-world-shift o-front-shift">
         <div className="o-world o-front" aria-hidden="true">
           {SCENES.map((Scene, i) => (
-            <div key={i} className={`o-scene o-scene-${i}`} data-scene-layer={i} data-part="front">
+            <div key={i} className={`o-scene o-scene-${i}${i ? ' o-paused' : ''}`} data-scene-layer={i} data-part="front">
               <Scene part="front" />
             </div>
           ))}
@@ -705,7 +707,7 @@ export default function OdysseeHome() {
             <p className="o-lede o-rv" style={{ '--i': 3 } as CSSProperties}>
               Une vraie partie d'échecs, trois cartes de pouvoir, un sort par tour. La partie est déjà ouverte : {mobile ? 'touchez une pièce' : 'déplacez une pièce'} sur l'échiquier, l'Oracle vous répond.
             </p>
-            <div className="o-hand-row o-rv" style={{ '--i': 4 } as CSSProperties}>
+            <div className="o-hand-row o-rv" style={{ '--i': 4 } as CSSProperties} onPointerEnter={wantPlay} onFocus={wantPlay}>
               <div className="o-hand-mini" aria-label="Vos trois sorts">
                 {g.hand.map((h, i) =>
                   h.card ? (
@@ -833,14 +835,17 @@ export default function OdysseeHome() {
             <div className="o-bazar-col o-veil" data-col>
               <header className="o-place-head">
                 <div className="o-seal o-rv" aria-label="Zéro pay-to-win">
-                  <svg viewBox="0 0 200 200" className="o-seal-text">
-                    <defs>
-                      <path id="o-seal-c" d="M100 100 m-78 0 a78 78 0 1 1 156 0 a78 78 0 1 1 -156 0" />
-                    </defs>
-                    <text fontFamily="Cinzel" fontSize="13.2" letterSpacing="5.2" fill="#f3c969">
-                      <textPath href="#o-seal-c">ZÉRO PAY-TO-WIN · STYLE UNIQUEMENT · </textPath>
-                    </text>
-                  </svg>
+                  {/* Le conteneur tourne, pas le <svg> : un texte SVG qui tourne serait remis en page à chaque image */}
+                  <div className="o-seal-text">
+                    <svg viewBox="0 0 200 200">
+                      <defs>
+                        <path id="o-seal-c" d="M100 100 m-78 0 a78 78 0 1 1 156 0 a78 78 0 1 1 -156 0" />
+                      </defs>
+                      <text fontFamily="Cinzel" fontSize="13.2" letterSpacing="5.2" fill="#f3c969">
+                        <textPath href="#o-seal-c">ZÉRO PAY-TO-WIN · STYLE UNIQUEMENT · </textPath>
+                      </text>
+                    </svg>
+                  </div>
                   <div className="o-seal-core">
                     <Mark size={34} />
                   </div>

@@ -1,6 +1,7 @@
 // Échiquier de démonstration : joue seul et lance des sorts en boucle (aperçu des skins).
 // Il n'est plus monté que par SkinPreview (pages/Home.tsx), que rien n'importe : la boutique et l'accueil passent
 // par odyssee/StageBoard. Il montre les huit pouvoirs (catalogue « climats »).
+// Sobriété (D6) : pas de scène 3D tant qu'il n'a pas été vu, et pause hors de l'écran ou onglet caché.
 import { useEffect, useRef, useState } from 'react';
 import { Color, VALUE, fileOf, rankOf } from '../../shared/chess';
 import { CARDS, CardId, cardsOf, isCardId } from '../../shared/cards';
@@ -79,11 +80,24 @@ export function DemoBoard({ skin, theme, mode = 'hero', onCaption }: Props) {
   const [wrap, setWrap] = useState<HTMLDivElement | null>(null);
   const [state, setState] = useState<GameState>(() => (mode === 'hero' ? freshHero() : freshPreview()));
   const [hidden, setHidden] = useState<Set<number>>(new Set());
-  const vfx = useVfx(wrap, 'w');
+  const [seen, setSeen] = useState(false);
+  const onScreen = useRef(false);
+  const vfx = useVfx(seen ? wrap : null, 'w');
   const captionRef = useRef(onCaption);
   captionRef.current = onCaption;
 
   useEffect(() => setWrap(ref.current?.wrap ?? null), []);
+
+  // À l'écran ou non : la démonstration ne joue (et ne prépare sa scène 3D) que si on la voit
+  useEffect(() => {
+    if (!wrap) return;
+    const io = new IntersectionObserver(([e]) => {
+      onScreen.current = e.isIntersecting;
+      if (e.isIntersecting) setSeen(true);
+    });
+    io.observe(wrap);
+    return () => io.disconnect();
+  }, [wrap]);
 
   useEffect(() => {
     if (!vfx) return;
@@ -125,7 +139,7 @@ export function DemoBoard({ skin, theme, mode = 'hero', onCaption }: Props) {
     const loop = async () => {
       await sleep(900);
       while (!dead) {
-        if (document.hidden) {
+        if (document.hidden || !onScreen.current) {
           await sleep(500);
           continue;
         }

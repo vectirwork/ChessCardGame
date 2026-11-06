@@ -194,6 +194,7 @@ function Stars({ seed, n, maxR = 1.4, twinkle = 0, color = '#fff', yMax = VH, wa
  * Bancs de nuées traversés pendant la chute, entre deux lieux (invisibles au repos, au-dessus de l'écran).
  * Chaque banc a sa vitesse : il croise le centre de l'écran quand il reste `f` écran à parcourir avant le lieu.
  * Les bancs « back » passent derrière l'échiquier, les bancs « front » devant.
+ * L'image est dans `data-bg` : le moteur (engine.ts) la pose à l'approche du lieu, pas au premier affichage.
  */
 const BANKS: Record<'back' | 'front', { d: number; f: number; img: 0 | 1; left: number; width: number; height: number; flip?: boolean; o?: number }[]> = {
   back: [
@@ -213,8 +214,8 @@ export function CloudBanks({ tone, part }: { tone: Tone; part: 'back' | 'front' 
         <Layer key={i} d={b.d} className="o-bank">
           <div
             className="o-bank-img"
+            data-bg={CLOUDS[tone][b.img]}
             style={{
-              backgroundImage: `url(${CLOUDS[tone][b.img]})`,
               left: `${b.left}vw`,
               width: `${b.width}vw`,
               height: `${b.height}vh`,
@@ -588,29 +589,33 @@ function Hourglass() {
   );
 }
 
+/** Cadran du Sablier. Il tourne par un conteneur HTML : faire tourner l'élément <svg> lui-même le ferait remettre
+ *  en page et repeindre à chaque image du fil principal (mesuré : 60 mises en page/s pendant le défilement). */
 function ClockRing({ size, ticks, className, style }: { size: number; ticks: number; className: string; style?: CSSProperties }) {
   const c = size / 2;
   return (
-    <svg className={`o-clock-ring ${className}`} style={{ width: size, height: size, ...style }} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
-      <circle cx={c} cy={c} r={c - 2} fill="none" stroke="rgba(243,201,105,.45)" strokeWidth="1" />
-      <circle cx={c} cy={c} r={c - 16} fill="none" stroke="rgba(243,201,105,.2)" strokeWidth="1" strokeDasharray="2 6" />
-      {Array.from({ length: ticks }, (_, i) => {
-        const a = (i / ticks) * Math.PI * 2;
-        const long = i % 5 === 0;
-        const r1 = c - 4, r2 = c - (long ? 14 : 9);
-        return (
-          <line
-            key={i}
-            x1={f1(c + Math.cos(a) * r1)}
-            y1={f1(c + Math.sin(a) * r1)}
-            x2={f1(c + Math.cos(a) * r2)}
-            y2={f1(c + Math.sin(a) * r2)}
-            stroke="rgba(255,220,150,.7)"
-            strokeWidth={long ? 1.6 : 0.8}
-          />
-        );
-      })}
-    </svg>
+    <div className={`o-clock-ring ${className}`} style={{ width: size, height: size, ...style }} aria-hidden="true">
+      <svg className="o-spin-svg" viewBox={`0 0 ${size} ${size}`}>
+        <circle cx={c} cy={c} r={c - 2} fill="none" stroke="rgba(243,201,105,.45)" strokeWidth="1" />
+        <circle cx={c} cy={c} r={c - 16} fill="none" stroke="rgba(243,201,105,.2)" strokeWidth="1" strokeDasharray="2 6" />
+        {Array.from({ length: ticks }, (_, i) => {
+          const a = (i / ticks) * Math.PI * 2;
+          const long = i % 5 === 0;
+          const r1 = c - 4, r2 = c - (long ? 14 : 9);
+          return (
+            <line
+              key={i}
+              x1={f1(c + Math.cos(a) * r1)}
+              y1={f1(c + Math.sin(a) * r1)}
+              x2={f1(c + Math.cos(a) * r2)}
+              y2={f1(c + Math.sin(a) * r2)}
+              stroke="rgba(255,220,150,.7)"
+              strokeWidth={long ? 1.6 : 0.8}
+            />
+          );
+        })}
+      </svg>
+    </div>
   );
 }
 

@@ -122,6 +122,48 @@ html.ody-home #root {
   overflow: visible;
 }
 
+/* Sobriété (D6) : décor caché, sorti de l'écran ou recouvert par la partie. Ses animations sont en pause (elles
+   reprennent là où elles en étaient) : Blink ne recalcule plus leur style à chaque image du fil principal. La classe
+   o-paused est posée par le moteur (scènes, calques), l'attribut data-offscreen par l'accueil (lieux et chapitres
+   hors de l'écran). */
+.ody .o-paused,
+.ody .o-paused *,
+.ody .o-paused::before,
+.ody .o-paused::after,
+.ody .o-paused *::before,
+.ody .o-paused *::after,
+.ody [data-offscreen],
+.ody [data-offscreen] *,
+.ody [data-offscreen]::before,
+.ody [data-offscreen]::after,
+.ody [data-offscreen] *::before,
+.ody [data-offscreen] *::after,
+.ody.is-game .o-world-shift *,
+.ody.is-game .o-world-shift *::before,
+.ody.is-game .o-world-shift *::after,
+.ody.is-game .o-content *,
+.ody.is-game .o-content *::before,
+.ody.is-game .o-content *::after {
+  animation-play-state: paused !important;
+}
+/* Lieu caché (loin, ou transparent) : son contenu n'est ni stylé, ni mis en page, ni peint. Il est rendu d'un coup
+   quand le moteur le montre, alors qu'il est encore transparent ou hors de l'écran. Au premier affichage, seul le
+   premier lieu est rendu. */
+.ody .o-scene.o-paused {
+  content-visibility: hidden;
+}
+/* En partie, le rideau opaque recouvre tout le décor de la page : rien à composer dessous */
+.ody.is-game .o-world-shift,
+.ody.is-game .o-content {
+  visibility: hidden;
+}
+/* Anneaux qui tournent : le conteneur HTML tourne, le dessin SVG le remplit */
+.ody .o-spin-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .ody .o-svg.o-tw {
   will-change: opacity;
   animation: o-twinkle-layer 5.2s ease-in-out infinite;
@@ -744,7 +786,8 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
   width: 192%;
   height: 192%;
 }
-.ody .o-orbit {
+.ody .o-orbit,
+.ody .o-orbit > .o-spin-svg {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -796,11 +839,14 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
 .ody .o-eq-clip .o-eq-squash {
   top: 0;
 }
-.ody .o-eq-spin {
+.ody .o-eq-spin,
+.ody .o-eq-spin > .o-spin-svg {
   display: block;
   width: 100%;
   height: 100%;
   overflow: visible;
+}
+.ody .o-eq-spin {
   animation: o-spin 90s linear infinite;
 }
 .ody .o-astre.is-game .o-astro-front,
@@ -1555,6 +1601,11 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
   width: 100%;
   height: 100%;
   animation: o-spin 30s linear infinite;
+}
+.ody .o-seal-text > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 .ody .o-seal-core {
   position: absolute;

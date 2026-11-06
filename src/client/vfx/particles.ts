@@ -142,6 +142,8 @@ export class Particles {
   }
 
   update(dt: number) {
+    // Aucune particule en vie (la dernière image l'a déjà envoyée au GPU) : rien à calculer ni à renvoyer
+    if (this.alive === 0) return;
     let alive = 0;
     for (let i = 0; i < this.n; i++) {
       if (this.life[i] <= 0) continue;
@@ -178,6 +180,16 @@ export class Particles {
     this.alive = alive;
     const g = this.points.geometry;
     for (const name of ['position', 'pcolor', 'size', 'alpha', 'rot']) (g.getAttribute(name) as THREE.BufferAttribute).needsUpdate = true;
+  }
+
+  /** Éteint toutes les particules (scène rendue à un autre échiquier). */
+  clear() {
+    this.life.fill(0);
+    this.alpha.fill(0);
+    this.size.fill(0);
+    this.alive = 0;
+    const g = this.points.geometry;
+    for (const name of ['alpha', 'size']) (g.getAttribute(name) as THREE.BufferAttribute).needsUpdate = true;
   }
 
   dispose() {

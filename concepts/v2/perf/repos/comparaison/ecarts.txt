@@ -1,0 +1,32 @@
+Planches : avant (gauche) | après (milieu) | différence ×4 (droite). Avant = instantané 2f1aeb6, après = même instantané + fichiers de l'agent « repos ».
+Les lieux II à VI et la partie montrent des démonstrations et des mains tirées au hasard : les écarts y viennent de l'état du jeu et de la phase des animations, pas du rendu.
+Comparaison contrôlée (même position, même main) : mur-de-glace-*.jpg. Bande sombre du Bazar mobile : artefact de capture présent aussi avant (le défilement bouge pendant la capture).
+
+bureau-1-observatoire.png: écart moyen 0.84/255, pixels très différents (>40) 1.00 %
+bureau-2-foret.png: écart moyen 1.84/255, pixels très différents (>40) 1.50 %
+bureau-3-pics.png: écart moyen 6.10/255, pixels très différents (>40) 5.72 %
+bureau-4-sablier.png: écart moyen 7.55/255, pixels très différents (>40) 7.28 %
+bureau-5-bazar.png: écart moyen 11.06/255, pixels très différents (>40) 12.65 %
+bureau-6-seuil.png: écart moyen 7.36/255, pixels très différents (>40) 6.79 %
+bureau-7-partie.png: écart moyen 4.92/255, pixels très différents (>40) 5.55 %
+bureau-8-sort-1100.png: écart moyen 7.78/255, pixels très différents (>40) 10.03 %
+bureau-8-sort-1800.png: écart moyen 8.78/255, pixels très différents (>40) 13.09 %
+bureau-8-sort-250.png: écart moyen 29.26/255, pixels très différents (>40) 32.07 %
+bureau-8-sort-600.png: écart moyen 11.51/255, pixels très différents (>40) 14.48 %
+bureau-9-apres-sort.png: écart moyen 7.80/255, pixels très différents (>40) 10.05 %
+bureau-p-apprendre.png: écart moyen 0.00/255, pixels très différents (>40) 0.00 %
+bureau-p-boutique.png: écart moyen 0.30/255, pixels très différents (>40) 0.27 %
+bureau-p-classement.png: écart moyen 0.01/255, pixels très différents (>40) 0.00 %
+bureau-p-jouer.png: écart moyen 0.00/255, pixels très différents (>40) 0.00 %
+mobile-1-observatoire.png: écart moyen 1.81/255, pixels très différents (>40) 2.35 %
+mobile-2-foret.png: écart moyen 2.86/255, pixels très différents (>40) 1.48 %
+mobile-3-pics.png: écart moyen 8.48/255, pixels très différents (>40) 6.17 %
+mobile-4-sablier.png: écart moyen 0.53/255, pixels très différents (>40) 0.47 %
+mobile-5-bazar.png: écart moyen 48.77/255, pixels très différents (>40) 48.70 %
+mobile-6-seuil.png: écart moyen 11.12/255, pixels très différents (>40) 10.05 %
+mobile-7-partie.png: écart moyen 4.77/255, pixels très différents (>40) 7.42 %
+mobile-8-sort-1100.png: écart moyen 13.06/255, pixels très différents (>40) 18.52 %
+mobile-8-sort-1800.png: écart moyen 12.71/255, pixels très différents (>40) 17.54 %
+mobile-8-sort-250.png: écart moyen 32.14/255, pixels très différents (>40) 37.34 %
+mobile-8-sort-600.png: écart moyen 13.85/255, pixels très différents (>40) 20.11 %
+mobile-9-apres-sort.png: écart moyen 12.75/255, pixels très différents (>40) 17.64 %

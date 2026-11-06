@@ -13,6 +13,7 @@ import { api, errMsg } from '../api';
 import { Spinner } from '../components/Layout';
 import { emitAck, getSocket } from '../socket';
 import { getGuestName, setGuestName, useApp } from '../store';
+import '../styles/game.css';
 
 type Mode = 'bot' | 'invite' | 'friendly' | 'ranked';
 
@@ -105,7 +106,7 @@ export default function Play() {
 
   // La partie s'ouvre vite : on charge son code au repos
   useEffect(() => {
-    const t = setTimeout(() => void import('../game/GamePage').catch(() => undefined), 1200);
+    const t = setTimeout(() => void import('./GameRoute').catch(() => undefined), 1200);
     return () => clearTimeout(t);
   }, []);
 

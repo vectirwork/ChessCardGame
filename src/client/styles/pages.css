@@ -2168,7 +2168,9 @@
   border: 1px dashed rgb(243 201 105 / 0.1);
   box-shadow: inset 0 0 0 9vh rgb(255 255 255 / 0), 0 0 0 1px rgb(var(--ft-tint) / 0.06);
   pointer-events: none;
-  animation: pg-spin 200s linear infinite;
+  /* Rotation par paliers d'un dixième de degré (moins d'un pixel au bord de l'anneau) : le mouvement reste le même à
+     l'œil, mais le compositeur ne redessine la page que 18 fois par seconde au lieu de 60 (D6, mesuré). */
+  animation: pg-spin 200s steps(3600) infinite;
 }
 .ft-page .ft-head .eyebrow::after,
 .ft-page .ft-head .kicker::after {

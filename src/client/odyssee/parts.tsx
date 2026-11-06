@@ -81,35 +81,40 @@ export function Chapter({ id, active }: { id: CardId; active: boolean }) {
   );
 }
 
-/** Anneaux méridiens de l'astrolabe, derrière l'échiquier. */
+/** Anneaux méridiens de l'astrolabe, derrière l'échiquier. Les anneaux qui tournent sont des conteneurs HTML : un
+ *  <svg> qui tourne lui-même serait remis en page et repeint à chaque image du fil principal. */
 export function OrbitRings() {
   return (
     <div className="o-orbits" aria-hidden="true">
-      <svg className="o-orbit o-o1" viewBox="0 0 200 200">
-        <circle cx="100" cy="100" r="98" fill="none" stroke="rgba(243,201,105,.55)" strokeWidth="0.3" />
-        <circle cx="100" cy="100" r="93" fill="none" stroke="rgba(243,201,105,.4)" strokeWidth="0.2" strokeDasharray="0.6 2.2" />
-        {Array.from({ length: 72 }, (_, i) => {
-          const a = (i / 72) * Math.PI * 2;
-          const l = i % 6 === 0 ? 4 : 1.8;
-          return (
-            <line
-              key={i}
-              x1={(100 + Math.cos(a) * 98).toFixed(2)}
-              y1={(100 + Math.sin(a) * 98).toFixed(2)}
-              x2={(100 + Math.cos(a) * (98 - l)).toFixed(2)}
-              y2={(100 + Math.sin(a) * (98 - l)).toFixed(2)}
-              stroke="rgba(243,201,105,.7)"
-              strokeWidth="0.24"
-            />
-          );
-        })}
-        <circle cx="198" cy="100" r="1.6" fill="#ffe1a0" />
-      </svg>
-      <svg className="o-orbit o-o2" viewBox="0 0 200 200">
-        <circle cx="100" cy="100" r="86" fill="none" stroke="rgba(127,231,255,.36)" strokeWidth="0.22" />
-        <circle cx="14" cy="100" r="1.3" fill="#bff3ff" />
-        <circle cx="186" cy="100" r="0.9" fill="#bff3ff" />
-      </svg>
+      <div className="o-orbit o-o1">
+        <svg className="o-spin-svg" viewBox="0 0 200 200">
+          <circle cx="100" cy="100" r="98" fill="none" stroke="rgba(243,201,105,.55)" strokeWidth="0.3" />
+          <circle cx="100" cy="100" r="93" fill="none" stroke="rgba(243,201,105,.4)" strokeWidth="0.2" strokeDasharray="0.6 2.2" />
+          {Array.from({ length: 72 }, (_, i) => {
+            const a = (i / 72) * Math.PI * 2;
+            const l = i % 6 === 0 ? 4 : 1.8;
+            return (
+              <line
+                key={i}
+                x1={(100 + Math.cos(a) * 98).toFixed(2)}
+                y1={(100 + Math.sin(a) * 98).toFixed(2)}
+                x2={(100 + Math.cos(a) * (98 - l)).toFixed(2)}
+                y2={(100 + Math.sin(a) * (98 - l)).toFixed(2)}
+                stroke="rgba(243,201,105,.7)"
+                strokeWidth="0.24"
+              />
+            );
+          })}
+          <circle cx="198" cy="100" r="1.6" fill="#ffe1a0" />
+        </svg>
+      </div>
+      <div className="o-orbit o-o2">
+        <svg className="o-spin-svg" viewBox="0 0 200 200">
+          <circle cx="100" cy="100" r="86" fill="none" stroke="rgba(127,231,255,.36)" strokeWidth="0.22" />
+          <circle cx="14" cy="100" r="1.3" fill="#bff3ff" />
+          <circle cx="186" cy="100" r="0.9" fill="#bff3ff" />
+        </svg>
+      </div>
       <svg className="o-orbit o-o3" viewBox="0 0 200 200">
         <circle cx="100" cy="100" r="78" fill="none" stroke="rgba(243,201,105,.24)" strokeWidth="0.16" />
         {['N', 'E', 'S', 'O'].map((t, i) => (
@@ -130,18 +135,20 @@ export function EqRing({ part, w, r, rot, dur, reverse, hue }: { part: 'back' | 
   const stroke = hue === 'gold' ? 'rgba(243,201,105,.85)' : 'rgba(150,236,255,.6)';
   const ring = (
     <div className="o-eq-squash" style={{ transform: `scaleY(${r})` }}>
-      <svg className="o-eq-spin" viewBox="0 0 200 200" style={{ animationDuration: `${dur}s`, animationDirection: reverse ? 'reverse' : 'normal' }}>
-        <circle cx="100" cy="100" r="98" fill="none" stroke={stroke} strokeWidth="0.55" />
-        <circle cx="100" cy="100" r="94.5" fill="none" stroke={stroke} strokeWidth="0.2" opacity="0.6" />
-        {Array.from({ length: 48 }, (_, i) => {
-          const a = (i / 48) * Math.PI * 2;
-          const l = i % 4 === 0 ? 3.5 : 1.6;
-          return <line key={i} x1={(100 + Math.cos(a) * 98).toFixed(2)} y1={(100 + Math.sin(a) * 98).toFixed(2)} x2={(100 + Math.cos(a) * (98 - l)).toFixed(2)} y2={(100 + Math.sin(a) * (98 - l)).toFixed(2)} stroke={stroke} strokeWidth="0.4" />;
-        })}
-        <circle cx="198" cy="100" r="3" fill={hue === 'gold' ? '#fff1c4' : '#d8f8ff'} />
-        <circle cx="198" cy="100" r="6" fill={hue === 'gold' ? 'rgba(255,225,160,.25)' : 'rgba(190,240,255,.25)'} />
-        <circle cx="30" cy="170" r="2" fill={hue === 'gold' ? '#ffd68a' : '#bff3ff'} />
-      </svg>
+      <div className="o-eq-spin" style={{ animationDuration: `${dur}s`, animationDirection: reverse ? 'reverse' : 'normal' }}>
+        <svg className="o-spin-svg" viewBox="0 0 200 200">
+          <circle cx="100" cy="100" r="98" fill="none" stroke={stroke} strokeWidth="0.55" />
+          <circle cx="100" cy="100" r="94.5" fill="none" stroke={stroke} strokeWidth="0.2" opacity="0.6" />
+          {Array.from({ length: 48 }, (_, i) => {
+            const a = (i / 48) * Math.PI * 2;
+            const l = i % 4 === 0 ? 3.5 : 1.6;
+            return <line key={i} x1={(100 + Math.cos(a) * 98).toFixed(2)} y1={(100 + Math.sin(a) * 98).toFixed(2)} x2={(100 + Math.cos(a) * (98 - l)).toFixed(2)} y2={(100 + Math.sin(a) * (98 - l)).toFixed(2)} stroke={stroke} strokeWidth="0.4" />;
+          })}
+          <circle cx="198" cy="100" r="3" fill={hue === 'gold' ? '#fff1c4' : '#d8f8ff'} />
+          <circle cx="198" cy="100" r="6" fill={hue === 'gold' ? 'rgba(255,225,160,.25)' : 'rgba(190,240,255,.25)'} />
+          <circle cx="30" cy="170" r="2" fill={hue === 'gold' ? '#ffd68a' : '#bff3ff'} />
+        </svg>
+      </div>
     </div>
   );
   return (

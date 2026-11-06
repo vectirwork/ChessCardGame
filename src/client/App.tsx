@@ -1,25 +1,116 @@
-import { Suspense, lazy, useEffect } from 'react';
-import { Route, Routes, useLocation } from 'react-router-dom';
+import { Suspense, lazy, useEffect, useState } from 'react';
+import type { ComponentType } from 'react';
+import { Route, Routes, matchPath, useLocation } from 'react-router-dom';
 import { Footer, Header, PageLoader } from './components/Layout';
-import { Home } from './pages/Home';
 
-const Play = lazy(() => import('./pages/Play'));
-const GamePage = lazy(() => import('./game/GamePage'));
-const Rules = lazy(() => import('./pages/Rules'));
-const Shop = lazy(() => import('./pages/Shop'));
-const DemoCheckout = lazy(() => import('./pages/DemoCheckout'));
-const Auth = lazy(() => import('./pages/Auth'));
-const Account = lazy(() => import('./pages/Account'));
-const Profile = lazy(() => import('./pages/Profile'));
-const Leaderboard = lazy(() => import('./pages/Leaderboard'));
-const Admin = lazy(() => import('./pages/Admin'));
-const Legal = lazy(() => import('./pages/Legal'));
-const NotFound = lazy(() => import('./pages/NotFound'));
-const Learn = lazy(() => import('./pages/Learn'));
-const Puzzles = lazy(() => import('./pages/Puzzles'));
-const Analysis = lazy(() => import('./pages/Analysis'));
-const MyGames = lazy(() => import('./pages/MyGames'));
-const Live = lazy(() => import('./pages/Live'));
+/**
+ * Page chargée à la demande (un morceau de code et de CSS par page, décision D6). `preload()` récupère son code à
+ * l'avance (main.tsx pour la première page, que le serveur précharge aussi dès le HTML ; survol d'un lien) : une page
+ * dont le code est déjà là s'affiche d'un coup, sans écran d'attente. Le choix entre rendu direct et attente Suspense
+ * est fait au montage et ne change plus ensuite (aucun remontage en cours de vie).
+ */
+interface Preloadable {
+  preload: () => Promise<unknown>;
+}
+function page<P extends object>(load: () => Promise<{ default: ComponentType<P> }>): ComponentType<P> & Preloadable {
+  let ready: ComponentType<P> | undefined;
+  let pending: Promise<ComponentType<P>> | undefined;
+  const preload = () =>
+    (pending ??= load().then(
+      m => (ready = m.default),
+      e => {
+        pending = undefined; // nouvel essai possible (réseau coupé, nouvelle version)
+        throw e;
+      },
+    ));
+  const Lazy = lazy(() => preload().then(C => ({ default: C })));
+  function Paged(props: P) {
+    const [Now] = useState(() => ready);
+    const Shown = (Now ?? Lazy) as ComponentType<P>;
+    return <Shown {...props} />;
+  }
+  return Object.assign(Paged, { preload });
+}
+
+const Home = page<object>(() => import('./pages/Home').then(m => ({ default: m.Home })));
+const Play = page(() => import('./pages/Play'));
+const GamePage = page(() => import('./pages/GameRoute'));
+const Rules = page(() => import('./pages/Rules'));
+const Shop = page(() => import('./pages/Shop'));
+const DemoCheckout = page(() => import('./pages/DemoCheckout'));
+const Auth = page(() => import('./pages/Auth'));
+const Account = page(() => import('./pages/Account'));
+const Profile = page(() => import('./pages/Profile'));
+const Leaderboard = page(() => import('./pages/Leaderboard'));
+const Admin = page(() => import('./pages/Admin'));
+const Legal = page(() => import('./pages/Legal'));
+const NotFound = page(() => import('./pages/NotFound'));
+const Learn = page(() => import('./pages/Learn'));
+const Puzzles = page(() => import('./pages/Puzzles'));
+const Analysis = page(() => import('./pages/Analysis'));
+const MyGames = page(() => import('./pages/MyGames'));
+const Live = page(() => import('./pages/Live'));
+
+/** Chemins et pages de Routes ci-dessous, à tenir ensemble : sert au préchargement de la première page (une route
+ *  absente d'ici s'affiche quand même, après un écran d'attente). */
+const PAGES: [string, Preloadable][] = [
+  ['/', Home],
+  ['/jouer', Play],
+  ['/partie/:id', GamePage],
+  ['/cartes', Rules],
+  ['/regles', Rules],
+  ['/boutique', Shop],
+  ['/boutique/demo/:id', DemoCheckout],
+  ['/connexion', Auth],
+  ['/inscription', Auth],
+  ['/mot-de-passe-oublie', Auth],
+  ['/reinitialiser/:token', Auth],
+  ['/verifier/:token', Auth],
+  ['/compte', Account],
+  ['/joueur/:username', Profile],
+  ['/classement', Leaderboard],
+  ['/admin', Admin],
+  ['/apprendre', Learn],
+  ['/apprendre/:lesson', Learn],
+  ['/problemes', Puzzles],
+  ['/problemes/:puzzle', Puzzles],
+  ['/analyse', Analysis],
+  ['/analyse/:gameId', Analysis],
+  ['/parties', MyGames],
+  ['/direct', Live],
+  ['/cgu', Legal],
+  ['/cgv', Legal],
+  ['/confidentialite', Legal],
+  ['/mentions-legales', Legal],
+];
+
+/** Charge le code de la page qui correspond à `pathname` (page introuvable sinon). Ne rejette jamais. */
+export function preloadRoute(pathname: string): Promise<unknown> {
+  const hit = PAGES.find(([path]) => matchPath(path, pathname));
+  return (hit ? hit[1] : NotFound).preload().catch(() => undefined);
+}
+
+/**
+ * Intention de navigation (survol, toucher ou focus d'un lien interne) : le code de la page visée est chargé
+ * d'avance, la navigation n'attend pas le réseau. Rien ne se passe au repos (événements de l'utilisateur seulement).
+ */
+function usePrefetchOnIntent() {
+  useEffect(() => {
+    const onIntent = (e: Event) => {
+      const a = e.target instanceof Element ? e.target.closest('a[href]') : null;
+      if (!(a instanceof HTMLAnchorElement) || a.origin !== window.location.origin || a.target === '_blank') return;
+      if (a.pathname.startsWith('/api/') || /\.\w+$/.test(a.pathname)) return;
+      void preloadRoute(a.pathname);
+    };
+    const opts = { capture: true, passive: true };
+    document.addEventListener('pointerover', onIntent, opts);
+    document.addEventListener('focusin', onIntent, opts);
+    return () => {
+      document.removeEventListener('pointerover', onIntent, opts);
+      document.removeEventListener('focusin', onIntent, opts);
+    };
+  }, []);
+}
 
 export function App() {
   const loc = useLocation();
@@ -27,6 +118,7 @@ export function App() {
   useEffect(() => {
     if (!loc.hash) window.scrollTo(0, 0);
   }, [loc.pathname, loc.hash]);
+  usePrefetchOnIntent();
   return (
     <>
       <a className="skip-link" href="#contenu">

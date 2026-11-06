@@ -1,5 +1,9 @@
 // Scène WebGL superposée à l'échiquier. La caméra reproduit exactement la perspective CSS du plateau,
 // ce qui permet d'incliner l'échiquier en 3D pendant un sort tout en gardant les effets alignés sur les cases.
+// Sobriété (D6) : la boucle d'images ne tourne que pendant un sort ; un objet persistant immobile (Mur de glace,
+// Faille) ne la garde pas allumée (elle se réveille au défilement, au redimensionnement, et vérifie la position de
+// l'échiquier deux fois par seconde) ; un objet qui scintille (Gel, Bouclier) est redessiné à ≈ 22 images/s sans
+// réveiller le fil principal entre deux. Densité de pixels bornée sur les appareils modestes.
 import * as THREE from 'three';
 import type { Color, Position } from '../../shared/chess';
 import type { Effect } from '../../shared/game';
@@ -37,6 +41,29 @@ export interface Cine {
   zoom: number;
 }
 
+/** Suite de la boucle d'images : arrêt, image suivante, image dans ≈ 45 ms (scintillement), veille (objets immobiles). */
+const enum Next {
+  Stop,
+  Frame,
+  Slow,
+  Park,
+}
+
+/** Appareil modeste (peu de cœurs ou de mémoire) : on dessine moins de pixels. */
+function modestDevice() {
+  const nav = navigator as Navigator & { deviceMemory?: number };
+  return (nav.hardwareConcurrency || 8) <= 4 || (nav.deviceMemory ?? 8) <= 4;
+}
+
+/**
+ * Densité de pixels du rendu WebGL : 2 au plus, 1,5 sur un appareil modeste (44 % de pixels en moins à dessiner).
+ * L'anticrénelage reste partout : sans lui, les arêtes fines des cristaux et des éclairs crénellent visiblement, même
+ * à haute densité (vérifié sur les captures mobiles).
+ */
+export function renderQuality(dpr = window.devicePixelRatio || 1, modest = modestDevice()) {
+  return { ratio: Math.min(dpr, modest ? 1.5 : 2), antialias: true };
+}
+
 export const ease = {
   outCubic: (k: number) => 1 - (1 - k) ** 3,
   inCubic: (k: number) => k ** 3,
@@ -47,6 +74,8 @@ export const ease = {
 
 export class VfxStage {
   readonly ok: boolean;
+  /** Échiquier suivi (changé par attach() quand la scène passe à un autre échiquier). */
+  wrap: HTMLElement;
   readonly scene = new THREE.Scene();
   /** Plan de l'échiquier : 1 unité = 1 case, x vers la droite, y vers le haut de l'écran, z vers le joueur. */
   readonly board = new THREE.Group();
@@ -58,6 +87,10 @@ export class VfxStage {
   private systems = new Map<string, Particles>();
   private markers = new Map<number, Marker>();
   private raf = 0;
+  /** Minuterie de la boucle ralentie (scintillement) ou de la veille (objets immobiles). */
+  private timer = 0;
+  /** Images consécutives sans mouvement ni sort, avec des objets immobiles. */
+  private still = 0;
   private last = 0;
   time = 0;
   tilt = 0;
@@ -80,14 +113,18 @@ export class VfxStage {
   markerFactory: MarkerFactory | null = null;
   arrivalFactory: ArrivalFactory | null = null;
 
-  constructor(readonly wrap: HTMLElement, public orientation: Color) {
+  constructor(wrap: HTMLElement, public orientation: Color) {
+    this.wrap = wrap;
     this.reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
     try {
       this.canvas = document.createElement('canvas');
       this.canvas.className = 'vfx-canvas';
-      this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, alpha: true, antialias: true, powerPreference: 'high-performance' });
+      const q = renderQuality();
+      // Processeur graphique par défaut : « high-performance » allumerait la carte dédiée d'un portable pour des
+      // effets de quelques secondes
+      this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, alpha: true, antialias: q.antialias, powerPreference: 'default' });
       this.renderer.setClearColor(0x000000, 0);
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      this.renderer.setPixelRatio(q.ratio);
       this.renderer.outputColorSpace = THREE.SRGBColorSpace;
       document.body.appendChild(this.canvas);
       this.ok = true;
@@ -107,6 +144,66 @@ export class VfxStage {
     const rim = new THREE.DirectionalLight(0xbfd7ff, 1.2);
     rim.position.set(3, 6, 3);
     this.scene.add(rim);
+    if (this.ok) {
+      // L'échiquier peut bouger sous des objets immobiles : on se réveille pour les recaler
+      window.addEventListener('scroll', this.onMove, { capture: true, passive: true });
+      window.addEventListener('resize', this.onMove);
+    }
+  }
+
+  private onMove = () => {
+    if (this.markers.size && !this.raf) this.kick();
+  };
+
+  /**
+   * Rattache la scène à un autre échiquier (la démonstration de l'accueil change d'échiquier à chaque lieu) : le
+   * contexte WebGL et les programmes déjà compilés sont gardés.
+   */
+  attach(wrap: HTMLElement, orientation: Color) {
+    this.detach();
+    this.wrap = wrap;
+    this.orientation = orientation;
+    const p = parseFloat(getComputedStyle(wrap).perspective);
+    this.perspective = p > 0 ? p : 1400;
+  }
+
+  /** Vide la scène (effets, objets, particules) et la met en sommeil, sans libérer le contexte WebGL. */
+  detach() {
+    this.halt();
+    for (const f of this.fx) {
+      try {
+        f.dispose?.();
+      } catch {
+        /* déjà libéré */
+      }
+    }
+    this.fx = [];
+    this.cines = [];
+    this.shakeAmp = 0;
+    for (const m of this.markers.values()) disposeObject(m.obj);
+    this.markers.clear();
+    this.pendingIds = new Set();
+    const keep = new Set<THREE.Object3D>([...this.systems.values()].map(ps => ps.points));
+    for (const c of [...this.board.children]) if (!keep.has(c)) disposeObject(c);
+    for (const ps of this.systems.values()) ps.clear();
+    this.renderer?.clear();
+    if (this.canvas) this.canvas.style.display = 'none';
+    this.tilt = 0;
+    this.zoom = 1;
+    this.wrap.style.translate = '';
+    this.wrap.style.setProperty('--tilt', '0deg');
+    this.wrap.style.setProperty('--zoom', '1');
+    this.applyTilt = '';
+    this.applied = { x: 0, y: 0 };
+    this.lastLayout = '';
+  }
+
+  /** Arrête la boucle d'images et ses minuteries. */
+  private halt() {
+    cancelAnimationFrame(this.raf);
+    this.raf = 0;
+    window.clearTimeout(this.timer);
+    this.timer = 0;
   }
 
   /** Centre d'une case dans le repère de l'échiquier. */
@@ -216,8 +313,15 @@ export class VfxStage {
     setTimeout(() => el.remove(), 900);
   }
 
-  private kick() {
-    if (!this.ok || this.raf) return;
+  /** Relance la boucle d'images (`poll` : simple vérification depuis la veille, sans compter comme un mouvement). */
+  private kick(poll = false) {
+    if (!this.ok) return;
+    if (!poll) this.still = 0;
+    if (this.timer) {
+      window.clearTimeout(this.timer);
+      this.timer = 0;
+    }
+    if (this.raf) return;
     if (this.canvas) this.canvas.style.display = 'block';
     this.last = performance.now();
     this.raf = requestAnimationFrame(this.frame);
@@ -225,18 +329,32 @@ export class VfxStage {
 
   private frame = (now: number) => {
     this.raf = 0;
-    let again = false;
+    let next = Next.Stop;
     try {
-      again = this.step(now);
+      next = this.step(now);
     } catch (err) {
       // Un effet en erreur ne doit jamais figer la scène (ni laisser l'échiquier incliné) : on le jette.
       console.error('[vfx]', err);
       this.fx = [];
       this.cines = [];
-      again = this.markers.size > 0;
+      next = this.markers.size > 0 ? Next.Frame : Next.Stop;
     }
-    if (again) {
+    if (next === Next.Frame) {
       this.raf = requestAnimationFrame(this.frame);
+    } else if (next === Next.Slow) {
+      // Objets qui scintillent, rien d'autre : une image toutes les ≈ 45 ms (cadence de leur rendu), le fil
+      // principal reste libre entre deux. L'horloge continue (pas de remise à zéro de `last`).
+      this.timer = window.setTimeout(() => {
+        this.timer = 0;
+        this.raf = requestAnimationFrame(this.frame);
+      }, 30);
+    } else if (next === Next.Park) {
+      // Objets immobiles déjà dessinés : la scène reste affichée telle quelle ; deux vérifications par seconde au cas
+      // où l'échiquier aurait bougé sans défilement ni redimensionnement (mise en page de la page)
+      this.timer = window.setTimeout(() => {
+        this.timer = 0;
+        this.kick(true);
+      }, 500);
     } else {
       this.renderer?.clear();
       this.tilt = 0;
@@ -248,8 +366,8 @@ export class VfxStage {
     }
   };
 
-  /** Une image. Renvoie true s'il faut continuer la boucle. */
-  private step(now: number): boolean {
+  /** Une image. Renvoie la suite de la boucle. */
+  private step(now: number): Next {
     // Plafond de 0,1 s : sur un appareil lent, l’animation saute des images au lieu de ralentir
     const dt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
     this.last = now;
@@ -328,7 +446,14 @@ export class VfxStage {
       this.renderer!.render(this.scene, this.camera);
       this.lastMarkerRender = now;
     }
-    return busy || this.markers.size > 0;
+    if (busy || moved) {
+      this.still = 0;
+      return Next.Frame;
+    }
+    if (!this.markers.size) return Next.Stop;
+    if (animating) return Next.Slow;
+    // Quelques images de plus avant la veille : l'échiquier peut finir de se déplacer (défilement doux)
+    return ++this.still < 12 ? Next.Frame : Next.Park;
   }
 
   private syncCamera(left: number, top: number, w: number, h: number) {
@@ -433,13 +558,20 @@ export class VfxStage {
   }
 
   dispose() {
-    cancelAnimationFrame(this.raf);
-    this.raf = 0;
+    this.halt();
+    window.removeEventListener('scroll', this.onMove, { capture: true });
+    window.removeEventListener('resize', this.onMove);
     for (const f of this.fx) f.dispose?.();
     for (const ps of this.systems.values()) ps.dispose();
     for (const m of this.markers.values()) disposeObject(m.obj);
     this.markers.clear();
     this.renderer?.dispose();
+    // Libère le contexte WebGL tout de suite (le navigateur en limite le nombre ; sinon il attend le ramasse-miettes)
+    try {
+      this.renderer?.forceContextLoss();
+    } catch {
+      /* contexte déjà perdu */
+    }
     this.canvas?.remove();
     this.wrap.style.translate = '';
     this.wrap.style.setProperty('--tilt', '0deg');

@@ -16,13 +16,18 @@
 //                      accueil-foret ; « tous » pour tous)
 //   --passages=3       passages de mesure par scénario et par site ; on garde la médiane. Les sites alternent.
 //   --chargement=10    fenêtre de chargement, en secondes depuis le début de la navigation
-//   --repos=10         fenêtre de repos (page immobile, souris hors de la page), en secondes
+//   --repos=10         fenêtre de repos (page immobile, aucun événement de souris envoyé), en secondes
 //   --diagnostic       un passage de plus par scénario et par site : profil CPU (chargement et repos), couverture
-//                      JS et CSS par fichier et par module, polices, images, effets CSS, animations en cours
+//                      JS et CSS par fichier et par module, polices, images, effets CSS, animations en cours, boucles
+//                      requestAnimationFrame par module, trace de 3 s des invalidations (style, mise en page, peinture)
 //   --sans-webgl       Chromium lancé avec --disable-webgl : sépare ce qui dépend du WebGL (logiciel en bac à sable)
 //   --reseau=4g        réseau mobile simulé (latence 150 ms, 1,6 Mbit/s descendant) ; --cpu=4 : CPU ralenti 4 fois
-//   --sortie=<dossier> résultats JSON, profils .cpuprofile (défaut : dossier temporaire du système)
+//   --sortie=<dossier> resultats.json, synthese.md, profils .cpuprofile (défaut : dossier temporaire du système)
+//   --relire=<resultats.json>  réimprime la synthèse d'une campagne déjà mesurée (mêmes sites et --scenarios)
 //   --visible          navigateur visible (headless par défaut)
+//
+// Durée : ≈ 35 s par passage (trace comprise), ≈ 45 s par diagnostic. Ne pas mesurer pendant qu'une construction ou
+// une autre campagne tourne sur la machine : la charge moyenne du système est notée dans chaque résultat.
 //
 // Lecture des résultats :
 // - « fil principal » : temps CPU des tâches du fil principal du rendu (JavaScript, styles, mise en page, peinture).
@@ -978,7 +983,9 @@ const CHAMPS = [
   ['Repos : mises en page /s', r => r.repos.trace?.miseEnPage, x => x.toFixed(1)],
   ['Repos : dont forcées dans un rAF /s', r => r.repos.trace?.miseEnPageForceeRaf, x => x.toFixed(1)],
   ['Repos : coût d’une image, fil principal', r => r.repos.trace?.coutImagePrincipal, x => `${x.toFixed(1)} ms`],
-  ['Repos : projection à 60 images/s (ms/s)', r => (r.repos.trace?.imagesPrincipal > 1 ? r.repos.trace.coutImagePrincipal * 60 : 0), x => x.toFixed(0)],
+  // Seulement pour une boucle soutenue (≥ 10 images/s du fil principal) : le compositeur logiciel du bac à sable bride la
+  // cadence, un vrai écran à 60 Hz ferait 60 images/s au même coût unitaire
+  ['Repos : projection à 60 images/s (ms/s)', r => (r.repos.trace?.imagesPrincipal >= 10 ? r.repos.trace.coutImagePrincipal * 60 : 0), x => x.toFixed(0)],
   ['Repos : rAF appelés /s', r => r.repos.rafParS, x => x.toFixed(1)],
   ['Repos : animations CSS en cours', r => r.repos.animations.enCours, x => String(Math.round(x))],
   ['Repos : dont infinies visibles', r => r.repos.animations.infiniesVisibles, x => String(Math.round(x))],
@@ -1017,6 +1024,14 @@ function synthese(resultats) {
 // ---------------------------------------------------------------------------------------------------------------
 // Programme
 // ---------------------------------------------------------------------------------------------------------------
+const RELIRE = opt('relire', '');
+if (RELIRE) {
+  // Régénère la synthèse d'une campagne déjà mesurée : node test/perf/mesure.mjs ref=… cur=… --relire=<resultats.json>
+  const { readFileSync } = await import('node:fs');
+  const d = JSON.parse(readFileSync(String(RELIRE), 'utf8'));
+  console.log(synthese(d.resultats));
+  process.exit(0);
+}
 const lancement = {
   headless: !opt('visible', false),
   args: [...(SANS_WEBGL ? ['--disable-webgl', '--disable-3d-apis'] : []), '--enable-unsafe-swiftshader'],

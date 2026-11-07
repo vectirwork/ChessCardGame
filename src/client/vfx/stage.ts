@@ -193,6 +193,7 @@ export class VfxStage {
     this.wrap.style.translate = '';
     this.wrap.style.setProperty('--tilt', '0deg');
     this.wrap.style.setProperty('--zoom', '1');
+    this.wrap.classList.remove('is-tilting');
     this.applyTilt = '';
     this.applied = { x: 0, y: 0 };
     this.lastLayout = '';
@@ -293,6 +294,9 @@ export class VfxStage {
     this.applyTilt = key;
     this.wrap.style.setProperty('--tilt', `${(tilt * 180) / Math.PI}deg`);
     this.wrap.style.setProperty('--zoom', String(zoom));
+    // La 3D de l'échiquier (pièces debout) n'existe que pendant l'inclinaison : au repos, l'échiquier est un seul
+    // calque plat (board.css), bien moins coûteux et sans scintillement sur les GPU de téléphone.
+    this.wrap.classList.toggle('is-tilting', tilt !== 0 || zoom !== 1);
   }
 
   shake(amount: number, duration = 0.45) {
@@ -576,6 +580,7 @@ export class VfxStage {
     this.wrap.style.translate = '';
     this.wrap.style.setProperty('--tilt', '0deg');
     this.wrap.style.setProperty('--zoom', '1');
+    this.wrap.classList.remove('is-tilting');
     this.applyTilt = '';
   }
 }

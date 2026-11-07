@@ -497,7 +497,8 @@ export class Engine {
         const k = Math.sin(lin * Math.PI);
         const crossing = Math.abs(a.x - b.x) > vw * 0.2;
         p.s *= 1 - (crossing ? 0.42 : 0.14) * k;
-        p.o = 1 - 0.86 * k;
+        // Téléphone : l'échiquier s'efface vite au lieu de flotter à demi transparent au-dessus des textes
+        p.o = isMobile(vw) ? Math.max(0, 1 - 2.4 * k) : 1 - 0.86 * k;
         p.orb *= 1 - 0.7 * k;
         p.front *= 1 - k;
         p.y += k * vh * 0.05;

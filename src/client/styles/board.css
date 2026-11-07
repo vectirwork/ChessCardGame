@@ -18,7 +18,9 @@
 .board {
   position: absolute;
   inset: 0;
-  transform-style: preserve-3d;
+  /* Plat au repos : un seul calque pour le cadre, les cases et les pièces. En 3D (preserve-3d), chaque pièce devient
+     un calque GPU et le cadre peut passer devant les cases sur les téléphones (échiquier qui noircit par moments). */
+  transform-style: flat;
   transform: rotateX(var(--tilt)) scale(var(--zoom, 1));
   touch-action: none;
   border-radius: 6px;
@@ -326,6 +328,11 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
+}
+/* Pendant un sort, l'échiquier s'incline et les pièces se redressent (stage.ts pose is-tilting) */
+.board-wrap.is-tilting .board,
+.board-wrap.is-tilting .pieces,
+.board-wrap.is-tilting .piece {
   transform-style: preserve-3d;
 }
 .piece {
@@ -336,8 +343,6 @@
   height: 12.5%;
   /* Même durée quelle que soit la distance : un fou qui traverse l'échiquier glisse aussi vite qu'un pion d'une case */
   transition: transform 0.18s cubic-bezier(0.25, 0.8, 0.35, 1);
-  transform-style: preserve-3d;
-  will-change: transform;
   z-index: 1;
 }
 /* La pièce prise s'efface sous celle qui arrive */
@@ -350,8 +355,12 @@
   background-size: 100% 100%;
   background-repeat: no-repeat;
   transform-origin: 50% 88%;
-  transform: rotateX(calc(var(--tilt) * -1));
   filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.35));
+}
+/* Pièces debout seulement pendant l'inclinaison : au repos, une rotation 3D (même nulle) créerait un calque GPU par
+   pièce */
+.board-wrap.is-tilting .pi {
+  transform: rotateX(calc(var(--tilt) * -1));
 }
 .board.interactive .piece {
   cursor: grab;
@@ -359,6 +368,7 @@
 .piece.dragging {
   transition: none;
   z-index: 10;
+  will-change: transform;
 }
 .piece.dragging .pi {
   transform: scale(1.15);

@@ -3260,3 +3260,39 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
     padding-bottom: 26vh;
   }
 }
+
+/* ------------------------------------------------------------------------------------------ */
+/* Téléphones et tablettes (même seuil que isMobile, 820 px) : rendu allégé pour le GPU. Les vidéos du fondateur
+   (Android, Chrome) montraient des morceaux d'image oubliés pendant le défilement (fantômes, rectangles, échiquier
+   noirci) : trop de grands calques à garder en mémoire. */
+@media (max-width: 819.98px) {
+  /* Bancs de nuées traversés : les plus grands calques de la page (environ 15 mégapixels), rendus en blocs flous
+     coupés net sur téléphone */
+  .ody .o-layer.o-bank,
+  .ody .o-fg-clouds {
+    display: none;
+  }
+  /* Le monde fixe garde la hauteur de la grande fenêtre : la barre d'adresse qui apparaît ou disparaît ne le
+     redimensionne plus (sinon tous ses calques sont redessinés pendant le défilement) */
+  .ody .o-world-shift {
+    bottom: auto;
+    height: 100vh;
+    height: 100lvh;
+  }
+  /* Flous d'arrière-plan : recalculés à chaque image sous un décor qui bouge, remplacés par un fond plus opaque */
+  .ody .o-astre-caption.is-live,
+  .ody .o-queue-pill,
+  .ody .o-sheet-veil {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .ody .o-astre-caption.is-live {
+    background: rgba(10, 8, 22, 0.9);
+  }
+  .ody .o-queue-pill {
+    background: rgba(8, 8, 22, 0.94);
+  }
+  .ody .o-sheet-veil {
+    background: rgba(2, 3, 10, 0.84);
+  }
+}

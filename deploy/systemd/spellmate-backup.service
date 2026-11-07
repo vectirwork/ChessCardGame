@@ -1,0 +1,6 @@
+[Unit]
+Description=Sauvegarde quotidienne de la base Spellmate
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/spellmate/repo/deploy/backup.sh

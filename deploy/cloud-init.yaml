@@ -1,0 +1,70 @@
+#cloud-config
+# Installation du serveur chess-powers.com (Hetzner Cloud, Ubuntu 24.04), sans SSH : le serveur suit la branche du
+# dépôt public et déploie le commit indiqué dans deploy/VERSION (voir deploy/README.md).
+# __STATUS_TOKEN__ est remplacé à la création par un jeton aléatoire (jamais commité).
+package_update: true
+package_upgrade: true
+packages: [docker.io, docker-compose-v2, git, openssl, python3]
+ssh_pwauth: false
+
+write_files:
+  - path: /etc/docker/daemon.json
+    content: |
+      { "log-driver": "json-file", "log-opts": { "max-size": "10m", "max-file": "3" } }
+  - path: /opt/spellmate/status-token
+    permissions: "0600"
+    content: __STATUS_TOKEN__
+  - path: /usr/local/bin/spellmate-poll
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      # Déploie le commit indiqué dans deploy/VERSION de la branche suivie, puis publie l'état.
+      set -uo pipefail
+      D=/opt/spellmate; S=$D/status
+      REPO=https://github.com/vectirwork/ChessCardGame.git
+      BRANCH=claude/peaceful-hamilton-qr9cmc
+      exec 9>"$D/poll.lock"; flock -n 9 || exit 0
+      mkdir -p "$S"
+      [ -d "$D/repo/.git" ] || git clone --quiet --branch "$BRANCH" "$REPO" "$D/repo" || exit 1
+      cd "$D/repo"
+      git fetch --quiet origin "$BRANCH" || exit 1
+      target=$(git show "origin/$BRANCH:deploy/VERSION" 2>/dev/null | tr -d '[:space:]')
+      if [ -n "$target" ] && [ "$target" != "$(cat "$S/deployed" 2>/dev/null)" ] && [ "$target" != "$(cat "$S/failed" 2>/dev/null)" ]; then
+        printf '{"state":"deploying","target":"%s","since":"%s"}\n' "$target" "$(date -u +%FT%TZ)" > "$S/status.json"
+        chmod 644 "$S/status.json"
+        if git checkout --quiet --force "$target" && bash deploy/update.sh > "$S/deploy.log" 2>&1; then
+          echo "$target" > "$S/deployed"; rm -f "$S/failed"
+        else
+          echo "$target" > "$S/failed"
+        fi
+      fi
+      [ -f "$D/repo/deploy/report.sh" ] && bash "$D/repo/deploy/report.sh"
+      exit 0
+  - path: /etc/systemd/system/spellmate-poll.service
+    content: |
+      [Unit]
+      Description=Déploiement de Spellmate (commit épinglé dans deploy/VERSION)
+      Wants=network-online.target
+      After=network-online.target docker.service
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/spellmate-poll
+      TimeoutStartSec=3600
+  - path: /etc/systemd/system/spellmate-poll.timer
+    content: |
+      [Unit]
+      Description=Vérifie toutes les 2 minutes s'il faut déployer une nouvelle version de Spellmate
+
+      [Timer]
+      OnBootSec=20s
+      OnUnitInactiveSec=2min
+
+      [Install]
+      WantedBy=timers.target
+
+runcmd:
+  - fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  - systemctl restart docker
+  - systemctl daemon-reload
+  - systemctl enable --now spellmate-poll.timer

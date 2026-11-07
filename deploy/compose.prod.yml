@@ -1,0 +1,18 @@
+# Surcharges de production du serveur chess-powers.com (voir deploy/README.md).
+# docker compose -p spellmate -f docker-compose.yml -f deploy/compose.prod.yml …
+services:
+  caddy:
+    environment:
+      STATUS_TOKEN: ${STATUS_TOKEN}
+    volumes:
+      - ./deploy/Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      - /opt/spellmate/status:/srv/status:ro
+
+  app:
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
+
+  db:
+    volumes:
+      - /opt/spellmate/backups:/backups

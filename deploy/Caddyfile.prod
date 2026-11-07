@@ -1,0 +1,21 @@
+# Caddyfile de production : le site, plus l'état du déploiement à une adresse secrète (jeton dans
+# /opt/spellmate/status-token, aussi rangé dans les étiquettes du serveur Hetzner).
+{$DOMAIN} {
+	encode zstd gzip
+	handle_path /.well-known/spellmate-{$STATUS_TOKEN}/* {
+		header Cache-Control "no-store"
+		root * /srv/status
+		file_server
+	}
+	handle {
+		reverse_proxy app:3000
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+}
+
+www.{$DOMAIN} {
+	redir https://{$DOMAIN}{uri} permanent
+}

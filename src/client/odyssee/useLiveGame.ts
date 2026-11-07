@@ -137,7 +137,12 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
   activeRef.current = active;
   levelRef.current = level;
 
-  const boardRef = useCallback((h: BoardHandle | null) => setWrapEl(h?.wrap ?? null), []);
+  const handleRef = useRef<BoardHandle | null>(null);
+  const boardRef = useCallback((h: BoardHandle | null) => {
+    handleRef.current = h;
+    setWrapEl(h?.wrap ?? null);
+  }, []);
+  const clearPremoves = useCallback(() => handleRef.current?.clearPremoves(), []);
 
   // Calque WebGL de la partie : masqué hors mode immersif (voir odyssee.css)
   useEffect(() => {
@@ -374,6 +379,8 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
     /** La partie a été reprise d'une sauvegarde au chargement de la page. */
     resumed,
     boardRef,
+    /** Annule les pré-coups en attente sur l'échiquier de la partie. */
+    clearPremoves,
     boardProps: {
       pos: state.pos,
       orientation: PLAYER,

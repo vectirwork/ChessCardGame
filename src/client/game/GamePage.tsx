@@ -20,7 +20,7 @@ import { Board, BoardHandle, checkSquare } from '../components/Board';
 import { Modal, Spinner } from '../components/Layout';
 import { rememberView } from '../features/history';
 import { castSafely } from '../odyssee/castSafely';
-import { GameShell, PowersPanel, castMessage, castThisTurn, gameLayout, handNotes } from '../odyssee/shell';
+import { GameShell, PowersPanel, PremoveNote, castMessage, castThisTurn, gameLayout, handNotes } from '../odyssee/shell';
 import type { ShellAction, ShellPrompt } from '../odyssee/shell';
 import { emitAck, getSocket } from '../socket';
 import { playCardSound, playSound, setSoundEnabled, soundEnabled } from '../sound';
@@ -89,6 +89,8 @@ export default function GamePage() {
   const [warm, setWarm] = useState(false);
   const layout = useStageLayout();
   const boardRef = useRef<BoardHandle>(null);
+  /** Pré-coups en attente (Board) : affichés dans le statut, avec de quoi les annuler. */
+  const [premoves, setPremoves] = useState(0);
   const [wrapEl, setWrapEl] = useState<HTMLDivElement | null>(null);
   const serverView = useRef<GameView | null>(null);
   const queue = useRef<Queued[]>([]);
@@ -543,7 +545,7 @@ export default function GamePage() {
     hint = (
       <>
         {turnSeat?.kind === 'bot' ? "L'IA calcule son coup." : 'Votre adversaire réfléchit.'}
-        {hasCards && you && !layout.mobile && state.hands[opposite(you)].some(h => !h.used) && <small>Ses pouvoirs restent visibles en haut à droite.</small>}
+        {you && <PremoveNote n={premoves} mobile={layout.mobile} onCancel={() => boardRef.current?.clearPremoves()} />}
       </>
     );
   }
@@ -723,6 +725,8 @@ export default function GamePage() {
         onTarget={onTarget}
         hidden={hidden}
         locked={!myTurn || animating}
+        premove={you && view.status === 'active' && !view.draft && !state.result ? you : null}
+        onPremoves={setPremoves}
       />
       {casting && <CastBanner key={casting.key} c={casting} />}
       {iAmCreatorWaiting && <WaitingCard id={id} view={view} catalog={catalog} onCancel={() => void send('game:abort', {})} />}

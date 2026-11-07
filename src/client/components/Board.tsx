@@ -10,10 +10,14 @@ import { CARDS } from '../../shared/cards';
 import type { CardId } from '../../shared/cards';
 import { boardStyle } from '../../shared/catalog';
 import { pieceUrl } from './pieces';
+import { fullmoveOf, premoveDests, virtualBoard } from './premoves';
+import type { Premove } from './premoves';
 
 export interface BoardHandle {
   el: HTMLDivElement | null;
   wrap: HTMLDivElement | null;
+  /** Annule tous les pré-coups en attente. */
+  clearPremoves: () => void;
 }
 
 interface Props {
@@ -35,6 +39,13 @@ interface Props {
   hidden?: Set<number>;
   locked?: boolean;
   coords?: boolean;
+  /**
+   * Pré-coups (premoves.ts) : camp du joueur. Pendant le tour adverse (échiquier verrouillé), il prépare ses coups
+   * suivants, sans limite ; ils se jouent d'eux-mêmes à son tour. Absent : pas de pré-coups (spectateur, fin).
+   */
+  premove?: Color | null;
+  /** Nombre de pré-coups en attente, à chaque changement. */
+  onPremoves?: (n: number) => void;
 }
 
 interface Shown {
@@ -57,11 +68,12 @@ function xy(sq: number, o: Color) {
 export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, ref) {
   const {
     pos, orientation, theme, legal = [], onMove, lastMove, check, effects = [], targets, targetHue = 200, chosen = [],
-    onTarget, hidden, locked, coords = true,
+    onTarget, hidden, locked, coords = true, premove, onPremoves,
   } = props;
   const boardRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  useImperativeHandle(ref, () => ({ el: boardRef.current, wrap: wrapRef.current }), []);
+  const [queue, setQueue] = useState<Premove[]>([]);
+  useImperativeHandle(ref, () => ({ el: boardRef.current, wrap: wrapRef.current, clearPremoves: () => setQueue([]) }), []);
 
   const [selected, setSelected] = useState<number | null>(null);
   const [drag, setDrag] = useState<{ sq: number; x: number; y: number; moved: boolean } | null>(null);
@@ -160,7 +172,68 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
 
   const targetSet = useMemo(() => new Set(targets ?? []), [targets]);
   const targeting = !!targets;
-  const interactive = !locked && !targeting && !!onMove;
+  /** Tour adverse : le joueur prépare des pré-coups sur la position virtuelle (ses pré-coups déjà joués). */
+  const premoving = !!locked && !!premove && !targeting && !!onMove;
+  const interactive = (!locked || premoving) && !targeting && !!onMove;
+  const vb = useMemo(() => (queue.length ? virtualBoard(pos.board, queue) : pos.board), [pos, queue]);
+  /** Pièces fantômes : chaque pré-coup, à sa case d'arrivée, numéroté ; `live` : la pièce y est encore (virtuellement). */
+  const ghosts = useMemo(() => {
+    const out: { i: number; m: Premove; p: Piece; live: boolean }[] = [];
+    let b = pos.board;
+    queue.forEach((m, i) => {
+      const king = b[m.from]?.t === 'k' && Math.abs(m.to - m.from) === 2;
+      b = virtualBoard(b, [m]);
+      const p = b[m.to];
+      if (p) out.push({ i, m, p, live: false });
+      // Roque : la tour a aussi son fantôme, même numéro
+      if (king) {
+        const side = m.to > m.from ? 1 : -1;
+        const rook = b[m.from + side];
+        if (rook) out.push({ i, m: { id: rook.id, from: side > 0 ? m.from + 3 : m.from - 4, to: m.from + side }, p: rook, live: false });
+      }
+    });
+    for (const g of out) g.live = vb[g.m.to]?.id === g.p.id && !queue.some((m, j) => j > g.i && m.id === g.p.id);
+    return out;
+  }, [pos, queue, vb]);
+
+  // Pas de pré-coups hors du jeu ; une partie nouvelle (ou un retour en arrière) les efface
+  useEffect(() => {
+    if (!premove) setQueue([]);
+  }, [premove]);
+  const fmRef = useRef(fullmoveOf(pos));
+  useEffect(() => {
+    const fm = fullmoveOf(pos);
+    if (fm < fmRef.current) setQueue([]);
+    fmRef.current = fm;
+  }, [pos]);
+  const onPremovesRef = useRef(onPremoves);
+  onPremovesRef.current = onPremoves;
+  useEffect(() => {
+    onPremovesRef.current?.(queue.length);
+  }, [queue.length]);
+
+  // À son tour, le premier pré-coup se joue s'il est légal ; sinon, tous sont annulés
+  const legalRef = useRef(legal);
+  legalRef.current = legal;
+  const onMoveRef = useRef(onMove);
+  onMoveRef.current = onMove;
+  const firedRef = useRef<Position | null>(null);
+  useEffect(() => {
+    if (!queue.length || locked || !premove || !legalRef.current.length || firedRef.current === pos) return;
+    const t = setTimeout(() => {
+      const [first, ...rest] = queue;
+      const cands = legalRef.current.filter(m => m.from === first.from && m.to === first.to);
+      if (pos.board[first.from]?.id !== first.id || !cands.length) {
+        setQueue([]);
+        setNote({ text: queue.length > 1 ? 'Pré-coup impossible : pré-coups annulés.' : 'Pré-coup impossible : annulé.', key: Date.now() });
+        return;
+      }
+      firedRef.current = pos;
+      setQueue(rest);
+      onMoveRef.current?.(first.from, first.to, cands.find(m => m.promo === 'q')?.promo ?? cands[0].promo);
+    }, 120);
+    return () => clearTimeout(t);
+  }, [pos, locked, premove, queue, legal.length]);
 
   const sqFromPoint = useCallback((cx: number, cy: number): number | null => {
     const el = boardRef.current;
@@ -173,6 +246,13 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
   }, [orientation]);
 
   const tryMove = useCallback((from: number, to: number): boolean => {
+    if (premoving) {
+      const p = vb[from];
+      if (!p || p.c !== premove || !premoveDests(vb, from, pos.castling, queue).includes(to)) return false;
+      setQueue(q => [...q, { id: p.id, from, to }]);
+      setSelected(null);
+      return true;
+    }
     const cands = (movesFrom.get(from) ?? []).filter(m => m.to === to);
     if (!cands.length) return false;
     if (cands.some(m => m.promo)) {
@@ -182,7 +262,7 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
     onMove?.(from, to);
     setSelected(null);
     return true;
-  }, [movesFrom, onMove]);
+  }, [movesFrom, onMove, premoving, vb, premove, pos.castling, queue]);
 
   /** Pourquoi la pièce de `from` ne peut pas aller en `to` (lâcher refusé sur une pièce adverse, pièce bloquée). */
   const refusal = (from: number, to: number | null): string | null => {
@@ -208,7 +288,18 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
     return legal.length ? 'Cette prise n’est pas permise ici.' : null;
   };
 
+  const cancelPremoves = () => {
+    setQueue([]);
+    setSelected(null);
+    setNote({ text: 'Pré-coups annulés.', key: Date.now() });
+  };
+
   const onPointerDown = (e: React.PointerEvent) => {
+    // Clic droit : annule les pré-coups
+    if (e.button === 2 && queue.length) {
+      cancelPremoves();
+      return;
+    }
     if (e.button !== 0) return;
     if (e.pointerType === 'mouse') {
       // Pas de sélection de texte ni de glisser-déposer natif à la souris (voir board.css) : sinon, dès le troisième
@@ -226,6 +317,19 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
     }
     if (!interactive || promo) return;
     if (selected !== null && selected !== sq && tryMove(selected, sq)) return;
+    if (premoving) {
+      if (vb[sq]?.c === premove) {
+        setSelected(sq);
+        setDrag({ sq, x: e.clientX, y: e.clientY, moved: false });
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } else if (selected === null && queue.length) {
+        // Appui hors de ses pièces, sans pièce choisie : les pré-coups s'annulent
+        cancelPremoves();
+      } else {
+        setSelected(null);
+      }
+      return;
+    }
     if (movesFrom.has(sq)) {
       setSelected(sq);
       setDrag({ sq, x: e.clientX, y: e.clientY, moved: false });
@@ -258,9 +362,14 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
   };
 
   const sel = selected;
-  const selMoves = sel !== null ? movesFrom.get(sel) ?? [] : [];
   const dests = new Map<number, boolean>();
-  for (const m of selMoves) dests.set(m.to, !!(m.flags & F_CAPTURE));
+  if (premoving) {
+    if (sel !== null) for (const to of premoveDests(vb, sel, pos.castling, queue)) dests.set(to, !!vb[to] && vb[to]!.c !== premove);
+  } else {
+    for (const m of sel !== null ? movesFrom.get(sel) ?? [] : []) dests.set(m.to, !!(m.flags & F_CAPTURE));
+  }
+  const preFrom = new Set(queue.map(m => m.from));
+  const preTo = new Set(queue.map(m => m.to));
 
   const bs = boardStyle(theme);
   const style = {
@@ -279,6 +388,8 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
       const cls = ['sq', light ? 'l' : 'd'];
       if (lastMove && (lastMove.from === sq || lastMove.to === sq)) cls.push('last');
       if (sel === sq) cls.push('sel');
+      if (preTo.has(sq)) cls.push('pm-to');
+      else if (preFrom.has(sq)) cls.push('pm-from');
       if (check === sq) cls.push('check');
       if (fx.iced.has(sq)) cls.push('iced');
       if (fx.rift.has(sq)) cls.push('rift');
@@ -307,7 +418,7 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
     <div ref={wrapRef} className={`board-wrap ${textureClass(theme)}${fx.climate ? ` clim clim-${fx.climate}` : ''}`} style={style}>
       <div
         ref={boardRef}
-        className={`board ${interactive ? 'interactive' : ''} ${targeting ? 'targeting' : ''}`}
+        className={`board ${interactive ? 'interactive' : ''} ${targeting ? 'targeting' : ''} ${premoving ? 'is-premove' : ''}`}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -320,7 +431,8 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
           {shown.map(({ p, sq, state, blast }) => {
             if (hidden?.has(p.id) && state !== 'vanish') return null;
             const { x, y } = xy(sq, orientation);
-            const dragging = drag?.moved && drag.sq === sq && state === 'idle';
+            // En pré-coup, on ne glisse la pièce réelle que si elle n'a pas déjà un pré-coup (sinon : son fantôme)
+            const dragging = drag?.moved && drag.sq === sq && state === 'idle' && (!premoving || vb[sq]?.id === p.id);
             const cls = ['piece', state];
             if (blast) cls.push('is-blast');
             if (p.t === 'p') cls.push('pawn');
@@ -342,11 +454,39 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
               </div>
             );
           })}
+          {ghosts.map(({ i, m, p, live }) => {
+            const { x, y } = xy(m.to, orientation);
+            const dragging = live && premoving && drag?.moved && drag.sq === m.to && pos.board[m.to]?.id !== p.id;
+            const transform = dragging && dragOffset ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : `translate(${x * 100}%, ${y * 100}%)`;
+            return (
+              <div key={`pm-${i}-${p.id}`} className={`piece ghost ${live ? 'is-live' : ''} ${dragging ? 'dragging' : ''}`} style={{ transform }} aria-hidden="true">
+                <div className="pi" style={{ backgroundImage: pieceUrl(p.c, p.t) }} />
+                <span className="pm-n">{i + 1}</span>
+              </div>
+            );
+          })}
           {burst && (() => {
             const { x, y } = xy(burst.sq, orientation);
             return <span key={burst.key} className="board-burst" style={{ transform: `translate(${x * 100}%, ${y * 100}%)` }} aria-hidden="true" />;
           })()}
         </div>
+        {queue.length > 0 && (
+          <svg className="pm-arrows" viewBox="0 0 800 800" aria-hidden="true">
+            <defs>
+              <marker id="pm-head" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="3.6" markerHeight="3.6" orient="auto-start-reverse">
+                <path d="M0 0 L10 5 L0 10 z" />
+              </marker>
+            </defs>
+            {queue.map((m, i) => {
+              const a = xy(m.from, orientation);
+              const b = xy(m.to, orientation);
+              const ax = a.x * 100 + 50, ay = a.y * 100 + 50, bx = b.x * 100 + 50, by = b.y * 100 + 50;
+              const len = Math.hypot(bx - ax, by - ay) || 1;
+              const ux = (bx - ax) / len, uy = (by - ay) / len;
+              return <line key={i} x1={ax + ux * 22} y1={ay + uy * 22} x2={bx - ux * 30} y2={by - uy * 30} markerEnd="url(#pm-head)" />;
+            })}
+          </svg>
+        )}
         {note && (
           <p key={note.key} className="board-note" role="status">
             {note.text}

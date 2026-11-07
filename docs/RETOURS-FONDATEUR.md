@@ -79,4 +79,12 @@ sélectionné) : corrigé, avec un test (`test/glisser.mjs`).
 - [x] Défaut trouvé en passant : sur un écran de 412 px (Pixel 7), l'échiquier de l'accueil pouvait sortir de
   l'écran (la page s'élargissait, le navigateur la dézoomait). Débordement horizontal coupé à la racine.
 
-À suivre : pré-coups sans limite (étape 2), mini-animations avant de lancer une carte (étape 3), accueil (étape 4).
+Étape 2 (traitée) :
+
+- [x] **Pré-coups sans limite** : pendant le tour adverse (contre l'Oracle comme entre amis), on joue ses coups
+  suivants au clic ou au glisser. Chacun apparaît en pièce fantôme avec un petit numéro (1, 2, 3…), cases teintées
+  de bleu et flèche en pointillés ; ils s'enchaînent sur la position prévue (roque compris). À son tour, le premier
+  se joue de lui-même s'il est légal, sinon tous s'annulent. Annuler : clic droit, toucher une case vide, ou
+  « Annuler » dans le statut. Les cartes ne se préparent pas. Mention ajoutée dans les règles.
+
+À suivre : mini-animations avant de lancer une carte (étape 3), accueil (étape 4).

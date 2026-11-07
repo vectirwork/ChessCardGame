@@ -1094,3 +1094,26 @@
     display: none;
   }
 }
+
+/* Pré-coups en attente (premoveNote.tsx) : toujours visibles, même sur mobile où l'aide est d'ordinaire repliée */
+.gs-premoves {
+  color: #9cc4ff;
+}
+.gs.is-mobile .gs-hint small.gs-premoves {
+  display: block;
+  margin-top: 2px;
+}
+.gs.is-mobile .gs-hint:has(.gs-premoves) {
+  display: block;
+}
+.gs-premoves-cancel {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gold-hi, #f3c969);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  pointer-events: auto;
+}

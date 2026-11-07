@@ -23,7 +23,7 @@ import {
 import { Engine, isMobile } from './engine';
 import { Chapter, EQ, EqRing, Kicker, Lines, Mark, OrbitRings, Sheet, Slot } from './parts';
 import { SCENES } from './scenery';
-import { GameShell, PowersPanel, cardName, castMessage, castThisTurn, handNotes } from './shell';
+import { GameShell, PowersPanel, PremoveNote, cardName, castMessage, castThisTurn, handNotes } from './shell';
 import type { ShellAction } from './shell';
 import type { Act } from './StageBoard';
 import { useHumanQueue } from './useHumanQueue';
@@ -417,17 +417,21 @@ export default function OdysseeHome() {
   const inProgress = g.state.ply > 0 && !g.result;
 
   const onMove = g.move;
+  /** Pré-coups en attente sur l'échiquier de la partie (pendant que l'Oracle réfléchit). */
+  const [premoves, setPremoves] = useState(0);
   const liveBoardProps = useMemo(
     () => ({
       ...g.boardProps,
       locked: g.boardProps.locked || !liveInteractive,
+      premove: liveInteractive && !g.result ? ('w' as const) : null,
+      onPremoves: setPremoves,
       onMove: (from: number, to: number, promo?: Parameters<typeof onMove>[2]) => {
         const ok = onMove(from, to, promo);
         // Premier geste sur l'échiquier de l'accueil : la partie passe en plein écran
         if (ok && modeRef.current === 'page') play();
       },
     }),
-    [g.boardProps, liveInteractive, onMove, play],
+    [g.boardProps, liveInteractive, onMove, play, g.result],
   );
 
   const wake = (on: boolean) => {
@@ -1094,7 +1098,12 @@ export default function OdysseeHome() {
         kicker={`Coup ${moveNo} · L'Oracle, ${levelName(g.level).toLowerCase()}`}
         title={statusOf(g)}
         hint={
-          g.state.cardPlayed && g.myTurn ? (
+          !g.myTurn && !g.result ? (
+            <>
+              L'Oracle prépare sa réponse.
+              <PremoveNote n={premoves} mobile={mobile} onCancel={g.clearPremoves} />
+            </>
+          ) : g.state.cardPlayed && g.myTurn ? (
             <>
               {castMessage(castThisTurn(g.state, 'w') ?? 'tide')}
               <small>Une seule carte par tour. Revenez à la page quand vous voulez : la partie vous attend.</small>

@@ -79,9 +79,12 @@
   border-radius: 4px;
   background: rgba(243, 201, 105, 0.28);
 }
-/* Mobile, au tour de l'adversaire : le titre suffit */
+/* Mobile, au tour de l'adversaire : le titre suffit, sauf s'il y a des pré-coups en attente (à pouvoir annuler) */
 .gs.gp.is-mobile.their-turn .gs-hint {
   display: none;
+}
+.gs.gp.is-mobile.their-turn .gs-hint:has(.gs-premoves) {
+  display: block;
 }
 /* Mobile : un bandeau « vous + pendule » se glisse sous l'échiquier, le statut descend d'autant */
 .gs.gp.is-mobile .gs-status {

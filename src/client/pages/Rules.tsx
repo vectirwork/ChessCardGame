@@ -114,6 +114,7 @@ const DETAILS: ReactNode[] = [
   'Le Sablier fou n’est proposé qu’entre humains, dans les parties avec pendule.',
   'Le choix des cartes dure 45 secondes : trois cartes différentes parmi les huit pouvoirs, sans autre contrainte. Si le temps s’écoule, celles qui vous manquent sont tirées au hasard. Sur l’accueil, le tirage favorise les cartes les moins rares, avec au plus deux Climats par main.',
   'Les animations des sorts ne vous coûtent pas de temps à la pendule.',
+  'Pré-coups : pendant que votre adversaire réfléchit, jouez déjà vos coups suivants, autant que vous voulez. Ils apparaissent en fantômes numérotés et se jouent d’eux-mêmes, dans l’ordre ; si l’un n’est plus possible, tous s’annulent. Clic droit (ou toucher une case vide) pour les annuler. Les cartes, elles, ne se préparent pas.',
   <>
     Pour choisir vos cartes et votre adversaire, passez par la page <Link to="/jouer">Jouer</Link>.
   </>,

@@ -453,9 +453,17 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
     [apply, runCast, takeView],
   );
 
-  // Rejoint la partie au serveur, suit ses mises à jour, la rejoint de nouveau après une coupure
+  // Rejoint la partie au serveur, suit ses mises à jour, la rejoint de nouveau après une coupure. Fonctions lues par
+  // références : l'abonnement ne dépend que de la partie (sinon il la quittait et la rejoignait à chaque scène 3D créée).
+  const applyRef = useRef(apply);
+  applyRef.current = apply;
+  const handleRef2 = useRef(handleUpdate);
+  handleRef2.current = handleUpdate;
+  const duelId = duel?.id ?? null;
   useEffect(() => {
-    if (!duel) return;
+    if (!duelId) return;
+    const duel = { id: duelId };
+    const apply = (n: GameState) => applyRef.current(n);
     const sock = getSocket();
     let dead = false;
     const join = () => {
@@ -470,7 +478,7 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
     };
     resyncRef.current = join;
     const onUpdate = (u: GameUpdate) => {
-      chainRef.current = chainRef.current.then(() => handleUpdate(u)).catch(() => {});
+      chainRef.current = chainRef.current.then(() => handleRef2.current(u)).catch(() => {});
     };
     sock.on('game:update', onUpdate);
     sock.on('connect', join);
@@ -482,7 +490,7 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
       sock.emit('game:leave', { id: duel.id });
       resyncRef.current = () => {};
     };
-  }, [duel, apply, handleUpdate, takeView]);
+  }, [duelId, takeView]);
 
   /** Le serveur a apparié ce visiteur avec un autre : la partie contre l'Oracle laisse place à la partie en direct. */
   const startDuel = useCallback(

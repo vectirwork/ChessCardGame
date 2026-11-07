@@ -7,7 +7,6 @@
 import * as THREE from 'three';
 import type { Color, Position } from '../../shared/chess';
 import type { Effect } from '../../shared/game';
-import { pieceSquare } from '../../shared/game';
 import type { SkinStyle } from '../../shared/catalog';
 import { skinStyle } from '../../shared/catalog';
 import { Particles } from './particles';
@@ -450,7 +449,7 @@ export class VfxStage {
       this.renderer!.render(this.scene, this.camera);
       this.lastMarkerRender = now;
     }
-    if (busy || moved) {
+    if (busy || (moved && this.markers.size > 0)) {
       this.still = 0;
       return Next.Frame;
     }
@@ -488,9 +487,12 @@ export class VfxStage {
    * Synchronise les objets persistants (Mur de glace, Faille, blocs et boucliers du Duel) avec les effets actifs,
    * et joue l'arrivée d'un Présage (effet annoncé qui devient actif).
    */
-  syncMarkers(effects: Effect[], pos: Position) {
-    if (!this.ok || !this.markerFactory) return;
-    const seen = new Set<number>();
+  syncMarkers(effects: Effect[], _pos: Position) {
+    if (!this.ok) return;
+    // Seule l'arrivée d'un Présage s'anime en 3D. Les effets durables (Mur de glace, Faille, givre…) sont dessinés
+    // par l'échiquier lui-même (cases givrées, gouffre) : une scène WebGL laissée affichée au-dessus de l'échiquier
+    // entre deux sorts le noircissait par endroits sur les téléphones (Chrome Android, vidéos du fondateur). La
+    // couche 3D n'existe donc que pendant une animation, puis elle disparaît.
     const pending = new Set<number>();
     for (const e of effects) {
       if (e.pending) {
@@ -504,49 +506,17 @@ export class VfxStage {
           console.error('[vfx]', err);
         }
       }
-      const square = e.squares?.length ? e.squares[0] : e.square ?? (e.pieceId !== undefined ? pieceSquare(pos, e.pieceId) : -1);
-      if (square < 0) continue;
-      const sig = e.squares ? e.squares.join(',') : undefined;
-      const existing = this.markers.get(e.id);
-      if (existing && existing.sig === sig) {
-        seen.add(e.id);
-        if (!sig && existing.square !== square) {
-          existing.square = square;
-          existing.obj.position.copy(this.local(square));
-        }
-        continue;
-      }
-      if (existing) {
-        // Faille rétrécie (« la magie cède ») : on reconstruit
-        this.markers.delete(e.id);
-        disposeObject(existing.obj);
-      }
-      let m: Marker | null = null;
-      try {
-        m = this.markerFactory(this, e, skinStyle(e.skin), square);
-      } catch (err) {
-        console.error('[vfx]', err);
-      }
-      if (!m) continue;
-      m.sig = sig;
-      seen.add(e.id);
-      this.markers.set(e.id, m);
-      this.board.add(m.obj);
     }
     this.pendingIds = pending;
-    for (const [id, m] of this.markers) {
-      if (seen.has(id)) continue;
-      this.markers.delete(id);
-      const fx = m.despawn();
-      if (fx) this.add(fx);
-      else {
+    if (this.markers.size) {
+      for (const m of this.markers.values()) {
         this.board.remove(m.obj);
         disposeObject(m.obj);
       }
+      this.markers.clear();
     }
-    this.lastLayout = '';
-    this.kick();
   }
+
 
   setOrientation(o: Color, effects: Effect[], pos: Position) {
     if (o === this.orientation) return;

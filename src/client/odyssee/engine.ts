@@ -147,6 +147,9 @@ export class Engine {
   private chapter: string | null | undefined = undefined;
   private transit = false;
   private docked = false;
+  /** Téléphone, premier écran : l'échiquier est placé dans le document (position absolue) et défile nativement. */
+  private flow = false;
+  private flowTop = 0;
   private alt = -1;
   private G = 0;
   private canvas: HTMLCanvasElement | null = null;
@@ -497,8 +500,9 @@ export class Engine {
         const k = Math.sin(lin * Math.PI);
         const crossing = Math.abs(a.x - b.x) > vw * 0.2;
         p.s *= 1 - (crossing ? 0.42 : 0.14) * k;
-        // Téléphone : l'échiquier s'efface vite au lieu de flotter à demi transparent au-dessus des textes
-        p.o = isMobile(vw) ? Math.max(0, 1 - 2.4 * k) : 1 - 0.86 * k;
+        // Téléphone : l'échiquier s'efface en un tiers d'écran de défilement au lieu de flotter à demi transparent
+        // au-dessus des textes jusqu'au lieu suivant (où il se pose de nouveau, voir dock)
+        p.o = isMobile(vw) ? Math.max(0, 1 - (y - prev.end) / (vh * 0.35)) : 1 - 0.86 * k;
         p.orb *= 1 - 0.7 * k;
         p.front *= 1 - k;
         p.y += k * vh * 0.05;
@@ -513,6 +517,9 @@ export class Engine {
     }
     if (isMobile(vw) && this.slots.length) {
       const hero = secs[0];
+      // Entre deux emplacements, l'échiquier s'efface en un tiers d'écran au lieu de flotter à demi transparent
+      // au-dessus des textes ; il réapparaît en se posant dans l'emplacement suivant (dock)
+      if (y > hero.end) p = { ...p, o: p.o * Math.max(0, 1 - (y - hero.end) / (vh * 0.35)) };
       if (y > hero.end + vh * 0.05) {
         const d = this.dock(y, p);
         p = d.p;
@@ -631,7 +638,19 @@ export class Engine {
       p = lerpPose(from, { x: g.x, y: g.y, s: g.G, orb: 1, front: 0, o: 1, tilt: 0, cap: 0 }, this.gameMix);
     }
     const k = p.s / this.G;
-    this.astre.style.transform = `translate3d(${(p.x - this.G / 2).toFixed(2)}px, ${(p.y - this.G / 2).toFixed(2)}px, 0) scale(${k.toFixed(4)})`;
+    // Téléphone, premier écran : l'échiquier (et sa légende) défilent avec la page, placés dans le document, au lieu
+    // d'être replacés par le script à chaque image : le défilement natif va plus vite que le script, l'échiquier
+    // sautait (vidéo du fondateur, Pixel 7). Dans ce lieu, sa position dans le document ne change pas.
+    const flow = mobile && this.gameMix === 0 && this.sections.length > 0 && y <= this.sections[0].end;
+    if (flow !== this.flow) {
+      this.flow = flow;
+      this.astre.style.position = flow ? 'absolute' : '';
+      if (this.els.caption) this.els.caption.style.position = flow ? 'absolute' : '';
+      const parent = flow ? (this.astre.offsetParent as HTMLElement | null) : null;
+      this.flowTop = parent && parent !== document.body ? parent.getBoundingClientRect().top + window.scrollY : 0;
+    }
+    const docY = this.flow ? y - this.flowTop : 0;
+    this.astre.style.transform = `translate3d(${(p.x - this.G / 2).toFixed(2)}px, ${(p.y + docY - this.G / 2).toFixed(2)}px, 0) scale(${k.toFixed(4)})`;
     const a = this.applied;
     const kr = Math.round(k * 1000) / 1000;
     if (kr !== a.k) {
@@ -666,7 +685,7 @@ export class Engine {
     if (this.els.caption) {
       const show = this.gameMix === 0 && p.s > 200 && p.o > 0.9 && (p.cap > 0.5 || this.hover) ? 1 : 0;
       const below = mobile ? p.s * 0.5 * Math.cos(p.tilt) + 22 : p.s * 0.5 + 34;
-      this.els.caption.style.transform = `translate3d(${p.x.toFixed(1)}px, ${(p.y + below).toFixed(1)}px, 0) translateX(-50%)`;
+      this.els.caption.style.transform = `translate3d(${p.x.toFixed(1)}px, ${(p.y + below + docY).toFixed(1)}px, 0) translateX(-50%)`;
       if (show !== a.cap) {
         a.cap = show;
         this.els.caption.style.opacity = String(show);

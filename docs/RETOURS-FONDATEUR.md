@@ -35,3 +35,10 @@
    bandeaux actuels, qu'on ne remarque pas.
 8. **Choisir ses 3 cartes** au début d'une vraie partie (invitation, partie amicale, partie classée, IA depuis la
    page Jouer), à la place du tirage au hasard. La partie zéro clic de l'accueil garde le tirage.
+
+## Traité (V2, 7 novembre)
+
+Les points 1 à 8 sont traités : voir `docs/PLAN-V2.md` (décisions D1 à D6) et les journaux `docs/progres/v2-*.md`.
+Vérifié en navigateur sans écran (Chromium, rendu logiciel), pas encore sur un vrai téléphone ni une vraie carte
+graphique. La capture au glisser échouait à la souris dès le troisième glisser de suite (texte de la page
+sélectionné) : corrigé, avec un test (`test/glisser.mjs`).

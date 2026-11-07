@@ -1,7 +1,7 @@
 # Spellmate : les échecs ont appris la magie
 
-Site complet d'échecs en ligne avec des **cartes de pouvoir**. Chaque joueur reçoit trois cartes, **visibles des deux
-joueurs**, et peut en lancer une par tour, avant son coup. Chaque pouvoir change la partie **pour les deux camps** :
+Site complet d'échecs en ligne avec des **cartes de pouvoir**. Au début d'une partie, chaque joueur **choisit trois
+cartes**, ensuite **visibles des deux joueurs**, et peut en lancer une par tour, avant son coup. Chaque pouvoir change la partie **pour les deux camps** :
 les pions gèlent pour tout le monde, une case devient infranchissable jusqu'à la fin de la partie, les prises
 deviennent interdites ou obligatoires… Le jeu est gratuit ; la boutique vend uniquement des **skins d'animation** et
 des **plateaux** (aucun pay-to-win).
@@ -28,8 +28,8 @@ débité) tant qu'aucune clé Stripe n'est configurée. Autre port : `PORT=4000 
 | Domaine | Contenu |
 |---|---|
 | Accueil | Une seule page racontée par le défilement (L'Odyssée : six lieux, parallaxe). **Zéro clic** : l'échiquier du premier écran est une vraie partie contre l'IA ; on joue en touchant une pièce et l'échiquier passe en plein écran, la main de cartes reste visible. Option « Affronter un humain » (partie amicale anonyme) |
-| Jeu | Règles complètes des échecs (validées par les tests « perft »), **8 pouvoirs**, pendules arbitrées par le serveur, nulle, abandon, revanche, reconnexion, spectateurs, reprise des parties après redémarrage du serveur |
-| Pouvoirs | Climats annoncés un tour à l'avance (Sablier fou, Trêve, Lune de sang, Ère glaciaire, Déflagration), Terrains (Mur de glace permanent, Faille), Événement (Grande Marée). Formules « Pouvoirs » ou « Sans cartes » (échecs classiques) |
+| Jeu | Règles complètes des échecs (validées par les tests « perft »), **8 pouvoirs**, **choix des 3 cartes** en début de partie (45 s, choix secret jusqu'à la révélation ; tirage au hasard sur l'accueil), pendules arbitrées par le serveur, nulle, abandon, revanche, reconnexion, spectateurs, reprise des parties après redémarrage du serveur |
+| Pouvoirs | Climats annoncés un tour à l'avance (Sablier fou, Trêve, Lune de sang, Ère glaciaire, Déflagration), Terrains (Mur de glace permanent, Faille), Événement (Grande Marée). Cartes épurées (nom, emblème, « + votre coup » ou « Remplace votre coup »), règle dans une bulle au survol ou au toucher, bouton « Lancer ce sort » à côté de la carte, cartes de l'adversaire en éventail retourné. Formules « Pouvoirs » ou « Sans cartes » (échecs classiques) |
 | Modes | IA à 3 niveaux (elle joue aussi ses cartes ; dans le navigateur sur l'accueil), invitation par lien **sans compte**, partie amicale ouverte aux invités, parties classées Elo |
 | Fonctions classiques | Leçons interactives (`/apprendre`), 49 problèmes dont des problèmes à pouvoirs (`/problemes`, problème du jour), échiquier d'analyse avec moteur, import et export PGN ou FEN, éditeur de position, relecture des parties avec courbe d'évaluation (`/analyse`), historique (`/parties`), parties en direct (`/direct`), règles et cartes (`/cartes`), classement |
 | Effets | Couche WebGL (Three.js) alignée sur l'échiquier, animation propre à chaque pouvoir ; 6 skins (Arcane offert, Inferno, Néon 2084, Céleste, Néant, Sakura) ; sons synthétisés |
@@ -127,7 +127,7 @@ Prérequis : Node.js 22. Sans `DATABASE_URL`, la base intégrée (PGlite) est ut
 ```bash
 npm install
 npm run dev        # http://localhost:3000, rechargement à chaud, paiements en mode démo
-npm test           # moteur d'échecs (perft), règles des pouvoirs, IA, pendules, leçons, problèmes, PGN (≈ 2 min)
+npm test           # moteur d'échecs (perft), règles des pouvoirs, choix des cartes, IA, pendules, leçons, problèmes, PGN (≈ 2 min)
 npm run typecheck
 npm run build && npm start   # version de production (avec NODE_ENV=production et SECRET_KEY)
 ```
@@ -135,7 +135,9 @@ npm run build && npm start   # version de production (avec NODE_ENV=production e
 Tests contre un serveur lancé :
 
 ```bash
-npm run test:integration          # comptes, invitation sans compte, mains visibles, pouvoirs, revanche, IA, boutique, RGPD
+npm run test:integration          # comptes, invitation sans compte, choix des cartes, mains visibles, pouvoirs, revanche, IA, boutique, RGPD
+node test/glisser.mjs http://localhost:3000   # glisser-déposer et capture au glisser, plusieurs fois de suite
+node test/perf/mesure.mjs ref=<url> actuelle=<url>   # performance : chargement, repos, WebGL (versions de production)
 node test/ranked.mjs              # file classée et Elo
 node test/stripe-webhook.mjs http://localhost:3100 whsec_test   # serveur lancé avec PAYMENTS_MODE=stripe
 ```

@@ -282,7 +282,8 @@ html.ody-home #root {
     0 0 220px 80px rgba(120, 220, 255, 0.16);
 }
 .ody .o-aurora-svg {
-  will-change: transform;
+  /* Pas de will-change : son calque (o-aurora-wrap) est déjà composé, et une animation de transform l'est d'office
+     pendant qu'elle joue ; un calque permanent doublait la mémoire GPU de l'aurore */
   transform-origin: 50% 20%;
   animation: o-aurora 16s ease-in-out infinite alternate;
 }

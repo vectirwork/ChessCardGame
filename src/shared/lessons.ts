@@ -437,15 +437,15 @@ export const LESSONS: Lesson[] = [
       {
         fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', goal: { kind: 'line', line: ['@ice_wall:e5', '*'] },
         hands: { w: ['ice_wall'] },
-        text: 'Posez un Mur de glace en e5 : choisissez la carte, puis la case. Un Mur se pose sur une case vide, de la 3e à la 6e rangée. Jouez ensuite votre coup.',
+        text: 'Posez un Mur de glace en e5 : touchez la carte « Mur de glace », puis « Lancer ce sort », puis la case e5. Un Mur se pose sur une case vide, de la 3e à la 6e rangée. Jouez ensuite votre coup.',
         marks: ['e5'],
-        hint: 'Cliquez d’abord sur la carte « Mur de glace », sous l’échiquier.',
+        hint: 'Touchez la carte « Mur de glace », sous l’échiquier : sa bulle s’ouvre. Touchez « Lancer ce sort », puis la case e5, qui brille.',
         success: 'La case e5 est infranchissable pour les deux camps, jusqu’à la fin de la partie. Seul un cavalier peut sauter par-dessus.',
       },
       {
         fen: '6kr/8/8/8/8/8/6P1/6RK w - - 0 1', goal: { kind: 'line', line: ['@ice_wall:h3|@ice_wall:h4|@ice_wall:h5|@ice_wall:h6'] },
         hands: { w: ['ice_wall'] },
-        text: 'Votre roi est en échec et n’a aucun coup : sans carte, ce serait mat. Mais une carte peut sauver : posez un Mur entre la tour noire et votre roi.',
+        text: 'Votre roi est en échec et n’a aucun coup : sans carte, ce serait mat. Mais une carte peut sauver : posez un Mur entre la tour noire et votre roi (la carte, « Lancer ce sort », puis la case).',
         hint: 'g2 et h2 sont sur la 2e rangée : le Mur va plus haut sur la colonne h.',
         success: 'Sauvé ! Un joueur sans coup légal doit jouer la carte qui lui en rend un. Une carte ne met jamais le roi adverse en échec, mais elle peut protéger le vôtre.',
       },
@@ -497,7 +497,7 @@ export const LESSONS: Lesson[] = [
         fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', goal: { kind: 'line', line: ['@truce', '*', 'e7e5'] },
         hands: { w: ['truce'] },
         text: 'Annoncez la Trêve (aucune capture pendant 3 coups, sauf pour sortir d’un échec), puis jouez un coup. Les Noirs répondent ; la Trêve arrive ensuite.',
-        hint: 'Cliquez sur la carte « Trêve » : elle n’a pas de cible.',
+        hint: 'Touchez la carte « Trêve », puis « Lancer ce sort » : elle n’a pas de cible.',
         success: 'La Trêve est arrivée : regardez la liste des effets sous l’échiquier. Elle vaut pour vous aussi : vous ne prendrez rien pendant 3 coups.',
       },
       {

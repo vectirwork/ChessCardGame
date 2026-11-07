@@ -88,9 +88,18 @@
   top: calc(var(--gs-top) + var(--gs-g) + 56px);
   max-height: calc(100vh - var(--gs-top) - var(--gs-g) - 56px - 146px);
 }
-/* Invite ou message au-dessus de l'éventail : le statut s'arrête plus haut */
+/* Invite ou message posés sur l'éventail : le statut s'arrête un peu plus haut (shell.css, .gs-fan-note) */
 .gs.gp.is-mobile.has-fan-note .gs-status {
-  max-height: calc(100vh - var(--gs-top) - var(--gs-g) - 56px - 200px);
+  max-height: calc(100vh - var(--gs-top) - var(--gs-g) - 56px - 160px);
+}
+/* Téléphones bas : éventail resserré (shell.css), le statut reprend la place gagnée */
+@media (max-height: 700px) {
+  .gs.gp.is-mobile .gs-status {
+    max-height: calc(100vh - var(--gs-top) - var(--gs-g) - 56px - 124px);
+  }
+  .gs.gp.is-mobile.has-fan-note .gs-status {
+    max-height: calc(100vh - var(--gs-top) - var(--gs-g) - 56px - 137px);
+  }
 }
 /* Partie sans cartes ou salle d'attente : pas de bande de cartes adverses */
 .gs.gp.is-mobile.no-cards .gs-opp-strip {

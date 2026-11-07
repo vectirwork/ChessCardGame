@@ -20,6 +20,7 @@ import { CardEmblem } from '../components/CardArt';
 import { SpellCard } from '../components/SpellCard';
 import { emitAck } from '../socket';
 import { playSound } from '../sound';
+import { deNom } from './names';
 import { modeLabel, tcLabel } from './parts';
 import './draft.css';
 
@@ -134,6 +135,10 @@ function DraftScreen({ view, draft, receivedAt, onAbort, onSubmitted }: {
   const dirty = useRef(false);
   const locked = spectator || confirmed || submitted || expired;
   const deadline = receivedAt + draft.msLeft;
+  // Nouvelle échéance dans le futur (le serveur a redémarré pendant le choix et redonne 45 s) : le choix rouvre.
+  useEffect(() => {
+    if (deadline > Date.now()) setExpired(false);
+  }, [deadline]);
 
   // Choix validé (par cet onglet ou un autre) : les cartes du serveur font foi.
   const mineKey = draft.mine.join();
@@ -426,6 +431,10 @@ function DraftTimer({ deadline, total, warn, onExpire }: { deadline: number; tot
   const expired = useRef(false);
   const warned = useRef(false);
   useEffect(() => {
+    // Échéance repoussée (redémarrage du serveur) : l'expiration et l'alerte des 10 s peuvent revenir
+    const l = secs();
+    if (l > 0) expired.current = false;
+    if (l > 10) warned.current = false;
     const tick = () => setLeft(secs());
     tick();
     const t = window.setInterval(tick, 250);
@@ -483,7 +492,7 @@ function Reveal({ view, auto, onDone }: { view: GameView; auto: boolean; onDone:
     : you === turn
       ? 'À vous de commencer : jouez votre premier coup.'
       : `${seatName(turnSeat, turn)} commence.`;
-  const label = (c: Color) => (you === c ? 'Vos cartes' : `Cartes de ${seatName(view.seats[c], c)}`);
+  const label = (c: Color) => (you === c ? 'Vos cartes' : `Cartes ${deNom(seatName(view.seats[c], c))}`);
   return (
     <div className="cd cd-reveal" role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={trapTab} onClick={e => e.target === e.currentTarget && onDone()}>
       <div className="cd-reveal-in">

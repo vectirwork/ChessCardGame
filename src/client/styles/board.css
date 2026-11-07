@@ -6,6 +6,14 @@
   aspect-ratio: 1;
   perspective: 1400px;
   perspective-origin: 50% 50%;
+  /* Glisser une pièce ne doit jamais sélectionner le texte des coordonnées : sinon le glisser suivant, parti de cette
+     sélection, devient un glisser-déposer natif (dragstart puis pointercancel) et la pièce revient sans rien dire. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.board-wrap * {
+  -webkit-user-drag: none;
 }
 .board {
   position: absolute;

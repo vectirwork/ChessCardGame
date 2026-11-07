@@ -99,8 +99,18 @@
   font-family: var(--caps);
   font-size: 11px;
   letter-spacing: 0.22em;
+  line-height: 1.6;
   text-transform: uppercase;
   color: var(--soft);
+}
+/* La barre du haut s'arrête avant l'échiquier (--gs-left, bord gauche de l'échiquier, posé par GameShell) : un
+   intitulé long (« Partie locale · aucun compte ») passe sur deux lignes au lieu de toucher le cadre. */
+.gs:not(.is-mobile) .gs-top {
+  max-width: calc(var(--gs-left, 100vw) - 40px - 26px);
+}
+.gs-back {
+  flex: none;
+  white-space: nowrap;
 }
 
 /* Statut */
@@ -279,8 +289,9 @@
   margin-top: 12px;
   padding: 0 4px 6px;
 }
+/* Chevauchement léger (10 %) : le nom de chaque carte reste lisible (layout.ts, OPP_FAN_SPAN) */
 .gs-opp-slot + .gs-opp-slot {
-  margin-left: calc(var(--w) * -0.16);
+  margin-left: calc(var(--w) * -0.1);
 }
 .gs-opp-slot.is-retired {
   width: var(--w);
@@ -302,12 +313,23 @@
   --w: var(--ow, 64px);
   pointer-events: auto;
 }
+/* Nom, jamais coupé dans un mot, loin des bords que couvre la carte voisine : un nom de plusieurs mots passe sur
+   deux lignes au-delà de 72 % de la carte ; un mot seul s'élargit jusqu'à sa propre largeur (min-width l'emporte),
+   et « Déflagration », le plus long (7,7 fois la taille du texte en Cinzel 800), tient dans 80 % de la carte. */
 .gs-opp-fan .sc-hand .sc-name {
-  font-size: max(8px, calc(var(--w) * 0.11));
+  max-width: calc(var(--w) * 0.72);
+  min-width: min-content;
+  font-size: min(max(8px, calc(var(--w) * 0.11)), calc(var(--w) * 0.8 / 7.8));
+  letter-spacing: 0;
 }
+/* Pastille courte (« + coup », « Remplace ») sur une seule ligne ; la bulle et le lecteur d'écran disent le reste */
 .gs-opp-fan .sc-hand .sc-turn {
-  font-size: max(7.5px, calc(var(--w) * 0.1));
+  font-size: min(max(7.5px, calc(var(--w) * 0.1)), calc((var(--w) * 0.88 - 4px) / 6.4));
   padding: 0.25em 0.55em 0.27em 0.35em;
+  white-space: nowrap;
+}
+.gs-opp-fan .sc-hand .sc-turn.is-replace {
+  padding-left: 0.55em;
 }
 .gs-opp-fan .sc-foil {
   display: none;
@@ -397,12 +419,6 @@
 .gs-fan .spell-card.disabled.clickable {
   cursor: pointer;
 }
-/* Bulle d'une carte, posée au-dessus de tout le HUD (portail) */
-.card-bubble.is-floating {
-  position: fixed;
-  z-index: 45;
-}
-
 .gs-self-extra {
   position: absolute;
   left: 4px;
@@ -543,10 +559,21 @@
   top: auto;
   bottom: calc(88px * 1.44 + 30px);
 }
-/* Petits écrans bas : on resserre l'éventail */
+/* Petits écrans bas : on resserre l'éventail (cartes de 72 × 104 px au lieu de 88 × 127 px), et le statut reprend
+   la place gagnée. gameLayout (layout.ts) borne l'échiquier avec les marges des cartes de 88 px : c'est un minimum. */
 @media (max-height: 700px) {
   .gs.is-mobile .gs-fan .sc-hand {
     --w: 72px;
+  }
+  .gs.is-mobile .gs-status {
+    max-height: calc(100vh - var(--gs-top) - var(--gs-g) - 12px - 128px);
+  }
+  .gs.is-mobile.has-fan-note .gs-status {
+    max-height: calc(100vh - var(--gs-top) - var(--gs-g) - 12px - 137px);
+  }
+  /* L'invite posée sur la main dit déjà comment jouer une carte : la consigne du statut s'efface, le titre reste */
+  .gs.is-mobile.has-fan-note .gs-hint {
+    display: none;
   }
 }
 
@@ -638,7 +665,7 @@
    (gameLayout descend l'échiquier d'autant) ; emblèmes seuls, la bulle donne le reste. */
 .gs.is-mobile .gs-opp-strip {
   position: absolute;
-  top: 50px;
+  top: 56px;
   right: 12px;
   left: 12px;
   display: flex;
@@ -682,10 +709,13 @@
   border: 0;
   rotate: 145deg;
 }
-/* Mobile : invite et message centrés au-dessus de l'éventail ; le statut leur laisse la place */
+/* Mobile : invite et message centrés, posés sur le haut de l'éventail (ils chevauchent de 18 px le cadre des
+   cartes, sans bloquer le toucher) ; le statut leur laisse le reste de leur hauteur. Gagner ces 18 px garde au
+   statut au moins 40 px sur un téléphone bas, avec l'invite affichée. */
 .gs.is-mobile .gs-fan-note {
   left: 50%;
-  bottom: calc(100% + 24px);
+  bottom: calc(100% - 18px);
+  z-index: 2;
   translate: -50% 0;
   justify-content: center;
   width: max-content;
@@ -694,15 +724,21 @@
   font-size: 12.5px;
   text-align: center;
 }
+.gs.is-mobile .gs-fan-note.is-cast {
+  padding: 6px 12px;
+  font-size: 12px;
+  line-height: 1.35;
+}
 .gs.is-mobile .gs-fan-note.is-cast b {
-  font-size: 16px;
+  margin-right: 6px;
+  font-size: 15px;
 }
 /* Mobile : le message au-dessus de la main suffit, la consigne du statut (même message) s'efface */
 .gs.is-mobile.has-cast .gs-hint {
   display: none;
 }
 .gs.is-mobile.has-fan-note .gs-status {
-  max-height: calc(100vh - var(--gs-top) - var(--gs-g) - 12px - 205px);
+  max-height: calc(100vh - var(--gs-top) - var(--gs-g) - 12px - 160px);
 }
 @media (prefers-reduced-motion: reduce) {
   .gs-opp-card,

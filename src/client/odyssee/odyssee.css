@@ -125,7 +125,7 @@ html.ody-home #root {
 /* Sobriété (D6) : décor caché, sorti de l'écran ou recouvert par la partie. Ses animations sont en pause (elles
    reprennent là où elles en étaient) : Blink ne recalcule plus leur style à chaque image du fil principal. La classe
    o-paused est posée par le moteur (scènes, calques), l'attribut data-offscreen par l'accueil (lieux et chapitres
-   hors de l'écran). */
+   hors de l'écran), l'attribut data-still par l'accueil après 30 s sans aucun geste (OdysseeHome). */
 .ody .o-paused,
 .ody .o-paused *,
 .ody .o-paused::before,
@@ -143,7 +143,15 @@ html.ody-home #root {
 .ody.is-game .o-world-shift *::after,
 .ody.is-game .o-content *,
 .ody.is-game .o-content *::before,
-.ody.is-game .o-content *::after {
+.ody.is-game .o-content *::after,
+.ody[data-still] .o-world-shift *,
+.ody[data-still] .o-world-shift *::before,
+.ody[data-still] .o-world-shift *::after,
+.ody[data-still] .o-content *,
+.ody[data-still] .o-content *::before,
+.ody[data-still] .o-content *::after,
+.ody[data-still] .o-falling-star *,
+.ody[data-still] :is(.o-orbit, .o-eq-spin, .o-astre-shadow, .o-astre-float, .o-hint-arrow, .o-live-dot) {
   animation-play-state: paused !important;
 }
 /* Lieu caché (loin, ou transparent) : son contenu n'est ni stylé, ni mis en page, ni peint. Il est rendu d'un coup
@@ -1183,6 +1191,43 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
 .ody .o-rv-lines.in .o-ln > span {
   transform: none;
 }
+/* Premier écran (D6, LCP) : le héros n'attend ni la timeline gsap ni la classe .in. Son entrée est lancée par le CSS
+   au premier rendu de l'accueil. Le chapeau (p.o-lede), l'élément LCP, ne passe jamais par une opacité nulle : il
+   monte seulement en place, et le navigateur le compte dès sa première peinture. Les titres glissent comme avant,
+   les autres éléments gardent leur fondu, avec les mêmes durées et les mêmes délais. */
+.ody .o-hero .o-rv {
+  opacity: 1;
+  transform: none;
+  transition: none;
+  animation: o-hero-in 1.1s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 90ms);
+}
+.ody .o-hero .o-lede {
+  animation-name: o-hero-rise;
+  animation-duration: 1.3s;
+}
+.ody .o-hero .o-rv-lines .o-ln > span {
+  transform: none;
+  transition: none;
+  animation: o-hero-line 1.4s var(--ease) both;
+  animation-delay: calc(var(--l, 0) * 110ms);
+}
+@keyframes o-hero-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 34px, 0);
+  }
+}
+@keyframes o-hero-rise {
+  from {
+    transform: translate3d(0, 34px, 0);
+  }
+}
+@keyframes o-hero-line {
+  from {
+    transform: translate3d(0, 112%, 0);
+  }
+}
 
 /* ------------------------------------------------------------------------------------------ */
 /* I. Accueil */
@@ -1866,6 +1911,10 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
   .ody .o-ln > span {
     opacity: 1;
     transform: none;
+  }
+  .ody .o-hero .o-rv,
+  .ody .o-hero .o-ln > span {
+    animation: none;
   }
 }
 
@@ -2582,6 +2631,20 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
 .ody .o-hand-names button.is-used {
   color: var(--faint);
   text-decoration: line-through;
+}
+/* Rituel : « remplace votre coup », en petites capitales dorées à côté du nom (même code que la pastille des cartes) */
+.ody .o-hand-turn {
+  margin-left: 8px;
+  padding: 2px 7px 3px;
+  border-radius: 99px;
+  background: linear-gradient(180deg, #ffe7ad, #f0c25e);
+  color: #2b1a05;
+  font-family: var(--sans);
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 600;
+  vertical-align: 3px;
+  white-space: nowrap;
 }
 /* Main de l'Oracle, visible (décision du 30 octobre) : une ligne discrète, cartes jouées barrées */
 .ody .o-hand-opp {

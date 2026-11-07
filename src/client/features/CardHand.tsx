@@ -116,8 +116,11 @@ function useAnchoredBubble(el: HTMLElement | null, prefer: 'above' | 'below'): {
       const w = Math.min(340, vw - 24);
       const left = Math.max(12, Math.min(r.left + r.width / 2 - w / 2, vw - w - 12));
       const ax = `${r.left + r.width / 2 - left}px`;
+      // L'en-tête du site reste collé en haut, au-dessus de la bulle : la place au-dessus de la carte s'arrête dessous
+      const head = document.querySelector('.site-header')?.getBoundingClientRect();
+      const top = head && head.bottom > 0 && head.height > 0 ? head.bottom : 0;
       const roomBelow = vh - r.bottom;
-      const roomAbove = r.top;
+      const roomAbove = r.top - top;
       const below = prefer === 'below' ? roomBelow >= 230 || roomBelow > roomAbove : roomAbove < 230 && roomBelow > roomAbove;
       setPos(
         below

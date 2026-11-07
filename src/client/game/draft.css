@@ -659,7 +659,14 @@
   .cd-foot {
     grid-template-columns: auto minmax(0, 1fr);
     gap: 10px 14px;
-    padding-top: 22px;
+    padding-top: 14px;
+  }
+  /* Barre collée : fond plein sous les emplacements (translucides) et le compte à rebours, fondu seulement au-dessus,
+     pour que la règle de la carte qui passe dessous ne se lise pas à travers. La barre est dans le flux : en bas de
+     la liste, la dernière règle se lit en entier au-dessus d'elle. */
+  .cd-foot::before {
+    top: -20px;
+    background: linear-gradient(180deg, rgba(5, 6, 15, 0), #05060f 20px);
   }
   .cd-timer {
     min-width: 0;

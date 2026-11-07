@@ -155,6 +155,20 @@ function LessonView({ lesson }: { lesson: Lesson }) {
     reset();
   }, [reset]);
 
+  // Étape qui commence par une carte (« Posez un Mur de glace… ») : la main, sous l'échiquier, peut être sous le pli
+  // (1280 × 720) ; on la fait venir à l'écran, sans toucher au reste du défilement si elle est déjà visible.
+  const cardFirst = step.goal.kind === 'line' && step.goal.line[0]?.startsWith('@');
+  useEffect(() => {
+    if (!cardFirst) return;
+    const t = window.setTimeout(() => {
+      const hand = document.querySelector('.ft-play-board .ft-hand');
+      if (!hand || hand.getBoundingClientRect().bottom <= window.innerHeight - 8) return;
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      hand.scrollIntoView({ block: 'end', behavior: reduced ? 'auto' : 'smooth' });
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [cardFirst, stepIdx]);
+
   const blink = (k: 'ok' | 'bad') => {
     setFlash(k);
     later(() => setFlash(null), 650);

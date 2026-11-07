@@ -1,7 +1,7 @@
 // Spellmate · L'Odyssée : une descente verticale à travers six lieux, avec un échiquier-astre qui l'accompagne.
 // Zéro clic : l'échiquier du premier écran est une vraie partie. Le visiteur joue les Blancs dès qu'il touche
 // une pièce ; au premier coup, la page s'efface vers la gauche et la partie passe en plein écran.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as RPointerEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
@@ -25,13 +25,16 @@ import { Chapter, EQ, EqRing, Kicker, Lines, Mark, OrbitRings, Sheet, Slot } fro
 import { SCENES } from './scenery';
 import { EffectChips, GameShell, cardName, castMessage, castThisTurn, handNotes } from './shell';
 import type { ShellAction } from './shell';
-import { StageBoard } from './StageBoard';
 import type { Act } from './StageBoard';
 import { useHumanQueue } from './useHumanQueue';
 import type { HumanQueue } from './useHumanQueue';
 import { useLiveGame } from './useLiveGame';
 import type { LiveGame } from './useLiveGame';
 import './odyssee.css';
+
+// Démonstrations des lieux II à V : hors du premier écran, chargées à part (préchargées au repos, voir plus bas)
+const loadStageBoard = () => import('./StageBoard');
+const StageBoard = lazy(() => loadStageBoard().then(m => ({ default: m.StageBoard })));
 
 type Mode = 'page' | 'entering' | 'game' | 'leaving';
 type SheetKind = 'friend' | 'ai' | null;
@@ -257,6 +260,60 @@ export default function OdysseeHome() {
     };
   }, []);
 
+  // Code des démonstrations des lieux II à V : préchargé au repos après le chargement, ou au premier défilement
+  useEffect(() => {
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number };
+    let done = false;
+    const go = () => {
+      if (done) return;
+      done = true;
+      window.removeEventListener('scroll', go, true);
+      window.removeEventListener('wheel', go, true);
+      void loadStageBoard().catch(() => undefined);
+    };
+    const t = window.setTimeout(() => (w.requestIdleCallback ? w.requestIdleCallback(go, { timeout: 3000 }) : go()), 2500);
+    window.addEventListener('scroll', go, { passive: true, capture: true });
+    window.addEventListener('wheel', go, { passive: true, capture: true });
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener('scroll', go, true);
+      window.removeEventListener('wheel', go, true);
+    };
+  }, []);
+
+  // Repos (D6) : 30 s sans aucun geste, les décors animés en boucle (anneaux, étoiles, lanternes, flottement…) se
+  // figent là où ils en sont (attribut data-still, odyssee.css) ; le premier geste les relance. Une seule minuterie,
+  // réarmée au plus tard à l'échéance : rien ne tourne pendant le repos.
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const STILL_MS = 30000;
+    let last = performance.now();
+    let timer = 0;
+    const check = () => {
+      timer = 0;
+      const idle = performance.now() - last;
+      // Seulement en lecture de la page : pendant la partie, l'échiquier et la coque ne se figent jamais (le geste
+      // suivant réarme la minuterie)
+      if (modeRef.current !== 'page') return;
+      if (idle >= STILL_MS) root.setAttribute('data-still', '');
+      else timer = window.setTimeout(check, STILL_MS - idle + 50);
+    };
+    const onGesture = () => {
+      last = performance.now();
+      if (root.hasAttribute('data-still')) root.removeAttribute('data-still');
+      if (!timer) timer = window.setTimeout(check, STILL_MS + 50);
+    };
+    const events = ['pointermove', 'pointerdown', 'wheel', 'keydown', 'touchstart', 'scroll'] as const;
+    for (const ev of events) window.addEventListener(ev, onGesture, { passive: true, capture: true });
+    timer = window.setTimeout(check, STILL_MS + 50);
+    return () => {
+      window.clearTimeout(timer);
+      for (const ev of events) window.removeEventListener(ev, onGesture, { capture: true });
+      root.removeAttribute('data-still');
+    };
+  }, []);
+
   const scrollTo = useCallback((sel: string) => {
     engineRef.current?.scrollTo(sel, () => {
       // Saut direct : ce qui est déjà à l'écran apparaît sans attendre
@@ -319,7 +376,7 @@ export default function OdysseeHome() {
     if (!e || !root || modeRef.current !== 'game') return;
     const k = reduced ? 0.25 : 1;
     gsap.to(root.querySelectorAll('.gs-fan-slot'), { y: 360, opacity: 0, duration: 0.5 * k, ease: 'expo.in', stagger: 0.04 * k });
-    gsap.to(root.querySelectorAll('.gs-in, .gs-toast, .gs-opponent, .gs-opp-hand-m'), { opacity: 0, y: 14, duration: 0.35 * k, ease: 'power2.in' });
+    gsap.to(root.querySelectorAll('.gs-in, .gs-toast, .gs-opponent'), { opacity: 0, y: 14, duration: 0.35 * k, ease: 'power2.in' });
     gsap.delayedCall(0.42 * k, () => {
       setMode('leaving');
       e.captureGameFrom();
@@ -590,19 +647,21 @@ export default function OdysseeHome() {
             <div className="o-astre-wake">
               <div className="o-astre-board">
                 {place !== 0 && mode === 'page' && (
-                  <StageBoard
-                    key={placeDef.id}
-                    act={act}
-                    catalog={catalog}
-                    theme={stageTheme}
-                    resetSignal={0}
-                    paused={mode !== 'page' || transit}
-                    tilt={castTilt}
-                    still={reduced}
-                    playSignal={playSignal}
-                    onCast={onCast}
-                    onCanvas={onCanvas}
-                  />
+                  <Suspense fallback={null}>
+                    <StageBoard
+                      key={placeDef.id}
+                      act={act}
+                      catalog={catalog}
+                      theme={stageTheme}
+                      resetSignal={0}
+                      paused={mode !== 'page' || transit}
+                      tilt={castTilt}
+                      still={reduced}
+                      playSignal={playSignal}
+                      onCast={onCast}
+                      onCanvas={onCanvas}
+                    />
+                  </Suspense>
                 )}
               </div>
               <div className={`o-astre-game ${hoverSq !== null ? 'is-grab' : ''}`} ref={liveRef}>
@@ -722,11 +781,17 @@ export default function OdysseeHome() {
                     h.card ? (
                       <button key={i} type="button" className={h.used ? 'is-used' : ''} onClick={() => heroCard(i)} title={CARDS[h.card].tagline}>
                         {CARDS[h.card].name}
+                        {/* Effet sur le tour (décision D1) : le Rituel, l'exception, le dit à côté de son nom */}
+                        {CARDS[h.card].ritual && <small className="o-hand-turn">remplace votre coup</small>}
                       </button>
                     ) : null,
                   )}
                 </span>
-                <span className="o-hand-t">Touchez-en un pour le lancer avant votre coup.</span>
+                <span className="o-hand-t">
+                  {g.hand.some(h => h.card && CARDS[h.card].ritual)
+                    ? 'Touchez-en un pour le lire et le lancer ; les autres sorts s’ajoutent à votre coup.'
+                    : 'Touchez-en un pour le lire et le lancer, puis jouez votre coup.'}
+                </span>
               </div>
             </div>
             {g.state.hands.b.length > 0 && (
@@ -1191,7 +1256,7 @@ function FriendSheet({ onClose, catalog: initial, signedIn }: { onClose: () => v
         {error && <div className="form-error">{error}</div>}
       </form>
       <p className="o-sheet-note">
-        Plus d'options (couleur, mode miroir) : <Link to="/jouer?mode=invite">page Jouer</Link>.
+        Plus d'options (couleur, cadence) : <Link to="/jouer?mode=invite">page Jouer</Link>.
       </p>
     </Sheet>
   );

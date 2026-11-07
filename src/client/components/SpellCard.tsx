@@ -58,9 +58,25 @@ export function ruleBody(def: CardDef): string {
     .replace(/^Rituel : la carte remplace votre coup\.\s*/u, '');
 }
 
-/** Pastille de tour : « + votre coup » ou « Remplace votre coup ». */
-export function TurnPill({ def, owner = 'self', className = '' }: { def: CardDef; owner?: 'self' | 'opponent'; className?: string }) {
+/**
+ * Pastille de tour : « + votre coup » ou « Remplace votre coup ». `compact` (petites cartes de la main adverse) :
+ * « + coup » ou « Remplace », le libellé entier restant lu par les lecteurs d'écran et dans la bulle.
+ */
+export function TurnPill({ def, owner = 'self', compact = false, className = '' }: { def: CardDef; owner?: 'self' | 'opponent'; compact?: boolean; className?: string }) {
   const t = turnEffect(def, owner);
+  if (compact) {
+    return (
+      <span className={`sc-turn is-${t.kind} is-compact ${className}`} title={t.label}>
+        {t.kind === 'plus' ? (
+          <>
+            <i className="sc-turn-sign">+</i> coup
+          </>
+        ) : (
+          'Remplace'
+        )}
+      </span>
+    );
+  }
   return (
     <span className={`sc-turn is-${t.kind} ${className}`}>
       {t.kind === 'plus' ? (
@@ -80,8 +96,8 @@ export function TurnPill({ def, owner = 'self', className = '' }: { def: CardDef
 }
 
 /** Libellé accessible d'une carte : nom, effet sur le tour, état. La règle est lue par la bulle (aria-describedby). */
-export function cardAriaLabel(def: CardDef, used?: boolean): string {
-  return `${def.name}, ${turnEffect(def).label}${used ? ', jouée' : ''}`;
+export function cardAriaLabel(def: CardDef, used?: boolean, owner: 'self' | 'opponent' = 'self'): string {
+  return `${def.name}, ${turnEffect(def, owner).label}${used ? ', jouée' : ''}`;
 }
 
 interface Props {
@@ -106,11 +122,13 @@ interface Props {
   label?: string;
   children?: ReactNode;
   tilt?: boolean;
+  /** Carte de votre adversaire : pastille et libellé à la troisième personne (« + son coup »), pastille courte. */
+  owner?: 'self' | 'opponent';
   className?: string;
 }
 
 export const SpellCard = forwardRef(function SpellCard(
-  { id, size = 'full', used, selected, disabled, dim, onClick, onHover, onFocusChange, describedBy, expanded, label, children, tilt = true, className = '' }: Props,
+  { id, size = 'full', used, selected, disabled, dim, onClick, onHover, onFocusChange, describedBy, expanded, label, children, tilt = true, owner = 'self', className = '' }: Props,
   outer: Ref<HTMLDivElement>,
 ) {
   const def = CARDS[id];
@@ -166,7 +184,7 @@ export const SpellCard = forwardRef(function SpellCard(
           onClick!('key');
         }
       }}
-      aria-label={label ?? `${cardAriaLabel(def, used)}${describedBy ? '' : ` : ${def.description}`}`}
+      aria-label={label ?? `${cardAriaLabel(def, used, owner)}${describedBy ? '' : ` : ${def.description}`}`}
     >
       <div className="sc-body">
         <div className="sc-art">
@@ -174,7 +192,7 @@ export const SpellCard = forwardRef(function SpellCard(
           <CardEmblem id={id} className="sc-emblem" />
         </div>
         {size !== 'mini' && <div className="sc-name">{def.name}</div>}
-        {size !== 'mini' && <TurnPill def={def} />}
+        {size !== 'mini' && <TurnPill def={def} owner={owner} compact={owner === 'opponent' && size === 'hand'} />}
         {children}
       </div>
       <div className="sc-foil" />

@@ -185,6 +185,14 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    if (e.pointerType === 'mouse') {
+      // Pas de sélection de texte ni de glisser-déposer natif à la souris (voir board.css) : sinon, dès le troisième
+      // glisser de suite, le navigateur part d'une sélection, envoie pointercancel et la pièce revient sans rien dire.
+      // On garde l'effet normal d'un clic sur le focus : ce qui l'avait hors de l'échiquier le perd.
+      e.preventDefault();
+      const active = document.activeElement as HTMLElement | null;
+      if (active && active !== document.body && !e.currentTarget.contains(active)) active.blur();
+    }
     const sq = sqFromPoint(e.clientX, e.clientY);
     if (sq === null) return;
     if (targeting) {
@@ -278,7 +286,8 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onPointerCancel={() => setDrag(null)}
+        onPointerCancel={() => { setDrag(null); setHover(null); }}
+        onDragStart={e => e.preventDefault()}
         onContextMenu={e => e.preventDefault()}
       >
         <div className="squares">{squares}</div>

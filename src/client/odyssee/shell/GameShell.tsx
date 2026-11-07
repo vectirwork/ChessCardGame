@@ -28,7 +28,7 @@ import type { CardId } from '../../../shared/cards';
 import type { HandCard } from '../../../shared/game';
 import { CardBubble, SpellCard } from '../../components/SpellCard';
 import { castMessage } from './cards';
-import { gameLayout } from './layout';
+import { OPP_FAN_SPAN, gameLayout } from './layout';
 import type { GameLayout } from './layout';
 import './shell.css';
 
@@ -104,6 +104,9 @@ export interface GameShellProps {
   selected: number | null;
   /** Choisit la carte `index` (l'appelant la sélectionne : ciblage, ou `prompt.onCast` pour une carte sans cible). */
   onPickCard: (index: number) => void;
+  /** Première intention de jouer une carte (survol, focus ou toucher d'une de vos cartes) : l'appelant peut préparer
+   *  la scène des sorts (WebGL) à ce moment-là plutôt qu'à l'arrivée sur la page. */
+  onCardIntent?: () => void;
   /** Carte lancée ce tour par le joueur, en attendant son coup (castThisTurn) : message au-dessus de la main. */
   cast?: CardId | null;
   /** La main du bas n'est pas celle du visiteur (spectateur) : lecture seule, sans invite. */
@@ -151,11 +154,11 @@ function useLayout() {
   return l;
 }
 
-/** Largeur d'une carte adverse : l'éventail tient entre l'échiquier et le bord droit (ordinateur). */
+/** Largeur d'une carte adverse : l'éventail tient entre l'échiquier et le bord droit (ordinateur, layout.ts). */
 function oppCardWidth(l: GameLayout): number {
   if (l.mobile) return 34;
   const side = window.innerWidth - (l.x + l.G / 2) - 34 - 20;
-  return Math.round(Math.max(44, Math.min(76, side / 2.85)));
+  return Math.floor(Math.max(44, Math.min(76, (side - 8) / OPP_FAN_SPAN)));
 }
 
 function ActionButton({ a }: { a: ShellAction }) {
@@ -220,6 +223,13 @@ export function GameShell(p: GameShellProps) {
 
   const { prompt, onBack, onEscape, hand, playable, selected, onPickCard, readOnlyHand } = p;
   const oppHand = p.opponent.hand;
+
+  // Intention de jouer une carte : bulle ouverte ou aperçu d'une de vos cartes
+  const intent = !readOnlyHand && (openIdx !== null || peek?.who === 'self');
+  const onCardIntent = p.onCardIntent;
+  useEffect(() => {
+    if (intent) onCardIntent?.();
+  }, [intent, onCardIntent]);
   const cardOf = (h: HandCard | undefined): CardId | null => (h?.card && isCardId(h.card) ? h.card : null);
 
   const markSeen = useCallback(() => {
@@ -507,7 +517,8 @@ export function GameShell(p: GameShellProps) {
   // ----- Au-dessus de votre main : message après un lancement, invite, ou intitulé -----
   const castDef = p.cast && CARDS[p.cast] ? CARDS[p.cast] : null;
   const hasUnused = hand.some(h => cardOf(h) && !h.used);
-  const showInvite = !readOnlyHand && !seen && hasUnused && !selfBubble && !castDef;
+  // Pas d'invite une fois la partie finie : il n'y a plus de carte à lancer
+  const showInvite = !readOnlyHand && !seen && hasUnused && !selfBubble && !castDef && !p.result;
   const coarse = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
   let fanNote: ReactNode;
   if (castDef) {
@@ -549,6 +560,7 @@ export function GameShell(p: GameShellProps) {
                   }}
                   id={card}
                   size="hand"
+                  owner="opponent"
                   used={h.used}
                   tilt={false}
                   onClick={how => onOppCard(i, how)}
@@ -569,7 +581,7 @@ export function GameShell(p: GameShellProps) {
     <div
       ref={rootRef}
       className={`gs ${layout.mobile ? 'is-mobile' : ''} ${sel !== null ? 'has-prompt' : ''} ${moreOpen ? 'more-open' : ''} ${castDef || showInvite ? 'has-fan-note' : ''} ${castDef ? 'has-cast' : ''} ${p.className ?? ''}`}
-      style={{ '--gs-g': `${layout.G}px`, '--gs-top': `${layout.y - layout.G / 2}px` } as CSSProperties}
+      style={{ '--gs-g': `${layout.G}px`, '--gs-top': `${layout.y - layout.G / 2}px`, '--gs-left': `${layout.x - layout.G / 2}px` } as CSSProperties}
     >
       {p.backdrop && (
         <div className="gs-backdrop" aria-hidden="true">

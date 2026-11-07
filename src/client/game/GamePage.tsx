@@ -28,6 +28,7 @@ import { getGuestName, setGuestName, useApp } from '../store';
 import { useVfx } from '../vfx/useVfx';
 import { AwayNotice, CastBanner, DrawOffer, EndCard, FirstMoveCountdown, JoinSheet, WaitingCard, rematchLabel, resultTitle } from './overlays';
 import { CardDraft } from './CardDraft';
+import { deNom } from './names';
 import type { Casting } from './overlays';
 import {
   Avatar, Captured, Clock, EffectsPanel, EmoteBubble, MoveList, SeatName, catalogDescription, catalogTag, colorName,
@@ -111,8 +112,9 @@ export default function GamePage() {
 
   const you = view?.you ?? null;
   const orientation: Color = flipped ? opposite(you ?? 'w') : you ?? 'w';
-  // Scène 3D des sorts : créée au repos après l'arrivée (ou à la première carte choisie), jamais pendant le premier
-  // affichage. Un sort reçu avant qu'elle soit prête s'applique sans animation.
+  // Scène 3D des sorts (WebGL) : créée à la première intention (une de vos cartes survolée, touchée ou choisie), au
+  // premier sort reçu, ou dès qu'un effet persiste sur l'échiquier (marqueurs du Mur, de la Faille…) ; jamais pendant
+  // le choix des cartes ni dans une partie sans cartes. Le module est seulement préchargé au repos, sans contexte.
   const vfx = useVfx(warm ? wrapEl : null, orientation);
   const vfxRef = useRef(vfx);
   vfxRef.current = vfx;
@@ -122,19 +124,27 @@ export default function GamePage() {
   }, [view !== null]);
 
   const viewStatus = view?.status;
+  const drafting = !!view?.draft;
+  const cardsGame = !!view && catalogOf(view.state) !== 'aucune';
+  const effectsOn = (view?.state.effects.length ?? 0) > 0;
   useEffect(() => {
-    if (warm || !viewStatus || viewStatus === 'waiting') return;
+    if (warm || !viewStatus || viewStatus === 'waiting' || drafting || !cardsGame) return;
     const w = window as IdleWin;
     let idle = 0;
+    const preload = () => void import('../vfx/index').catch(() => undefined);
     const t = window.setTimeout(() => {
-      if (w.requestIdleCallback) idle = w.requestIdleCallback(() => setWarm(true), { timeout: 2000 });
-      else setWarm(true);
+      if (w.requestIdleCallback) idle = w.requestIdleCallback(preload, { timeout: 3000 });
+      else preload();
     }, 1600);
     return () => {
       window.clearTimeout(t);
       if (idle) w.cancelIdleCallback?.(idle);
     };
-  }, [warm, viewStatus]);
+  }, [warm, viewStatus, drafting, cardsGame]);
+  useEffect(() => {
+    if (effectsOn && !drafting) setWarm(true);
+  }, [effectsOn, drafting]);
+  const onCardIntent = useCallback(() => setWarm(true), []);
 
   const applyView = useCallback((v: GameView, at = Date.now()) => {
     setView(v);
@@ -163,7 +173,14 @@ export default function GamePage() {
       playCardSound(info.card);
       const victim = opposite(info.caster);
       const bottom = (prev?.you ?? 'w') === victim ? !flippedRef.current : flippedRef.current;
-      const v = vfxRef.current;
+      let v = vfxRef.current;
+      if (!v) {
+        // Premier sort de la partie : la scène se crée maintenant (module déjà préchargé au repos, d'ordinaire)
+        setWarm(true);
+        const t0 = Date.now();
+        while (!vfxRef.current && Date.now() - t0 < 1200) await new Promise(r => setTimeout(r, 50));
+        v = vfxRef.current;
+      }
       if (v) {
         await castSafely(v, info, skinStyle(info.skin), {
           impact: () => applyView(u.view, u.at),
@@ -477,7 +494,7 @@ export default function GamePage() {
   else if (animating && casting) title = 'Le sort se déploie…';
   else if (spectator) title = `Trait aux ${colorName(turn)}.`;
   else if (myTurn) title = check !== null ? 'Échec au roi.' : 'À vous de jouer.';
-  else title = turnSeat?.kind === 'bot' ? `${turnSeat.name} réfléchit…` : `Au tour de ${turnSeat?.name ?? 'votre adversaire'}.`;
+  else title = turnSeat?.kind === 'bot' ? `${turnSeat.name} réfléchit…` : `Au tour ${turnSeat?.name ? deNom(turnSeat.name) : 'de votre adversaire'}.`;
 
   const firstMove = !view.started && view.firstMoveDeadline && view.status === 'active' && myTurn ? <FirstMoveCountdown deadline={view.firstMoveDeadline} /> : null;
   let hint: ReactNode = null;
@@ -721,7 +738,7 @@ export default function GamePage() {
           sub: seatSub(oppSeat, top, view.ratingDiff?.[top] ?? null),
           // Main visible, en éventail retourné en haut à droite (coque)
           hand: hasCards && view.status !== 'waiting' ? known(state.hands[top]) : [],
-          handLabel: you ? 'Cartes de votre adversaire' : `Cartes de ${oppSeat?.name ?? `des ${colorName(top)}`}`,
+          handLabel: you ? 'Cartes de votre adversaire' : `Cartes ${oppSeat?.name ? deNom(oppSeat.name) : `des ${colorName(top)}`}`,
           avatar: <Avatar seat={oppSeat} color={top} />,
           extra: (
             <>
@@ -738,9 +755,10 @@ export default function GamePage() {
         notes={notes}
         selected={selCard}
         onPickCard={pickCard}
+        onCardIntent={onCardIntent}
         cast={castNow}
         readOnlyHand={!you}
-        handLabel={you ? 'Votre main · un sort par tour' : `Cartes de ${selfSeat?.name ?? `des ${colorName(bottom)}`}`}
+        handLabel={you ? 'Votre main · un sort par tour' : `Cartes ${selfSeat?.name ? deNom(selfSeat.name) : `des ${colorName(bottom)}`}`}
         toast={announce}
         onEscape={() => {
           if (selCard !== null) cancelCard();

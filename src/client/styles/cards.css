@@ -98,13 +98,19 @@
   display: grid;
   place-items: center;
 }
+/* Halo de l'emblème : un dégradé déjà doux (sans filtre de flou), qui respire trois fois à l'arrivée de la carte puis
+   se fige ; il reprend tant que la carte est survolée, ouverte ou choisie. Au repos, rien ne tourne (D6). */
 .sc-halo {
   position: absolute;
   inset: 4%;
   border-radius: 50%;
-  background: radial-gradient(circle, hsl(var(--h) 100% 70% / 0.55), hsl(var(--h) 100% 60% / 0.12) 55%, transparent 70%);
-  filter: blur(2px);
-  animation: halo 4s ease-in-out infinite;
+  background: radial-gradient(circle, hsl(var(--h) 100% 70% / 0.55), hsl(var(--h) 100% 60% / 0.14) 52%, hsl(var(--h) 100% 60% / 0.04) 64%, transparent 72%);
+  animation: halo 4s ease-in-out 3;
+}
+.spell-card:hover .sc-halo,
+.spell-card.selected .sc-halo,
+.spell-card[aria-expanded='true'] .sc-halo {
+  animation-iteration-count: infinite;
 }
 @keyframes halo {
   50% {
@@ -239,7 +245,10 @@
   font-size: calc(var(--w) * 0.094);
   line-height: 1.08;
   text-wrap: balance;
-  overflow-wrap: anywhere;
+  /* Un nom ne se coupe qu'entre deux mots (jamais « DÉFLAGRATI / ON ») : la taille du texte est prévue pour que
+     « Déflagration », le mot le plus long (5,7 fois la taille du texte), tienne dans la carte. */
+  overflow-wrap: normal;
+  word-break: keep-all;
 }
 .sc-hand .sc-turn {
   margin-bottom: 3%;
@@ -420,6 +429,13 @@
 }
 .card-bubble.is-read {
   pointer-events: none;
+}
+/* Bulle en portail (coque de partie, leçons, problèmes, analyse) : coordonnées d'écran, au-dessus de tout le HUD.
+   Elle vit ici, avec .card-bubble, parce que cards.css est chargé sur toutes les pages : une règle d'un composant
+   partagé ne doit pas dépendre de la feuille d'une seule page (shell.css n'arrive qu'avec l'accueil et /partie). */
+.card-bubble.is-floating {
+  position: fixed;
+  z-index: 45;
 }
 /* Contenu : défile si la place manque (--cbub-max), la pointe reste dehors */
 .cbub-in {

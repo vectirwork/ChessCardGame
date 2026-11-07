@@ -267,6 +267,22 @@ html.ody-home #root {
   height: 60vh;
   background: radial-gradient(closest-side, rgba(16, 20, 60, 0.96), transparent);
 }
+/* Le calque des nuées de l'Observatoire se limite à leur bande (de 90 à 160 vh sous le haut de l'écran au départ),
+   au lieu d'un calque plein écran prolongé vers le bas : mêmes nuées, calque deux fois plus petit */
+.ody .o-layer.o-fg-clouds {
+  inset: auto;
+  left: 0;
+  right: 0;
+  top: 90vh;
+  height: 70vh;
+  pointer-events: none;
+}
+.ody .o-fg-clouds .o-cb-1 {
+  bottom: 20vh;
+}
+.ody .o-fg-clouds .o-cb-2 {
+  bottom: 0;
+}
 
 /* II. Forêt de givre */
 .ody .o-moon {
@@ -1824,7 +1840,7 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
   }
   .ody .o-hero {
     align-items: flex-start;
-    padding: calc(62px + min(86vw, 44vh) + 54px) var(--gutter) 40px;
+    padding: calc(62px + min(86vw, 44vh) + 70px) var(--gutter) 40px;
   }
   .ody .o-hero-copy {
     max-width: none;
@@ -1939,10 +1955,16 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
 /* Bancs de nuées : traversés pendant la chute, certains derrière l'échiquier, d'autres devant */
 
 .ody .o-layer.o-bank {
+  inset: auto;
+  left: var(--bl);
+  top: calc(var(--bt) - var(--bh) / 2);
+  width: var(--bw);
+  height: var(--bh);
   pointer-events: none;
 }
 .ody .o-bank-img {
   position: absolute;
+  inset: 0;
   background-size: 100% 100%;
   background-repeat: no-repeat;
 }
@@ -2619,6 +2641,10 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
   padding: 0;
   transition: color 0.3s;
 }
+/* Un nom de carte ne se coupe pas (« Grande Marée ») ; la pastille du Rituel peut passer à la ligne */
+.ody .o-hand-n {
+  white-space: nowrap;
+}
 .ody .o-hand-names button + button::before {
   content: '·';
   margin: 0 10px;
@@ -3267,10 +3293,25 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
    (Android, Chrome) montraient des morceaux d'image oubliés pendant le défilement (fantômes, rectangles, échiquier
    noirci) : trop de grands calques à garder en mémoire. */
 @media (max-width: 819.98px) {
-  /* Bancs de nuées traversés : les plus grands calques de la page (environ 15 mégapixels), rendus en blocs flous
-     coupés net sur téléphone */
-  .ody .o-layer.o-bank,
-  .ody .o-fg-clouds {
+  /* Bancs de nuées traversés : sur un écran étroit, la boîte de l'ordinateur (120 vw × 50 vh) écrasait l'image
+     (1600 × 560) en blocs flous. Ici, l'image garde ses proportions : un banc plus large que l'écran, centré, haut
+     de 44 % de l'écran environ. Un banc devant et un derrière par passage (au lieu de deux et deux). */
+  .ody .o-layer.o-bank {
+    left: 0;
+    width: 100vw;
+    height: 98vw;
+    top: calc(var(--bt) - 49vw);
+    /* Calque coupé à la largeur de l'écran : seule la partie visible de l'image est peinte */
+    overflow: hidden;
+  }
+  .ody .o-layer.o-bank .o-bank-img {
+    inset: auto;
+    left: -90vw;
+    top: 0;
+    width: 280vw;
+    height: 100%;
+  }
+  .ody .o-layer.o-bank-1 {
     display: none;
   }
   /* Le monde fixe garde la hauteur de la grande fenêtre : la barre d'adresse qui apparaît ou disparaît ne le

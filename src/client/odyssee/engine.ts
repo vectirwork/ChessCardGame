@@ -685,7 +685,8 @@ export class Engine {
     }
     if (this.els.caption) {
       const show = this.gameMix === 0 && p.s > 200 && p.o > 0.9 && (p.cap > 0.5 || this.hover) ? 1 : 0;
-      const below = mobile ? p.s * 0.5 * Math.cos(p.tilt) + 22 : p.s * 0.5 + 34;
+      // Mobile : la perspective agrandit le bas du cadre ; la légende garde un peu d'air dessous
+      const below = mobile ? p.s * 0.5 * Math.cos(p.tilt) + 36 : p.s * 0.5 + 34;
       this.els.caption.style.transform = `translate3d(${p.x.toFixed(1)}px, ${(p.y + below + docY).toFixed(1)}px, 0) translateX(-50%)`;
       if (show !== a.cap) {
         a.cap = show;

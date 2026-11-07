@@ -784,7 +784,7 @@ export default function OdysseeHome() {
                   {g.hand.map((h, i) =>
                     h.card ? (
                       <button key={i} type="button" className={h.used ? 'is-used' : ''} onClick={() => heroCard(i)} title={CARDS[h.card].tagline}>
-                        {CARDS[h.card].name}
+                        <span className="o-hand-n">{CARDS[h.card].name}</span>
                         {/* Effet sur le tour (décision D1) : le Rituel, l'exception, le dit à côté de son nom */}
                         {CARDS[h.card].ritual && <small className="o-hand-turn">remplace votre coup</small>}
                       </button>

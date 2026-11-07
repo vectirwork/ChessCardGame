@@ -94,4 +94,15 @@ sélectionné) : corrigé, avec un test (`test/glisser.mjs`).
   (image fixe dans chaque tuile, animée au survol ou au dernier toucher) et dans la page des règles (animée au
   survol de la fiche ou au toucher de l'image).
 
-À suivre : accueil, concepts rétablis en version optimisée (étape 4).
+Étape 4 (traitée) : accueil, mêmes concepts, en plus léger.
+
+- [x] **Bancs de nuées rétablis sur téléphone** (retirés lors du premier correctif mobile). Les « blocs flous coupés
+  net » de la vidéo venaient de l'image (1600 × 560) écrasée dans une boîte presque carrée : sur téléphone, le banc
+  garde maintenant ses proportions (plus large que l'écran, calque coupé à la largeur de l'écran), un devant et un
+  derrière par passage. Partout, chaque banc a un calque à sa taille, au lieu d'un calque plein écran prolongé ;
+  idem pour les nuées sous l'Observatoire. Mesure (412 × 915, densité 2,6) : 2 à 3 Mpx de plus qu'avant, dans le
+  budget de 25 à 35 Mpx du correctif mobile.
+- [x] Premier écran mobile : la légende de l'échiquier ne touche plus son cadre ni le titre ; les noms des cartes ne
+  se coupent plus (« Grande Marée »).
+
+À confirmer sur le Pixel 7 du fondateur : défilement de l'accueil (nuées) sans scintillement.

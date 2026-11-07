@@ -208,22 +208,19 @@ const BANKS: Record<'back' | 'front', { d: number; f: number; img: 0 | 1; left: 
 };
 
 export function CloudBanks({ tone, part }: { tone: Tone; part: 'back' | 'front' }) {
+  // Le calque (déplacé à chaque image par le moteur) a exactement la taille du banc : pas de grand calque presque
+  // vide autour. Boîte du banc en variables, que le téléphone redéfinit (odyssee.css) pour garder les proportions
+  // de l'image.
   return (
     <>
       {BANKS[part].map((b, i) => (
-        <Layer key={i} d={b.d} className="o-bank">
-          <div
-            className="o-bank-img"
-            data-bg={CLOUDS[tone][b.img]}
-            style={{
-              left: `${b.left}vw`,
-              width: `${b.width}vw`,
-              height: `${b.height}vh`,
-              top: `calc(50vh - ${(b.f * b.d * 100).toFixed(1)}vh - ${b.height / 2}vh)`,
-              transform: b.flip ? 'scaleX(-1)' : undefined,
-              opacity: b.o,
-            }}
-          />
+        <Layer
+          key={i}
+          d={b.d}
+          className={`o-bank o-bank-${i}`}
+          style={{ '--bl': `${b.left}vw`, '--bw': `${b.width}vw`, '--bh': `${b.height}vh`, '--bt': `calc(50vh - ${(b.f * b.d * 100).toFixed(1)}vh)` } as CSSProperties}
+        >
+          <div className="o-bank-img" data-bg={CLOUDS[tone][b.img]} style={{ transform: b.flip ? 'scaleX(-1)' : undefined, opacity: b.o }} />
         </Layer>
       ))}
     </>

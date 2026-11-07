@@ -100,3 +100,20 @@ describe('leçon « Jouer une carte » : le geste réel', () => {
     expect(step.text).not.toMatch(/choisissez la carte, puis la case/);
   });
 });
+
+describe('partie en direct de l’accueil : pays de l’adversaire', () => {
+  it('fuseau horaire → pays, et la bonne préposition en français', async () => {
+    const { countryOfTimezone } = await import('../src/server/timezones');
+    const { fromCountry } = await import('../src/client/odyssee/country');
+    expect(countryOfTimezone('Europe/Paris')).toBe('FR');
+    expect(countryOfTimezone('Asia/Calcutta')).toBe('IN');
+    expect(countryOfTimezone('UTC')).toBeNull();
+    expect(fromCountry('FR')).toBe('depuis la France');
+    expect(fromCountry('CA')).toBe('depuis le Canada');
+    expect(fromCountry('US')).toBe('depuis les États-Unis');
+    expect(fromCountry('ES')).toBe('depuis l’Espagne');
+    expect(fromCountry('IL')).toBe('depuis Israël');
+    expect(fromCountry('MX')).toBe('depuis le Mexique');
+    expect(fromCountry(null)).toBeNull();
+  });
+});

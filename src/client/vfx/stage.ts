@@ -73,6 +73,8 @@ export const ease = {
 
 export class VfxStage {
   readonly ok: boolean;
+  /** Scène libérée : plus rien à y jouer (une arrivée de Présage différée, par exemple). */
+  private disposed = false;
   /** Échiquier suivi (changé par attach() quand la scène passe à un autre échiquier). */
   wrap: HTMLElement;
   readonly scene = new THREE.Scene();
@@ -500,11 +502,17 @@ export class VfxStage {
         continue;
       }
       if (this.pendingIds.has(e.id) && this.arrivalFactory) {
-        try {
-          this.arrivalFactory(this, e, skinStyle(e.skin));
-        } catch (err) {
-          console.error('[vfx]', err);
-        }
+        // Un peu plus tard : l'échiquier prend d'abord la teinte du Climat qui arrive (React réécrit alors ses classes,
+        // ce qui effacerait l'ambiance posée par la mise en scène)
+        const factory = this.arrivalFactory;
+        window.setTimeout(() => {
+          if (!this.ok || this.disposed) return;
+          try {
+            factory(this, e, skinStyle(e.skin));
+          } catch (err) {
+            console.error('[vfx]', err);
+          }
+        }, 80);
       }
     }
     this.pendingIds = pending;
@@ -533,6 +541,7 @@ export class VfxStage {
 
   dispose() {
     this.halt();
+    this.disposed = true;
     window.removeEventListener('scroll', this.onMove, { capture: true });
     window.removeEventListener('resize', this.onMove);
     for (const f of this.fx) f.dispose?.();

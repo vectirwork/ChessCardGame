@@ -17,8 +17,8 @@ import { CARDS, FAMILY_LABEL } from '../../shared/cards';
 import type { CardDef, CardId } from '../../shared/cards';
 import type { Ack, DraftView, GameView, SeatView } from '../../shared/protocol';
 import { CardEmblem } from '../components/CardArt';
-import { SpellCard } from '../components/SpellCard';
-import { CardScene } from '../components/CardScene';
+import { SpellCard, cardWhen, ruleBody, turnEffect } from '../components/SpellCard';
+import { CardScene, scenePaired } from '../components/CardScene';
 import { emitAck } from '../socket';
 import { playSound } from '../sound';
 import { deNom } from './names';
@@ -35,7 +35,8 @@ const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 /** Famille, mot-clé et durée, en clair : « Climat · Présage · 3 coups ». */
 function cardMeta(def: CardDef): string {
-  const key = def.presage ? 'Présage' : def.ritual ? 'Rituel' : def.permanent && def.family === 'terrain' ? 'Permanent' : null;
+  // Le moment (immédiat, au prochain tour) et l'effet sur le coup ont leurs pastilles : ici, famille et durée
+  const key = def.permanent && def.family === 'terrain' ? 'Permanent' : null;
   const dur = def.permanent && def.family === 'terrain' ? 'toute la partie' : def.duration.replace(/\s*\(.*\)\s*$/, '');
   return [FAMILY_LABEL[def.family], key, dur.charAt(0).toLowerCase() + dur.slice(1)].filter(Boolean).join(' · ');
 }
@@ -322,17 +323,20 @@ function DraftScreen({ view, draft, receivedAt, onAbort, onSubmitted }: {
                     <span className="cd-meta" id={`cd-m-${id}`}>
                       {cardMeta(def)}
                     </span>
-                    <span className={`cd-turn ${def.ritual ? 'is-replace' : ''}`} id={`cd-t-${id}`}>
-                      {def.ritual ? 'Remplace votre coup' : '+ votre coup'}
-                    </span>
                   </span>
+                </span>
+                {/* Moment et effet sur le tour, sur toute la largeur de la tuile (une seule ligne) */}
+                <span className="cd-pills" id={`cd-t-${id}`}>
+                  <span className={`cd-when ${def.presage ? 'is-next' : ''}`}>{cardWhen(def).label}</span>
+                  <span className={`cd-turn ${def.ritual ? 'is-replace' : ''}`}>{turnEffect(def).label}</span>
                 </span>
                 <span className="cd-rule" id={`cd-r-${id}`}>
                   {/* Scène de la carte en image fixe, animée sur la tuile survolée ou touchée en dernier */}
-                  <span className="cd-scene" aria-hidden="true">
+                  <span className={`cd-scene ${scenePaired(id) ? 'is-pair' : ''}`} aria-hidden="true">
                     <CardScene id={id} play="still" active={peek === id} />
                   </span>
-                  {def.description}
+                  {/* Sans « Annoncée, elle arrive… » ni « Rituel : … » : les pastilles le disent déjà */}
+                  {ruleBody(def)}
                 </span>
                 {!spectator && (
                   <span className="cd-mark" aria-hidden="true">

@@ -350,6 +350,12 @@
   width: 118px;
   margin: 4px 0 8px 16px;
 }
+/* Deux images (avant, après), avec leurs légendes : sous le texte, sur toute la largeur utile */
+.rg-pscene.is-pair {
+  float: none;
+  width: min(270px, 100%);
+  margin: 14px 0 0;
+}
 .rg-pmeta {
   grid-area: meta;
   align-self: end;
@@ -528,6 +534,10 @@
   .rg-pscene {
     width: 104px;
     margin-left: 12px;
+  }
+  .rg-pscene.is-pair {
+    width: min(270px, 100%);
+    margin-left: 0;
   }
   .rg-pname {
     font-size: 24px;

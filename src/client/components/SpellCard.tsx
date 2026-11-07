@@ -1,9 +1,9 @@
 // Carte de pouvoir : cadre type tarot, emblème, effet holographique et inclinaison 3D au survol.
 //
-// Face épurée (décision D1 du plan V2) : l'emblème, le nom et une seule pastille qui dit l'effet sur le tour,
-// « + votre coup » (on lance la carte, puis on joue son coup) ou « Remplace votre coup » (Rituel). La règle, la
-// famille, la durée et le moment où la carte agit sont dans la bulle (CardBubble), ouverte au survol, au focus ou au
-// toucher. Une carte jouée reste visible, grisée, avec « Jouée ».
+// Face épurée (décision D1 du plan V2) : l'emblème, le nom, en haut le moment où elle agit (« Immédiat » ou « Au
+// prochain tour » pour un Présage) et une pastille qui dit l'effet sur le tour : « En plus du coup » (on lance la
+// carte, puis on joue son coup) ou « Remplace le coup » (Rituel). La règle, la famille et la durée sont dans la bulle
+// (CardBubble), ouverte au survol, au focus ou au toucher. Une carte jouée reste visible, grisée, avec « Jouée ».
 //
 // Tailles : 'hand' (mains), 'full' (la même face en grand : annonce d'un sort, chapitres de l'accueil, dont la règle
 // est écrite à côté), 'mini' (vignette : emblème seul) et 'compact' (bandeau : emblème, nom, pastille).
@@ -30,9 +30,33 @@ export function cardKicker(def: CardDef): string {
  * Effet de la carte sur le tour : elle s'ajoute au coup, ou elle le remplace (Rituel). `owner` 'opponent' : formulé
  * pour la carte de votre adversaire (« + son coup »), dans sa bulle.
  */
-export function turnEffect(def: CardDef, owner: 'self' | 'opponent' = 'self'): { kind: 'plus' | 'replace'; label: string; who: string } {
+export function turnEffect(def: CardDef, owner: 'self' | 'opponent' = 'self'): { kind: 'plus' | 'replace'; label: string; short: string; who: string } {
   const who = owner === 'self' ? 'votre coup' : 'son coup';
-  return def.ritual ? { kind: 'replace', label: `Remplace ${who}`, who } : { kind: 'plus', label: `+ ${who}`, who };
+  return def.ritual
+    ? { kind: 'replace', label: `Remplace ${who}`, short: 'Remplace le coup', who }
+    : { kind: 'plus', label: `En plus de ${who}`, short: 'En plus du coup', who };
+}
+
+/** Moment où la carte agit, en deux mots : tout de suite, ou au prochain tour du lanceur (Présage). */
+export function cardWhen(def: CardDef): { kind: 'now' | 'next'; label: string } {
+  return def.presage ? { kind: 'next', label: 'Au prochain tour' } : { kind: 'now', label: 'Immédiat' };
+}
+
+/** Étiquette du haut de la carte : « Immédiat » (éclair) ou « Au prochain tour » (sablier). `iconOnly` : petites cartes. */
+export function WhenTag({ def, iconOnly = false, className = '' }: { def: CardDef; iconOnly?: boolean; className?: string }) {
+  const w = cardWhen(def);
+  return (
+    <span className={`sc-when is-${w.kind} ${className}`} title={w.label}>
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        {w.kind === 'next' ? (
+          <path d="M4.5 2.5h7M4.5 13.5h7M5.5 2.5c0 3 5 3.2 5 5.5s-5 2.5-5 5.5M10.5 2.5c0 3-5 3.2-5 5.5s5 2.5 5 5.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        ) : (
+          <path d="M9.2 1.8 3.8 9h4l-1 5.2L12.2 7h-4z" fill="currentColor" />
+        )}
+      </svg>
+      {!iconOnly && w.label}
+    </span>
+  );
 }
 
 /** Moment où la carte agit, en une phrase. `owner` : la carte est à vous, ou à votre adversaire. */
@@ -64,14 +88,14 @@ export function ruleBody(def: CardDef): string {
  * Pastille de tour : « + votre coup » ou « Remplace votre coup ». `compact` (petites cartes de la main adverse) :
  * « + coup » ou « Remplace », le libellé entier restant lu par les lecteurs d'écran et dans la bulle.
  */
-export function TurnPill({ def, owner = 'self', compact = false, className = '' }: { def: CardDef; owner?: 'self' | 'opponent'; compact?: boolean; className?: string }) {
+export function TurnPill({ def, owner = 'self', compact = false, long = false, className = '' }: { def: CardDef; owner?: 'self' | 'opponent'; compact?: boolean; /** Libellé entier (« En plus de votre coup »), là où il y a la place. */ long?: boolean; className?: string }) {
   const t = turnEffect(def, owner);
   if (compact) {
     return (
       <span className={`sc-turn is-${t.kind} is-compact ${className}`} title={t.label}>
         {t.kind === 'plus' ? (
           <>
-            <i className="sc-turn-sign">+</i> coup
+            <i className="sc-turn-sign">+</i> En plus
           </>
         ) : (
           'Remplace'
@@ -80,17 +104,17 @@ export function TurnPill({ def, owner = 'self', compact = false, className = '' 
     );
   }
   return (
-    <span className={`sc-turn is-${t.kind} ${className}`}>
+    <span className={`sc-turn is-${t.kind} ${className}`} title={t.label}>
       {t.kind === 'plus' ? (
         <>
-          <i className="sc-turn-sign">+</i> {t.who}
+          <i className="sc-turn-sign">+</i> {long ? t.label : t.short}
         </>
       ) : (
         <>
           <svg viewBox="0 0 16 16" aria-hidden="true">
             <path d="M3 6h8.5l-2.4-2.4M13 10H4.5l2.4 2.4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          {t.label}
+          {long ? t.label : t.short}
         </>
       )}
     </span>
@@ -99,7 +123,7 @@ export function TurnPill({ def, owner = 'self', compact = false, className = '' 
 
 /** Libellé accessible d'une carte : nom, effet sur le tour, état. La règle est lue par la bulle (aria-describedby). */
 export function cardAriaLabel(def: CardDef, used?: boolean, owner: 'self' | 'opponent' = 'self'): string {
-  return `${def.name}, ${turnEffect(def, owner).label}${used ? ', jouée' : ''}`;
+  return `${def.name}, ${cardWhen(def).label.toLowerCase()}, ${turnEffect(def, owner).label.toLowerCase()}${used ? ', jouée' : ''}`;
 }
 
 interface Props {
@@ -193,6 +217,7 @@ export const SpellCard = forwardRef(function SpellCard(
           <div className="sc-halo" />
           <CardEmblem id={id} className="sc-emblem" />
         </div>
+        {(size === 'hand' || size === 'full') && <WhenTag def={def} iconOnly={owner === 'opponent' && size === 'hand'} />}
         {size !== 'mini' && <div className="sc-name">{def.name}</div>}
         {size !== 'mini' && <TurnPill def={def} owner={owner} compact={owner === 'opponent' && size === 'hand'} />}
         {children}
@@ -294,15 +319,15 @@ export function CardBubble({ id, domId, mode, used, owner = 'self', note, aim, o
         )}
         {/* Avant de lancer la carte : sa scène se joue en boucle, à côté de la règle (pas pendant le ciblage) */}
         {mode !== 'aim' && CARD_SCENES[id] ? (
-          <div className="cbub-body">
-            <CardScene id={id} play="auto" className="cbub-scene" />
+          <div className={`cbub-body ${CARD_SCENES[id]?.pair ? 'is-pair' : ''}`}>
+            <CardScene id={id} play="auto" className="cbub-scene" labels={!!CARD_SCENES[id]?.pair} />
             <p className="cbub-rule">{ruleBody(def)}</p>
           </div>
         ) : (
           <p className="cbub-rule">{ruleBody(def)}</p>
         )}
         <p className="cbub-when">
-          <TurnPill def={def} owner={owner} />
+          <TurnPill def={def} owner={owner} long />
           <span>{cardTiming(def, owner)}</span>
         </p>
         {(used || note) && mode !== 'aim' && <p className="cbub-note">{used ? 'Déjà jouée.' : note}</p>}

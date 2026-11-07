@@ -158,6 +158,11 @@ export interface ServerToClient {
   'game:redirect': (p: { from: string; to: string }) => void;
   'queue:matched': (p: { gameId: string }) => void;
   'queue:status': (p: { waiting: boolean; tc: string | null; since: number | null; players: number }) => void;
+  /**
+   * Accueil : deux visiteurs arrivés depuis moins de 30 s, l'échiquier du haut sous les yeux, jouent l'un contre
+   * l'autre. `country` : code pays de l'adversaire, d'après le fuseau horaire de son navigateur (null : inconnu).
+   */
+  'home:paired': (p: { gameId: string; color: Color; opponent: { country: string | null } }) => void;
 }
 
 export interface ClientToServer {
@@ -187,6 +192,13 @@ export interface ClientToServer {
    */
   'queue:join': (p: { tc: string; rated?: boolean; name?: string; catalog?: string }, ack: (r: Ack) => void) => void;
   'queue:leave': () => void;
+  /**
+   * Accueil : le visiteur arrive (`tz` : fuseau horaire du navigateur) ; `ready` : il peut être apparié (échiquier du
+   * haut sous les yeux, partie contre l'Oracle à peine commencée). Ensuite `home:ready` à chaque changement.
+   */
+  'home:hello': (p: { tz: string; ready: boolean }) => void;
+  'home:ready': (p: { ready: boolean }) => void;
+  'home:bye': () => void;
 }
 
 /** Utilisateur connecté, tel que renvoyé par /api/me. */

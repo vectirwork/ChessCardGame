@@ -9,15 +9,23 @@
 // `active` (mode immersif) : les sorts s'animent en 3D et l'IA joue. Hors mode immersif, la partie est en pause :
 // l'IA attend, et la scène 3D est vidée (aucun rendu WebGL pour un échiquier qu'on ne regarde pas).
 // La scène 3D n'est créée qu'à la première intention de jouer (`warm`) ou au passage en mode immersif.
+//
+// Partie en direct (`startDuel`) : deux visiteurs de l'accueil appariés par le serveur jouent l'un contre l'autre sur
+// ce même échiquier. Le visiteur peut alors avoir les Noirs ; ses coups partent au serveur (et s'affichent aussitôt),
+// ceux de l'adversaire arrivent par game:update et s'animent. Rien n'est sauvegardé localement : la partie est au
+// serveur, et la partie contre l'Oracle reprend ensuite.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BOT_PROFILES, askBot } from '../ai';
 import { rememberLocalGame } from '../features/history';
 import type { BotLevel } from '../ai';
 import { CARDS, isCardId } from '../../shared/cards';
 import type { CardDef, Catalog } from '../../shared/cards';
+import { opposite } from '../../shared/chess';
 import type { Color, PieceType } from '../../shared/chess';
 import { skinStyle } from '../../shared/catalog';
-import { cardOptions, cardPlayable, createGame, dealHands, legalMovesOf, playCard, playMove, sideInCheck } from '../../shared/game';
+import { cardOptions, cardPlayable, createGame, dealHands, legalMovesOf, playCard, playMove, positionKey, sideInCheck } from '../../shared/game';
+import type { Ack, GameUpdate, GameView, JoinReply } from '../../shared/protocol';
+import { emitAck, getSocket } from '../socket';
 import type { CardInfo, GameState, Result } from '../../shared/game';
 import { checkSquare } from '../components/Board';
 import type { BoardHandle } from '../components/Board';
@@ -27,6 +35,28 @@ import { castSafely } from './castSafely';
 import { liveCatalog } from './data';
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+/** Même partie, au coup près : position, effets, mains, fin. */
+function sameGame(a: GameState, b: GameState) {
+  return a.log.length === b.log.length && !!a.result === !!b.result && positionKey(a) === positionKey(b) && JSON.stringify(a.hands) === JSON.stringify(b.hands);
+}
+
+/** Partie en direct contre un autre visiteur de l'accueil. */
+export interface HomeDuel {
+  id: string;
+  /** Couleur du visiteur. */
+  me: Color;
+  /** Pays de l'adversaire (code ISO), d'après son fuseau horaire. */
+  country: string | null;
+}
+/** Ce que le serveur dit de la partie en direct, au-delà de la position. */
+interface DuelInfo {
+  status: GameView['status'];
+  started: boolean;
+  /** Depuis quand l'adversaire a quitté la page (horodatage serveur), null s'il est là. */
+  away: number | null;
+  claimAfterMs: number;
+}
 
 export const PLAYER: Color = 'w';
 export const BOT: Color = 'b';
@@ -112,8 +142,13 @@ export interface LiveGameOptions {
 }
 
 export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm = false }: LiveGameOptions) {
-  const [state, setState] = useState<GameState>(() => loadSaved() ?? newGame());
-  const [resumed] = useState(() => state.ply > 0);
+  // Chaque visite commence une partie neuve (retour du fondateur : « le site peut m'oublier un peu quand je recharge
+  // la page »). La partie d'avant reste proposée, discrètement, jusqu'au premier coup de la nouvelle.
+  const [previous, setPrevious] = useState<GameState | null>(() => {
+    const p = loadSaved();
+    return p && p.ply > 0 ? p : null;
+  });
+  const [state, setState] = useState<GameState>(newGame);
   const [level, setLevelState] = useState<BotLevel>(loadLevel);
   const [wrapEl, setWrapEl] = useState<HTMLDivElement | null>(null);
   const [hidden, setHidden] = useState<Set<number>>(new Set());
@@ -127,7 +162,21 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
   useEffect(() => {
     if (active || warm) setArmed(true);
   }, [active, warm]);
+  const [duel, setDuel] = useState<HomeDuel | null>(null);
+  const [duelInfo, setDuelInfo] = useState<DuelInfo | null>(null);
+  const duelInfoRef = useRef(duelInfo);
+  duelInfoRef.current = duelInfo;
+  const duelRef = useRef(duel);
+  duelRef.current = duel;
+  /** Camp du visiteur : les Blancs contre l'Oracle ; en direct, celui que le serveur lui a donné. */
+  const me: Color = duel?.me ?? PLAYER;
+  const them = opposite(me);
+  const meRef = useRef(me);
+  meRef.current = me;
   const vfx = useVfx(armed ? wrapEl : null, PLAYER);
+  useEffect(() => {
+    if (vfx) vfx.stage.setOrientation(me, stateRef.current.effects, stateRef.current.pos);
+  }, [vfx, me]);
 
   const stateRef = useRef(state);
   const activeRef = useRef(active);
@@ -160,8 +209,9 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
 
   const apply = useCallback(
     (n: GameState) => {
-      // Partie terminée : elle rejoint « Mes parties » (journal compris, pour la relire dans l'Analyse)
-      if (n.result && !stateRef.current.result && n.result.reason !== 'aborted') {
+      // Partie terminée : elle rejoint « Mes parties » (journal compris, pour la relire dans l'Analyse). Une partie en
+      // direct est gardée par le serveur.
+      if (!duelRef.current && n.result && !stateRef.current.result && n.result.reason !== 'aborted') {
         try {
           rememberLocalGame(n, { white: 'Vous', black: `L'Oracle (${BOT_PROFILES[levelRef.current].name})`, you: PLAYER, vsBot: true });
         } catch {
@@ -171,7 +221,10 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
       stateRef.current = n;
       setState(n);
       syncScene(n);
+      if (duelRef.current) return;
       persist(n);
+      // Un coup dans la nouvelle partie remplace la sauvegarde : la partie d'avant n'est plus proposée
+      if (n.ply > 0) setPrevious(null);
     },
     [syncScene],
   );
@@ -192,14 +245,14 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
   const runCast = useCallback(
     async (n: GameState, info: CardInfo, skinId: string) => {
       playCardSound(info.card);
-      setLastCast({ card: info.card, by: info.caster === PLAYER ? 'player' : 'bot', key: Date.now() });
+      setLastCast({ card: info.card, by: info.caster === meRef.current ? 'player' : 'bot', key: Date.now() });
       if (vfx && activeRef.current) {
         // Garde-fou : une carte sans animation (carte nouvelle) ou une scène 3D qui rame ne bloquent jamais la partie
         await castSafely(vfx, info, skinStyle(skinId), {
           impact: () => apply(n),
           hide: ids => setHidden(new Set(ids)),
           show: () => setHidden(new Set()),
-          victimAtBottom: info.caster === BOT,
+          victimAtBottom: info.caster !== meRef.current,
         });
       } else {
         apply(n);
@@ -256,7 +309,7 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
   }, [apply, runCast, botSkin]);
 
   useEffect(() => {
-    if (botBusy.current) return;
+    if (botBusy.current || duel) return;
     if (state.result || state.pos.turn !== BOT) return;
     botBusy.current = true;
     void botTurn().finally(() => {
@@ -264,17 +317,17 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
       // Si c'est encore à l'IA (un sort lui a rendu la main), on relance
       setBotTick(t => t + 1);
     });
-  }, [state, botTick, botTurn]);
+  }, [state, botTick, botTurn, duel]);
 
-  const myTurn = state.pos.turn === PLAYER && !state.result && !casting;
+  const myTurn = state.pos.turn === me && !state.result && !casting && (!duel || duelInfo?.status === 'active');
   const legal = useMemo(() => (myTurn ? legalMovesOf(state) : []), [state, myTurn]);
-  const hand = state.hands[PLAYER];
-  const playable = useMemo(() => hand.map((_, i) => myTurn && cardPlayable(state, PLAYER, i)), [hand, myTurn, state]);
+  const hand = state.hands[me];
+  const playable = useMemo(() => hand.map((_, i) => myTurn && cardPlayable(state, me, i)), [hand, myTurn, state, me]);
   const selectedDef: CardDef | null = selected !== null && hand[selected]?.card ? CARDS[hand[selected].card!] : null;
   const options = useMemo(() => {
     if (selected === null || !selectedDef || selectedDef.targets === 0) return null;
-    return cardOptions(state, PLAYER, selected, partial);
-  }, [selected, selectedDef, state, partial]);
+    return cardOptions(state, me, selected, partial);
+  }, [selected, selectedDef, state, partial, me]);
 
   // Une carte sélectionnée qui n'est plus jouable (tour passé, partie finie) est relâchée
   useEffect(() => {
@@ -289,14 +342,18 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
       const s = stateRef.current;
       setSelected(null);
       setPartial([]);
-      const r = playCard(s, PLAYER, index, targets, skin);
+      const r = playCard(s, meRef.current, index, targets, skin);
       if (!r.ok) {
         playSound('error');
         return;
       }
+      const d = duelRef.current;
+      // En direct : la carte part au serveur tout de suite, l'animation se joue pendant ce temps
+      const sent = d ? emitAck<Ack>('game:card', { id: d.id, index, targets }).catch(() => ({ ok: false }) as Ack) : null;
       setCasting(true);
       await runCast(r.state, r.info, skin);
       setCasting(false);
+      if (sent && !(await sent).ok) resyncRef.current();
     },
     [skin, runCast],
   );
@@ -332,6 +389,14 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
       setPartial([]);
       apply(r.state);
       playSound(r.state.result ? 'end' : r.info.check ? 'check' : r.info.capturedId !== null ? 'capture' : 'move');
+      const d = duelRef.current;
+      if (d) {
+        void emitAck<Ack>('game:move', { id: d.id, from, to, promo })
+          .catch(() => ({ ok: false }) as Ack)
+          .then(a => {
+            if (!a.ok) resyncRef.current();
+          });
+      }
       return true;
     },
     [apply],
@@ -345,7 +410,108 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
     return null;
   }, [state]);
 
+  // ------------------------------------------------------------------------------------------
+  // Partie en direct contre un autre visiteur de l'accueil
+
+  /** Reprend la position du serveur (coup refusé, reconnexion). */
+  const resyncRef = useRef<() => void>(() => {});
+  /** Mises à jour du serveur traitées une par une : une carte adverse s'anime avant que son coup ne s'affiche. */
+  const chainRef = useRef<Promise<void>>(Promise.resolve());
+
+  const takeView = useCallback((v: GameView) => {
+    setDuelInfo({ status: v.status, started: v.started, away: v.away[opposite(meRef.current)], claimAfterMs: v.claimAfterMs });
+  }, []);
+
+  const handleUpdate = useCallback(
+    async (u: GameUpdate) => {
+      const d = duelRef.current;
+      if (!d || u.view.id !== d.id) return;
+      takeView(u.view);
+      const srv = u.view.state;
+      const ev = u.event;
+      const other = opposite(d.me);
+      if (ev.type === 'card' && ev.info.caster === other) {
+        setSelected(null);
+        setPartial([]);
+        setCasting(true);
+        await runCast(srv, ev.info, ev.info.skin);
+        setCasting(false);
+        return;
+      }
+      if (ev.type === 'move' && ev.color === other) {
+        apply(srv);
+        playSound(srv.result ? 'end' : ev.info.check ? 'check' : ev.info.capturedId !== null ? 'capture' : 'move');
+        return;
+      }
+      // Ses propres coups (déjà affichés), fin, synchronisation : on ne reprend la position du serveur que si elle diffère
+      const local = stateRef.current;
+      if (!sameGame(srv, local)) {
+        apply(srv);
+        if (srv.result && !local.result) playSound('end');
+      }
+    },
+    [apply, runCast, takeView],
+  );
+
+  // Rejoint la partie au serveur, suit ses mises à jour, la rejoint de nouveau après une coupure
+  useEffect(() => {
+    if (!duel) return;
+    const sock = getSocket();
+    let dead = false;
+    const join = () => {
+      void emitAck<JoinReply>('game:join', { id: duel.id })
+        .then(r => {
+          if (dead || !r.ok || !r.view) return;
+          takeView(r.view);
+          // La partie du serveur fait foi (mains tirées par lui, coups joués pendant une coupure)
+          if (!sameGame(r.view.state, stateRef.current)) apply(r.view.state);
+        })
+        .catch(() => {});
+    };
+    resyncRef.current = join;
+    const onUpdate = (u: GameUpdate) => {
+      chainRef.current = chainRef.current.then(() => handleUpdate(u)).catch(() => {});
+    };
+    sock.on('game:update', onUpdate);
+    sock.on('connect', join);
+    join();
+    return () => {
+      dead = true;
+      sock.off('game:update', onUpdate);
+      sock.off('connect', join);
+      sock.emit('game:leave', { id: duel.id });
+      resyncRef.current = () => {};
+    };
+  }, [duel, apply, handleUpdate, takeView]);
+
+  /** Le serveur a apparié ce visiteur avec un autre : la partie contre l'Oracle laisse place à la partie en direct. */
+  const startDuel = useCallback(
+    (p: HomeDuel) => {
+      epochRef.current++;
+      setSelected(null);
+      setPartial([]);
+      setHidden(new Set());
+      setCasting(false);
+      setThinking(false);
+      setLastCast(null);
+      setDuelInfo(null);
+      // La position de départ, en attendant celle du serveur (mêmes règles : rien ne bouge avant le premier coup)
+      duelRef.current = p;
+      setDuel(p);
+      playSound('start');
+    },
+    [],
+  );
+
   const newGameNow = useCallback(() => {
+    // Quitter une partie en direct : annulée si personne n'a encore joué, sinon abandonnée
+    const d = duelRef.current;
+    if (d) {
+      if (!stateRef.current.result) void emitAck<Ack>(duelInfoRef.current?.started ? 'game:resign' : 'game:abort', { id: d.id }).catch(() => {});
+      duelRef.current = null;
+      setDuel(null);
+      setDuelInfo(null);
+    }
     epochRef.current++;
     setSelected(null);
     setPartial([]);
@@ -357,9 +523,29 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
     playSound('start');
   }, [apply]);
 
+  /** Reprend la partie d'avant (celle de la visite précédente). */
+  const resumePrevious = useCallback(() => {
+    const p = previous;
+    if (!p) return;
+    epochRef.current++;
+    setSelected(null);
+    setPartial([]);
+    setHidden(new Set());
+    setCasting(false);
+    setThinking(false);
+    setLastCast(null);
+    apply(p);
+  }, [previous, apply]);
+
   const resign = useCallback(() => {
     const s = stateRef.current;
     if (s.result) return;
+    const d = duelRef.current;
+    if (d) {
+      // Le serveur annonce la fin à tous les deux (game:update, événement « end »)
+      void emitAck<Ack>(duelInfoRef.current?.started ? 'game:resign' : 'game:abort', { id: d.id }).catch(() => {});
+      return;
+    }
     epochRef.current++;
     setSelected(null);
     setPartial([]);
@@ -376,14 +562,27 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
     catalog,
     level,
     setLevel,
-    /** La partie a été reprise d'une sauvegarde au chargement de la page. */
-    resumed,
+    /** Partie de la visite précédente, encore en cours : coup où elle en était (rien après le premier coup de la nouvelle). */
+    previous: previous && !duel ? { moveNo: Math.floor(previous.ply / 2) + 1 } : null,
+    resumePrevious,
+    /** Partie en direct contre un autre visiteur (null : contre l'Oracle). */
+    duel,
+    duelInfo,
+    startDuel,
+    /** Camp du visiteur, et celui de son adversaire. */
+    me,
+    them,
+    /** Réclamer la victoire : l'adversaire a quitté la page depuis assez longtemps. */
+    claim: () => {
+      const d = duelRef.current;
+      if (d) void emitAck<Ack>('game:claim', { id: d.id }).catch(() => {});
+    },
     boardRef,
     /** Annule les pré-coups en attente sur l'échiquier de la partie. */
     clearPremoves,
     boardProps: {
       pos: state.pos,
-      orientation: PLAYER,
+      orientation: me,
       theme,
       legal,
       onMove: (from: number, to: number, promo?: PieceType) => void onMove(from, to, promo),

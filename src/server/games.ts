@@ -20,6 +20,7 @@ import { botPool } from './bot-pool';
 import { DbClient, one, q, tx } from './db';
 import { gameId, randomToken } from './security';
 import { toSummary } from './summary';
+import { countryOfTimezone } from './timezones';
 
 type IO = Server<ClientToServer, ServerToClient>;
 type Sock = Socket<ClientToServer, ServerToClient, Record<string, never>, { identity: Identity }>;
@@ -576,13 +577,13 @@ function botSeat(level: BotLevel): Seat {
  * Nouvelle partie. Avec cartes, elle commence par le choix des cartes (D5) : mains vides jusqu'à la révélation.
  * Le mode miroir n'existe plus (le paramètre `mirror` des anciens clients est ignoré). Exportée pour les tests.
  */
-export function newRoom(opts: { mode: GameMode; rated: boolean; tc: string; catalog: Catalog; creator: string; seats: Record<Color, Seat | null> }): Room {
+export function newRoom(opts: { mode: GameMode; rated: boolean; tc: string; catalog: Catalog; creator: string; seats: Record<Color, Seat | null>; /** Mains tirées au hasard, sans choix des cartes (parties de l'accueil). */ deal?: boolean }): Room {
   const tc = tcFromId(opts.tc) ?? null;
   let id = gameId();
   while (rooms.has(id)) id = gameId();
   // Réserve : contre l'IA, pas de Sablier fou (il ne pénaliserait que l'humain) ; sans pendule non plus.
   const vsBot = opts.mode === 'bot';
-  const draft = newDraft(opts.catalog, !!tc, vsBot);
+  const draft = opts.deal ? null : newDraft(opts.catalog, !!tc, vsBot);
   const room = new Room({
     id,
     mode: opts.mode,
@@ -877,6 +878,46 @@ setInterval(() => {
 }, 30_000).unref();
 
 // ---------------------------------------------------------------------------------------------
+// Accueil : deux visiteurs arrivés depuis moins de 30 s, l'échiquier du haut sous les yeux, jouent l'un contre l'autre
+// sur cet échiquier, sans rien demander (retour du fondateur du 7 novembre). Partie amicale, sans pendule, mains tirées
+// au hasard comme sur l'accueil ; personne ne joue le premier coup en 45 s : elle est annulée (FIRST_MOVE_MS).
+
+interface HomeVisitor {
+  sock: Sock;
+  key: string;
+  since: number;
+  tz: string;
+  ready: boolean;
+}
+/** Fenêtre d'arrivée : au-delà, le visiteur joue contre l'Oracle, on ne vient plus le chercher. */
+export const HOME_WINDOW_MS = 30_000;
+const homeVisitors = new Map<string, HomeVisitor>();
+
+function pairHomeVisitors() {
+  const t = now();
+  for (const [id, v] of homeVisitors) if (t - v.since > HOME_WINDOW_MS) homeVisitors.delete(id);
+  const ready = [...homeVisitors.values()].filter(v => v.ready).sort((a, b) => a.since - b.since);
+  while (ready.length >= 2) {
+    const a = ready.shift()!;
+    // Jamais contre soi-même (deux onglets du même navigateur)
+    const i = ready.findIndex(v => v.key !== a.key);
+    if (i < 0) break;
+    const b = ready.splice(i, 1)[0];
+    homeVisitors.delete(a.sock.id);
+    homeVisitors.delete(b.sock.id);
+    void startHomeGame(a, b).catch(e => console.error('Partie de l’accueil :', e));
+  }
+}
+
+async function startHomeGame(a: HomeVisitor, b: HomeVisitor) {
+  const [sa, sb] = await Promise.all([seatFor(a.sock.data.identity, 'Visiteur'), seatFor(b.sock.data.identity, 'Visiteur')]);
+  const aWhite = Math.random() < 0.5;
+  const room = newRoom({ mode: 'quick', rated: false, tc: 'none', catalog: 'climats', creator: a.key, seats: aWhite ? { w: sa, b: sb } : { w: sb, b: sa }, deal: true });
+  a.sock.emit('home:paired', { gameId: room.d.id, color: aWhite ? 'w' : 'b', opponent: { country: countryOfTimezone(b.tz) } });
+  b.sock.emit('home:paired', { gameId: room.d.id, color: aWhite ? 'b' : 'w', opponent: { country: countryOfTimezone(a.tz) } });
+}
+
+// ---------------------------------------------------------------------------------------------
 // Socket.IO
 
 const guestNameSchema = z.string().trim().min(2).max(20).regex(/^[\p{L}\p{N} _.-]+$/u);
@@ -1096,7 +1137,24 @@ export function attachSockets(server: IO) {
       sock.emit('queue:status', { waiting: false, tc: null, since: null, players: queueSize() });
     });
 
+    sock.on('home:hello', p => {
+      if (!allow()) return;
+      homeVisitors.set(sock.id, { sock, key: myKey, since: now(), tz: String(p?.tz ?? '').slice(0, 64), ready: !!p?.ready });
+      pairHomeVisitors();
+    });
+    sock.on('home:ready', p => {
+      if (!allow()) return;
+      const v = homeVisitors.get(sock.id);
+      if (!v) return;
+      v.ready = !!p?.ready;
+      if (v.ready) pairHomeVisitors();
+    });
+    sock.on('home:bye', () => {
+      homeVisitors.delete(sock.id);
+    });
+
     sock.on('disconnect', async () => {
+      homeVisitors.delete(sock.id);
       for (const room of joined) {
         room.sockets.delete(sock);
         updatePresence(room);

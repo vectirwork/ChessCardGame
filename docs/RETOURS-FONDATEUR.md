@@ -106,3 +106,49 @@ sélectionné) : corrigé, avec un test (`test/glisser.mjs`).
   se coupent plus (« Grande Marée »).
 
 À confirmer sur le Pixel 7 du fondateur : défilement de l'accueil (nuées) sans scintillement.
+
+## 7 novembre, soir : retours sur les étapes 1 à 4
+
+> « j'aime pas les petites images en image fixe on ne comprend pas […] pas obligé de mettre des flèches jaunes
+> partout […] deux images genre dame qui prend cavalier puis image 2 les deux ont disparu ; recommencer la partie sur
+> l'accueil / trouver un nouvel adversaire ; deux personnes qui viennent d'arriver sur l'accueil jouent l'une contre
+> l'autre […] connecté depuis le PAYS ; « en plus de votre coup » / remplacer ; actif direct ou annoncé ; animations
+> jouées deux fois ; déployer seulement à la fin ; pré-coups sans flèches, plus transparents, numéros épurés ; idées
+> de carte sacrifice ; le site peut m'oublier quand je recharge la page. »
+
+- [x] **Scènes en deux images** (avant → après) : Déflagration (la dame prend le cavalier → les deux disparaissent,
+  case roussie), Mur de glace, Ère glaciaire, Faille (points de coups possibles avant / après), Grande Marée, Sablier
+  fou (pendule normale → ×2, +0 s). Trêve et Lune de sang inchangées. Une seule flèche fine, pour la prise de la
+  Déflagration. L'image de droite rejoue l'action au survol (ou en boucle dans la bulle d'une carte).
+- [x] **Faces des cartes** : en haut « ⚡ Immédiat » ou « ⏳ Au prochain tour » ; en bas « + En plus du coup » ou
+  « Remplace le coup » (libellés entiers dans la bulle, le choix des cartes et les règles).
+- [x] **Présages** : à l'annonce, un sceau discret du côté du lanceur ; la grande animation se joue quand le pouvoir
+  devient actif (échiquier à plat : on peut jouer pendant). Bandeau « Vous annoncez… · Active au début de votre
+  prochain tour ».
+- [x] **Pré-coups** : plus de flèches, fantômes plus transparents, numéro dans une petite pastille noire.
+- [x] **Accueil** : partie neuve à chaque visite, lien discret « Reprendre la partie d'avant (coup N) » ; « Nouvelle
+  partie » et « Trouver un adversaire » directement sur la page.
+- [x] **Partie en direct sur l'accueil** : deux visiteurs arrivés depuis moins de 30 s, l'échiquier du haut sous les
+  yeux (partie contre l'Oracle à peine commencée), sont appariés et jouent l'un contre l'autre sur cet échiquier :
+  « En direct : vous jouez contre une personne qui est aussi sur cette page, connectée depuis la France ». Le pays
+  vient du fuseau horaire du navigateur (pas de géolocalisation par IP, mentionné dans la confidentialité). Mains tirées
+  au hasard, sans pendule ; personne ne joue en 45 s : annulée, retour à l'Oracle. « Jouer plutôt contre l'Oracle »
+  à tout moment ; si l'adversaire quitte la page, bandeau et victoire réclamable.
+
+### À garder en mémoire : idées de carte « sacrifice »
+
+Le principe des huit pouvoirs (ils touchent les deux camps) ne s'applique pas tel quel : un sacrifice est
+asymétrique par nature, c'est son prix (du matériel, parfois le coup) qui l'équilibre.
+
+1. **Bombe à retardement** (Présage) : vous marquez une de vos pièces (pas le roi), visible de tous. Au début de
+   votre prochain tour, elle explose avec les pièces adverses voisines (le roi excepté). L'adversaire a un coup pour
+   s'écarter, ou la prendre (elle explose alors sur sa case). Riche en parades : notre favorite.
+2. **Tribut** (Rituel, symétrique) : vous sacrifiez une pièce ; votre adversaire doit en sacrifier une de valeur égale
+   ou supérieure, de son choix. Fidèle au « tout le monde paie », intéressant quand ses pièces sont toutes utiles.
+3. **Pacte de sang** (Rituel) : vous sacrifiez une pièce ; une pièce adverse de valeur strictement inférieure, choisie
+   par vous, disparaît (le roi est intouchable). Perte de matériel et de temps contre un défenseur clé : fort, à tester.
+4. **Offrande** (Présage) : sacrifier un cavalier gèle les cavaliers adverses 4 coups (de même pour chaque type de
+   pièce). Plus original, plus difficile à lire.
+
+Avant d'en ajouter une, mesurer l'équilibre comme pour les huit autres (parties IA contre IA), et se demander s'il
+faut une neuvième carte ou en remplacer une.

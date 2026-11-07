@@ -12,7 +12,7 @@ import type { Color } from '../../../shared/chess';
 import { CARDS } from '../../../shared/cards';
 import type { Effect } from '../../../shared/game';
 import { CardEmblem } from '../../components/CardArt';
-import { CardScene } from '../../components/CardScene';
+import { CardScene, scenePaired } from '../../components/CardScene';
 import { deNom } from '../../game/names';
 
 const plural = (n: number, w: string) => `${n} ${w}${n > 1 ? 's' : ''}`;
@@ -76,12 +76,12 @@ function grouped(effects: Effect[]) {
   return out;
 }
 
-function Detail({ e, n, you, names, active = false }: { e: Effect; n: number; you: Color | null; names: PowersProps['names']; active?: boolean }) {
+function Detail({ e, n, you, names, active = false, sheet = false }: { e: Effect; n: number; you: Color | null; names: PowersProps['names']; active?: boolean; sheet?: boolean }) {
   const def = CARDS[e.card];
   return (
     <>
-      <div className="gs-pw-scene">
-        <CardScene id={e.card} play="hover" active={active} />
+      <div className={`gs-pw-scene ${scenePaired(e.card) ? 'is-pair' : ''}`}>
+        <CardScene id={e.card} play="hover" active={active} labels={sheet} />
       </div>
       <div className="gs-pw-txt">
         <div className="gs-pw-head">
@@ -147,7 +147,7 @@ export function PowersPanel({ effects, you, names, mobile }: PowersProps) {
               <div className="gs-sheet gs-pw-sheet" role="dialog" aria-label={CARDS[openFx.e.card].name} style={{ '--h': CARDS[openFx.e.card].hue } as CSSProperties} onClick={ev => ev.stopPropagation()}>
                 <div className="gs-pw-row is-sheet">
                   {/* La fiche a été ouverte pour voir ce pouvoir : sa scène se joue */}
-                  <Detail e={openFx.e} n={openFx.n} you={you} names={names} active />
+                  <Detail e={openFx.e} n={openFx.n} you={you} names={names} active sheet />
                 </div>
                 <p className="gs-pw-desc">{CARDS[openFx.e.card].description}</p>
                 <button type="button" className="btn-line gs-sheet-close" onClick={() => setOpen(null)}>

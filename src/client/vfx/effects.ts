@@ -394,8 +394,25 @@ interface Scene {
  * - les pièces masquées (`hooks.hide`) sont réaffichées.
  */
 export function playCast(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks: CastHooks): Promise<void> {
+  // Présage : à l'annonce, un sceau discret du côté du lanceur ; la vraie mise en scène se joue à son arrivée
+  // (playArrival), quand le pouvoir devient actif. Jouer deux fois la grande animation déroutait (retour du 7 novembre).
+  if (CARDS[info.card]?.presage) return runScene(stage, info, skin, hooks, { scene: announceScene, impactAt: 0.45, tilt: false, light: true });
+  return runScene(stage, info, skin, hooks, {});
+}
+
+interface RunOpts {
+  /** Mise en scène à jouer (par défaut, celle de la carte). */
+  scene?: SceneFn;
+  impactAt?: number;
+  /** false : l'échiquier reste à plat (on peut jouer pendant l'animation). */
+  tilt?: false;
+  /** Flash atténué, sans secousse. */
+  light?: boolean;
+}
+
+function runScene(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks: CastHooks, opts: RunOpts): Promise<void> {
   const reduced = stage.reduced || !stage.ok;
-  const impactAt = reduced ? 0.15 : IMPACT_AT[info.card] ?? 0.85;
+  const impactAt = reduced ? 0.15 : opts.impactAt ?? IMPACT_AT[info.card] ?? 0.85;
   return new Promise(resolve => {
     let fired = false;
     let ended = false;
@@ -444,7 +461,7 @@ export function playCast(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks
     if (!stage.ok) return;
 
     try {
-      cine = stage.cinematic(1.25, TILT[info.card] ?? 0.52);
+      cine = opts.tilt === false ? null : stage.cinematic(1.25, TILT[info.card] ?? 0.52);
       const t0 = info.targets[0] !== undefined ? stage.local(info.targets[0]) : new THREE.Vector3(0, 0, 0);
       const sc: Scene = {
         stage, info, skin, pal: palette(skin), hooks: safeHooks, impactAt, t0, center: new THREE.Vector3(0, 0, 0),
@@ -456,8 +473,8 @@ export function playCast(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks
               console.error('[vfx]', err);
             }
             fire();
-            stage.flash(skin.primary, skin.flash * (FLASH[info.card] ?? 0.6));
-            stage.shake(skin.shake * (SHAKE[info.card] ?? 0.7));
+            stage.flash(skin.primary, skin.flash * (FLASH[info.card] ?? 0.6) * (opts.light ? 0.3 : 1));
+            if (!opts.light) stage.shake(skin.shake * (SHAKE[info.card] ?? 0.7));
           });
         },
         mood: (cls, ms) => {
@@ -465,7 +482,7 @@ export function playCast(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks
           window.setTimeout(() => stage.wrap.classList.remove(cls), ms);
         },
       };
-      (SCENES[info.card] ?? genericScene)(sc);
+      (opts.scene ?? SCENES[info.card] ?? genericScene)(sc);
     } catch (err) {
       console.error('[vfx]', err);
       fire();
@@ -1005,22 +1022,24 @@ function tideScene({ stage, skin, info, impactAt, onImpact, mood }: Scene) {
 }
 
 /**
- * Arrivée d'un Présage (l'effet annoncé devient actif au début du tour du lanceur) : une onde parcourt le
- * plateau, sans incliner l'échiquier ni bloquer la partie.
+ * Arrivée d'un Présage (l'effet annoncé devient actif au début du tour du lanceur) : la vraie mise en scène de la
+ * carte, celle que l'annonce a gardée pour ce moment. L'échiquier reste à plat : c'est le tour du lanceur, il peut
+ * jouer pendant l'animation ; l'état de la partie est déjà à jour (rien à appliquer à l'impact).
  */
 export function playArrival(stage: VfxStage, e: Effect, skin: SkinStyle) {
   if (!stage.ok) return;
-  const col = cardColor(e.card, 0.66);
+  const info: CardInfo = { card: e.card, caster: e.caster, targets: [], pieces: [], skin: e.skin };
+  void runScene(stage, info, skin, { impact: () => {} }, { tilt: false });
+}
+
+/** Annonce d'un Présage : un sceau s'allume du côté du lanceur, sans plus ; la carte agira à son prochain tour. */
+function announceScene({ stage, skin, info, impactAt, onImpact }: Scene) {
+  const col = cardColor(info.card, 0.66);
   const s2 = tinted(skin, '#' + col.getHexString(), 0.6);
-  const center = new THREE.Vector3(0, 0, 0);
-  // L'onde part du camp du lanceur
-  const fromY = (e.caster === stage.orientation ? -1 : 1) * 3.6;
-  sweep(stage, glowColor(s2), fromY, -fromY, 1.1, 0, 1.4, 0.7);
-  shockwave(stage, glowColor(s2), center, 6.5, 1.1, 0.2, 0.04);
-  flourishDisk(stage, s2, center, 3, 1.5, 0.1, 0.5);
-  if (e.card === 'ice_age') fall(stage, s2, 70, 0.9, 0.1);
-  else burst(stage, s2, new THREE.Vector3(0, 0, 0.4), 50, 3, 0.9, 0.12, { up: 0.5 });
-  stage.flash('#' + col.getHexString(), skin.flash * 0.4);
+  const at = new THREE.Vector3(0, (info.caster === stage.orientation ? -1 : 1) * 2.6, 0.2);
+  flourishDisk(stage, s2, at, 1.3, impactAt + 1, 0, 0.8);
+  converge(stage, s2, at, 36, 1.6, impactAt);
+  onImpact(() => shockwave(stage, glowColor(s2), at, 2.2, 0.7, 0, 0.04));
 }
 
 /** Flot de particules qui s'élève en arc d'une case à l'autre. */

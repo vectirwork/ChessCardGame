@@ -1,7 +1,10 @@
 // Scènes explicatives des 8 pouvoirs : un cas typique sur un petit échiquier (CardScene).
 //
-// Image fixe : la position de départ et des flèches numérotées (1, 2…) qui racontent le cas ; une flèche barrée dit
-// ce qui est interdit. Animée (survol, bulle d'une carte) : les étapes se jouent, puis la scène recommence.
+// Deux sortes de scènes :
+// - deux images, « avant » et « après » (`pair`) : la position de départ, puis l'effet du pouvoir. Les coups possibles
+//   sont des points, comme sur l'échiquier ; une seule flèche fine, quand une prise doit se voir (Déflagration).
+//   Animée (survol, bulle d'une carte) : l'image de droite rejoue l'action, celle de gauche reste le point de départ.
+// - une seule image avec des flèches (Trêve, Lune de sang) : un coup interdit (flèche barrée) ou forcé.
 // Coordonnées propres à la scène : colonnes a, b, c…, rangées 1 (en bas) à `rows`.
 import type { CardId } from '../../shared/cards';
 import type { Color, PieceType } from '../../shared/chess';
@@ -16,8 +19,8 @@ export interface ScenePiece {
 export interface SceneArrow {
   from: string;
   to: string;
-  /** gold : le coup du lanceur ou du joueur ; red : la réponse, ou l'interdit ; cyan : un mouvement d'ensemble */
-  tone: 'gold' | 'red' | 'cyan';
+  /** gold : le coup du joueur ; red : la réponse, ou l'interdit ; cyan : un mouvement d'ensemble ; white : discret */
+  tone: 'gold' | 'red' | 'cyan' | 'white';
   /** Numéro de l'étape, affiché en petit au départ de la flèche. */
   n?: number;
   /** Coup interdit par le pouvoir : flèche barrée. */
@@ -37,20 +40,40 @@ export interface SceneStep {
   hold?: number;
 }
 
+export type SceneMark = { at: string; kind: 'wall' | 'rift' | 'frost' | 'scorch' };
+
+/** Ce qu'une image d'une paire montre en plus des pièces. */
+export interface PanelDecor {
+  /** Coups possibles (points), comme sur l'échiquier. */
+  dots?: string[];
+  /** Prises possibles (anneaux). */
+  rings?: string[];
+  /** Cases du coup joué, surlignées comme le dernier coup d'une partie. */
+  hl?: string[];
+  marks?: SceneMark[];
+  /** Une flèche fine et discrète. */
+  arrow?: { from: string; to: string };
+}
+
 export interface CardSceneDef {
   cols: number;
   rows: number;
   pieces: ScenePiece[];
-  /** Cases transformées : Mur de glace, gouffre de la Faille, givre sur un pion gelé. */
-  marks?: { at: string; kind: 'wall' | 'rift' | 'frost' }[];
-  /** Teinte de l'échiquier pendant le pouvoir. */
+  /** Image unique : cases transformées (Mur de glace, gouffre de la Faille, givre sur un pion gelé). */
+  marks?: SceneMark[];
+  /** Teinte de l'échiquier pendant le pouvoir (image unique, ou image « après »). */
   tint?: 'moon' | 'frost' | 'truce' | 'blast' | 'rift' | 'tide';
   arrows: SceneArrow[];
   steps: SceneStep[];
   /** Ce que montre la scène, en une phrase (texte alternatif et légende). */
   caption: string;
-  /** Sablier fou : deux pendules au lieu d'un échiquier. */
+  /** Sablier fou : des pendules au lieu d'un échiquier. */
   clocks?: boolean;
+  /**
+   * Deux images, avant et après. `afterAt` : étape à partir de laquelle l'image de droite montre l'effet (marques,
+   * points, teinte) quand elle s'anime ; par défaut, la dernière.
+   */
+  pair?: { labels: [string, string]; before: PanelDecor; after: PanelDecor; afterAt?: number };
 }
 
 export const CARD_SCENES: Partial<Record<CardId, CardSceneDef>> = {
@@ -89,112 +112,112 @@ export const CARD_SCENES: Partial<Record<CardId, CardSceneDef>> = {
     caption: 'Trêve : personne ne prend. La tour ne peut pas prendre le cavalier, elle joue ailleurs.',
   },
   ice_age: {
-    cols: 4,
-    rows: 4,
+    cols: 3,
+    rows: 3,
     tint: 'frost',
     pieces: [
-      { id: 'p', c: 'w', t: 'p', at: 'b2' },
-      { id: 'x', c: 'b', t: 'p', at: 'c3' },
-      { id: 'n', c: 'w', t: 'n', at: 'd1' },
+      { id: 'p', c: 'w', t: 'p', at: 'a2' },
+      { id: 'x', c: 'b', t: 'p', at: 'b3' },
     ],
-    marks: [
-      { at: 'b2', kind: 'frost' },
-      { at: 'c3', kind: 'frost' },
-    ],
-    arrows: [
-      { from: 'b2', to: 'c3', tone: 'red', blocked: true },
-      { from: 'd1', to: 'c3', tone: 'gold', n: 1 },
-    ],
-    steps: [{ shake: 'p' }, { moves: [['n', 'c3']], remove: ['x'], hold: 1300 }],
-    caption: 'Les pions gelés ne bougent ni ne prennent : ce sont les autres pièces qui jouent.',
+    arrows: [],
+    steps: [{ hold: 1700 }],
+    pair: {
+      labels: ['Avant', 'Pions gelés : ils ne bougent plus'],
+      before: { dots: ['a3'], rings: ['b3'] },
+      after: { marks: [{ at: 'a2', kind: 'frost' }, { at: 'b3', kind: 'frost' }] },
+      afterAt: 1,
+    },
+    caption: 'Ère glaciaire : avant, le pion peut avancer ou prendre ; pendant, les pions gelés ne bougent ni ne prennent.',
   },
   blast: {
-    cols: 4,
-    rows: 4,
+    cols: 3,
+    rows: 3,
     tint: 'blast',
     pieces: [
-      { id: 'n', c: 'w', t: 'n', at: 'b1' },
-      { id: 'q', c: 'b', t: 'q', at: 'c3' },
-      { id: 'p', c: 'b', t: 'p', at: 'd4' },
+      { id: 'q', c: 'w', t: 'q', at: 'a1' },
+      { id: 'n', c: 'b', t: 'n', at: 'c3' },
+      { id: 'p', c: 'b', t: 'p', at: 'b3' },
     ],
-    arrows: [{ from: 'b1', to: 'c3', tone: 'gold', n: 1 }],
-    steps: [{ moves: [['n', 'c3']], hold: 450 }, { remove: ['n', 'q'], burst: 'c3', hold: 1500 }],
-    caption: 'Chaque prise est un sacrifice : le cavalier prend la dame et disparaît avec elle. Le pion voisin ne craint rien.',
+    arrows: [],
+    steps: [{ moves: [['q', 'c3']], hold: 500 }, { remove: ['q', 'n'], burst: 'c3', hold: 1700 }],
+    pair: {
+      labels: ['La dame prend le cavalier', 'Les deux disparaissent'],
+      before: { hl: ['a1', 'c3'], arrow: { from: 'a1', to: 'c3' } },
+      after: { marks: [{ at: 'c3', kind: 'scorch' }] },
+      afterAt: 2,
+    },
+    caption: 'Déflagration : la dame prend le cavalier et explose avec lui. Le pion voisin ne craint rien.',
   },
   ice_wall: {
-    cols: 4,
-    rows: 4,
-    pieces: [
-      { id: 'r', c: 'w', t: 'r', at: 'a2' },
-      { id: 'n', c: 'b', t: 'n', at: 'd2' },
-    ],
-    marks: [{ at: 'c2', kind: 'wall' }],
-    arrows: [
-      { from: 'a2', to: 'd2', tone: 'red', blocked: true },
-      { from: 'a2', to: 'b2', tone: 'gold', n: 1 },
-    ],
-    steps: [{ shake: 'r' }, { moves: [['r', 'b2']], hold: 1300 }],
-    caption: 'Le Mur de glace ferme sa case jusqu’à la fin de la partie : la tour ne passe plus.',
+    cols: 3,
+    rows: 3,
+    pieces: [{ id: 'r', c: 'w', t: 'r', at: 'a2' }],
+    arrows: [],
+    steps: [{ hold: 1700 }],
+    pair: {
+      labels: ['Sans le mur', 'Le mur arrête la tour'],
+      before: { dots: ['b2', 'c2', 'a1', 'a3'] },
+      after: { marks: [{ at: 'b2', kind: 'wall' }], dots: ['a1', 'a3'] },
+      afterAt: 1,
+    },
+    caption: 'Mur de glace : la case devient infranchissable jusqu’à la fin de la partie, la tour ne passe plus.',
   },
   rift: {
-    cols: 4,
-    rows: 4,
+    cols: 3,
+    rows: 3,
     tint: 'rift',
-    pieces: [
-      { id: 'r', c: 'w', t: 'r', at: 'b1' },
-      { id: 'n', c: 'w', t: 'n', at: 'c1' },
-      { id: 'p', c: 'b', t: 'p', at: 'b4' },
-    ],
-    marks: [
-      { at: 'a2', kind: 'rift' },
-      { at: 'b2', kind: 'rift' },
-      { at: 'c2', kind: 'rift' },
-      { at: 'd2', kind: 'rift' },
-    ],
-    arrows: [
-      { from: 'b1', to: 'b4', tone: 'red', blocked: true },
-      { from: 'c1', to: 'd3', tone: 'gold', n: 1 },
-    ],
-    steps: [{ shake: 'r' }, { moves: [['n', 'd3']], hold: 1300 }],
-    caption: 'La Faille coupe le plateau : aucune pièce ne la traverse, sauf le cavalier qui saute.',
+    pieces: [{ id: 'r', c: 'w', t: 'r', at: 'a1' }],
+    arrows: [],
+    steps: [{ hold: 1700 }],
+    pair: {
+      labels: ['Avant', 'La faille coupe le plateau'],
+      before: { dots: ['a2', 'a3', 'b1', 'c1'] },
+      after: {
+        marks: [
+          { at: 'a2', kind: 'rift' },
+          { at: 'b2', kind: 'rift' },
+          { at: 'c2', kind: 'rift' },
+        ],
+        dots: ['b1', 'c1'],
+      },
+      afterAt: 1,
+    },
+    caption: 'Faille : une rangée devient un gouffre. Aucune pièce ne la traverse, sauf le cavalier qui saute.',
   },
   tide: {
     cols: 4,
-    rows: 4,
+    rows: 3,
     tint: 'tide',
     pieces: [
-      { id: 'w1', c: 'w', t: 'p', at: 'a2' },
-      { id: 'w2', c: 'w', t: 'p', at: 'c2' },
+      { id: 'w1', c: 'w', t: 'p', at: 'a1' },
+      { id: 'w2', c: 'w', t: 'p', at: 'c1' },
       { id: 'b1', c: 'b', t: 'p', at: 'b3' },
       { id: 'b2', c: 'b', t: 'p', at: 'd3' },
     ],
-    arrows: [
-      { from: 'a2', to: 'a3', tone: 'cyan' },
-      { from: 'c2', to: 'c3', tone: 'cyan' },
-      { from: 'b3', to: 'b2', tone: 'cyan' },
-      { from: 'd3', to: 'd2', tone: 'cyan' },
-    ],
+    arrows: [],
     steps: [
       {
         moves: [
-          ['w1', 'a3'],
-          ['w2', 'c3'],
+          ['w1', 'a2'],
+          ['w2', 'c2'],
           ['b1', 'b2'],
           ['b2', 'd2'],
         ],
-        hold: 1500,
+        hold: 1700,
       },
     ],
-    caption: 'La carte remplace votre coup : tous les pions des deux camps avancent d’une case.',
+    pair: { labels: ['Avant', 'Tous les pions avancent'], before: {}, after: {}, afterAt: 1 },
+    caption: 'Grande Marée : la carte remplace votre coup, tous les pions des deux camps avancent d’une case.',
   },
   hourglass: {
-    cols: 4,
+    cols: 2,
     rows: 2,
     clocks: true,
     pieces: [],
     arrows: [],
     steps: [{ hold: 2600 }],
-    caption: 'Les deux pendules s’écoulent deux fois plus vite, et les coups ne rapportent plus d’incrément.',
+    pair: { labels: ['Pendule normale', 'Deux fois plus vite, sans incrément'], before: {}, after: {}, afterAt: 1 },
+    caption: 'Sablier fou : les deux pendules s’écoulent deux fois plus vite, et les coups ne rapportent plus d’incrément.',
   },
 };
 

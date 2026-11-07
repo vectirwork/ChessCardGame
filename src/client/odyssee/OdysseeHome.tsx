@@ -27,6 +27,8 @@ import { GameShell, PowersPanel, PremoveNote, cardName, castMessage, castThisTur
 import type { ShellAction } from './shell';
 import type { Act } from './StageBoard';
 import { useHumanQueue } from './useHumanQueue';
+import { useHomeLobby } from './useHomeLobby';
+import { countryName, fromCountry } from './country';
 import type { HumanQueue } from './useHumanQueue';
 import { useLiveGame } from './useLiveGame';
 import type { LiveGame } from './useLiveGame';
@@ -74,9 +76,9 @@ function HumanOption({ q, compact }: { q: HumanQueue; compact?: boolean }) {
   return (
     <p className="o-human">
       <button type="button" className="o-link" onClick={() => void q.join()}>
-        Affronter un humain
+        Trouver un adversaire
       </button>
-      {!compact && <span className="o-human-sub">partie amicale, 10 minutes, sans compte</span>}
+      {!compact && <span className="o-human-sub">une vraie personne, partie amicale de 10 minutes, sans compte</span>}
       {q.status === 'error' && q.error && <span className="o-human-err">{q.error}</span>}
     </p>
   );
@@ -97,9 +99,12 @@ function LevelPick({ level, onChange }: { level: BotLevel; onChange: (l: BotLeve
 }
 
 function statusOf(g: LiveGame) {
-  if (g.result) return g.result.winner === 'w' ? 'Victoire.' : g.result.winner === 'b' ? 'Défaite.' : 'Partie nulle.';
+  if (g.result) {
+    if (g.result.reason === 'aborted') return 'Partie annulée.';
+    return g.result.winner === g.me ? 'Victoire.' : g.result.winner === g.them ? 'Défaite.' : 'Partie nulle.';
+  }
   if (g.casting) return 'Le sort se déploie…';
-  if (g.state.pos.turn === 'b') return "L'Oracle réfléchit…";
+  if (g.state.pos.turn === g.them) return g.duel ? 'Au tour de votre adversaire.' : "L'Oracle réfléchit…";
   if (g.boardProps.check !== null) return 'Échec au roi.';
   return 'À vous de jouer.';
 }
@@ -405,8 +410,71 @@ export default function OdysseeHome() {
   useEffect(() => {
     if (!g.lastCast) return;
     const name = cardName(g.lastCast.card);
-    setToast({ text: g.lastCast.by === 'bot' ? `L'Oracle lance ${name}` : `Vous lancez ${name}`, key: g.lastCast.key });
+    const them = g.duel ? 'Votre adversaire' : "L'Oracle";
+    setToast({ text: g.lastCast.by === 'bot' ? `${them} lance ${name}` : `Vous lancez ${name}`, key: g.lastCast.key });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [g.lastCast]);
+
+  // ------------------------------------------------------------------------------------------
+  // Partie en direct : deux visiteurs arrivés en même temps jouent l'un contre l'autre sur cet échiquier
+
+  const [tabVisible, setTabVisible] = useState(() => typeof document === 'undefined' || document.visibilityState === 'visible');
+  useEffect(() => {
+    const on = () => setTabVisible(document.visibilityState === 'visible');
+    document.addEventListener('visibilitychange', on);
+    return () => document.removeEventListener('visibilitychange', on);
+  }, []);
+  // Prêt : échiquier du haut sous les yeux (ou partie en plein écran), partie contre l'Oracle à peine commencée
+  const lobbyReady =
+    tabVisible && !g.duel && !g.result && g.state.ply <= 4 && q.status !== 'waiting' && q.status !== 'joining' && (mode === 'game' || (mode === 'page' && place === 0));
+  const startDuel = g.startDuel;
+  useHomeLobby(lobbyReady, d => {
+    startDuel(d);
+    const where = fromCountry(d.country);
+    notify(`Une personne vient d’arriver sur cette page${where ? `, ${where}` : ''} : vous jouez l’un contre l’autre.`);
+  });
+  const oppLabel = g.duel ? 'Votre adversaire' : "L'Oracle";
+  const oppFrom = g.duel ? fromCountry(g.duel.country) : null;
+  const oppCountry = g.duel?.country ? countryName(g.duel.country) : null;
+  // L'adversaire a quitté la page : réclamer la victoire (passé le délai), ou revenir à l'Oracle
+  const [, tick] = useState(0);
+  const away = g.duel && !g.result ? g.duelInfo?.away ?? null : null;
+  useEffect(() => {
+    if (away === null) return;
+    const i = window.setInterval(() => tick(x => x + 1), 1000);
+    return () => window.clearInterval(i);
+  }, [away]);
+  const claimIn = away !== null && g.duelInfo ? Math.max(0, Math.ceil((away + g.duelInfo.claimAfterMs - Date.now()) / 1000)) : 0;
+  // Partie en direct annulée avant le moindre coup (personne n'a joué en 45 s) : retour à l'Oracle, sans rien demander
+  const abortedEmpty = !!g.duel && g.result?.reason === 'aborted' && g.state.ply === 0;
+  const newGameNow = g.newGame;
+  useEffect(() => {
+    if (!abortedEmpty) return;
+    const t = window.setTimeout(() => {
+      newGameNow();
+      notify('Personne n’a joué : la partie en direct est annulée, l’Oracle reprend.');
+    }, 2500);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abortedEmpty]);
+  const duelBanner =
+    away !== null ? (
+      <div className="gp-offer is-away" role="status">
+        <p>Votre adversaire a quitté la page.</p>
+        <div className="gp-offer-actions">
+          {claimIn > 0 ? (
+            <small>Victoire réclamable dans {claimIn} s, s'il ne revient pas.</small>
+          ) : (
+            <button type="button" className="btn-gold sm" onClick={g.claim}>
+              Réclamer la victoire
+            </button>
+          )}
+          <button type="button" className="btn-line" onClick={g.newGame}>
+            Revenir à l’Oracle
+          </button>
+        </div>
+      </div>
+    ) : null;
 
   // ------------------------------------------------------------------------------------------
   // Échiquier jouable : zéro clic depuis l'accueil
@@ -423,7 +491,7 @@ export default function OdysseeHome() {
     () => ({
       ...g.boardProps,
       locked: g.boardProps.locked || !liveInteractive,
-      premove: liveInteractive && !g.result ? ('w' as const) : null,
+      premove: liveInteractive && !g.result ? g.me : null,
       onPremoves: setPremoves,
       onMove: (from: number, to: number, promo?: Parameters<typeof onMove>[2]) => {
         const ok = onMove(from, to, promo);
@@ -431,7 +499,7 @@ export default function OdysseeHome() {
         if (ok && modeRef.current === 'page') play();
       },
     }),
-    [g.boardProps, liveInteractive, onMove, play, g.result],
+    [g.boardProps, liveInteractive, onMove, play, g.result, g.me],
   );
 
   const wake = (on: boolean) => {
@@ -531,13 +599,14 @@ export default function OdysseeHome() {
     else if (!inProgress)
       captionBody = (
         <>
-          <span className="o-live-dot idle" />
+          <span className={`o-live-dot ${g.duel ? '' : 'idle'}`} />
           <span>
-            Vous avez les Blancs <span className="o-cap-sep">·</span> <b>jouez votre premier coup</b>
+            {g.me === 'w' ? 'Vous avez les Blancs' : 'Vous avez les Noirs'} <span className="o-cap-sep">·</span>{' '}
+            <b>{g.me === 'w' ? 'jouez votre premier coup' : 'à votre adversaire de commencer'}</b>
           </span>
         </>
       );
-    else if (g.state.pos.turn === 'b')
+    else if (g.state.pos.turn === g.them)
       captionBody = (
         <>
           <span className="o-live-dot idle" />
@@ -768,8 +837,29 @@ export default function OdysseeHome() {
             <Kicker num="I" name="L'Observatoire" />
             <Lines as="h1" className="o-display" lines={['Les échecs', 'ont appris', <em key="m">la magie.</em>]} />
             <p className="o-lede o-rv" style={{ '--i': 3 } as CSSProperties}>
-              Une vraie partie d'échecs, trois cartes de pouvoir, un sort par tour. La partie est déjà ouverte : {mobile ? 'touchez une pièce' : 'déplacez une pièce'} sur l'échiquier, l'Oracle vous répond.
+              Une vraie partie d'échecs, trois cartes de pouvoir, un sort par tour. La partie est déjà ouverte : {mobile ? 'touchez une pièce' : 'déplacez une pièce'} sur l'échiquier, {g.duel ? 'votre adversaire vous répond' : 'l’Oracle vous répond'}.
             </p>
+            {g.duel && (
+              <p className={`o-duel-note ${away !== null ? 'is-away' : ''}`} role="status">
+                <span className="o-live-dot" style={{ '--h': away !== null ? 30 : 150 } as CSSProperties} />
+                {away !== null ? (
+                  <span>
+                    Votre adversaire a quitté la page.{' '}
+                    {claimIn > 0 ? (
+                      <small>Victoire réclamable dans {claimIn} s.</small>
+                    ) : (
+                      <button type="button" className="o-link" onClick={g.claim}>
+                        Réclamer la victoire
+                      </button>
+                    )}
+                  </span>
+                ) : (
+                  <span>
+                    <b>En direct</b> : vous jouez contre une personne qui est aussi sur cette page{oppFrom ? `, connectée ${oppFrom}` : ''}.
+                  </span>
+                )}
+              </p>
+            )}
             <div className="o-hand-row o-rv" style={{ '--i': 4 } as CSSProperties} onPointerEnter={wantPlay} onFocus={wantPlay}>
               <div className="o-hand-mini" aria-label="Vos trois sorts">
                 {g.hand.map((h, i) =>
@@ -798,10 +888,10 @@ export default function OdysseeHome() {
                 </span>
               </div>
             </div>
-            {g.state.hands.b.length > 0 && (
-              <p className="o-hand-opp o-rv" style={{ '--i': 4 } as CSSProperties} aria-label="Cartes de l'Oracle, visibles">
-                <span className="o-hand-opp-k">L'Oracle tient</span>
-                {g.state.hands.b.map((h, i) =>
+            {g.state.hands[g.them].length > 0 && (
+              <p className="o-hand-opp o-rv" style={{ '--i': 4 } as CSSProperties} aria-label={`Cartes ${g.duel ? 'de votre adversaire' : "de l'Oracle"}, visibles`}>
+                <span className="o-hand-opp-k">{g.duel ? 'Votre adversaire tient' : "L'Oracle tient"}</span>
+                {g.state.hands[g.them].map((h, i) =>
                   h.card && h.card in CARDS ? (
                     <span key={i} className={h.used ? 'is-used' : ''} title={`${CARDS[h.card].name}${h.used ? ' (jouée)' : ''} : ${CARDS[h.card].description}`}>
                       {CARDS[h.card].name}
@@ -811,11 +901,36 @@ export default function OdysseeHome() {
               </p>
             )}
             <div className="o-opts o-rv" style={{ '--i': 5 } as CSSProperties}>
-              <div className="o-opts-line">
-                <span className="o-opts-k">Contre</span>
-                <span>L'Oracle, IA</span>
-                <LevelPick level={g.level} onChange={g.setLevel} />
-              </div>
+              {g.duel ? (
+                <div className="o-opts-line">
+                  <span className="o-opts-k">Contre</span>
+                  <span>une personne aussi sur cette page{oppCountry ? ` (${oppCountry})` : ''}</span>
+                  <button type="button" className="o-link" onClick={g.newGame}>
+                    {g.result ? 'Rejouer contre l’Oracle' : 'Jouer plutôt contre l’Oracle'}
+                  </button>
+                </div>
+              ) : (
+                <div className="o-opts-line">
+                  <span className="o-opts-k">Contre</span>
+                  <span>L'Oracle, IA</span>
+                  <LevelPick level={g.level} onChange={g.setLevel} />
+                </div>
+              )}
+              {/* Recommencer, ou retrouver la partie de la visite précédente, sans passer par le plein écran */}
+              {!g.duel && (g.state.ply > 0 || g.result || g.previous) && (
+                <p className="o-restart">
+                  {(g.state.ply > 0 || g.result) && (
+                    <button type="button" className="o-link" onClick={g.newGame}>
+                      Nouvelle partie
+                    </button>
+                  )}
+                  {g.previous && g.state.ply === 0 && (
+                    <button type="button" className="o-link is-quiet" onClick={g.resumePrevious}>
+                      Reprendre la partie d’avant (coup {g.previous.moveNo})
+                    </button>
+                  )}
+                </p>
+              )}
               <HumanOption q={q} />
             </div>
             <button type="button" className="o-kbd-play" onClick={() => play()}>
@@ -1094,18 +1209,19 @@ export default function OdysseeHome() {
         active={mode === 'game'}
         onBack={leave}
         backLabel="Retour à la page"
-        badge="Partie locale · aucun compte"
-        kicker={`Coup ${moveNo} · L'Oracle, ${levelName(g.level).toLowerCase()}`}
+        badge={g.duel ? 'En direct · aucun compte' : 'Partie locale · aucun compte'}
+        kicker={g.duel ? `Coup ${moveNo} · partie en direct` : `Coup ${moveNo} · L'Oracle, ${levelName(g.level).toLowerCase()}`}
         title={statusOf(g)}
+        banner={duelBanner}
         hint={
           !g.myTurn && !g.result ? (
             <>
-              L'Oracle prépare sa réponse.
+              {g.duel ? 'Votre adversaire réfléchit.' : 'L’Oracle prépare sa réponse.'}
               <PremoveNote n={premoves} mobile={mobile} onCancel={g.clearPremoves} />
             </>
           ) : g.state.cardPlayed && g.myTurn ? (
             <>
-              {castMessage(castThisTurn(g.state, 'w') ?? 'tide')}
+              {castMessage(castThisTurn(g.state, g.me) ?? 'tide')}
               <small>Une seule carte par tour. Revenez à la page quand vous voulez : la partie vous attend.</small>
             </>
           ) : (
@@ -1122,7 +1238,7 @@ export default function OdysseeHome() {
                 actions: (
                   <>
                     <button type="button" className="btn-gold sm" onClick={g.newGame}>
-                      Rejouer
+                      {g.duel ? 'Rejouer contre l’Oracle' : 'Rejouer'}
                     </button>
                     <button type="button" className="btn-line" onClick={leave}>
                       Retour à la page
@@ -1134,20 +1250,26 @@ export default function OdysseeHome() {
         }
         prompt={prompt}
         actions={shellActions}
-        powers={!g.result && g.state.effects.length > 0 && <PowersPanel effects={g.state.effects} you="w" names={{ b: "L'Oracle" }} mobile={mobile} />}
+        powers={!g.result && g.state.effects.length > 0 && <PowersPanel effects={g.state.effects} you={g.me} names={{ [g.them]: oppLabel }} mobile={mobile} />}
         statusExtra={
-          <div className="o-shell-extra">
-            <LevelPick level={g.level} onChange={g.setLevel} />
-            <HumanOption q={q} compact={mobile} />
-          </div>
+          g.duel ? undefined : (
+            <div className="o-shell-extra">
+              <LevelPick level={g.level} onChange={g.setLevel} />
+              <HumanOption q={q} compact={mobile} />
+            </div>
+          )
         }
-        opponent={{ name: "L'Oracle", sub: `IA · niveau ${levelName(g.level)}`, hand: g.state.hands.b, handLabel: "Cartes de l'Oracle" }}
+        opponent={
+          g.duel
+            ? { name: 'Votre adversaire', sub: oppCountry ? `En direct · ${oppCountry}` : 'En direct, sur cette page', hand: g.state.hands[g.them], handLabel: 'Cartes de votre adversaire' }
+            : { name: "L'Oracle", sub: `IA · niveau ${levelName(g.level)}`, hand: g.state.hands.b, handLabel: "Cartes de l'Oracle" }
+        }
         hand={g.hand}
         playable={g.playable}
         selected={g.selected}
         onPickCard={g.pickCard}
-        notes={mode === 'game' ? handNotes(g.state, 'w', g.myTurn, g.playable) : undefined}
-        cast={g.myTurn ? castThisTurn(g.state, 'w') : null}
+        notes={mode === 'game' ? handNotes(g.state, g.me, g.myTurn, g.playable) : undefined}
+        cast={g.myTurn ? castThisTurn(g.state, g.me) : null}
         toast={toast}
       />
 

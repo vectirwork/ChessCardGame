@@ -1,16 +1,20 @@
 // Scène explicative d'un pouvoir (voir cardScenes.ts) : un cas typique sur un petit échiquier.
 //
-// - `still` : image fixe, la position de départ et ses flèches numérotées ;
-// - `hover` : image fixe qui s'anime au survol, au focus clavier, ou au toucher (pouvoirs en cours : aucune animation
-//   n'attire l'œil pendant la partie tant qu'on ne la demande pas) ;
-// - `auto` : animée en boucle (bulle d'une carte, avant de la lancer).
-// Mouvement réduit : toujours l'image fixe. Styles : styles/cards.css (classes csn-*).
+// La plupart des pouvoirs se montrent en deux images, « avant » et « après » ; Trêve et Lune de sang, en une image
+// avec leurs flèches. Modes :
+// - `still` : images fixes ;
+// - `hover` : images fixes, l'action se rejoue au survol, au focus clavier ou au toucher (pouvoirs en cours : aucune
+//   animation n'attire l'œil pendant la partie tant qu'on ne la demande pas) ;
+// - `auto` : l'action se rejoue en boucle (bulle d'une carte, avant de la lancer).
+// En deux images, seule celle de droite s'anime : celle de gauche reste le point de départ.
+// `active` : le parent demande l'animation (ligne survolée, tuile). Mouvement réduit : toujours fixe.
+// Styles : styles/cards.css (classes csn-*).
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, FocusEvent, PointerEvent } from 'react';
+import type { CSSProperties, FocusEvent, PointerEvent, ReactNode } from 'react';
 import type { CardId } from '../../shared/cards';
 import { boardStyle } from '../../shared/catalog';
 import { CARD_SCENES, sceneXY } from './cardScenes';
-import type { CardSceneDef, SceneArrow } from './cardScenes';
+import type { CardSceneDef, PanelDecor, SceneArrow, SceneMark } from './cardScenes';
 import { pieceUrl } from './pieces';
 
 type Play = 'still' | 'hover' | 'auto';
@@ -41,6 +45,7 @@ function stateAfter(def: CardSceneDef, n: number) {
   });
   return { at, gone, burst, shake };
 }
+type SceneState = ReturnType<typeof stateAfter>;
 
 function Arrow({ a, rows }: { a: SceneArrow; rows: number }) {
   const p = (s: string) => {
@@ -80,36 +85,112 @@ function Arrow({ a, rows }: { a: SceneArrow; rows: number }) {
   );
 }
 
-function Clocks({ running }: { running: boolean }) {
-  return (
-    <div className={`csn-clocks ${running ? 'is-fast' : ''}`}>
-      {[0, 1].map(i => (
-        <svg key={i} viewBox="0 0 100 100" className="csn-dial" aria-hidden="true">
-          <circle cx="50" cy="50" r="40" />
-          {Array.from({ length: 12 }, (_, k) => (
-            <line key={k} x1="50" y1="14" x2="50" y2={k % 3 === 0 ? 22 : 18} transform={`rotate(${k * 30} 50 50)`} />
-          ))}
-          <line className="csn-hand" x1="50" y1="50" x2="50" y2="20" style={{ animationDelay: `${-i * 0.4}s` }} />
-          <circle cx="50" cy="50" r="4" className="csn-hub" />
-        </svg>
-      ))}
-      <span className="csn-x2">×2</span>
-    </div>
-  );
-}
-
 const boardColors = (() => {
   const bs = boardStyle(undefined);
   return { '--light': bs.light, '--dark': bs.dark } as CSSProperties;
 })();
 
-export function CardScene({ id, play = 'hover', className = '', active = false }: { id: CardId; play?: Play; className?: string; /** Animée tant que vrai, quel que soit `play` (le parent gère le survol : ligne d'un pouvoir, tuile). */ active?: boolean }) {
+/** Style d'un élément posé sur une case de la scène (marque, point, surlignage, pièce). */
+function cell(def: CardSceneDef, at: string, extra?: CSSProperties) {
+  const { x, y } = sceneXY(at);
+  return { '--x': x, '--y': def.rows - 1 - y, ...extra } as CSSProperties;
+}
+
+/** Un petit échiquier : cases, surlignages, marques, points, pièces, explosion, flèches. */
+function Board({ def, st, decor, marks, arrows, tint, moving, reset, live, children }: {
+  def: CardSceneDef;
+  st: SceneState;
+  decor?: PanelDecor;
+  marks?: SceneMark[];
+  arrows: SceneArrow[];
+  tint: boolean;
+  moving: boolean;
+  reset: boolean;
+  /** Animation en cours : ce qui apparaît (mur, givre, points) le fait en douceur. */
+  live: boolean;
+  children?: ReactNode;
+}) {
+  const style = { ...boardColors, '--cols': def.cols, '--rows': def.rows } as CSSProperties;
+  return (
+    <div className={`csn ${tint && def.tint ? `tint-${def.tint}` : ''} ${moving ? 'is-moving' : ''} ${reset ? 'is-reset' : ''} ${live ? 'is-live' : ''}`} style={style}>
+      <div className="csn-board" aria-hidden="true">
+        {Array.from({ length: def.rows * def.cols }, (_, k) => {
+          const x = k % def.cols;
+          const y = def.rows - 1 - Math.floor(k / def.cols);
+          return <span key={k} className={`csn-sq ${(x + y) % 2 === 0 ? 'd' : 'l'}`} />;
+        })}
+      </div>
+      {decor?.hl?.map(at => <span key={`hl-${at}`} className="csn-hl" style={cell(def, at)} aria-hidden="true" />)}
+      {marks?.map(m => <span key={`${m.kind}-${m.at}`} className={`csn-mark is-${m.kind}`} style={cell(def, m.at)} aria-hidden="true" />)}
+      {decor?.dots?.map(at => <span key={`d-${at}`} className="csn-dot" style={cell(def, at)} aria-hidden="true" />)}
+      {decor?.rings?.map(at => <span key={`r-${at}`} className="csn-dot is-ring" style={cell(def, at)} aria-hidden="true" />)}
+      {def.pieces.map(p => (
+        <span
+          key={p.id}
+          className={`csn-pc ${st.gone.has(p.id) ? 'is-gone' : ''} ${st.shake === p.id ? 'is-shake' : ''}`}
+          style={cell(def, st.at.get(p.id) ?? p.at, { backgroundImage: pieceUrl(p.c, p.t) })}
+          aria-hidden="true"
+        />
+      ))}
+      {st.burst && <span key={`burst-${st.burst}`} className="csn-burst" style={cell(def, st.burst)} aria-hidden="true" />}
+      {arrows.length > 0 && (
+        <svg className="csn-arrows" viewBox={`0 0 ${def.cols * 100} ${def.rows * 100}`} aria-hidden="true">
+          <defs>
+            {(['gold', 'red', 'cyan', 'white'] as const).map(t => (
+              <marker key={t} id={`csn-head-${t}`} className={`tone-${t}`} viewBox="0 0 10 10" refX="6" refY="5" markerWidth="4.2" markerHeight="4.2" orient="auto-start-reverse">
+                <path d="M0 0 L10 5 L0 10 z" />
+              </marker>
+            ))}
+          </defs>
+          {arrows.map((a, i) => (
+            <Arrow key={i} a={a} rows={def.rows} />
+          ))}
+        </svg>
+      )}
+      {children}
+    </div>
+  );
+}
+
+/** Sablier fou : une pendule. `fast` : elle s'emballe (traînée de l'aiguille) ; `spinning` : l'aiguille tourne. */
+function Clock({ fast, spinning, tag, children }: { fast: boolean; spinning: boolean; tag: ReactNode; children?: ReactNode }) {
+  return (
+    <div className={`csn is-clocks ${spinning ? 'is-spinning' : ''}`} style={{ '--cols': 1, '--rows': 1 } as CSSProperties}>
+      <svg viewBox="0 0 100 100" className={`csn-dial ${fast ? 'is-fast' : ''}`} aria-hidden="true">
+        <circle cx="50" cy="46" r="34" />
+        {Array.from({ length: 12 }, (_, k) => (
+          <line key={k} x1="50" y1="16" x2="50" y2={k % 3 === 0 ? 23 : 19} transform={`rotate(${k * 30} 50 46)`} />
+        ))}
+        {fast && <path className="csn-trail" d="M50 46 L50 20 A26 26 0 0 1 72.5 33 Z" />}
+        <line className="csn-hand" x1="50" y1="46" x2="50" y2="21" />
+        <circle cx="50" cy="46" r="3.6" className="csn-hub" />
+      </svg>
+      <span className="csn-tag">{tag}</span>
+      {children}
+    </div>
+  );
+}
+
+export function CardScene({
+  id,
+  play = 'hover',
+  className = '',
+  active = false,
+  labels = false,
+}: {
+  id: CardId;
+  play?: Play;
+  className?: string;
+  /** Animée tant que vrai, quel que soit `play` (le parent gère le survol : ligne d'un pouvoir, tuile). */
+  active?: boolean;
+  /** Légendes sous les deux images (« Avant », « Les deux disparaissent »), là où il y a la place. */
+  labels?: boolean;
+}) {
   const def = CARD_SCENES[id];
   const reduced = useReducedMotion();
   const [wanted, setWanted] = useState(false);
   /** Type du dernier appui : un toucher émule aussi un survol et un focus, qu'il ne faut pas compter deux fois. */
   const pointer = useRef('mouse');
-  // `active` : le parent demande l'animation (ligne survolée, tuile du choix des cartes, fiche ouverte)
   const running = !!def && !reduced && (play === 'auto' || active || (play === 'hover' && wanted));
   const [n, setN] = useState(0);
   const [reset, setReset] = useState(false);
@@ -132,7 +213,7 @@ export function CardScene({ id, play = 'hover', className = '', active = false }
         i = 0;
         setReset(true);
         setN(0);
-        timer = window.setTimeout(next, 900);
+        timer = window.setTimeout(next, 700);
       }
     };
     timer = window.setTimeout(next, 450);
@@ -140,7 +221,9 @@ export function CardScene({ id, play = 'hover', className = '', active = false }
   }, [running, def]);
 
   const st = useMemo(() => (def ? stateAfter(def, n) : null), [def, n]);
-  if (!def || !st) return null;
+  const start = useMemo(() => (def ? stateAfter(def, 0) : null), [def]);
+  const end = useMemo(() => (def ? stateAfter(def, def.steps.length) : null), [def]);
+  if (!def || !st || !start || !end) return null;
 
   const hoverProps =
     play === 'hover'
@@ -160,62 +243,93 @@ export function CardScene({ id, play = 'hover', className = '', active = false }
           },
         }
       : {};
+  const playHint = play === 'hover' && !running && !reduced && <span className="csn-play" aria-hidden="true" />;
+  const common = {
+    role: 'img',
+    'aria-label': def.caption,
+    title: play === 'hover' ? def.caption : undefined,
+    ...hoverProps,
+  };
 
-  const style = { ...boardColors, '--cols': def.cols, '--rows': def.rows } as CSSProperties;
+  // Une image : position animée, marques et flèches de la scène
+  if (!def.pair) {
+    return (
+      <div className={`csn-one ${running ? 'is-playing' : ''} ${className}`} {...common}>
+        <Board def={def} st={st} marks={def.marks} arrows={def.arrows} tint moving={n > 0} reset={reset} live={running}>
+          {playHint}
+        </Board>
+      </div>
+    );
+  }
+
+  // Deux images : avant (fixe), après (fixe, ou l'action rejouée)
+  const pair = def.pair;
+  const afterAt = pair.afterAt ?? def.steps.length;
+  const showAfter = !running || n >= afterAt;
+  const sep = (
+    <span className="csn-sep" aria-hidden="true">
+      <svg viewBox="0 0 10 16">
+        <path d="M2 2 L8 8 L2 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </span>
+  );
   return (
-    <div
-      className={`csn ${def.tint ? `tint-${def.tint}` : ''} ${running ? 'is-playing' : ''} ${n > 0 ? 'is-moving' : ''} ${reset ? 'is-reset' : ''} ${def.clocks ? 'is-clocks' : ''} ${className}`}
-      style={style}
-      role="img"
-      aria-label={def.caption}
-      title={play === 'hover' ? def.caption : undefined}
-      {...hoverProps}
-    >
+    <div className={`csn-pair ${running ? 'is-playing' : ''} ${def.clocks ? 'is-clocks' : ''} ${className}`} {...common}>
       {def.clocks ? (
-        <Clocks running={running} />
+        <>
+          <Clock fast={false} spinning={false} tag="+2 s par coup" />
+          {sep}
+          <Clock
+            fast={showAfter}
+            spinning={running && showAfter}
+            tag={
+              <>
+                <b>×2</b> · +0 s
+              </>
+            }
+          >
+            {playHint}
+          </Clock>
+        </>
       ) : (
         <>
-          <div className="csn-board" aria-hidden="true">
-            {Array.from({ length: def.rows * def.cols }, (_, k) => {
-              const x = k % def.cols;
-              const y = def.rows - 1 - Math.floor(k / def.cols);
-              return <span key={k} className={`csn-sq ${(x + y) % 2 === 0 ? 'd' : 'l'}`} />;
-            })}
-          </div>
-          {def.marks?.map(m => {
-            const { x, y } = sceneXY(m.at);
-            return <span key={`${m.kind}-${m.at}`} className={`csn-mark is-${m.kind}`} style={{ '--x': x, '--y': def.rows - 1 - y } as CSSProperties} aria-hidden="true" />;
-          })}
-          {def.pieces.map(p => {
-            const { x, y } = sceneXY(st.at.get(p.id) ?? p.at);
-            return (
-              <span
-                key={p.id}
-                className={`csn-pc ${st.gone.has(p.id) ? 'is-gone' : ''} ${st.shake === p.id ? 'is-shake' : ''}`}
-                style={{ '--x': x, '--y': def.rows - 1 - y, backgroundImage: pieceUrl(p.c, p.t) } as CSSProperties}
-                aria-hidden="true"
-              />
-            );
-          })}
-          {st.burst && (() => {
-            const { x, y } = sceneXY(st.burst);
-            return <span key={`burst-${n}`} className="csn-burst" style={{ '--x': x, '--y': def.rows - 1 - y } as CSSProperties} aria-hidden="true" />;
-          })()}
-          <svg className="csn-arrows" viewBox={`0 0 ${def.cols * 100} ${def.rows * 100}`} aria-hidden="true">
-            <defs>
-              {(['gold', 'red', 'cyan'] as const).map(t => (
-                <marker key={t} id={`csn-head-${t}`} className={`tone-${t}`} viewBox="0 0 10 10" refX="6" refY="5" markerWidth="4.2" markerHeight="4.2" orient="auto-start-reverse">
-                  <path d="M0 0 L10 5 L0 10 z" />
-                </marker>
-              ))}
-            </defs>
-            {def.arrows.map((a, i) => (
-              <Arrow key={i} a={a} rows={def.rows} />
-            ))}
-          </svg>
+          <Board
+            def={def}
+            st={start}
+            decor={pair.before}
+            marks={pair.before.marks}
+            arrows={pair.before.arrow ? [{ ...pair.before.arrow, tone: 'white' }] : []}
+            tint={false}
+            moving={false}
+            reset={false}
+            live={false}
+          />
+          {sep}
+          <Board
+            def={def}
+            st={running ? st : end}
+            decor={showAfter ? pair.after : undefined}
+            marks={showAfter ? pair.after.marks : undefined}
+            arrows={[]}
+            tint={showAfter}
+            moving={running && n > 0}
+            reset={reset}
+            live={running}
+          >
+            {playHint}
+          </Board>
         </>
       )}
-      {play === 'hover' && !running && !reduced && <span className="csn-play" aria-hidden="true" />}
+      {labels && (
+        <>
+          <span className="csn-cap">{pair.labels[0]}</span>
+          <span />
+          <span className="csn-cap">{pair.labels[1]}</span>
+        </>
+      )}
     </div>
   );
 }
+
+/** La scène de ce pouvoir est-elle en deux images ? (mise en page des conteneurs) */
+export const scenePaired = (id: CardId) => !!CARD_SCENES[id]?.pair;

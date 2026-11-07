@@ -181,6 +181,10 @@ export default function Legal({ page }: { page: Page }) {
                 <li>
                   <b>Technique</b> : adresse IP et navigateur au moment de la connexion, pour la sécurité du compte.
                 </li>
+                <li>
+                  <b>Partie en direct de l’accueil</b> : le fuseau horaire de votre navigateur, pour indiquer à votre adversaire le pays d’où vous
+                  jouez (par exemple « connectée depuis la France »). Il n’est ni conservé ni déduit de votre adresse IP.
+                </li>
               </ul>
               <h2>Finalités et bases légales</h2>
               <ul>

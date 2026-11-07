@@ -103,69 +103,51 @@
 .sq.hover {
   box-shadow: inset 0 0 0 4px rgba(255, 255, 255, 0.75);
 }
-/* Pré-coups (premoves.ts) : cases de départ et d'arrivée teintées de bleu, pièces fantômes numérotées, flèches en
-   pointillés. Les chiffres restent petits : ils disent l'ordre, sans masquer la pièce. */
+/* Pré-coups (premoves.ts) : pièces fantômes très transparentes, cases à peine voilées, petit numéro d'ordre sobre
+   (noir et blanc). Pas de flèches : le fantôme et son numéro suffisent. */
 .sq.pm-from::after,
 .sq.pm-to::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: rgba(70, 150, 255, 0.22);
+  background: rgba(20, 20, 30, 0.12);
 }
 .sq.pm-to::after {
-  background: rgba(70, 150, 255, 0.34);
+  background: rgba(20, 20, 30, 0.2);
 }
 .board.is-premove .hint {
-  background: rgba(40, 110, 230, 0.4);
+  background: rgba(18, 16, 40, 0.24);
 }
 .board.is-premove .hint.cap {
   background: transparent;
-  border-color: rgba(40, 110, 230, 0.45);
+  border-color: rgba(18, 16, 40, 0.24);
 }
 .piece.ghost {
   z-index: 2;
   pointer-events: none;
 }
 .piece.ghost .pi {
-  opacity: 0.5;
+  opacity: 0.38;
 }
 .piece.ghost:not(.is-live) .pi {
-  opacity: 0.28;
+  opacity: 0.2;
 }
 .piece.ghost.dragging .pi {
-  opacity: 0.85;
+  opacity: 0.8;
 }
 .pm-n {
   position: absolute;
-  left: 4%;
-  top: 4%;
-  min-width: 15px;
-  height: 15px;
-  padding: 0 3px;
-  border-radius: 8px;
-  background: rgba(30, 80, 190, 0.92);
+  left: 5%;
+  top: 5%;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 2px;
+  border-radius: 7px;
+  background: rgba(12, 12, 16, 0.78);
   color: #fff;
-  font: 700 10px/15px var(--sans, system-ui);
+  font: 600 9px/13px var(--sans, system-ui);
   text-align: center;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-}
-.pm-arrows {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 3;
-  pointer-events: none;
-  overflow: visible;
-}
-.pm-arrows line {
-  stroke: rgba(60, 140, 255, 0.78);
-  stroke-width: 7;
-  stroke-linecap: round;
-  stroke-dasharray: 2 13;
-}
-.pm-arrows marker path {
-  fill: rgba(60, 140, 255, 0.9);
+  letter-spacing: 0;
 }
 /* Glisser sur une pièce prenable : la case s'allume et la pièce visée s'efface à moitié (décision D4) */
 .sq.hover-cap {

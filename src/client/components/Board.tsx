@@ -470,23 +470,6 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
             return <span key={burst.key} className="board-burst" style={{ transform: `translate(${x * 100}%, ${y * 100}%)` }} aria-hidden="true" />;
           })()}
         </div>
-        {queue.length > 0 && (
-          <svg className="pm-arrows" viewBox="0 0 800 800" aria-hidden="true">
-            <defs>
-              <marker id="pm-head" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="3.6" markerHeight="3.6" orient="auto-start-reverse">
-                <path d="M0 0 L10 5 L0 10 z" />
-              </marker>
-            </defs>
-            {queue.map((m, i) => {
-              const a = xy(m.from, orientation);
-              const b = xy(m.to, orientation);
-              const ax = a.x * 100 + 50, ay = a.y * 100 + 50, bx = b.x * 100 + 50, by = b.y * 100 + 50;
-              const len = Math.hypot(bx - ax, by - ay) || 1;
-              const ux = (bx - ax) / len, uy = (by - ay) / len;
-              return <line key={i} x1={ax + ux * 22} y1={ay + uy * 22} x2={bx - ux * 30} y2={by - uy * 30} markerEnd="url(#pm-head)" />;
-            })}
-          </svg>
-        )}
         {note && (
           <p key={note.key} className="board-note" role="status">
             {note.text}

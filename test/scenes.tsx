@@ -10,10 +10,10 @@ import { CardScene } from '../src/client/components/CardScene';
 const IDS: CardId[] = ['blood_moon', 'truce', 'ice_age', 'blast', 'ice_wall', 'rift', 'tide', 'hourglass'];
 const auto = new URLSearchParams(location.search).has('auto');
 createRoot(document.getElementById('root')!).render(
-  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 200px)', gap: 20, padding: 20 }}>
+  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 260px)', gap: 24, padding: 20, alignItems: 'start' }}>
     {IDS.map(id => (
       <figure key={id} style={{ margin: 0 }}>
-        <CardScene id={id} play={auto ? 'auto' : 'hover'} />
+        <CardScene id={id} play={auto ? 'auto' : 'hover'} labels />
         <figcaption style={{ fontSize: 12, marginTop: 6 }}>{CARDS[id].name}</figcaption>
       </figure>
     ))}

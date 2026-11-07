@@ -370,6 +370,48 @@ eve.socket.close();
 frank.socket.close();
 step('échéance de 45 s : choix validé gardé, sélection provisoire complétée au hasard, délai du premier coup ensuite');
 
+// 8 bis. Accueil : deux visiteurs prêts, arrivés en même temps, sont appariés ; deux onglets du même visiteur, jamais
+{
+  const v1 = new Client();
+  const v2 = new Client();
+  await v1.api('/me');
+  await v2.api('/me');
+  await v1.connect();
+  await v2.connect();
+  const paired = c => new Promise(res => c.socket.once('home:paired', res));
+  // Deux onglets du même visiteur : pas de partie contre soi-même
+  const twin = io(BASE, { transports: ['websocket'], extraHeaders: { cookie: [...v1.cookies].map(([k, v]) => `${k}=${v}`).join('; ') } });
+  await new Promise(r => twin.on('connect', r));
+  let selfPaired = false;
+  twin.once('home:paired', () => (selfPaired = true));
+  v1.socket.once('home:paired', () => (selfPaired = true));
+  v1.socket.emit('home:hello', { tz: 'Europe/Paris', ready: true });
+  twin.emit('home:hello', { tz: 'Europe/Paris', ready: true });
+  await new Promise(r => setTimeout(r, 400));
+  assert.equal(selfPaired, false, 'deux onglets du même visiteur ne sont pas appariés');
+  twin.emit('home:bye');
+  twin.close();
+  // Pas prêt (il a fait défiler la page) : pas apparié, puis prêt : apparié
+  const p1 = paired(v1);
+  const p2 = paired(v2);
+  v2.socket.emit('home:hello', { tz: 'America/Montreal', ready: false });
+  await new Promise(r => setTimeout(r, 300));
+  v2.socket.emit('home:ready', { ready: true });
+  const [a, b] = await Promise.all([p1, p2]);
+  assert.equal(a.gameId, b.gameId, 'même partie');
+  assert.notEqual(a.color, b.color, 'couleurs opposées');
+  assert.equal(a.opponent.country, 'CA', 'pays de l’adversaire d’après son fuseau');
+  assert.equal(b.opponent.country, 'FR');
+  const ja = await v1.emit('game:join', { id: a.gameId });
+  assert.ok(ja.ok && ja.view.status === 'active' && !ja.view.draft, 'partie lancée tout de suite, sans choix des cartes');
+  assert.ok(ja.view.state.hands.w.length === 3 && ja.view.state.hands.b.length === 3, 'mains tirées au hasard');
+  assert.equal(ja.view.clock, null, 'sans pendule');
+  assert.ok((await v1.emit('game:abort', { id: a.gameId })).ok, 'on peut revenir à l’Oracle avant le premier coup');
+  v1.socket.close();
+  v2.socket.close();
+}
+step('accueil : deux visiteurs prêts appariés (pays d’après le fuseau, partie sans choix ni pendule), jamais soi-même');
+
 // 9. Compte : profil public, export, suppression
 r = await alice.api(`/users/alice_${stamp}`);
 assert.equal(r.status, 200);

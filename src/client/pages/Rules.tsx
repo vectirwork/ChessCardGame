@@ -7,7 +7,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { CARDS, CATALOGS, RARITY_LABEL, cardsOf } from '../../shared/cards';
 import type { CardDef, Catalog, Family } from '../../shared/cards';
 import { SpellCard } from '../components/SpellCard';
-import { CardScene } from '../components/CardScene';
+import { CardScene, scenePaired } from '../components/CardScene';
 import { PageHead, PlacePage, useTitle } from './PageScene';
 import './Rules.css';
 
@@ -123,9 +123,7 @@ const DETAILS: ReactNode[] = [
 ];
 
 function arrival(def: CardDef) {
-  if (def.presage) return 'Votre prochain tour';
-  if (def.ritual) return 'À la place du coup';
-  return 'Tout de suite';
+  return def.presage ? 'Au prochain tour (annoncée)' : 'Immédiate';
 }
 
 function SectionHead({ id, n, kicker, title, lede }: { id: string; n: string; kicker: string; title: ReactNode; lede?: ReactNode }) {
@@ -146,6 +144,7 @@ function SectionHead({ id, n, kicker, title, lede }: { id: string; n: string; ki
 function Power({ def }: { def: CardDef }) {
   // La scène du pouvoir est une image fixe ; elle s'anime quand la souris passe sur sa fiche (ou au toucher)
   const [hover, setHover] = useState(false);
+  const paired = scenePaired(def.id);
   return (
     <article
       className="rg-power"
@@ -163,16 +162,27 @@ function Power({ def }: { def: CardDef }) {
         </h4>
         <p className="rg-ptag">{def.tagline}</p>
       </header>
-      <p className="rg-prule">
-        <span className="rg-pscene">
-          <CardScene id={def.id} play="hover" active={hover} />
-        </span>
+      <div className="rg-prule">
+        {!paired && (
+          <div className="rg-pscene">
+            <CardScene id={def.id} play="hover" active={hover} />
+          </div>
+        )}
         {def.description}
-      </p>
+        {paired && (
+          <div className="rg-pscene is-pair">
+            <CardScene id={def.id} play="hover" active={hover} labels />
+          </div>
+        )}
+      </div>
       <dl className="rg-pmeta">
         <div>
           <dt>Arrivée</dt>
           <dd>{arrival(def)}</dd>
+        </div>
+        <div>
+          <dt>Votre coup</dt>
+          <dd>{def.ritual ? 'Remplacé par la carte' : 'Joué en plus'}</dd>
         </div>
         <div>
           <dt>Durée</dt>

@@ -2776,6 +2776,42 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
   color: #1a1206;
   background: linear-gradient(180deg, #ffe6a6, #f3c969 60%, #d9a443);
 }
+/* Partie en direct contre un autre visiteur de l'accueil */
+.ody .o-duel-note {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 9px 14px;
+  border: 1px solid rgba(120, 230, 170, 0.35);
+  border-radius: 12px;
+  background: rgba(8, 26, 20, 0.62);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.ody .o-duel-note b {
+  color: #9ff0c4;
+  font-weight: 600;
+}
+.ody .o-duel-note.is-away {
+  border-color: rgba(255, 190, 120, 0.4);
+  background: rgba(30, 18, 8, 0.62);
+}
+.ody .o-duel-note small {
+  color: var(--soft);
+}
+/* Nouvelle partie, partie d'avant : sur la page, sans passer par le plein écran */
+.ody .o-restart {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: 6px 0 0;
+  font-size: 14px;
+}
+.ody .o-restart .is-quiet {
+  color: var(--soft);
+}
 .ody .o-human {
   display: flex;
   align-items: baseline;

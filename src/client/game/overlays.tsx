@@ -32,8 +32,10 @@ export function CastBanner({ c }: { c: Casting }) {
     <div className="gp-cast" style={{ '--h': def.hue } as CSSProperties} aria-live="polite">
       <SpellCard id={c.card} size="full" tilt={false} />
       <p className="gp-cast-cap">
-        <span>{c.mine ? 'Vous lancez' : `${c.by} lance`}</span>
+        {/* Présage : la carte est annoncée, elle n'agit qu'au prochain tour de son lanceur (la grande animation aussi) */}
+        <span>{def.presage ? (c.mine ? 'Vous annoncez' : `${c.by} annonce`) : c.mine ? 'Vous lancez' : `${c.by} lance`}</span>
         <b>{def.name}</b>
+        {def.presage && <small>Active au début {c.mine ? 'de votre prochain tour' : 'de son prochain tour'}</small>}
       </p>
     </div>
   );

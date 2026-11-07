@@ -56,6 +56,8 @@ interface DuelInfo {
   /** Depuis quand l'adversaire a quitté la page (horodatage serveur), null s'il est là. */
   away: number | null;
   claimAfterMs: number;
+  /** L'IA joue pour ce camp (relais : le joueur ne jouait plus), jusqu'à ce qu'il reprenne la main. */
+  standIn: Record<Color, boolean>;
 }
 
 export const PLAYER: Color = 'w';
@@ -123,7 +125,8 @@ function loadLevel(): BotLevel {
 
 export interface LastCast {
   card: string;
-  by: 'player' | 'bot';
+  /** 'relay' : l'IA l'a lancée pour le joueur (partie en direct, relais). */
+  by: 'player' | 'bot' | 'relay';
   key: number;
 }
 
@@ -243,9 +246,9 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
   }, []);
 
   const runCast = useCallback(
-    async (n: GameState, info: CardInfo, skinId: string) => {
+    async (n: GameState, info: CardInfo, skinId: string, relay = false) => {
       playCardSound(info.card);
-      setLastCast({ card: info.card, by: info.caster === meRef.current ? 'player' : 'bot', key: Date.now() });
+      setLastCast({ card: info.card, by: relay ? 'relay' : info.caster === meRef.current ? 'player' : 'bot', key: Date.now() });
       if (vfx && activeRef.current) {
         // Garde-fou : une carte sans animation (carte nouvelle) ou une scène 3D qui rame ne bloquent jamais la partie
         await castSafely(vfx, info, skinStyle(skinId), {
@@ -419,7 +422,13 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
   const chainRef = useRef<Promise<void>>(Promise.resolve());
 
   const takeView = useCallback((v: GameView) => {
-    setDuelInfo({ status: v.status, started: v.started, away: v.away[opposite(meRef.current)], claimAfterMs: v.claimAfterMs });
+    setDuelInfo({
+      status: v.status,
+      started: v.started,
+      away: v.away[opposite(meRef.current)],
+      claimAfterMs: v.claimAfterMs,
+      standIn: { w: !!v.standIn?.w, b: !!v.standIn?.b },
+    });
   }, []);
 
   const handleUpdate = useCallback(
@@ -429,16 +438,18 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
       takeView(u.view);
       const srv = u.view.state;
       const ev = u.event;
-      const other = opposite(d.me);
-      if (ev.type === 'card' && ev.info.caster === other) {
+      // Nouveau pour ce navigateur : un coup ou une carte de l'adversaire, ou joués par l'IA en relais pour ce joueur
+      // (ses propres coups sont déjà affichés)
+      const fresh = srv.log.length > stateRef.current.log.length;
+      if (ev.type === 'card' && fresh) {
         setSelected(null);
         setPartial([]);
         setCasting(true);
-        await runCast(srv, ev.info, ev.info.skin);
+        await runCast(srv, ev.info, ev.info.skin, ev.info.caster === d.me);
         setCasting(false);
         return;
       }
-      if (ev.type === 'move' && ev.color === other) {
+      if (ev.type === 'move' && fresh) {
         apply(srv);
         playSound(srv.result ? 'end' : ev.info.check ? 'check' : ev.info.capturedId !== null ? 'capture' : 'move');
         return;
@@ -491,6 +502,22 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
       resyncRef.current = () => {};
     };
   }, [duelId, takeView]);
+
+  /** Signe de présence (le joueur touche l'échiquier) : l'IA attend avant de jouer pour lui. Au plus toutes les 3 s. */
+  const lastPing = useRef(0);
+  const activity = useCallback(() => {
+    const d = duelRef.current;
+    if (!d || stateRef.current.result) return;
+    const t = Date.now();
+    if (t - lastPing.current < 3000) return;
+    lastPing.current = t;
+    getSocket().emit('game:activity', { id: d.id });
+  }, []);
+  /** Reprendre la main : l'IA cesse de jouer pour ce joueur. */
+  const takeOver = useCallback(() => {
+    const d = duelRef.current;
+    if (d) void emitAck<Ack>('game:takeover', { id: d.id }).catch(() => {});
+  }, []);
 
   /** Le serveur a apparié ce visiteur avec un autre : la partie contre l'Oracle laisse place à la partie en direct. */
   const startDuel = useCallback(
@@ -577,6 +604,8 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
     duel,
     duelInfo,
     startDuel,
+    activity,
+    takeOver,
     /** Camp du visiteur, et celui de son adversaire. */
     me,
     them,

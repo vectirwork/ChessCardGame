@@ -152,3 +152,22 @@ asymétrique par nature, c'est son prix (du matériel, parfois le coup) qui l'é
 
 Avant d'en ajouter une, mesurer l'équilibre comme pour les huit autres (parties IA contre IA), et se demander s'il
 faut une neuvième carte ou en remplacer une.
+
+## 7 novembre, nuit : l'IA en relais
+
+> « garde l'IA pour la page d'accueil ; quand je joue contre l'IA il faut que ce soit indiqué clairement et que j'aie
+> un bouton chercher une partie contre un vrai joueur […] laisse le système d'appariement : si au bout de 10 s la
+> personne ne joue pas, ça passe sur une IA, ou mieux c'est l'IA qui joue et à tout moment la personne peut prendre
+> la main. »
+
+- [x] **Contre l'Oracle, c'est écrit** : « Contre [IA] l'Oracle, une intelligence artificielle », « Contre l'IA » dans
+  la légende de l'échiquier et en plein écran (badge, surtitre).
+- [x] **« Chercher un vrai joueur »** : bouton sur l'accueil et dans la barre d'actions (menu ⋯ sur téléphone). La
+  recherche passe par la salle d'attente de l'accueil, sans limite de temps ; l'IA reste l'adversaire en attendant ;
+  « Annuler » à tout moment. (Remplace « Trouver un adversaire », qui menait à une partie de 10 minutes sur une autre
+  page.)
+- [x] **L'IA en relais** (parties en direct de l'accueil) : un joueur qui ne joue pas (10 s pour son premier coup,
+  ensuite 30 s sans toucher l'échiquier) est relayé par l'IA, côté serveur (même onglet fermé). Il reprend la main
+  en jouant un coup ou avec « Prendre la main ». Chacun voit qui joue : « Vous ne jouiez pas : l'IA joue pour vous en
+  attendant » / « Elle ne joue pas pour l'instant : l'IA joue à sa place ». L'IA ne joue jamais contre elle-même : si
+  les deux joueurs sont absents, la partie s'arrête.

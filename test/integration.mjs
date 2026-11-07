@@ -412,6 +412,44 @@ step('échéance de 45 s : choix validé gardé, sélection provisoire complét�
 }
 step('accueil : deux visiteurs prêts appariés (pays d’après le fuseau, partie sans choix ni pendule), jamais soi-même');
 
+// 8 ter. Accueil : « Chercher un vrai joueur » (sans limite de temps), puis relais de l'IA pour celui qui ne joue pas
+{
+  const v1 = new Client();
+  const v2 = new Client();
+  await v1.api('/me');
+  await v2.api('/me');
+  await v1.connect();
+  await v2.connect();
+  let early = false;
+  v1.socket.once('home:paired', () => (early = true));
+  v1.socket.emit('home:hello', { tz: 'Europe/Paris', ready: false });
+  v2.socket.emit('home:hello', { tz: 'Europe/Paris', ready: false });
+  v1.socket.emit('home:search', { search: true, tz: 'Europe/Paris' });
+  await new Promise(r => setTimeout(r, 300));
+  assert.equal(early, false, 'seul à chercher : pas encore apparié');
+  const p1 = new Promise(res => v1.socket.once('home:paired', res));
+  const p2 = new Promise(res => v2.socket.once('home:paired', res));
+  v2.socket.emit('home:search', { search: true, tz: 'Europe/Paris' });
+  const [a, b] = await Promise.all([p1, p2]);
+  assert.equal(a.gameId, b.gameId, 'deux chercheurs appariés');
+  const [white, black] = a.color === 'w' ? [v1, v2] : [v2, v1];
+  const jw = await white.emit('game:join', { id: a.gameId });
+  await black.emit('game:join', { id: a.gameId });
+  assert.deepEqual(jw.view.standIn, { w: false, b: false }, 'personne n’est relayé au départ');
+  assert.equal(jw.view.firstMoveDeadline, null, 'pas d’annulation au premier coup : l’IA prend le relais');
+  // Les Blancs ne jouent pas : au bout de 10 s, l'IA joue pour eux
+  const relayed = await black.waitFor(u => u.view.id === a.gameId && u.event.type === 'move' && u.event.color === 'w', 16000);
+  assert.equal(relayed.view.standIn.w, true, 'les Blancs sont relayés par l’IA');
+  // Les Noirs jouent ; les Blancs reprennent la main
+  assert.ok((await white.emit('game:takeover', { id: a.gameId })).ok, 'reprendre la main');
+  const back = await black.waitFor(u => u.view.id === a.gameId && u.view.standIn && u.view.standIn.w === false, 4000);
+  assert.ok(back, 'les Blancs ont repris la main');
+  assert.ok((await white.emit('game:resign', { id: a.gameId })).ok);
+  v1.socket.close();
+  v2.socket.close();
+}
+step('accueil : recherche d’un vrai joueur ; un joueur qui ne joue pas est relayé par l’IA (10 s), puis reprend la main');
+
 // 9. Compte : profil public, export, suppression
 r = await alice.api(`/users/alice_${stamp}`);
 assert.equal(r.status, 200);

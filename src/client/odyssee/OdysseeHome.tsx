@@ -26,10 +26,9 @@ import { SCENES } from './scenery';
 import { GameShell, PowersPanel, PremoveNote, cardName, castMessage, castThisTurn, handNotes } from './shell';
 import type { ShellAction } from './shell';
 import type { Act } from './StageBoard';
-import { useHumanQueue } from './useHumanQueue';
 import { useHomeLobby } from './useHomeLobby';
+import type { HomeLobby } from './useHomeLobby';
 import { countryName, fromCountry } from './country';
-import type { HumanQueue } from './useHumanQueue';
 import { useLiveGame } from './useLiveGame';
 import type { LiveGame } from './useLiveGame';
 import './odyssee.css';
@@ -52,22 +51,23 @@ function fmtWait(since: number | null) {
 }
 
 /** Ligne discrète « Affronter un humain » : rejoindre la file amicale, voir l'attente, annuler. */
-function HumanOption({ q, compact }: { q: HumanQueue; compact?: boolean }) {
+/** « Chercher un vrai joueur » : la salle d'attente de l'accueil ; l'IA reste l'adversaire en attendant. */
+function SearchOption({ lobby, compact }: { lobby: HomeLobby; compact?: boolean }) {
   const [, force] = useState(0);
   useEffect(() => {
-    if (q.status !== 'waiting') return;
+    if (!lobby.searching) return;
     const i = setInterval(() => force(x => x + 1), 1000);
     return () => clearInterval(i);
-  }, [q.status]);
-  if (q.status === 'waiting' || q.status === 'joining') {
+  }, [lobby.searching]);
+  if (lobby.searching) {
     return (
       <p className="o-human is-waiting" role="status">
         <span className="o-live-dot" style={{ '--h': 190 } as CSSProperties} />
         <span>
-          Recherche d'un adversaire humain <b>{fmtWait(q.since)}</b>
-          {!compact && <small>L'Oracle reste à votre disposition en attendant.</small>}
+          Recherche d'un vrai joueur <b>{fmtWait(lobby.since)}</b>
+          {!compact && <small>L'IA reste votre adversaire en attendant.</small>}
         </span>
-        <button type="button" className="o-link" onClick={q.cancel}>
+        <button type="button" className="o-link" onClick={() => lobby.setSearching(false)}>
           Annuler
         </button>
       </p>
@@ -75,11 +75,10 @@ function HumanOption({ q, compact }: { q: HumanQueue; compact?: boolean }) {
   }
   return (
     <p className="o-human">
-      <button type="button" className="o-link" onClick={() => void q.join()}>
-        Trouver un adversaire
+      <button type="button" className="btn-gold sm o-search-btn" onClick={() => lobby.setSearching(true)}>
+        Chercher un vrai joueur
       </button>
-      {!compact && <span className="o-human-sub">une vraie personne, partie amicale de 10 minutes, sans compte</span>}
-      {q.status === 'error' && q.error && <span className="o-human-err">{q.error}</span>}
+      {!compact && <span className="o-human-sub">sans compte ; l'IA continue de jouer en attendant</span>}
     </p>
   );
 }
@@ -160,7 +159,6 @@ export default function OdysseeHome() {
   const [intent, setIntent] = useState(false);
   const wantPlay = useCallback(() => setIntent(true), []);
   const g = useLiveGame({ skin: mySkin, theme: myBoard, active: mode === 'game', warm: intent });
-  const q = useHumanQueue(catalog);
   const gRef = useRef(g);
   gRef.current = g;
 
@@ -410,8 +408,9 @@ export default function OdysseeHome() {
   useEffect(() => {
     if (!g.lastCast) return;
     const name = cardName(g.lastCast.card);
-    const them = g.duel ? 'Votre adversaire' : "L'Oracle";
-    setToast({ text: g.lastCast.by === 'bot' ? `${them} lance ${name}` : `Vous lancez ${name}`, key: g.lastCast.key });
+    const them = g.duel ? (g.duelInfo?.standIn[g.them] ? 'L’IA, pour votre adversaire,' : 'Votre adversaire') : "L'Oracle";
+    const text = g.lastCast.by === 'relay' ? `L’IA lance ${name} pour vous` : g.lastCast.by === 'bot' ? `${them} lance ${name}` : `Vous lancez ${name}`;
+    setToast({ text, key: g.lastCast.key });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [g.lastCast]);
 
@@ -425,14 +424,46 @@ export default function OdysseeHome() {
     return () => document.removeEventListener('visibilitychange', on);
   }, []);
   // Prêt : échiquier du haut sous les yeux (ou partie en plein écran), partie contre l'Oracle à peine commencée
-  const lobbyReady =
-    tabVisible && !g.duel && !g.result && g.state.ply <= 4 && q.status !== 'waiting' && q.status !== 'joining' && (mode === 'game' || (mode === 'page' && place === 0));
+  const lobbyReady = tabVisible && !g.duel && !g.result && g.state.ply <= 4 && (mode === 'game' || (mode === 'page' && place === 0));
   const startDuel = g.startDuel;
-  useHomeLobby(lobbyReady, d => {
+  const searchedRef = useRef(false);
+  const lobby = useHomeLobby(lobbyReady, d => {
     startDuel(d);
     const where = fromCountry(d.country);
-    notify(`Une personne vient d’arriver sur cette page${where ? `, ${where}` : ''} : vous jouez l’un contre l’autre.`);
+    notify(
+      searchedRef.current
+        ? `Joueur trouvé${where ? `, ${where}` : ''} : vous jouez contre une vraie personne.`
+        : `Une personne vient d’arriver sur cette page${where ? `, ${where}` : ''} : vous jouez l’un contre l’autre.`,
+    );
   });
+  searchedRef.current = lobby.searching;
+
+  // Partie en direct : l'IA joue pour un joueur qui ne joue pas (relais), jusqu'à ce qu'il reprenne la main
+  const meRelayed = !!g.duel && !g.result && !!g.duelInfo?.standIn[g.me];
+  const themRelayed = !!g.duel && !g.result && !!g.duelInfo?.standIn[g.them];
+  useEffect(() => {
+    if (meRelayed) notify('Vous ne jouiez pas : l’IA joue pour vous en attendant. « Prendre la main » quand vous voulez, ou jouez un coup.');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meRelayed]);
+  // Signes de présence : la souris ou le doigt sur l'échiquier (sur la page) ou n'importe où en plein écran
+  const activity = g.activity;
+  useEffect(() => {
+    if (!g.duel || g.result) return;
+    const on = (e: Event) => {
+      if (mode === 'game') return activity();
+      const t = e.target as Node | null;
+      if (t && (astreRef.current?.contains(t) || rootRef.current?.querySelector('.o-hand-row')?.contains(t))) activity();
+    };
+    const opts = { passive: true } as AddEventListenerOptions;
+    document.addEventListener('pointermove', on, opts);
+    document.addEventListener('pointerdown', on, opts);
+    document.addEventListener('keydown', on);
+    return () => {
+      document.removeEventListener('pointermove', on);
+      document.removeEventListener('pointerdown', on);
+      document.removeEventListener('keydown', on);
+    };
+  }, [g.duel, g.result, mode, activity]);
   const oppLabel = g.duel ? 'Votre adversaire' : "L'Oracle";
   const oppFrom = g.duel ? fromCountry(g.duel.country) : null;
   const oppCountry = g.duel?.country ? countryName(g.duel.country) : null;
@@ -457,10 +488,20 @@ export default function OdysseeHome() {
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abortedEmpty]);
-  const duelBanner =
+  const duelBanner = meRelayed ? (
+    <div className="gp-offer is-away" role="status">
+      <p>Vous ne jouiez pas : l’IA joue pour vous en attendant.</p>
+      <div className="gp-offer-actions">
+        <button type="button" className="btn-gold sm" onClick={g.takeOver}>
+          Prendre la main
+        </button>
+        <small>ou jouez simplement un coup</small>
+      </div>
+    </div>
+  ) :
     away !== null ? (
       <div className="gp-offer is-away" role="status">
-        <p>Votre adversaire a quitté la page.</p>
+        <p>Votre adversaire a quitté la page{themRelayed ? ' : l’IA joue à sa place' : ''}.</p>
         <div className="gp-offer-actions">
           {claimIn > 0 ? (
             <small>Victoire réclamable dans {claimIn} s, s'il ne revient pas.</small>
@@ -601,6 +642,11 @@ export default function OdysseeHome() {
         <>
           <span className={`o-live-dot ${g.duel ? '' : 'idle'}`} />
           <span>
+            {!g.duel && (
+              <>
+                Contre l'IA <span className="o-cap-sep">·</span>{' '}
+              </>
+            )}
             {g.me === 'w' ? 'Vous avez les Blancs' : 'Vous avez les Noirs'} <span className="o-cap-sep">·</span>{' '}
             <b>{g.me === 'w' ? 'jouez votre premier coup' : 'à votre adversaire de commencer'}</b>
           </span>
@@ -656,6 +702,14 @@ export default function OdysseeHome() {
 
   // HUD du mode immersif
   const shellActions: ShellAction[] = [
+    // Contre l'IA : chercher un vrai joueur, sans quitter la partie (l'IA joue en attendant) ; en direct : reprendre la main
+    {
+      label: lobby.searching ? 'Annuler la recherche' : 'Chercher un vrai joueur',
+      icon: 'search',
+      onClick: () => lobby.setSearching(!lobby.searching),
+      hidden: !!g.duel,
+    },
+    { label: 'Prendre la main', icon: 'hand', onClick: g.takeOver, hidden: !meRelayed },
     { label: 'Nouvelle partie', icon: 'new', onClick: g.newGame, hidden: g.state.ply === 0 },
     { label: 'Abandonner', icon: 'resign', confirm: "Confirmer l'abandon", onClick: g.resign, hidden: g.state.ply === 0 || !!g.result },
   ];
@@ -837,14 +891,21 @@ export default function OdysseeHome() {
             <Kicker num="I" name="L'Observatoire" />
             <Lines as="h1" className="o-display" lines={['Les échecs', 'ont appris', <em key="m">la magie.</em>]} />
             <p className="o-lede o-rv" style={{ '--i': 3 } as CSSProperties}>
-              Une vraie partie d'échecs, trois cartes de pouvoir, un sort par tour. La partie est déjà ouverte : {mobile ? 'touchez une pièce' : 'déplacez une pièce'} sur l'échiquier, {g.duel ? 'votre adversaire vous répond' : 'l’Oracle vous répond'}.
+              Une vraie partie d'échecs, trois cartes de pouvoir, un sort par tour. La partie est déjà ouverte : {mobile ? 'touchez une pièce' : 'déplacez une pièce'} sur l'échiquier, {g.duel ? 'votre adversaire vous répond' : 'l’Oracle, une IA, vous répond'}.
             </p>
             {g.duel && (
               <p className={`o-duel-note ${away !== null ? 'is-away' : ''}`} role="status">
                 <span className="o-live-dot" style={{ '--h': away !== null ? 30 : 150 } as CSSProperties} />
-                {away !== null ? (
+                {meRelayed ? (
                   <span>
-                    Votre adversaire a quitté la page.{' '}
+                    Vous ne jouiez pas : <b>l’IA joue pour vous</b> en attendant.{' '}
+                    <button type="button" className="o-link" onClick={g.takeOver}>
+                      Prendre la main
+                    </button>
+                  </span>
+                ) : away !== null ? (
+                  <span>
+                    Votre adversaire a quitté la page{themRelayed ? ' : l’IA joue à sa place' : ''}.{' '}
                     {claimIn > 0 ? (
                       <small>Victoire réclamable dans {claimIn} s.</small>
                     ) : (
@@ -856,6 +917,7 @@ export default function OdysseeHome() {
                 ) : (
                   <span>
                     <b>En direct</b> : vous jouez contre une personne qui est aussi sur cette page{oppFrom ? `, connectée ${oppFrom}` : ''}.
+                    {themRelayed && <small> Elle ne joue pas pour l’instant : l’IA joue à sa place.</small>}
                   </span>
                 )}
               </p>
@@ -912,7 +974,9 @@ export default function OdysseeHome() {
               ) : (
                 <div className="o-opts-line">
                   <span className="o-opts-k">Contre</span>
-                  <span>L'Oracle, IA</span>
+                  <span className="o-vs-ai">
+                    <b className="o-ai-tag">IA</b> l'Oracle, une intelligence artificielle
+                  </span>
                   <LevelPick level={g.level} onChange={g.setLevel} />
                 </div>
               )}
@@ -931,7 +995,7 @@ export default function OdysseeHome() {
                   )}
                 </p>
               )}
-              <HumanOption q={q} />
+              {!g.duel && <SearchOption lobby={lobby} />}
             </div>
             <button type="button" className="o-kbd-play" onClick={() => play()}>
               Ouvrir la partie en plein écran
@@ -1209,14 +1273,14 @@ export default function OdysseeHome() {
         active={mode === 'game'}
         onBack={leave}
         backLabel="Retour à la page"
-        badge={g.duel ? 'En direct · aucun compte' : 'Partie locale · aucun compte'}
-        kicker={g.duel ? `Coup ${moveNo} · partie en direct` : `Coup ${moveNo} · L'Oracle, ${levelName(g.level).toLowerCase()}`}
+        badge={g.duel ? 'En direct · aucun compte' : 'Contre l’IA · aucun compte'}
+        kicker={g.duel ? `Coup ${moveNo} · partie en direct` : `Coup ${moveNo} · contre l'IA, niveau ${levelName(g.level).toLowerCase()}`}
         title={statusOf(g)}
         banner={duelBanner}
         hint={
           !g.myTurn && !g.result ? (
             <>
-              {g.duel ? 'Votre adversaire réfléchit.' : 'L’Oracle prépare sa réponse.'}
+              {g.duel ? (themRelayed ? 'L’IA joue pour votre adversaire.' : 'Votre adversaire réfléchit.') : 'L’Oracle, une IA, prépare sa réponse.'}
               <PremoveNote n={premoves} mobile={mobile} onCancel={g.clearPremoves} />
             </>
           ) : g.state.cardPlayed && g.myTurn ? (
@@ -1255,13 +1319,18 @@ export default function OdysseeHome() {
           g.duel ? undefined : (
             <div className="o-shell-extra">
               <LevelPick level={g.level} onChange={g.setLevel} />
-              <HumanOption q={q} compact={mobile} />
+              <SearchOption lobby={lobby} compact={mobile} />
             </div>
           )
         }
         opponent={
           g.duel
-            ? { name: 'Votre adversaire', sub: oppCountry ? `En direct · ${oppCountry}` : 'En direct, sur cette page', hand: g.state.hands[g.them], handLabel: 'Cartes de votre adversaire' }
+            ? {
+                name: 'Votre adversaire',
+                sub: themRelayed ? 'L’IA joue à sa place en ce moment' : oppCountry ? `En direct · ${oppCountry}` : 'En direct, sur cette page',
+                hand: g.state.hands[g.them],
+                handLabel: 'Cartes de votre adversaire',
+              }
             : { name: "L'Oracle", sub: `IA · niveau ${levelName(g.level)}`, hand: g.state.hands.b, handLabel: "Cartes de l'Oracle" }
         }
         hand={g.hand}
@@ -1273,9 +1342,9 @@ export default function OdysseeHome() {
         toast={toast}
       />
 
-      {mode === 'page' && place !== 0 && q.status === 'waiting' && (
+      {mode === 'page' && place !== 0 && lobby.searching && (
         <div className="o-queue-pill" role="status">
-          <HumanOption q={q} compact />
+          <SearchOption lobby={lobby} compact />
         </div>
       )}
 

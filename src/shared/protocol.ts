@@ -111,6 +111,11 @@ export interface GameView {
   mirror: boolean;
   /** Chaque joueur a joué son premier coup : la partie ne peut plus être annulée. */
   started: boolean;
+  /**
+   * Partie en direct de l'accueil : l'IA joue pour un joueur qui ne joue pas (relais), jusqu'à ce qu'il reprenne la
+   * main. null hors de ces parties.
+   */
+  standIn?: Record<Color, boolean> | null;
   /** Phase de choix des cartes en cours (voir DraftView), sinon null (choix terminé, sans cartes, ancienne partie). */
   draft: DraftView | null;
 }
@@ -199,6 +204,12 @@ export interface ClientToServer {
   'home:hello': (p: { tz: string; ready: boolean }) => void;
   'home:ready': (p: { ready: boolean }) => void;
   'home:bye': () => void;
+  /** Accueil : chercher un vrai joueur (sans limite de temps depuis l'arrivée), ou arrêter de chercher. */
+  'home:search': (p: { search: boolean; tz: string }) => void;
+  /** Partie en direct : le joueur est là (il touche l'échiquier) ; l'IA attend avant de jouer pour lui. */
+  'game:activity': (p: { id: string }) => void;
+  /** Partie en direct : le joueur reprend la main, l'IA cesse de jouer pour lui. */
+  'game:takeover': (p: { id: string }, ack: (r: Ack) => void) => void;
 }
 
 /** Utilisateur connecté, tel que renvoyé par /api/me. */

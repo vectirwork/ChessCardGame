@@ -2776,6 +2776,26 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
   color: #1a1206;
   background: linear-gradient(180deg, #ffe6a6, #f3c969 60%, #d9a443);
 }
+/* Contre l'IA : écrit clairement, et la recherche d'un vrai joueur bien en vue */
+.ody .o-vs-ai {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+}
+.ody .o-ai-tag {
+  padding: 1px 6px 2px;
+  border: 1px solid rgba(127, 231, 255, 0.55);
+  border-radius: 6px;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #9fe9ff;
+  background: rgba(127, 231, 255, 0.1);
+}
+.ody .o-search-btn {
+  white-space: nowrap;
+}
 /* Partie en direct contre un autre visiteur de l'accueil */
 .ody .o-duel-note {
   display: flex;

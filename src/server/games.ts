@@ -90,6 +90,12 @@ export interface RoomData {
   draft?: DraftData | null;
   lastActivity?: number;
   /**
+   * Partie en direct de l'accueil : si un joueur ne joue pas, l'IA joue pour lui (`standIn`) jusqu'à ce qu'il reprenne
+   * la main (il joue un coup, ou game:takeover).
+   */
+  relay?: boolean;
+  standIn?: Record<Color, boolean>;
+  /**
    * Heure de la dernière sauvegarde : après un arrêt brutal, le temps écoulé jusqu'à elle depuis le début du
    * tour est décompté à la reprise (après un arrêt normal, la pendule est figée juste avant).
    */
@@ -105,6 +111,11 @@ export class Room {
   draftTimer: NodeJS.Timeout | null = null;
   saveTimer: NodeJS.Timeout | null = null;
   botBusy = false;
+  /** Relais de l'IA (parties de l'accueil) : minuterie du tour, calcul en cours, début du tour, dernière présence. */
+  relayTimer: NodeJS.Timeout | null = null;
+  relayBusy = false;
+  turnSince = Date.now();
+  activityAt: Record<Color, number> = { w: 0, b: 0 };
   rematchPending = false;
   endedAt = 0;
   constructor(public d: RoomData) {}
@@ -206,6 +217,7 @@ export function resumeRoom(room: Room) {
   armTimers(room);
   if (both) closeDraftRoom(room);
   maybeBot(room);
+  armRelay(room);
 }
 
 export async function restoreRooms() {
@@ -263,6 +275,7 @@ function viewFor(room: Room, you: Color | null): GameView {
     mirror: d.mirror,
     started: !!d.started,
     draft: draftView(d, you),
+    standIn: d.relay ? { w: !!d.standIn?.w, b: !!d.standIn?.b } : null,
   };
 }
 
@@ -542,8 +555,9 @@ function updateFirstMoveDeadline(room: Room) {
   const s = room.d.state;
   const turnSeat = room.d.seats[s.pos.turn];
   // Pendant le choix des cartes, pas de délai : il commence à la révélation des mains.
+  // Parties de l'accueil : pas de délai, l'IA joue pour celui qui ne joue pas (relais)
   room.d.firstMoveDeadline =
-    room.d.status === 'active' && !room.d.draft && !room.d.started && turnSeat?.kind !== 'bot' ? now() + FIRST_MOVE_MS : null;
+    room.d.status === 'active' && !room.d.draft && !room.d.started && !room.d.relay && turnSeat?.kind !== 'bot' ? now() + FIRST_MOVE_MS : null;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -577,7 +591,7 @@ function botSeat(level: BotLevel): Seat {
  * Nouvelle partie. Avec cartes, elle commence par le choix des cartes (D5) : mains vides jusqu'à la révélation.
  * Le mode miroir n'existe plus (le paramètre `mirror` des anciens clients est ignoré). Exportée pour les tests.
  */
-export function newRoom(opts: { mode: GameMode; rated: boolean; tc: string; catalog: Catalog; creator: string; seats: Record<Color, Seat | null>; /** Mains tirées au hasard, sans choix des cartes (parties de l'accueil). */ deal?: boolean }): Room {
+export function newRoom(opts: { mode: GameMode; rated: boolean; tc: string; catalog: Catalog; creator: string; seats: Record<Color, Seat | null>; /** Mains tirées au hasard, sans choix des cartes (parties de l'accueil). */ deal?: boolean; /** L'IA joue pour un joueur qui ne joue pas (parties de l'accueil). */ relay?: boolean }): Room {
   const tc = tcFromId(opts.tc) ?? null;
   let id = gameId();
   while (rooms.has(id)) id = gameId();
@@ -604,6 +618,7 @@ export function newRoom(opts: { mode: GameMode; rated: boolean; tc: string; cata
     createdAt: now(),
     started: false,
     lastActivity: now(),
+    ...(opts.relay ? { relay: true, standIn: { w: false, b: false } } : {}),
   });
   rooms.set(id, room);
   if (room.d.status === 'active') begin(room);
@@ -620,6 +635,8 @@ function begin(room: Room) {
   armTimers(room);
   if (chosen) closeDraftRoom(room);
   maybeBot(room);
+  room.turnSince = now();
+  armRelay(room);
 }
 
 function elo(a: number, b: number, score: number, games: number): number {
@@ -640,6 +657,8 @@ function endGame(room: Room, result?: Result) {
   d.draft = null;
   room.endedAt = now();
   armTimers(room);
+  if (room.relayTimer) clearTimeout(room.relayTimer);
+  room.relayTimer = null;
   const { w, b } = d.seats;
   if (d.rated && w?.userId && b?.userId && r.reason !== 'aborted') {
     const sw = r.winner === 'w' ? 1 : r.winner === 'b' ? 0 : 0.5;
@@ -717,6 +736,89 @@ function maybeBot(room: Room) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Relais de l'IA (parties en direct de l'accueil)
+//
+// Un joueur qui ne joue pas (aucun coup, l'échiquier pas touché) : l'IA joue pour lui, sans le faire attendre ni
+// faire attendre l'autre, jusqu'à ce qu'il reprenne la main. Premier coup : 10 s ; ensuite 30 s sans le moindre
+// signe de présence (game:activity). Relayé, il joue de lui-même dès qu'il veut : son coup lui rend la main. Si les
+// deux joueurs sont relayés, l'IA ne joue pas contre elle-même : la partie attend ; personne n'est plus là, elle
+// est annulée.
+
+const RELAY_FIRST_MS = 10_000;
+const RELAY_IDLE_MS = 30_000;
+const RELAY_LEVEL: BotLevel = 2;
+
+export function armRelay(room: Room) {
+  if (room.relayTimer) clearTimeout(room.relayTimer);
+  room.relayTimer = null;
+  const d = room.d;
+  if (!d.relay || d.status !== 'active' || d.state.result) return;
+  const c = d.state.pos.turn;
+  const seat = d.seats[c];
+  if (!seat || seat.kind === 'bot') return;
+  const other = opposite(c);
+  if (d.standIn?.[other] && !d.standIn?.[c]) {
+    // L'adversaire est déjà relayé : l'IA ne joue pas contre elle-même. On attend ce joueur ; si plus personne n'est
+    // sur la page depuis 30 s, la partie est annulée.
+    if (room.away.w && room.away.b) {
+      room.relayTimer = setTimeout(() => {
+        if (d.status === 'active' && room.away.w && room.away.b) endGame(room, { winner: null, reason: 'aborted' });
+      }, 30_000);
+    }
+    return;
+  }
+  let ms: number;
+  if (d.standIn?.[c]) ms = 900 + Math.random() * 700;
+  else {
+    const first = d.state.ply < (c === 'w' ? 1 : 2);
+    const since = Math.max(room.turnSince, room.activityAt[c]);
+    ms = Math.max(0, since + (first ? RELAY_FIRST_MS : RELAY_IDLE_MS) - now());
+  }
+  room.relayTimer = setTimeout(() => relayPlay(room, c), ms);
+}
+
+function relayPlay(room: Room, c: Color) {
+  const d = room.d;
+  room.relayTimer = null;
+  if (!d.relay || d.status !== 'active' || d.state.pos.turn !== c || room.relayBusy) return;
+  if (d.standIn?.[opposite(c)] && !d.standIn?.[c]) return;
+  if (!d.standIn?.[c]) {
+    d.standIn = { w: !!d.standIn?.w, b: !!d.standIn?.b, [c]: true } as Record<Color, boolean>;
+    broadcast(room, { type: 'sync' });
+  }
+  room.relayBusy = true;
+  const len = d.state.log.length;
+  const still = () => d.status === 'active' && d.state.pos.turn === c && d.state.log.length === len && !!d.standIn?.[c];
+  void botPool
+    .decide(d.state, RELAY_LEVEL)
+    .then(async reply => {
+      if (reply.error) console.error('Relais de l’IA :', reply.error);
+      if (!still()) return;
+      if (reply.card && applyCard(room, c, reply.card.index, reply.card.targets).ok && reply.move) {
+        await new Promise(r => setTimeout(r, BOT_CARD_PAUSE_MS));
+      }
+      if (reply.move && d.status === 'active' && d.state.pos.turn === c && d.standIn?.[c]) {
+        const r = applyMove(room, c, reply.move.from, reply.move.to, reply.move.promo as PieceType | undefined);
+        if (!r.ok) console.error('Relais de l’IA, coup refusé :', r.error);
+      }
+    })
+    .catch(e => console.error('Relais de l’IA :', e))
+    .finally(() => {
+      room.relayBusy = false;
+      armRelay(room);
+    });
+}
+
+/** Le joueur reprend la main (il joue lui-même, ou game:takeover). */
+function takeOver(room: Room, c: Color) {
+  const d = room.d;
+  room.activityAt[c] = now();
+  if (!d.relay || !d.standIn?.[c]) return false;
+  d.standIn = { ...d.standIn, [c]: false };
+  return true;
+}
+
+// ---------------------------------------------------------------------------------------------
 // Actions
 
 type Ack = { ok: boolean; error?: string };
@@ -736,6 +838,8 @@ export function applyMove(room: Room, color: Color, from: number, to: number, pr
   broadcast(room, { type: 'move', color, info: r.info });
   if (d.state.result) endGame(room);
   else maybeBot(room);
+  room.turnSince = now();
+  armRelay(room);
   return { ok: true };
 }
 
@@ -753,6 +857,8 @@ function applyCard(room: Room, color: Color, index: number, targets: number[]): 
   broadcast(room, { type: 'card', info: r.info });
   if (d.state.result) endGame(room);
   else if (turnChanges) maybeBot(room);
+  if (turnChanges) room.turnSince = now();
+  armRelay(room);
   return { ok: true };
 }
 
@@ -888,6 +994,8 @@ interface HomeVisitor {
   since: number;
   tz: string;
   ready: boolean;
+  /** « Chercher un vrai joueur » : apparié quel que soit le temps passé sur la page. */
+  searching: boolean;
 }
 /** Fenêtre d'arrivée : au-delà, le visiteur joue contre l'Oracle, on ne vient plus le chercher. */
 export const HOME_WINDOW_MS = 30_000;
@@ -895,8 +1003,8 @@ const homeVisitors = new Map<string, HomeVisitor>();
 
 function pairHomeVisitors() {
   const t = now();
-  for (const [id, v] of homeVisitors) if (t - v.since > HOME_WINDOW_MS) homeVisitors.delete(id);
-  const ready = [...homeVisitors.values()].filter(v => v.ready).sort((a, b) => a.since - b.since);
+  for (const [id, v] of homeVisitors) if (!v.searching && t - v.since > HOME_WINDOW_MS) homeVisitors.delete(id);
+  const ready = [...homeVisitors.values()].filter(v => v.ready || v.searching).sort((a, b) => a.since - b.since);
   while (ready.length >= 2) {
     const a = ready.shift()!;
     // Jamais contre soi-même (deux onglets du même navigateur)
@@ -912,7 +1020,7 @@ function pairHomeVisitors() {
 async function startHomeGame(a: HomeVisitor, b: HomeVisitor) {
   const [sa, sb] = await Promise.all([seatFor(a.sock.data.identity, 'Visiteur'), seatFor(b.sock.data.identity, 'Visiteur')]);
   const aWhite = Math.random() < 0.5;
-  const room = newRoom({ mode: 'quick', rated: false, tc: 'none', catalog: 'climats', creator: a.key, seats: aWhite ? { w: sa, b: sb } : { w: sb, b: sa }, deal: true });
+  const room = newRoom({ mode: 'quick', rated: false, tc: 'none', catalog: 'climats', creator: a.key, seats: aWhite ? { w: sa, b: sb } : { w: sb, b: sa }, deal: true, relay: true });
   a.sock.emit('home:paired', { gameId: room.d.id, color: aWhite ? 'w' : 'b', opponent: { country: countryOfTimezone(b.tz) } });
   b.sock.emit('home:paired', { gameId: room.d.id, color: aWhite ? 'b' : 'w', opponent: { country: countryOfTimezone(a.tz) } });
 }
@@ -953,6 +1061,7 @@ function updatePresence(room: Room) {
     if (!online && room.away[c] === null) { room.away[c] = now(); changed = true; }
   }
   if (changed) broadcast(room, { type: 'sync' });
+  if (changed && room.d.relay) armRelay(room);
 }
 
 export function attachSockets(server: IO) {
@@ -1037,12 +1146,46 @@ export function attachSockets(server: IO) {
     });
 
     sock.on('game:move', (p, ack) =>
-      withRoom(p?.id, ack, (room, color) => applyMove(room, color, Number(p.from), Number(p.to), p.promo)));
+      withRoom(p?.id, ack, (room, color) => {
+        // Un joueur relayé qui joue lui-même reprend la main
+        const took = takeOver(room, color);
+        const r = applyMove(room, color, Number(p.from), Number(p.to), p.promo);
+        if (took && !r.ok) {
+          broadcast(room, { type: 'sync' });
+          armRelay(room);
+        }
+        return r;
+      }));
+
+    sock.on('game:activity', p => {
+      if (!allow()) return;
+      const room = [...joined].find(r => r.d.id === String(p?.id ?? ''));
+      const color = room ? colorOf(room, identity) : null;
+      if (!room || !color || !room.d.relay) return;
+      room.activityAt[color] = now();
+      if (!room.d.standIn?.[color]) armRelay(room);
+    });
+
+    sock.on('game:takeover', (p, ack) =>
+      withRoom(p?.id, ack, room => {
+        const color = colorOf(room, identity)!;
+        if (takeOver(room, color)) {
+          broadcast(room, { type: 'sync' });
+          armRelay(room);
+        }
+        return { ok: true };
+      }));
 
     sock.on('game:card', (p, ack) =>
       withRoom(p?.id, ack, (room, color) => {
         const targets = Array.isArray(p.targets) ? p.targets.map(Number).filter(n => Number.isInteger(n) && n >= 0 && n < 64) : [];
-        return applyCard(room, color, Number(p.index), targets);
+        const took = takeOver(room, color);
+        const r = applyCard(room, color, Number(p.index), targets);
+        if (took && !r.ok) {
+          broadcast(room, { type: 'sync' });
+          armRelay(room);
+        }
+        return r;
       }));
 
     sock.on('game:draft', (p, ack) => {
@@ -1139,8 +1282,16 @@ export function attachSockets(server: IO) {
 
     sock.on('home:hello', p => {
       if (!allow()) return;
-      homeVisitors.set(sock.id, { sock, key: myKey, since: now(), tz: String(p?.tz ?? '').slice(0, 64), ready: !!p?.ready });
+      const prev = homeVisitors.get(sock.id);
+      homeVisitors.set(sock.id, { sock, key: myKey, since: now(), tz: String(p?.tz ?? '').slice(0, 64), ready: !!p?.ready, searching: !!prev?.searching });
       pairHomeVisitors();
+    });
+    sock.on('home:search', p => {
+      if (!allow()) return;
+      const v = homeVisitors.get(sock.id);
+      if (v) v.searching = !!p?.search;
+      else if (p?.search) homeVisitors.set(sock.id, { sock, key: myKey, since: now(), tz: String(p?.tz ?? '').slice(0, 64), ready: false, searching: true });
+      if (p?.search) pairHomeVisitors();
     });
     sock.on('home:ready', p => {
       if (!allow()) return;

@@ -58,7 +58,7 @@ export interface ShellPrompt {
   onCancel: () => void;
 }
 
-export type ShellIcon = 'draw' | 'resign' | 'abort' | 'new' | 'moves' | 'flip' | 'sound' | 'mute';
+export type ShellIcon = 'draw' | 'resign' | 'abort' | 'new' | 'moves' | 'flip' | 'sound' | 'mute' | 'search' | 'hand';
 
 export interface ShellAction {
   label: string;
@@ -177,6 +177,8 @@ const ICONS: Record<ShellIcon, ReactNode> = {
   flip: <path d="M8 4v15M8 4 4.5 7.5M8 4l3.5 3.5M16 20V5m0 15-3.5-3.5M16 20l3.5-3.5" />,
   sound: <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9a4 4 0 0 1 0 6" />,
   mute: <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9.5l5 5m0-5-5 5" />,
+  search: <path d="M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM15.5 15.5 20 20" />,
+  hand: <path d="M8 12V6.5a1.5 1.5 0 0 1 3 0V11m0-5.5V5a1.5 1.5 0 0 1 3 0v6m0-4.5a1.5 1.5 0 0 1 3 0V14a6 6 0 0 1-6 6h-1a6 6 0 0 1-5-2.7L4.6 15a1.5 1.5 0 0 1 2.4-1.8L8 14.5" />,
 };
 
 function ActionButton({ a, variant }: { a: ShellAction; variant: 'tool' | 'sheet' }) {

@@ -392,8 +392,9 @@ export function chooseBotCard(s: GameState, level: BotLevel): { index: number; t
 const DRAFT_VALUE: Partial<Record<CardId, number>> = {
   ice_wall: 5,
   blood_moon: 4.5,
-  blast: 4.4,
   tide: 4,
+  // Déflagration (7 novembre) : chaque prise coûte la pièce qui prend ; moins décisive que l'ancienne explosion
+  blast: 3.8,
   rift: 3.6,
   truce: 3.4,
   ice_age: 3.1,

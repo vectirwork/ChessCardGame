@@ -7,7 +7,7 @@ import { Color, PieceType, VALUE, sanToFrench } from '../../shared/chess';
 import { CARDS, CATALOGS } from '../../shared/cards';
 import type { Catalog } from '../../shared/cards';
 import { BOT_PROFILES } from '../../shared/bot';
-import type { Effect, GameState, LogEntry } from '../../shared/game';
+import type { GameState, LogEntry } from '../../shared/game';
 import { describeCardPlay } from '../../shared/game';
 import type { ClockView, GameView, SeatView } from '../../shared/protocol';
 import { TIME_CONTROLS } from '../../shared/protocol';
@@ -15,7 +15,6 @@ import { pieceUrl } from '../components/pieces';
 import { OracleEye } from '../odyssee/shell';
 import { playSound } from '../sound';
 
-const plural = (n: number, w: string) => `${n} ${w}${n > 1 ? 's' : ''}`;
 
 // ---------------------------------------------------------------------------------------------
 // Libellés
@@ -258,63 +257,3 @@ export function MoveList({ log, className = '' }: { log: LogEntry[]; className?:
   );
 }
 
-// ---------------------------------------------------------------------------------------------
-// Sorts en cours : Présages annoncés (pas encore actifs), Climats (toute la partie), sorts de Duel
-
-function effectLine(e: Effect, you: Color | null): string {
-  const mine = you ? e.caster === you : false;
-  const who = you ? (mine ? 'Votre sort' : 'Sort adverse') : `Sort des ${colorName(e.caster)}`;
-  if (e.pending) {
-    // Un Présage arrive au début du prochain tour de son lanceur : delay = demi-coups restants (2 juste après
-    // l'annonce, le lanceur ayant encore son coup à jouer ; 1 pendant le tour de l'adversaire).
-    if (!you) return `Présage des ${colorName(e.caster)} · arrive à leur prochain tour`;
-    if (mine) return 'Votre Présage · arrive à votre prochain tour';
-    return `Présage adverse · arrive ${(e.delay ?? 1) > 1 ? 'après votre prochain coup' : 'après votre coup'}`;
-  }
-  if (e.permanent) return `${who} · permanent`;
-  if (e.global) return `${who} · encore ${plural(e.remaining, 'coup')}`;
-  if (e.countsOn === e.caster) return `${who} · ce tour`;
-  if (!you) return `${who} · encore ${plural(e.remaining, 'coup')} des ${colorName(e.countsOn)}`;
-  if (e.countsOn === you) return `${who} · ${e.remaining > 1 ? `encore ${e.remaining} de vos coups` : 'votre prochain coup'}`;
-  return `${who} · encore ${plural(e.remaining, 'coup')} adverse${e.remaining > 1 ? 's' : ''}`;
-}
-
-export function EffectsPanel({ effects, you, title = 'Sorts en cours' }: { effects: Effect[]; you: Color | null; title?: string }) {
-  if (!effects.length) return null;
-  // Présages d'abord : ce qui va arriver se lit avant ce qui est déjà là
-  const sorted = [...effects].sort((a, b) => Number(!!b.pending) - Number(!!a.pending));
-  return (
-    <section className="gp-effects" aria-label={title}>
-      <p className="gp-label">{title}</p>
-      <ul>
-        {sorted.map(e => {
-          const def = CARDS[e.card];
-          if (!def) return null;
-          const mine = you ? e.caster === you : e.caster === 'w';
-          const pips = e.pending || e.permanent ? 0 : Math.min(e.total, 8);
-          return (
-            <li
-              key={e.id}
-              className={`${e.pending ? 'is-pending' : ''} ${e.global ? 'is-global' : ''} ${mine ? 'is-mine' : 'is-theirs'}`}
-              style={{ '--h': def.hue } as CSSProperties}
-              title={def.description}
-            >
-              <span className="gp-effect-mark" aria-hidden="true" />
-              <span className="gp-effect-txt">
-                <b>{def.name}</b>
-                <small>{effectLine(e, you)}</small>
-              </span>
-              {pips > 0 && (
-                <span className="gp-pips" aria-label={`${e.remaining} sur ${e.total}`}>
-                  {Array.from({ length: pips }, (_, i) => (
-                    <i key={i} className={i < e.remaining ? 'on' : ''} />
-                  ))}
-                </span>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </section>
-  );
-}

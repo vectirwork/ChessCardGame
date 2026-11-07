@@ -209,29 +209,30 @@ describe('La magie cède (R6), cas limites', () => {
 describe('Déflagration près des rois et des pièces protégées', () => {
   const blast = (s: GameState) => withEffect(s, 'blast', { remaining: 3 }, 'w');
 
-  it('explosion au contact des deux rois : rois et pions épargnés, pièces des deux camps détruites', () => {
-    // Rd1 et Rd3 ; le Cf3 prend le Cd2 ; voisins Fc1, Fe1, Cc2, Te2 (détruits), pions c3 et e3 (épargnés).
+  it('prise au contact des deux rois : seules la preneuse et sa victime disparaissent', () => {
+    // Rd1 et Rd3 ; le Cf3 prend le Cd2 : les deux cavaliers disparaissent, Fc1, Fe1, Cc2, Te2 et les pions restent.
     const h = blast(game('8/8/8/8/8/2pkPN2/2Nnr3/2BKb3 w - - 0 1'));
     const info = mvInfo(h, 'f3', 'd2');
     const b = info.state.pos.board;
     expect(info.info.move.flags & F_BLAST).toBeTruthy();
-    for (const x of ['d2', 'c1', 'e1', 'c2', 'e2', 'f3']) expect(b[q(x)], x).toBeNull();
+    for (const x of ['d2', 'f3']) expect(b[q(x)], x).toBeNull();
+    for (const x of ['c1', 'e1', 'c2', 'e2', 'c3', 'e3']) expect(b[q(x)], x).not.toBeNull();
     expect(b[q('d1')]).toMatchObject({ t: 'k', c: 'w' });
     expect(b[q('d3')]).toMatchObject({ t: 'k', c: 'b' });
-    expect(b[q('c3')]).toMatchObject({ t: 'p', c: 'b' });
-    expect(b[q('e3')]).toMatchObject({ t: 'p', c: 'w' });
-    expect(info.info.blasted).toHaveLength(5);
-    expect([...info.state.captured.w].sort()).toEqual(['b', 'n', 'n']);
-    expect([...info.state.captured.b].sort()).toEqual(['b', 'n', 'r']);
+    expect(info.info.blasted).toHaveLength(1);
+    expect([...info.state.captured.w]).toEqual(['n']);
+    expect([...info.state.captured.b]).toEqual(['n']);
     expect(info.info.san).toBe('Nxd2*');
   });
 
-  it('une explosion qui emporte un écran adverse découvre un échec : permis, et noté +', () => {
-    const s = blast(game('4k3/8/3p4/1N2n3/8/8/8/4R1K1 w - - 0 1'));
-    const r = mvInfo(s, 'b5', 'd6');
+  it('la preneuse disparaît : une prise sur la colonne du roi adverse découvre un échec, noté +', () => {
+    // Cf3 x e5 : en échecs ordinaires le cavalier boucherait la colonne e ; ici il disparaît, la Te1 fait échec.
+    const fen = '4k3/8/8/4p3/8/5N2/8/4R1K1 w - - 0 1';
+    const s = blast(game(fen));
+    const r = mvInfo(s, 'f3', 'e5');
     expect(r.state.pos.board[q('e5')]).toBeNull();
     expect(r.info.check).toBe(true);
-    expect(r.state.log[r.state.log.length - 1]).toMatchObject({ san: 'Nxd6*+' });
+    expect(r.state.log[r.state.log.length - 1]).toMatchObject({ san: 'Nxe5*+' });
   });
 
   it('un roi capture sans explosion, et jamais une pièce protégée', () => {
@@ -250,15 +251,15 @@ describe('Déflagration près des rois et des pièces protégées', () => {
     expect(has(blast(game(fen)), 'e2e5')).toBe(false); // explosion : la dame e8 verrait le roi
   });
 
-  it('une explosion qui emporte la pièce qui donne échec est une parade', () => {
-    const fen = 'k7/8/8/6rp/5N2/8/8/6K1 w - - 0 1';
-    expect(has(game(fen), 'f4h5')).toBe(false);
-    expect(has(blast(game(fen)), 'f4h5')).toBe(true);
-    const r = mvInfo(blast(game(fen)), 'f4', 'h5');
-    expect(r.state.pos.board[q('g5')]).toBeNull();
+  it('prendre la pièce qui donne échec reste une parade : les deux disparaissent', () => {
+    const fen = 'k7/8/6r1/8/5N2/8/8/6K1 w - - 0 1';
+    expect(has(blast(game(fen)), 'f4g6')).toBe(true);
+    const r = mvInfo(blast(game(fen)), 'f4', 'g6');
+    expect(r.state.pos.board[q('g6')]).toBeNull();
+    expect(r.info.check).toBe(false);
   });
 
-  it('prise en passant : explosion centrée sur la case d’arrivée, pas sur le pion pris', () => {
+  it('prise en passant : le pion qui prend disparaît avec sa victime, les voisins restent', () => {
     let s = withEffect(game('6k1/3p4/8/2n1P3/4r3/8/8/6K1 b - - 0 1'), 'blast', { remaining: 3 }, 'w');
     s = mv(s, 'd7', 'd5');
     const r = mvInfo(s, 'e5', 'd6');
@@ -266,8 +267,8 @@ describe('Déflagration près des rois et des pièces protégées', () => {
     const b = r.state.pos.board;
     expect(b[q('d6')]).toBeNull(); // le pion qui prend explose
     expect(b[q('d5')]).toBeNull(); // la victime
-    expect(b[q('c5')]).toBeNull(); // voisin de d6
-    expect(b[q('e4')]).toMatchObject({ t: 'r', c: 'b' }); // voisin de d5 seulement : épargné
+    expect(b[q('c5')]).toMatchObject({ t: 'n', c: 'b' }); // voisin de d6 : épargné
+    expect(b[q('e4')]).toMatchObject({ t: 'r', c: 'b' }); // voisin de d5 : épargné
     expect(r.info.san).toBe('exd6*');
   });
 });
@@ -474,19 +475,20 @@ describe('Tirage pondéré (R9), sur des milliers de mains', () => {
     }
   });
 
-  it('la Légendaire reste rare et les Communes fréquentes, sans pendule comme avec', () => {
+  it('les Épiques restent plus rares que les Communes, sans pendule comme avec', () => {
     const rand = rng(99);
     const N = 20000;
     const seen: Partial<Record<CardId, number>> = {};
     for (let i = 0; i < N; i++) for (const id of dealHands(false, false, rand, 'climats').w) seen[id] = (seen[id] ?? 0) + 1;
     const pct = (id: CardId) => ((seen[id] ?? 0) / N) * 100;
     expect(pct('hourglass')).toBe(0);
-    // Sans Sablier (7 cartes) : Mur 57,5 %, Déflagration 14,9 % (400 000 tirages).
-    expect(pct('ice_wall')).toBeGreaterThan(54);
-    expect(pct('ice_wall')).toBeLessThan(61);
-    expect(pct('blast')).toBeGreaterThan(12);
-    expect(pct('blast')).toBeLessThan(18);
-    expect(pct('blast')).toBeLessThan(pct('blood_moon'));
+    // Sans Sablier (7 cartes) ; la Déflagration est Épique, comme la Lune de sang : même fréquence, bien sous le Mur.
+    expect(pct('ice_wall')).toBeGreaterThan(48);
+    expect(pct('ice_wall')).toBeLessThan(64);
+    expect(pct('blast')).toBeGreaterThan(18);
+    expect(pct('blast')).toBeLessThan(34);
+    expect(Math.abs(pct('blast') - pct('blood_moon'))).toBeLessThan(3);
+    expect(pct('blast')).toBeLessThan(pct('ice_wall'));
   }, 60_000);
 });
 
@@ -760,10 +762,13 @@ function aggressive(start: GameState, rand: () => number, maxSteps: number, from
       expect(r.info.check).toBe(sideInCheck(n));
       expect(n.keys[n.keys.length - 1]).toBe(positionKey(n));
       if (m.flags & F_BLAST) {
+        // La preneuse disparaît avec sa victime ; les voisines restent telles quelles.
         expect(n.pos.board[m.to]).toBeNull();
+        expect(r.info.blasted ?? []).toHaveLength(1);
+        const epVictim = m.flags & F_EP ? m.to + (me === 'w' ? -8 : 8) : -1;
         for (const x of neighbours(m.to)) {
-          const p = n.pos.board[x];
-          expect(!p || p.t === 'p' || p.t === 'k', `voisine survivante ${sqName(x)}`).toBe(true);
+          if (x === m.from || x === epVictim) continue;
+          expect(n.pos.board[x], `voisine touchée ${sqName(x)}`).toEqual(s.pos.board[x]);
         }
       }
       // Promotion en 8e rangée seulement (le Couronnement est retiré), jamais par un pion qui explose.

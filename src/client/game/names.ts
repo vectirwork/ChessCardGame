@@ -4,7 +4,7 @@
 const ELIDE = /^[aeiouhàâäéèêëîïôöùûüœæ]/i;
 
 /**
- * « de » + nom, avec l'élision et les contractions du français : « d'Alice », « de Bruno », « de l'IA Sorcier »,
+ * « de » + nom, avec l'élision et les contractions du français : « d'Alice », « de Bruno », « de l'IA Sorcier », « de l'Oracle »,
  * « des Blancs » (pour « Les Blancs »).
  */
 export function deNom(name: string): string {
@@ -12,5 +12,6 @@ export function deNom(name: string): string {
   if (/^les\s/i.test(n)) return `des ${n.slice(4)}`;
   if (/^le\s/i.test(n)) return `du ${n.slice(3)}`;
   if (/^IA(\s|$)/.test(n)) return `de l'${n}`;
+  if (/^l['’]/i.test(n)) return `de l'${n.slice(2)}`;
   return ELIDE.test(n) ? `d'${n}` : `de ${n}`;
 }

@@ -112,7 +112,7 @@ const DETAILS: ReactNode[] = [
   'Votre roi doit être à l’abri après votre coup, avec les effets tels qu’ils seront alors : l’arrivée d’un Climat ou la fermeture d’une Faille comptent déjà. Celui qui répond à un Présage se prépare donc au monde qui arrive.',
   'Un Climat ne sauve jamais du mat : il arrive trop tard. Le Mur de glace, la Faille ou la Grande Marée le peuvent.',
   'Le Sablier fou n’est proposé qu’entre humains, dans les parties avec pendule.',
-  'Le choix des cartes dure 45 secondes : trois cartes différentes parmi les huit pouvoirs, sans autre contrainte. Si le temps s’écoule, celles qui vous manquent sont tirées au hasard. Sur l’accueil, le tirage favorise les cartes les moins rares, avec au plus une Légendaire et deux Climats par main.',
+  'Le choix des cartes dure 45 secondes : trois cartes différentes parmi les huit pouvoirs, sans autre contrainte. Si le temps s’écoule, celles qui vous manquent sont tirées au hasard. Sur l’accueil, le tirage favorise les cartes les moins rares, avec au plus deux Climats par main.',
   'Les animations des sorts ne vous coûtent pas de temps à la pendule.',
   <>
     Pour choisir vos cartes et votre adversaire, passez par la page <Link to="/jouer">Jouer</Link>.

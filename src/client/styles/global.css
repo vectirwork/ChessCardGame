@@ -130,6 +130,11 @@ body::before {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  /* Jamais de défilement horizontal. Sur téléphone, un élément placé en absolu qui dépasse à droite (anneaux de
+     l'échiquier de l'accueil, qui défile avec la page) élargirait la page : le navigateur la dézoomerait, et
+     l'échiquier, placé d'après la largeur de la fenêtre, partirait encore plus loin. `clip` ne crée pas de zone de
+     défilement : les éléments collants et fixes ne changent pas. */
+  overflow-x: clip;
 }
 
 a {

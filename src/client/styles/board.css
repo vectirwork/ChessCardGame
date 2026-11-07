@@ -153,6 +153,9 @@
   .board-note {
     animation: none;
   }
+  .board-burst {
+    display: none;
+  }
 }
 .sq.check::before {
   content: '';
@@ -382,6 +385,72 @@
     opacity: 0;
     transform: scale(0.6);
     filter: blur(3px) brightness(2);
+  }
+}
+/* Déflagration : la pièce qui prend glisse jusqu'à sa victime (0,18 s), puis les deux éclatent dans un flash */
+.piece.vanish.is-blast {
+  z-index: 2;
+}
+.piece.vanish.is-blast .pi {
+  animation: blast-out 0.46s ease-in 0.16s forwards;
+}
+@keyframes blast-out {
+  30% {
+    opacity: 1;
+    transform: scale(1.14);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+.board-burst {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 12.5%;
+  height: 12.5%;
+  z-index: 3;
+  pointer-events: none;
+}
+.board-burst::before,
+.board-burst::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0;
+}
+.board-burst::before {
+  inset: -70%;
+  background: radial-gradient(circle, rgba(255, 251, 226, 0.95) 0%, rgba(255, 186, 84, 0.85) 20%, rgba(255, 92, 40, 0.42) 42%, transparent 66%);
+  animation: board-burst 0.62s ease-out 0.16s forwards;
+}
+.board-burst::after {
+  inset: -10%;
+  border: 2px solid rgba(255, 210, 140, 0.9);
+  animation: board-ring 0.7s ease-out 0.18s forwards;
+}
+@keyframes board-burst {
+  0% {
+    opacity: 0;
+    transform: scale(0.25);
+  }
+  22% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.15);
+  }
+}
+@keyframes board-ring {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2.2);
   }
 }
 .piece.appear .pi {

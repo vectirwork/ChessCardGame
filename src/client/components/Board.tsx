@@ -41,7 +41,11 @@ interface Shown {
   p: Piece;
   sq: number;
   state: 'idle' | 'vanish' | 'appear';
+  /** Déflagration : la pièce éclate (celle qui a pris, après avoir glissé jusqu'à sa victime, et la victime). */
+  blast?: boolean;
 }
+
+const moveKey = (m: { from: number; to: number } | null | undefined) => (m ? `${m.from}-${m.to}` : '');
 
 const textureClass = (theme: string | undefined) => `tex-${boardStyle(theme).texture}`;
 
@@ -76,6 +80,7 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
   const prevIds = useRef<Set<number>>(new Set(pos.board.filter(Boolean).map(p => p!.id)));
   const shownRef = useRef(shown);
   shownRef.current = shown;
+  const lastKeyRef = useRef(moveKey(lastMove));
   useEffect(() => {
     const now: Shown[] = [];
     const ids = new Set<number>();
@@ -84,16 +89,34 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
       ids.add(p.id);
       now.push({ p, sq, state: prevIds.current.has(p.id) ? 'idle' : 'appear' });
     });
-    const gone = shownRef.current.filter(s => !ids.has(s.p.id) && s.state !== 'vanish').map(s => ({ ...s, state: 'vanish' as const }));
+    let gone: Shown[] = shownRef.current.filter(s => !ids.has(s.p.id) && s.state !== 'vanish').map(s => ({ ...s, state: 'vanish' as const }));
     prevIds.current = ids;
+    // Déflagration : la pièce qui vient de jouer a disparu, elle a donc pris et explosé avec sa victime. Elle glisse
+    // jusqu'à la case de la prise, puis les deux pièces éclatent ensemble.
+    const key = moveKey(lastMove);
+    const fresh = key !== lastKeyRef.current;
+    lastKeyRef.current = key;
+    const sacrifice = fresh && !!lastMove && gone.some(s => s.sq === lastMove.from);
+    if (sacrifice && lastMove) {
+      gone = gone.map(s => ({ ...s, sq: s.sq === lastMove.from ? lastMove.to : s.sq, blast: true }));
+      setBurst({ sq: lastMove.to, key: Date.now() });
+    }
     // Ordre stable (par pièce, pas par case) : si React déplaçait le nœud d'une pièce dans le DOM, le navigateur
     // annulerait la transition et la pièce sauterait d'un coup à sa case d'arrivée.
     setShown([...now, ...gone].sort((a, b) => a.p.id - b.p.id));
     if (gone.length) {
-      const t = setTimeout(() => setShown(cur => cur.filter(s => s.state !== 'vanish' || ids.has(s.p.id))), 420);
+      const t = setTimeout(() => setShown(cur => cur.filter(s => s.state !== 'vanish' || ids.has(s.p.id))), sacrifice ? 760 : 420);
       return () => clearTimeout(t);
     }
+    // lastMove change en même temps que pos (même état de partie)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pos]);
+  const [burst, setBurst] = useState<{ sq: number; key: number } | null>(null);
+  useEffect(() => {
+    if (!burst) return;
+    const t = setTimeout(() => setBurst(null), 900);
+    return () => clearTimeout(t);
+  }, [burst]);
 
   useEffect(() => {
     setSelected(null);
@@ -294,11 +317,12 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
       >
         <div className="squares">{squares}</div>
         <div className="pieces">
-          {shown.map(({ p, sq, state }) => {
+          {shown.map(({ p, sq, state, blast }) => {
             if (hidden?.has(p.id) && state !== 'vanish') return null;
             const { x, y } = xy(sq, orientation);
             const dragging = drag?.moved && drag.sq === sq && state === 'idle';
             const cls = ['piece', state];
+            if (blast) cls.push('is-blast');
             if (p.t === 'p') cls.push('pawn');
             if (p.t === 'p' && fx.climate === 'ice_age') cls.push('chilled');
             if (fx.frozen.has(p.id)) cls.push('frozen');
@@ -318,6 +342,10 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
               </div>
             );
           })}
+          {burst && (() => {
+            const { x, y } = xy(burst.sq, orientation);
+            return <span key={burst.key} className="board-burst" style={{ transform: `translate(${x * 100}%, ${y * 100}%)` }} aria-hidden="true" />;
+          })()}
         </div>
         {note && (
           <p key={note.key} className="board-note" role="status">

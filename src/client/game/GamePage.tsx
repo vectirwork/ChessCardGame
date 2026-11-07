@@ -20,7 +20,7 @@ import { Board, BoardHandle, checkSquare } from '../components/Board';
 import { Modal, Spinner } from '../components/Layout';
 import { rememberView } from '../features/history';
 import { castSafely } from '../odyssee/castSafely';
-import { GameShell, castMessage, castThisTurn, gameLayout, handNotes } from '../odyssee/shell';
+import { GameShell, PowersPanel, castMessage, castThisTurn, gameLayout, handNotes } from '../odyssee/shell';
 import type { ShellAction, ShellPrompt } from '../odyssee/shell';
 import { emitAck, getSocket } from '../socket';
 import { playCardSound, playSound, setSoundEnabled, soundEnabled } from '../sound';
@@ -31,8 +31,8 @@ import { CardDraft } from './CardDraft';
 import { deNom } from './names';
 import type { Casting } from './overlays';
 import {
-  Avatar, Captured, Clock, EffectsPanel, EmoteBubble, MoveList, SeatName, catalogDescription, catalogTag, colorName,
-  modeLabel, seatSub, tcLabel,
+  Avatar, Captured, Clock, EmoteBubble, MoveList, SeatName, catalogDescription, catalogTag, colorName, modeLabel,
+  seatSub, tcLabel,
 } from './parts';
 
 type Queued = GameUpdate & { at: number };
@@ -591,29 +591,49 @@ export default function GamePage() {
   const actions: ShellAction[] = [
     {
       label: 'Proposer la nulle',
+      icon: 'draw',
       onClick: () => void send('game:draw', { action: 'offer' }).then(ok => ok && toast('Proposition de nulle envoyée.')),
       hidden: !you || view.status !== 'active' || !view.started || !vsHuman || view.drawOffer === you,
     },
-    { label: 'Annuler la partie', confirm: "Confirmer l'annulation", onClick: () => void send('game:abort', {}), hidden: !you || view.status !== 'active' || view.started },
-    { label: 'Abandonner', confirm: "Confirmer l'abandon", onClick: () => void send('game:resign', {}), hidden: !you || view.status !== 'active' },
-    { label: 'Coups joués', onClick: () => setMovesOpen(true), hidden: showRail || view.status === 'waiting' },
-    { label: "Retourner l'échiquier", onClick: () => setFlipped(f => !f), hidden: !layout.mobile },
-    { label: sound ? 'Couper le son' : 'Activer le son', onClick: () => toggleSound(), hidden: !layout.mobile },
+    { label: 'Annuler la partie', icon: 'abort', confirm: "Confirmer l'annulation", onClick: () => void send('game:abort', {}), hidden: !you || view.status !== 'active' || view.started },
+    { label: 'Abandonner', icon: 'resign', confirm: "Confirmer l'abandon", onClick: () => void send('game:resign', {}), hidden: !you || view.status !== 'active' },
+    { label: 'Coups joués', icon: 'moves', onClick: () => setMovesOpen(true), hidden: showRail || view.status === 'waiting' },
+    { label: "Retourner l'échiquier", icon: 'flip', onClick: () => setFlipped(f => !f), hidden: !layout.mobile },
+    { label: sound ? 'Couper le son' : 'Activer le son', icon: sound ? 'mute' : 'sound', onClick: () => toggleSound(), hidden: !layout.mobile },
   ];
 
   const oppSeat = view.seats[top];
   const selfSeat = view.seats[bottom];
 
-  const info = (
-    <>
-      {view.drawOffer && you && view.drawOffer !== you && view.status === 'active' && (
-        <DrawOffer onAccept={() => void send('game:draw', { action: 'accept' })} onDecline={() => void send('game:draw', { action: 'decline' })} />
-      )}
-      {view.drawOffer === you && you && view.status === 'active' && <p className="gp-note">Nulle proposée : en attente de la réponse.</p>}
-      {oppAway && view.status === 'active' && <AwayNotice since={oppAway} claimAfter={view.claimAfterMs} onClaim={() => void send('game:claim', {})} />}
-      {ended && view.rematch.next === null && you && view.rematch[opposite(you)] && !view.rematch[you] && <p className="gp-note">Votre adversaire propose une revanche.</p>}
-      {!ended && <EffectsPanel effects={state.effects} you={you} />}
-    </>
+  // Bandeau sur le haut de l'échiquier : une proposition de l'adversaire ne se rate pas (ordinateur comme mobile)
+  const rematchAsked = ended && view.rematch.next === null && !!you && view.rematch[opposite(you)] && !view.rematch[you];
+  let banner: ReactNode = null;
+  if (view.drawOffer && you && view.drawOffer !== you && view.status === 'active') {
+    banner = <DrawOffer onAccept={() => void send('game:draw', { action: 'accept' })} onDecline={() => void send('game:draw', { action: 'decline' })} />;
+  } else if (oppAway && view.status === 'active') {
+    banner = <AwayNotice since={oppAway} claimAfter={view.claimAfterMs} onClaim={() => void send('game:claim', {})} />;
+  } else if (rematchAsked) {
+    banner = (
+      <div className="gp-offer" role="alert">
+        <p>Votre adversaire propose une revanche.</p>
+        <div className="gp-offer-actions">
+          <button type="button" className="btn-gold sm" onClick={() => void send('game:rematch', {})}>
+            Accepter
+          </button>
+        </div>
+      </div>
+    );
+  } else if (view.drawOffer === you && you && view.status === 'active') {
+    banner = <p className="gp-note is-banner">Nulle proposée : en attente de la réponse.</p>;
+  }
+
+  const powers = !ended && view.status !== 'waiting' && state.effects.length > 0 && (
+    <PowersPanel
+      effects={state.effects}
+      you={you}
+      names={{ w: view.seats.w?.name, b: view.seats.b?.name }}
+      mobile={layout.mobile}
+    />
   );
 
 
@@ -732,7 +752,8 @@ export default function GamePage() {
         result={result}
         prompt={prompt}
         actions={actions}
-        info={info}
+        banner={banner}
+        powers={powers}
         opponent={{
           name: oppSeat?.name ?? 'En attente…',
           sub: seatSub(oppSeat, top, view.ratingDiff?.[top] ?? null),

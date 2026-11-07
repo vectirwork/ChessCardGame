@@ -23,7 +23,7 @@ import {
 import { Engine, isMobile } from './engine';
 import { Chapter, EQ, EqRing, Kicker, Lines, Mark, OrbitRings, Sheet, Slot } from './parts';
 import { SCENES } from './scenery';
-import { EffectChips, GameShell, cardName, castMessage, castThisTurn, handNotes } from './shell';
+import { GameShell, PowersPanel, cardName, castMessage, castThisTurn, handNotes } from './shell';
 import type { ShellAction } from './shell';
 import type { Act } from './StageBoard';
 import { useHumanQueue } from './useHumanQueue';
@@ -583,8 +583,8 @@ export default function OdysseeHome() {
 
   // HUD du mode immersif
   const shellActions: ShellAction[] = [
-    { label: 'Nouvelle partie', onClick: g.newGame, hidden: g.state.ply === 0 },
-    { label: 'Abandonner', confirm: "Confirmer l'abandon", onClick: g.resign, hidden: g.state.ply === 0 || !!g.result },
+    { label: 'Nouvelle partie', icon: 'new', onClick: g.newGame, hidden: g.state.ply === 0 },
+    { label: 'Abandonner', icon: 'resign', confirm: "Confirmer l'abandon", onClick: g.resign, hidden: g.state.ply === 0 || !!g.result },
   ];
   const prompt = g.selectedDef
     ? {
@@ -1125,7 +1125,7 @@ export default function OdysseeHome() {
         }
         prompt={prompt}
         actions={shellActions}
-        info={<EffectChips effects={g.state.effects} />}
+        powers={!g.result && g.state.effects.length > 0 && <PowersPanel effects={g.state.effects} you="w" names={{ b: "L'Oracle" }} mobile={mobile} />}
         statusExtra={
           <div className="o-shell-extra">
             <LevelPick level={g.level} onChange={g.setLevel} />

@@ -652,3 +652,278 @@
     animation: none;
   }
 }
+
+/* ------------------------------------------------------------------------------------------ */
+/* Scènes explicatives des pouvoirs (components/CardScene.tsx) : petit échiquier, flèches, pièces qui glissent */
+.csn {
+  position: relative;
+  width: 100%;
+  aspect-ratio: var(--cols) / var(--rows);
+  border-radius: 8px;
+  overflow: hidden;
+  isolation: isolate;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 8px 20px -10px rgba(0, 0, 0, 0.7);
+  background: #1a1630;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.csn[tabindex] {
+  cursor: pointer;
+}
+.csn:focus-visible {
+  outline: 2px solid var(--gold, #f3c969);
+  outline-offset: 2px;
+}
+.csn-board {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--cols), 1fr);
+  grid-template-rows: repeat(var(--rows), 1fr);
+}
+.csn-sq.l {
+  background: var(--light);
+}
+.csn-sq.d {
+  background: var(--dark);
+}
+/* Teinte du pouvoir, en calque (pas de filtre : rien à recalculer quand une pièce bouge) */
+.csn[class*='tint-']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+.csn.tint-moon::after {
+  background: radial-gradient(circle at 70% 20%, rgba(255, 70, 80, 0.32), rgba(150, 20, 40, 0.16) 70%);
+}
+.csn.tint-frost::after {
+  background: linear-gradient(180deg, rgba(190, 240, 255, 0.24), rgba(120, 200, 255, 0.1));
+}
+.csn.tint-truce::after {
+  background: linear-gradient(180deg, rgba(150, 240, 160, 0.18), rgba(90, 200, 120, 0.06));
+}
+.csn.tint-blast::after {
+  background: radial-gradient(circle at 60% 40%, rgba(255, 150, 60, 0.2), transparent 70%);
+}
+.csn.tint-rift::after {
+  background: linear-gradient(180deg, rgba(150, 90, 255, 0.12), rgba(150, 90, 255, 0.04));
+}
+.csn.tint-tide::after {
+  background: linear-gradient(0deg, rgba(60, 220, 210, 0.22), transparent 70%);
+}
+.csn-mark,
+.csn-pc,
+.csn-burst {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: calc(100% / var(--cols));
+  height: calc(100% / var(--rows));
+  transform: translate(calc(var(--x) * 100%), calc(var(--y) * 100%));
+}
+.csn-mark {
+  z-index: 2;
+}
+.csn-mark.is-wall {
+  background: linear-gradient(160deg, rgba(235, 252, 255, 0.95), rgba(140, 215, 245, 0.85) 55%, rgba(90, 170, 220, 0.9));
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.75), inset 0 -6px 10px rgba(40, 110, 170, 0.45);
+}
+.csn-mark.is-rift {
+  background: linear-gradient(180deg, rgba(14, 8, 30, 0.92), rgba(40, 12, 70, 0.95) 50%, rgba(14, 8, 30, 0.92));
+  box-shadow: inset 0 0 12px rgba(170, 100, 255, 0.75);
+}
+.csn-mark.is-frost::after {
+  content: '❄';
+  position: absolute;
+  right: 6%;
+  top: 2%;
+  font-size: clamp(9px, 30%, 16px);
+  color: #dff6ff;
+  text-shadow: 0 0 6px rgba(120, 210, 255, 0.9);
+}
+.csn-pc {
+  z-index: 3;
+  background-size: 84% 84%;
+  background-position: 50% 55%;
+  background-repeat: no-repeat;
+  transition: transform 0.5s cubic-bezier(0.3, 0.8, 0.3, 1), opacity 0.35s ease;
+}
+.csn.is-reset .csn-pc {
+  transition: none;
+}
+.csn-pc.is-gone {
+  opacity: 0;
+}
+.csn-pc.is-shake {
+  animation: csn-shake 0.5s ease;
+}
+@keyframes csn-shake {
+  20%,
+  60% {
+    translate: -5% 0;
+  }
+  40%,
+  80% {
+    translate: 5% 0;
+  }
+}
+.csn-burst {
+  z-index: 4;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 245, 210, 0.95), rgba(255, 160, 60, 0.75) 40%, rgba(255, 80, 30, 0) 70%);
+  animation: csn-burst 0.7s ease-out forwards;
+}
+@keyframes csn-burst {
+  from {
+    opacity: 1;
+    scale: 0.4;
+  }
+  to {
+    opacity: 0;
+    scale: 2.2;
+  }
+}
+.csn-arrows {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+.csn.is-moving .csn-arrows {
+  opacity: 0.18;
+}
+.csn-arrow line {
+  stroke-width: 9;
+  stroke-linecap: round;
+}
+.csn-arrow.tone-gold line {
+  stroke: #f3c969;
+}
+.csn-arrow.tone-red line {
+  stroke: #ff6b6b;
+}
+.csn-arrow.tone-cyan line {
+  stroke: #7fe7ff;
+}
+.csn-arrow.is-blocked line {
+  stroke-dasharray: 14 10;
+  opacity: 0.85;
+}
+.csn-arrows marker.tone-gold path {
+  fill: #f3c969;
+}
+.csn-arrows marker.tone-red path {
+  fill: #ff6b6b;
+}
+.csn-arrows marker.tone-cyan path {
+  fill: #7fe7ff;
+}
+.csn-cross circle {
+  fill: rgba(22, 10, 24, 0.9);
+  stroke: #ff6b6b;
+  stroke-width: 3;
+}
+.csn-cross path {
+  stroke: #ff8080;
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+/* Numéros d'étape, en petit */
+.csn-num circle {
+  fill: rgba(10, 8, 24, 0.88);
+  stroke: rgba(243, 201, 105, 0.9);
+  stroke-width: 2;
+}
+.csn-num text {
+  fill: #fff1c4;
+  font: 600 17px/1 var(--sans, sans-serif);
+  text-anchor: middle;
+}
+/* Invite discrète : la scène s'anime au survol */
+.csn-play {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  z-index: 6;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(8, 7, 20, 0.7);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+.csn-play::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 4px;
+  border-left: 5px solid rgba(255, 241, 196, 0.9);
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+}
+/* Sablier fou : deux pendules */
+.csn.is-clocks {
+  background: radial-gradient(circle at 50% 40%, #2a2350, #120f26);
+}
+.csn-clocks {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8%;
+}
+.csn-dial {
+  width: 34%;
+  height: auto;
+}
+.csn-dial circle:first-child {
+  fill: rgba(255, 241, 196, 0.08);
+  stroke: rgba(243, 201, 105, 0.85);
+  stroke-width: 3;
+}
+.csn-dial line {
+  stroke: rgba(255, 241, 196, 0.7);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.csn-dial .csn-hand {
+  stroke: #7fe7ff;
+  stroke-width: 4;
+  transform-origin: 50px 50px;
+}
+.csn-dial .csn-hub {
+  fill: #7fe7ff;
+}
+.csn-clocks.is-fast .csn-hand {
+  animation: csn-spin 1.1s linear infinite;
+}
+@keyframes csn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.csn-x2 {
+  position: absolute;
+  right: 8%;
+  top: 10%;
+  font: 600 13px/1 var(--caps, serif);
+  letter-spacing: 0.08em;
+  color: #fff1c4;
+  text-shadow: 0 0 8px rgba(243, 201, 105, 0.7);
+}
+@media (prefers-reduced-motion: reduce) {
+  .csn-pc,
+  .csn-arrows {
+    transition: none;
+  }
+  .csn-pc.is-shake,
+  .csn-burst,
+  .csn-clocks.is-fast .csn-hand {
+    animation: none;
+  }
+}

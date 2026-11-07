@@ -505,17 +505,16 @@ describe('Ère glaciaire et Grande Marée', () => {
 });
 
 describe('Déflagration près des rois et des Murs', () => {
-  it('une explosion à côté d’un Mur détruit les pièces voisines mais laisse le Mur, qui bloque toujours', () => {
-    // Td1 x Cd5 sous la Déflagration : Fc6 et Fe6 noirs sautent, le Mur e5 reste, le roi e8 aussi.
+  it('une prise à côté d’un Mur : la preneuse et sa victime disparaissent, les voisines et le Mur restent', () => {
+    // Td1 x Cd5 sous la Déflagration : la tour et le cavalier disparaissent ; Fc6, Fe6, le Mur e5 et le roi restent.
     let s = G('4k3/8/2b1b3/3n4/8/8/8/3RK3 w - - 0 1');
     s = withFx(s, wallFx('e5', 'b'), climFx('blast', 'w'));
     const r = mv(s, 'd1', 'd5');
-    // La tour qui prend et les deux fous ; le cavalier pris est une capture ordinaire.
-    expect(r.info.blasted?.length).toBe(3);
+    expect(r.info.blasted?.length).toBe(1);
     s = r.state;
     expect(walls(s)).toEqual(['e5']);
-    expect(s.pos.board[q('c6')]).toBeNull();
-    expect(s.pos.board[q('e6')]).toBeNull();
+    expect(s.pos.board[q('c6')]).toMatchObject({ t: 'b', c: 'b' });
+    expect(s.pos.board[q('e6')]).toMatchObject({ t: 'b', c: 'b' });
     expect(s.pos.board[q('d5')]).toBeNull();
     expect(modsFromEffects(s.effects).blocked[q('e5')]).toBe(true);
   });
@@ -586,11 +585,10 @@ describe('Tirage, sur des dizaines de milliers de mains', () => {
     }
     expect(bad).toEqual([]);
     expect(count.get('true:hourglass')).toBeGreaterThan(1000);
-    // Communes (Trêve, Mur, Faille) plus fréquentes que les Rares, elles-mêmes plus que l'Épique et la Légendaire.
+    // Communes (Trêve, Mur, Faille) plus fréquentes que les Rares, elles-mêmes plus que les deux Épiques (Lune de sang, Déflagration).
     const f = (id: CardId) => count.get(`false:${id}`) ?? 0;
     expect(Math.min(f('truce'), f('ice_wall'), f('rift'))).toBeGreaterThan(Math.max(f('ice_age'), f('tide')));
-    expect(Math.min(f('ice_age'), f('tide'))).toBeGreaterThan(f('blood_moon'));
-    expect(f('blood_moon')).toBeGreaterThan(f('blast'));
+    expect(Math.min(f('ice_age'), f('tide'))).toBeGreaterThan(Math.max(f('blood_moon'), f('blast')));
     expect(dealHands(true, false, rand, 'aucune')).toEqual({ w: [], b: [] });
   }, 60_000);
 

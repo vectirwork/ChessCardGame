@@ -208,14 +208,15 @@ describe('problèmes à cartes', () => {
     expect(legalMovesOf(s).map(uciOf)).toEqual(['d8d5']);
   });
 
-  it('la Déflagration : la bonne prise gagne du matériel, Dxb7 perd la dame', () => {
+  it('la Déflagration : prendre avec le pion gagne du matériel, Dxa4 perd la dame', () => {
     const p = puzzleById('carte-deflagration')!;
     const start = puzzleStart(p);
     const gain = (s: GameState) => { const m = material(s); return m.w - m.b; };
-    const good = applyAction(start, stepOptions('d1d7')[0])!;
-    expect(gain(good) - gain(start)).toBeGreaterThanOrEqual(10);
-    const bad = applyAction(start, stepOptions('b3b7')[0])!;
-    expect(bad.pos.board[sqIndex('b7')]).toBeNull();
+    const good = applyAction(start, stepOptions('e4d5')[0])!;
+    expect(good.pos.board[sqIndex('d5')]).toBeNull();
+    expect(gain(good) - gain(start)).toBeGreaterThanOrEqual(2);
+    const bad = applyAction(start, stepOptions('d1a4')[0])!;
+    expect(bad.pos.board[sqIndex('a4')]).toBeNull();
     expect(gain(bad) - gain(start)).toBeLessThan(0);
   });
 

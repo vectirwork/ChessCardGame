@@ -415,13 +415,13 @@ export const PUZZLES: Puzzle[] = [
     moral: 'Un pouvoir touche les deux camps : la Lune lancée par les Noirs force leur tour à prendre, et la 8e rangée tombe.',
   },
   {
-    id: 'carte-deflagration', title: 'Une prise, trois pièces', themes: ['cartes'], level: 2,
-    fen: '3qr1k1/pp1n1ppp/2p5/8/8/1QN5/P4PPP/3R2K1 w - - 0 1', solution: ['d1d7'],
+    id: 'carte-deflagration', title: 'Prenez petit', themes: ['cartes'], level: 2,
+    fen: '6k1/pp3ppp/8/3n4/r3P3/8/PP3PPP/3Q2K1 w - - 0 1', solution: ['e4d5'],
     hands: { w: ['blast'] },
     effects: [{ card: 'blast', by: 'w', remaining: 4 }],
-    goal: 'Votre Déflagration vient d’arriver. Les Blancs jouent et gagnent du matériel.',
-    hint: 'Toute prise explose : la pièce qui prend saute aussi, avec ses voisines. Cherchez la case entourée de pièces noires.',
-    moral: 'Sous la Déflagration, Dxb7 ferait sauter votre dame. Txd7 ne coûte qu’une tour : le cavalier, la dame et la tour noires partent avec elle.',
+    goal: 'Votre Déflagration vient d’arriver : chaque prise coûte la pièce qui prend. Les Blancs jouent et gagnent du matériel.',
+    hint: 'Dxa4 gagne une tour… et perd la dame avec elle. Prenez avec votre plus petite pièce.',
+    moral: 'Sous la Déflagration, la pièce qui prend disparaît avec sa victime : exd5 échange un pion contre un cavalier. Dxa4 aurait donné la dame pour une tour.',
   },
   {
     id: 'carte-main-visible', title: 'Lisez sa main', themes: ['cartes', 'mat1'], level: 1, mate: 1,

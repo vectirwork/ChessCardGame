@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { deNom } from '../src/client/game/names';
-import { remainingText } from '../src/client/odyssee/shell/EffectChips';
+import { powerLeft, powerTiming } from '../src/client/odyssee/shell/powers';
 import { DESKTOP_OPP_ROOM, MOBILE_BOARD_TOP, OPP_FAN_SPAN, desktopHandRight, gameLayout } from '../src/client/odyssee/shell/layout';
 import { LESSONS } from '../src/shared/lessons';
 import type { Effect } from '../src/shared/game';
@@ -33,17 +33,29 @@ describe('noms dans les phrases', () => {
     expect(deNom('Yann')).toBe('de Yann');
     expect(deNom('IA Sorcier')).toBe("de l'IA Sorcier");
     expect(deNom('Les Blancs')).toBe('des Blancs');
+    expect(deNom("L'Oracle")).toBe("de l'Oracle");
     expect(`Cartes ${deNom('Alice')}`).toBe("Cartes d'Alice");
   });
 });
 
-describe('effets en cours', () => {
-  const base = { id: 1, card: 'ice_wall', owner: 'w', countsOn: 'w', remaining: 0, total: 0 } as unknown as Effect;
+describe('pouvoirs en cours', () => {
+  const base = { id: 1, card: 'ice_wall', caster: 'w', countsOn: 'w', remaining: 0, total: 0, global: true } as unknown as Effect;
   it('un Mur de glace permanent dure toute la partie, pas « encore 0 coup »', () => {
-    expect(remainingText({ ...base, permanent: true })).toBe('toute la partie');
-    expect(remainingText({ ...base, card: 'truce', remaining: 3 } as Effect)).toBe('encore 3 coups');
-    expect(remainingText({ ...base, card: 'truce', remaining: 1 } as Effect)).toBe('encore 1 coup');
-    expect(remainingText({ ...base, card: 'truce', pending: true, delay: 1 } as Effect)).toBe('arrive au prochain tour');
+    expect(powerLeft({ ...base, permanent: true })).toBe('toute la partie');
+    expect(powerLeft({ ...base, card: 'truce', remaining: 3 } as Effect)).toBe('encore 3 coups');
+    expect(powerLeft({ ...base, card: 'truce', remaining: 1 } as Effect)).toBe('encore 1 coup');
+    expect(powerLeft({ ...base, card: 'blast', pending: true, delay: 1 } as Effect)).toBe('à venir');
+  });
+  it('dit qui a lancé le pouvoir et quand un pouvoir annoncé arrive', () => {
+    const blast = { ...base, card: 'blast', remaining: 4, total: 4 } as Effect;
+    expect(powerTiming(blast, 'w')).toBe('Votre sort');
+    expect(powerTiming(blast, 'b', { w: 'Alice' })).toBe("Sort d'Alice");
+    expect(powerTiming(blast, 'b', { w: "L'Oracle" })).toBe("Sort de l'Oracle");
+    expect(powerTiming(blast, null)).toBe('Sort des Blancs');
+    expect(powerTiming({ ...blast, pending: true, delay: 2 }, 'w')).toBe('Vous · annoncé, arrive au début de votre prochain tour');
+    expect(powerTiming({ ...blast, pending: true, delay: 2 }, 'b', { w: "L'Oracle" })).toBe("L'Oracle · annoncé, arrive après votre prochain coup");
+    expect(powerTiming({ ...blast, pending: true, delay: 1 }, 'b', { w: "L'Oracle" })).toBe("L'Oracle · annoncé, arrive après votre coup");
+    expect(powerTiming({ ...blast, pending: true, delay: 1 }, null)).toBe('Les Blancs · annoncé, arrive au début de leur prochain tour');
   });
 });
 

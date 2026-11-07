@@ -282,30 +282,34 @@ describe('Déflagration', () => {
     expect(names(s, 'f1')).toEqual(['g1']);
   });
 
-  it('les voisines sautent, sauf les pions et les rois', () => {
+  it('la pièce qui prend disparaît avec sa victime ; les voisines restent', () => {
     const s = blast(game('1k6/8/3b1n2/3pp3/5B2/5N2/8/6K1 w - - 0 1'));
     const r = playMove(s, q('f3'), q('e5'));
     if (!r.ok) throw new Error(r.error);
     const b = r.state.pos.board;
-    for (const x of ['e5', 'd6', 'f6', 'f4', 'f3']) expect(b[q(x)]).toBeNull();
+    for (const x of ['e5', 'f3']) expect(b[q(x)]).toBeNull();
+    expect(b[q('d6')]).toMatchObject({ t: 'b', c: 'b' });
+    expect(b[q('f6')]).toMatchObject({ t: 'n', c: 'b' });
+    expect(b[q('f4')]).toMatchObject({ t: 'b', c: 'w' });
     expect(b[q('d5')]).toMatchObject({ t: 'p', c: 'b' });
     expect(r.info.san).toBe('Nxe5*');
-    expect(r.info.blasted).toHaveLength(4);
-    expect(r.state.captured.b.slice().sort()).toEqual(['b', 'n', 'p']);
-    expect(r.state.captured.w.slice().sort()).toEqual(['b', 'n']);
+    expect(r.info.blasted).toHaveLength(1);
+    expect(r.state.captured.b).toEqual(['p']);
+    expect(r.state.captured.w).toEqual(['n']);
   });
 
-  it('une explosion qui exposerait son propre roi est refusée', () => {
-    const fen = '1k4r1/8/8/8/8/5p2/3N2B1/6K1 w - - 0 1';
-    expect(names(game(fen), 'd2')).toContain('f3');
-    expect(names(blast(game(fen)), 'd2')).not.toContain('f3');
+  it('une prise qui ouvrirait une ligne sur son propre roi (la preneuse disparaît) est refusée', () => {
+    const fen = '4r1k1/8/8/4n3/8/8/4R3/4K3 w - - 0 1';
+    expect(names(game(fen), 'e2')).toContain('e5');
+    expect(names(blast(game(fen)), 'e2')).not.toContain('e5');
   });
 
-  it('une tour détruite sur sa case perd son droit de roque', () => {
+  it('les voisines restent : la tour h1 et son droit de roque sont intacts', () => {
     const s = blast(game('4k3/8/8/8/8/4n3/6P1/4K2R b K - 0 1'));
     const n = mv(s, 'e3', 'g2');
-    expect(n.pos.board[q('h1')]).toBeNull();
-    expect(n.pos.castling & 1).toBe(0);
+    expect(n.pos.board[q('g2')]).toBeNull();
+    expect(n.pos.board[q('h1')]).toMatchObject({ t: 'r', c: 'w' });
+    expect(n.pos.castling & 1).toBe(1);
   });
 
   it('une capture vers la dernière rangée n’offre aucun choix de promotion', () => {

@@ -400,22 +400,11 @@ export function makeMove(pos: Position, m: Move): Undo {
   if (ROOK_HOME_BITS[m.from] !== undefined) pos.castling &= ~ROOK_HOME_BITS[m.from];
   if (ROOK_HOME_BITS[m.to] !== undefined) pos.castling &= ~ROOK_HOME_BITS[m.to];
   if (m.flags & F_BLAST) {
-    // Explosion centrée sur la case d'arrivée : la pièce qui capture, puis les voisines (ni pions ni rois).
-    const blasted = [{ sq: m.to, piece: b[m.to]! }];
+    // Déflagration : chaque prise est un sacrifice, la pièce qui prend explose avec sa victime (déjà retirée).
+    // Les voisines sont épargnées (décision du fondateur du 7 novembre : l'ancienne explosion de zone, jusqu'à
+    // 10 pièces d'un coup, était trop forte).
+    undo.blasted = [{ sq: m.to, piece: b[m.to]! }];
     b[m.to] = null;
-    const tf = fileOf(m.to), tr = rankOf(m.to);
-    for (const [df, dr] of KING) {
-      const f = tf + df, r = tr + dr;
-      if (!onBoard(f, r)) continue;
-      const s = sq(f, r);
-      const p = b[s];
-      if (!p || p.t === 'p' || p.t === 'k') continue;
-      blasted.push({ sq: s, piece: p });
-      b[s] = null;
-      // Une tour détruite sur sa case de départ perd son droit de roque.
-      if (ROOK_HOME_BITS[s] !== undefined) pos.castling &= ~ROOK_HOME_BITS[s];
-    }
-    undo.blasted = blasted;
   }
   pos.ep = m.flags & F_DOUBLE ? (m.from + m.to) / 2 : -1;
   pos.halfmove = moved.t === 'p' || m.flags & F_CAPTURE ? 0 : pos.halfmove + 1;

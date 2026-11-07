@@ -58,12 +58,15 @@ export interface ShellPrompt {
   onCancel: () => void;
 }
 
+export type ShellIcon = 'draw' | 'resign' | 'abort' | 'new' | 'moves' | 'flip' | 'sound' | 'mute';
+
 export interface ShellAction {
   label: string;
   onClick: () => void;
   /** Action irréversible : un second clic confirme (« Abandonner ? »). */
   confirm?: string;
   hidden?: boolean;
+  icon?: ShellIcon;
 }
 
 export interface GameShellProps {
@@ -87,13 +90,17 @@ export interface GameShellProps {
   result?: { text: ReactNode; actions?: ReactNode } | null;
   /** Carte choisie par l'appelant (`selected`) : consigne de ciblage, lancement, annulation. */
   prompt?: ShellPrompt | null;
-  /** Actions discrètes sous le statut (Nouvelle partie, Abandonner…). Masquées pendant un ciblage ; repliées
-   *  sous « Options » sur mobile. */
+  /** Actions de la partie (Nouvelle partie, Nulle, Abandonner…) : une barre toujours visible sous le bouton de retour
+   *  (ordinateur), ou un bouton « ⋯ » à portée du pouce qui ouvre une fiche (mobile). */
   actions?: ShellAction[];
-  /** Informations toujours visibles sous la consigne (effets en cours : <EffectChips />…). */
+  /** Informations toujours visibles sous la consigne. */
   info?: ReactNode;
-  /** Contenu libre sous le statut (niveau de l'IA, file d'attente…). Masqué pendant un ciblage ; replié sous
-   *  « Options » sur mobile. */
+  /** Pouvoirs en cours (<PowersPanel />), sous la consigne. */
+  powers?: ReactNode;
+  /** Bandeau posé sur le haut de l'échiquier, toujours visible : proposition de nulle, revanche, adversaire parti… */
+  banner?: ReactNode;
+  /** Contenu libre sous le statut (niveau de l'IA, file d'attente…). Masqué pendant un ciblage ; dans la fiche
+   *  « ⋯ » sur mobile. */
   statusExtra?: ReactNode;
   opponent: ShellPlayer;
   /** Main du joueur. */
@@ -161,7 +168,18 @@ function oppCardWidth(l: GameLayout): number {
   return Math.floor(Math.max(44, Math.min(76, (side - 8) / OPP_FAN_SPAN)));
 }
 
-function ActionButton({ a }: { a: ShellAction }) {
+const ICONS: Record<ShellIcon, ReactNode> = {
+  draw: <path d="M5 12h14M12 5v14" transform="rotate(45 12 12)" />,
+  resign: <path d="M6 21V4m0 0h11l-2.5 4L17 12H6" />,
+  abort: <path d="M6 6l12 12M18 6 6 18" />,
+  new: <path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4h4" />,
+  moves: <path d="M5 6h14M5 12h14M5 18h9" />,
+  flip: <path d="M8 4v15M8 4 4.5 7.5M8 4l3.5 3.5M16 20V5m0 15-3.5-3.5M16 20l3.5-3.5" />,
+  sound: <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9a4 4 0 0 1 0 6" />,
+  mute: <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9.5l5 5m0-5-5 5" />,
+};
+
+function ActionButton({ a, variant }: { a: ShellAction; variant: 'tool' | 'sheet' }) {
   const [armed, setArmed] = useState(false);
   useEffect(() => {
     if (!armed) return;
@@ -171,7 +189,7 @@ function ActionButton({ a }: { a: ShellAction }) {
   return (
     <button
       type="button"
-      className={`gs-quiet ${armed ? 'is-armed' : ''}`}
+      className={`${variant === 'tool' ? 'gs-tool-btn' : 'gs-sheet-btn'} ${armed ? 'is-armed' : ''} ${a.icon === 'resign' || a.icon === 'abort' ? 'is-danger' : ''}`}
       onClick={() => {
         if (a.confirm && !armed) {
           setArmed(true);
@@ -181,7 +199,14 @@ function ActionButton({ a }: { a: ShellAction }) {
         a.onClick();
       }}
     >
-      {armed ? a.confirm : a.label}
+      {a.icon && (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <g fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            {ICONS[a.icon]}
+          </g>
+        </svg>
+      )}
+      <span>{armed ? a.confirm : a.label}</span>
     </button>
   );
 }
@@ -218,6 +243,29 @@ export function GameShell(p: GameShellProps) {
   const oppRefs = useRef<(HTMLDivElement | null)[]>([]);
   const fanRef = useRef<HTMLDivElement>(null);
   const oppFanRef = useRef<HTMLDivElement>(null);
+
+  // Ordinateur : le statut défile quand il déborde ; son bas s'estompe alors au lieu de couper net une ligne
+  const statusRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = statusRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const check = () => el.classList.toggle('is-clipped', el.scrollHeight - el.clientHeight - el.scrollTop > 4);
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    const mo = new MutationObserver(() => {
+      for (const c of Array.from(el.children)) ro.observe(c);
+      check();
+    });
+    mo.observe(el, { childList: true });
+    for (const c of Array.from(el.children)) ro.observe(c);
+    el.addEventListener('scroll', check, { passive: true });
+    check();
+    return () => {
+      ro.disconnect();
+      mo.disconnect();
+      el.removeEventListener('scroll', check);
+    };
+  }, []);
   const [selfPos, setSelfPos] = useState<CSSProperties | null>(null);
   const [oppPos, setOppPos] = useState<CSSProperties | null>(null);
 
@@ -604,8 +652,20 @@ export function GameShell(p: GameShellProps) {
           </button>
           {p.badge && <span className="gs-badge">{p.badge}</span>}
         </div>
+        {!layout.mobile && shownActions.length > 0 && (
+          <div className="gs-toolbar gs-in" role="toolbar" aria-label="Actions de la partie">
+            {shownActions.map(a => (
+              <ActionButton key={a.label} a={a} variant="tool" />
+            ))}
+          </div>
+        )}
+        {layout.mobile && hasMore && (
+          <button type="button" className="gs-menu-btn" aria-label="Options de la partie" aria-expanded={moreOpen} onClick={() => setMoreOpen(true)}>
+            <span aria-hidden="true">⋯</span>
+          </button>
+        )}
 
-        <div className="gs-status">
+        <div className="gs-status" ref={statusRef}>
           {p.kicker && <p className="gs-kicker gs-in">{p.kicker}</p>}
           <h2 className="gs-title gs-in" aria-live="polite">
             {p.title}
@@ -619,24 +679,9 @@ export function GameShell(p: GameShellProps) {
             p.hint && <div className="gs-hint gs-in">{p.hint}</div>
           )}
           {p.info && <div className="gs-info gs-in">{p.info}</div>}
+          {p.powers && <div className="gs-powers gs-in">{p.powers}</div>}
           {/* Pendant le ciblage d'un sort, seul le sort compte : les options s'effacent */}
-          {sel === null && hasMore && layout.mobile && (
-            <button type="button" className="gs-more-btn gs-in" aria-expanded={moreOpen} onClick={() => setMoreOpen(o => !o)}>
-              {moreOpen ? 'Masquer les options' : 'Options de la partie'}
-            </button>
-          )}
-          {sel === null && (!layout.mobile || moreOpen) && (
-            <>
-              {p.statusExtra && <div className="gs-extra gs-in">{p.statusExtra}</div>}
-              {shownActions.length > 0 && (
-                <div className="gs-quiet-row gs-in">
-                  {shownActions.map(a => (
-                    <ActionButton key={a.label} a={a} />
-                  ))}
-                </div>
-              )}
-            </>
-          )}
+          {sel === null && !layout.mobile && p.statusExtra && <div className="gs-extra gs-in">{p.statusExtra}</div>}
           {p.toast && (
             <p key={p.toast.key} className="gs-toast" role="status">
               {p.toast.text}
@@ -689,6 +734,31 @@ export function GameShell(p: GameShellProps) {
           {hand.length === 0 && <span className="gs-no-cards gs-in">Partie sans cartes</span>}
         </div>
       </div>
+      {p.banner && (
+        <div className="gs-banner" style={{ left: layout.x, top: layout.y - layout.G / 2 + (layout.mobile ? 8 : 14) }}>
+          {p.banner}
+        </div>
+      )}
+      {/* Dans la coque (pas dans document.body) : les réglages qu'elle montre gardent les styles de leur page
+          (niveau de l'Oracle de l'accueil, sous .ody) */}
+      {layout.mobile && moreOpen && (
+        <div className="gs-sheet-veil" onClick={() => setMoreOpen(false)}>
+          <div className="gs-sheet" role="dialog" aria-label="Options de la partie" onClick={e => e.stopPropagation()}>
+            <p className="gs-sheet-title">Options de la partie</p>
+            {p.statusExtra && <div className="gs-sheet-extra">{p.statusExtra}</div>}
+            {shownActions.map(a => (
+              <ActionButton
+                key={a.label}
+                a={{ ...a, onClick: () => { a.onClick(); setMoreOpen(false); } }}
+                variant="sheet"
+              />
+            ))}
+            <button type="button" className="btn-line gs-sheet-close" onClick={() => setMoreOpen(false)}>
+              Fermer
+            </button>
+          </div>
+        </div>
+      )}
       {typeof document !== 'undefined' && (selfBubbleEl || oppBubbleEl) && createPortal(
         <>
           {selfBubbleEl}

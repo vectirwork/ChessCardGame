@@ -56,3 +56,27 @@ sélectionné) : corrigé, avec un test (`test/glisser.mjs`).
 - [x] Scintillement au repos et défauts au défilement (vidéo du fondateur, Android + Chrome) : échiquier plat au
   repos (3D seulement pendant un sort), moins de calques GPU, bancs de nuées retirés sur téléphone, monde fixe à la
   hauteur de la grande fenêtre, flous d'arrière-plan remplacés. À confirmer sur le téléphone du fondateur.
+
+## 7 novembre, suite : pendant la partie
+
+> « afficher de manière claire quels sont les pouvoirs en cours […] nombre de coups restants, un petit dessin qui
+> montre l'effet […] pas d'animation sur les pouvoirs en cours […] quand on passe la souris dessus là ça s'anime ;
+> la Déflagration est trop forte ; sur mobile la section pour abandonner est difficilement accessible ; sur PC quand
+> quelqu'un propose la nulle on ne le voit pas ; pré-coups sans limite, nombres écrits en petit ; pas de vidéos. »
+
+Étape 1 (traitée) :
+
+- [x] **Pouvoirs en cours** : sur ordinateur, une ligne par pouvoir dans la colonne de gauche (scène explicative en
+  image fixe, nom, temps restant en points, qui l'a lancé, règle en une phrase) ; la scène s'anime seulement quand
+  la souris passe sur la ligne. Sur téléphone, des pastilles ; toucher une pastille ouvre une fiche où la scène se
+  joue. Écrans d'ordinateur bas (1280 × 720) : lignes resserrées.
+- [x] **Actions de la partie** : sur ordinateur, barre toujours visible sous « Retour » (nulle, abandon, nouvelle
+  partie) ; sur téléphone, bouton « ⋯ » en bas à droite, à portée de pouce, qui ouvre une fiche.
+- [x] **Proposition de nulle, revanche, adversaire parti** : bandeau en haut de l'échiquier, des deux côtés.
+- [x] **Déflagration revue** : chaque prise est un sacrifice (la pièce qui prend explose avec sa victime), les
+  voisines sont épargnées, un roi prend normalement ; rareté épique. À l'écran, la pièce glisse jusqu'à sa victime
+  et les deux éclatent.
+- [x] Défaut trouvé en passant : sur un écran de 412 px (Pixel 7), l'échiquier de l'accueil pouvait sortir de
+  l'écran (la page s'élargissait, le navigateur la dézoomait). Débordement horizontal coupé à la racine.
+
+À suivre : pré-coups sans limite (étape 2), mini-animations avant de lancer une carte (étape 3), accueil (étape 4).

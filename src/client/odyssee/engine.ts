@@ -299,7 +299,8 @@ export class Engine {
   }
 
   measure = () => {
-    this.vw = window.innerWidth;
+    // Largeur de la page, pas de la fenêtre : si la page était dézoomée (téléphone), innerWidth serait gonflé
+    this.vw = document.documentElement.clientWidth || window.innerWidth;
     this.vh = window.innerHeight;
     const { vw, vh } = this;
     const y = window.scrollY;

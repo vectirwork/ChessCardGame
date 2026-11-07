@@ -211,9 +211,16 @@
   color: var(--gold-hi);
 }
 .cd-rule {
+  display: block;
   font-size: 13px;
   line-height: 1.5;
   color: var(--dim);
+}
+/* Scène de la carte (CardScene), à droite de la règle, le texte coule autour */
+.cd-scene {
+  float: right;
+  width: 92px;
+  margin: 2px 0 6px 14px;
 }
 .cd-tile.is-on .cd-rule {
   color: var(--text);
@@ -593,6 +600,10 @@
     font-size: 12.5px;
     line-height: 1.45;
   }
+  .cd-scene {
+    width: 64px;
+    margin: 2px 0 4px 10px;
+  }
   .cd-foot {
     padding-top: 20px;
     padding-bottom: 12px;
@@ -630,6 +641,10 @@
     gap: 9px;
     padding: 12px 12px 13px;
     border-radius: 16px;
+  }
+  .cd-scene {
+    width: 84px;
+    margin-left: 12px;
   }
   .cd .cd-sc {
     --w: 50px;

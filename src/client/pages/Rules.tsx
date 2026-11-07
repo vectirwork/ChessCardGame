@@ -2,10 +2,12 @@
 // Les règles des cartes viennent de src/shared/cards.ts (règle exacte, durée, rareté, famille) : la page suit le
 // moteur sans recopier les textes. Le Duel (ancien catalogue) n'est pas présenté. Styles : Rules.css (préfixe rg-).
 import { Link } from 'react-router-dom';
+import { useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { CARDS, CATALOGS, RARITY_LABEL, cardsOf } from '../../shared/cards';
 import type { CardDef, Catalog, Family } from '../../shared/cards';
 import { SpellCard } from '../components/SpellCard';
+import { CardScene } from '../components/CardScene';
 import { PageHead, PlacePage, useTitle } from './PageScene';
 import './Rules.css';
 
@@ -142,8 +144,16 @@ function SectionHead({ id, n, kicker, title, lede }: { id: string; n: string; ki
 }
 
 function Power({ def }: { def: CardDef }) {
+  // La scène du pouvoir est une image fixe ; elle s'anime quand la souris passe sur sa fiche (ou au toucher)
+  const [hover, setHover] = useState(false);
   return (
-    <article className="rg-power" style={{ '--h': def.hue } as CSSProperties} aria-labelledby={`rg-${def.id}`}>
+    <article
+      className="rg-power"
+      style={{ '--h': def.hue } as CSSProperties}
+      aria-labelledby={`rg-${def.id}`}
+      onPointerEnter={e => e.pointerType === 'mouse' && setHover(true)}
+      onPointerLeave={e => e.pointerType === 'mouse' && setHover(false)}
+    >
       <div className="rg-pcard">
         <SpellCard id={def.id} size="hand" />
       </div>
@@ -153,7 +163,12 @@ function Power({ def }: { def: CardDef }) {
         </h4>
         <p className="rg-ptag">{def.tagline}</p>
       </header>
-      <p className="rg-prule">{def.description}</p>
+      <p className="rg-prule">
+        <span className="rg-pscene">
+          <CardScene id={def.id} play="hover" active={hover} />
+        </span>
+        {def.description}
+      </p>
       <dl className="rg-pmeta">
         <div>
           <dt>Arrivée</dt>

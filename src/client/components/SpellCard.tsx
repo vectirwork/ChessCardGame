@@ -11,6 +11,8 @@ import { forwardRef, useRef } from 'react';
 import type { CSSProperties, FocusEvent as RFocusEvent, PointerEvent as RPointerEvent, ReactNode, Ref } from 'react';
 import { CARDS, CardDef, CardId, FAMILY_LABEL } from '../../shared/cards';
 import { CardEmblem } from './CardArt';
+import { CardScene } from './CardScene';
+import { CARD_SCENES } from './cardScenes';
 
 /** Durée courte (le détail « vous, lui, vous » reste dans la règle). */
 export function shortDuration(def: CardDef): string {
@@ -290,7 +292,15 @@ export function CardBubble({ id, domId, mode, used, owner = 'self', note, aim, o
             {aim}
           </p>
         )}
-        <p className="cbub-rule">{ruleBody(def)}</p>
+        {/* Avant de lancer la carte : sa scène se joue en boucle, à côté de la règle (pas pendant le ciblage) */}
+        {mode !== 'aim' && CARD_SCENES[id] ? (
+          <div className="cbub-body">
+            <CardScene id={id} play="auto" className="cbub-scene" />
+            <p className="cbub-rule">{ruleBody(def)}</p>
+          </div>
+        ) : (
+          <p className="cbub-rule">{ruleBody(def)}</p>
+        )}
         <p className="cbub-when">
           <TurnPill def={def} owner={owner} />
           <span>{cardTiming(def, owner)}</span>

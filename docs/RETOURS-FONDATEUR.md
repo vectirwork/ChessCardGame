@@ -87,4 +87,11 @@ sélectionné) : corrigé, avec un test (`test/glisser.mjs`).
   se joue de lui-même s'il est légal, sinon tous s'annulent. Annuler : clic droit, toucher une case vide, ou
   « Annuler » dans le statut. Les cartes ne se préparent pas. Mention ajoutée dans les règles.
 
-À suivre : mini-animations avant de lancer une carte (étape 3), accueil (étape 4).
+Étape 3 (traitée) :
+
+- [x] **Mini-animations des cartes** (scènes dessinées, pas de vidéo) : dans la bulle d'une carte avant de la
+  lancer (survol sur ordinateur, toucher sur mobile ; pas pendant le choix d'une case), dans le choix des 3 cartes
+  (image fixe dans chaque tuile, animée au survol ou au dernier toucher) et dans la page des règles (animée au
+  survol de la fiche ou au toucher de l'image).
+
+À suivre : accueil, concepts rétablis en version optimisée (étape 4).

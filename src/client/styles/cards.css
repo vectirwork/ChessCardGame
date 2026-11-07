@@ -508,6 +508,17 @@
   line-height: 1.5;
   color: var(--dim);
 }
+/* Scène de la carte (CardScene) à gauche de la règle */
+.cbub-body {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin-top: 12px;
+}
+.cbub-body .cbub-rule {
+  margin-top: 0;
+}
 .cbub-when {
   display: flex;
   align-items: flex-start;

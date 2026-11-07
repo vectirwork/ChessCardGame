@@ -18,6 +18,7 @@ import type { CardDef, CardId } from '../../shared/cards';
 import type { Ack, DraftView, GameView, SeatView } from '../../shared/protocol';
 import { CardEmblem } from '../components/CardArt';
 import { SpellCard } from '../components/SpellCard';
+import { CardScene } from '../components/CardScene';
 import { emitAck } from '../socket';
 import { playSound } from '../sound';
 import { deNom } from './names';
@@ -125,6 +126,8 @@ function DraftScreen({ view, draft, receivedAt, onAbort, onSubmitted }: {
   const [sel, setSel] = useState<CardId[]>(() => draft.mine.filter(c => draft.pool.includes(c)).slice(0, count));
   const [submitted, setSubmitted] = useState(confirmed);
   const [sending, setSending] = useState(false);
+  /** Tuile dont la scène s'anime : survolée à la souris, au focus clavier, ou touchée en dernier. */
+  const [peek, setPeek] = useState<CardId | null>(null);
   const [expired, setExpired] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -325,6 +328,10 @@ function DraftScreen({ view, draft, receivedAt, onAbort, onSubmitted }: {
                   </span>
                 </span>
                 <span className="cd-rule" id={`cd-r-${id}`}>
+                  {/* Scène de la carte en image fixe, animée sur la tuile survolée ou touchée en dernier */}
+                  <span className="cd-scene" aria-hidden="true">
+                    <CardScene id={id} play="still" active={peek === id} />
+                  </span>
                   {def.description}
                 </span>
                 {!spectator && (
@@ -346,7 +353,13 @@ function DraftScreen({ view, draft, receivedAt, onAbort, onSubmitted }: {
                     aria-disabled={locked || undefined}
                     aria-labelledby={`cd-n-${id}`}
                     aria-describedby={`cd-m-${id} cd-t-${id} cd-r-${id}`}
-                    onClick={() => toggle(id)}
+                    onClick={e => {
+                      toggle(id);
+                      if (e.nativeEvent instanceof PointerEvent && e.nativeEvent.pointerType !== 'mouse') setPeek(id);
+                    }}
+                    onPointerEnter={e => e.pointerType === 'mouse' && setPeek(id)}
+                    onPointerLeave={e => e.pointerType === 'mouse' && setPeek(p => (p === id ? null : p))}
+                    onFocus={e => e.currentTarget.matches(':focus-visible') && setPeek(id)}
                   >
                     {content}
                   </button>

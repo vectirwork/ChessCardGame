@@ -103,13 +103,14 @@ const boardColors = (() => {
   return { '--light': bs.light, '--dark': bs.dark } as CSSProperties;
 })();
 
-export function CardScene({ id, play = 'hover', className = '', active = false }: { id: CardId; play?: Play; className?: string; /** `hover` : animée aussi quand le parent est survolé (ligne entière d'un pouvoir en cours). */ active?: boolean }) {
+export function CardScene({ id, play = 'hover', className = '', active = false }: { id: CardId; play?: Play; className?: string; /** Animée tant que vrai, quel que soit `play` (le parent gère le survol : ligne d'un pouvoir, tuile). */ active?: boolean }) {
   const def = CARD_SCENES[id];
   const reduced = useReducedMotion();
   const [wanted, setWanted] = useState(false);
   /** Type du dernier appui : un toucher émule aussi un survol et un focus, qu'il ne faut pas compter deux fois. */
   const pointer = useRef('mouse');
-  const running = !!def && !reduced && (play === 'auto' || (play === 'hover' && (wanted || active)));
+  // `active` : le parent demande l'animation (ligne survolée, tuile du choix des cartes, fiche ouverte)
+  const running = !!def && !reduced && (play === 'auto' || active || (play === 'hover' && wanted));
   const [n, setN] = useState(0);
   const [reset, setReset] = useState(false);
 

@@ -42,3 +42,16 @@ Les points 1 à 8 sont traités : voir `docs/PLAN-V2.md` (décisions D1 à D6) e
 Vérifié en navigateur sans écran (Chromium, rendu logiciel), pas encore sur un vrai téléphone ni une vraie carte
 graphique. La capture au glisser échouait à la souris dès le troisième glisser de suite (texte de la page
 sélectionné) : corrigé, avec un test (`test/glisser.mjs`).
+
+## 7 novembre : premiers essais sur téléphone (site en ligne)
+
+> « il y a du flickering : quand j'appuie sur l'échiquier par exemple il devient bleu […] c'est l'indicateur de
+> sélection de base, il faudrait enlever ça ; aussi les pièces se déplacent en instantané, il faudrait une animation
+> smooth lors du déplacement (quasi invisible mais là !), même temps de déplacement si la pièce est loin ; même au
+> repos il y a un peu de flickering, et surtout en scrollant vers le bas il y a pas mal de défauts. »
+
+- [x] Surbrillance bleue au toucher retirée (Android : `-webkit-tap-highlight-color`), pas de sélection au toucher.
+- [x] Pièces : glissement de 0,18 s, même durée quelle que soit la distance (la transition existait mais était
+  annulée par un réordonnancement du DOM à chaque coup).
+- [ ] Scintillement au repos et défauts au défilement de l'accueil : en attente du modèle de téléphone, du navigateur
+  et de la vidéo du fondateur.

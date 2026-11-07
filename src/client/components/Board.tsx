@@ -86,7 +86,9 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
     });
     const gone = shownRef.current.filter(s => !ids.has(s.p.id) && s.state !== 'vanish').map(s => ({ ...s, state: 'vanish' as const }));
     prevIds.current = ids;
-    setShown([...now, ...gone]);
+    // Ordre stable (par pièce, pas par case) : si React déplaçait le nœud d'une pièce dans le DOM, le navigateur
+    // annulerait la transition et la pièce sauterait d'un coup à sa case d'arrivée.
+    setShown([...now, ...gone].sort((a, b) => a.p.id - b.p.id));
     if (gone.length) {
       const t = setTimeout(() => setShown(cur => cur.filter(s => s.state !== 'vanish' || ids.has(s.p.id))), 420);
       return () => clearTimeout(t);

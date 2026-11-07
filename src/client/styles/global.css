@@ -69,6 +69,8 @@ html {
   background: var(--ink);
   -webkit-text-size-adjust: 100%;
   scroll-behavior: smooth;
+  /* Pas de surbrillance bleue (Android) ou grise (iOS) au toucher : chaque élément a son propre retour visuel */
+  -webkit-tap-highlight-color: transparent;
 }
 html.lenis,
 html.lenis body {

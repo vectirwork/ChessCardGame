@@ -334,9 +334,15 @@
   top: 0;
   width: 12.5%;
   height: 12.5%;
-  transition: transform 0.2s cubic-bezier(0.3, 0.8, 0.3, 1);
+  /* Même durée quelle que soit la distance : un fou qui traverse l'échiquier glisse aussi vite qu'un pion d'une case */
+  transition: transform 0.18s cubic-bezier(0.25, 0.8, 0.35, 1);
   transform-style: preserve-3d;
   will-change: transform;
+  z-index: 1;
+}
+/* La pièce prise s'efface sous celle qui arrive */
+.piece.vanish {
+  z-index: 0;
 }
 .pi {
   width: 100%;

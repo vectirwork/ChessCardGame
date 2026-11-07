@@ -53,5 +53,6 @@ sélectionné) : corrigé, avec un test (`test/glisser.mjs`).
 - [x] Surbrillance bleue au toucher retirée (Android : `-webkit-tap-highlight-color`), pas de sélection au toucher.
 - [x] Pièces : glissement de 0,18 s, même durée quelle que soit la distance (la transition existait mais était
   annulée par un réordonnancement du DOM à chaque coup).
-- [ ] Scintillement au repos et défauts au défilement de l'accueil : en attente du modèle de téléphone, du navigateur
-  et de la vidéo du fondateur.
+- [x] Scintillement au repos et défauts au défilement (vidéo du fondateur, Android + Chrome) : échiquier plat au
+  repos (3D seulement pendant un sort), moins de calques GPU, bancs de nuées retirés sur téléphone, monde fixe à la
+  hauteur de la grande fenêtre, flous d'arrière-plan remplacés. À confirmer sur le téléphone du fondateur.

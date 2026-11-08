@@ -4,6 +4,7 @@
 import { Suspense, lazy, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MutableRefObject, PointerEvent as RPointerEvent, ReactNode } from 'react';
 import { createPortal, flushSync } from 'react-dom';
+import { prewarmVfx } from '../vfx/useVfx';
 import { Link, useNavigate } from 'react-router-dom';
 import gsap from 'gsap';
 import { CARDS, CATALOGS, offeredCatalog } from '../../shared/cards';
@@ -386,13 +387,52 @@ export default function OdysseeHome() {
       // Face des grands mots du décor (italique 300) : demandée au repos, pas en pleine traversée de la Forêt
       void (document as Document & { fonts?: FontFaceSet }).fonts?.load('italic 300 1em "Cormorant Garamond"').catch(() => undefined);
     };
+    // Ordinateur (souris) : la scène 3D attend la première pause du lecteur (400 ms sans molette, défilement ni
+    // touche), puis un moment libre ; elle est alors préparée en entier (contexte WebGL, programmes, textures des
+    // lieux), hors de toute glissade. Avec Lenis, l'analyse de three.js (≈ 600 Ko) en plein geste figeait le
+    // défilement lui-même. Sans pause dans les 3 s, le module est chargé quand même (comme avant, juste plus tard)
+    const fine = (window.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? false) && !reduced;
+    const CALM = ['wheel', 'scroll', 'keydown'] as const;
+    let lastMove = 0;
+    let calmTimer = 0;
+    let idleId = 0;
+    const onMove = () => {
+      lastMove = performance.now();
+    };
+    const stopCalm = () => {
+      window.clearTimeout(calmTimer);
+      calmTimer = 0;
+      for (const ev of CALM) window.removeEventListener(ev, onMove, true);
+    };
+    const prewarm = (full: boolean) => {
+      stopCalm();
+      if (full) prewarmVfx('odyssee-stage', PLACES.map(p => p.skin));
+      else void import('../vfx/index').catch(() => undefined);
+    };
+    const waitCalm = () => {
+      const since = performance.now();
+      lastMove = since;
+      for (const ev of CALM) window.addEventListener(ev, onMove, { passive: true, capture: true });
+      const check = () => {
+        const now = performance.now();
+        if (now - lastMove >= 400) {
+          calmTimer = 0;
+          idleId = w.requestIdleCallback ? w.requestIdleCallback(() => prewarm(true), { timeout: 500 }) : window.setTimeout(() => prewarm(true), 1);
+          return;
+        }
+        if (now - since > 3000) return prewarm(false);
+        calmTimer = window.setTimeout(check, 150);
+      };
+      calmTimer = window.setTimeout(check, 400);
+    };
     // Un geste du visiteur (doigt, molette, clavier), pas un défilement quelconque : le retour en haut de page fait par
     // le routeur (App.tsx) en déclenche un sans que personne n'ait rien touché
     const onScroll = () => {
       go();
       if (!vfx) {
         vfx = true;
-        void import('../vfx/index').catch(() => undefined);
+        if (fine) waitCalm();
+        else void import('../vfx/index').catch(() => undefined);
       }
       for (const ev of GESTURES) window.removeEventListener(ev, onScroll, true);
     };
@@ -400,6 +440,9 @@ export default function OdysseeHome() {
     for (const ev of GESTURES) window.addEventListener(ev, onScroll, { passive: true, capture: true });
     return () => {
       window.clearTimeout(t);
+      stopCalm();
+      if (idleId && typeof w.cancelIdleCallback === 'function') w.cancelIdleCallback(idleId);
+      else if (idleId) window.clearTimeout(idleId);
       for (const ev of GESTURES) window.removeEventListener(ev, onScroll, true);
     };
   }, []);

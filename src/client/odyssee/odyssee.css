@@ -56,6 +56,11 @@ html.ody-home #root {
   inset: 0;
   opacity: 0;
 }
+/* Ordinateur : fond de lieu ou anneaux pendant un fondu écrit par le script (engine.ts, fading) : l'opacité change
+   sans refaire la mise en calques de toute la page */
+.ody .o-fading {
+  will-change: opacity;
+}
 /* Ordinateur : ciel visible dans son propre calque (engine.ts, liveSky) ; son fondu ne retrame plus le calque des
    ciels à chaque image */
 .ody .o-sky-layer.o-sky-live {

@@ -117,9 +117,12 @@ function usePrefetchOnIntent() {
     };
     const opts = { capture: true, passive: true };
     document.addEventListener('pointermove', onMove, opts);
+    // Lien arrivé sous un curseur immobile puis cliqué : le chargement part dès l'appui, avant le clic
+    document.addEventListener('pointerdown', onIntent, opts);
     document.addEventListener('focusin', onIntent, opts);
     return () => {
       document.removeEventListener('pointermove', onMove, opts);
+      document.removeEventListener('pointerdown', onIntent, opts);
       document.removeEventListener('focusin', onIntent, opts);
     };
   }, []);

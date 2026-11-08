@@ -226,6 +226,11 @@ export class Engine {
   private rootH = -1;
   /** Mode natif : ciels montrés (les autres sont cachés : ni peints ni composés). */
   private skyShown: (boolean | null)[] = [];
+  /** Éléments dont l'opacité vient de varier (fondus écrits par le script), avec l'heure de la dernière variation. */
+  private fadeAt = new Map<HTMLElement, number>();
+  private fadeTimer = 0;
+  /** Dernière opacité écrite sur chaque fond de lieu (ordinateur). */
+  private backOp = new WeakMap<HTMLElement, string>();
   private touchable = true;
   /** Constructeur fini : frame() peut appeler les rappels de l'accueil. */
   private ready = false;
@@ -359,6 +364,9 @@ export class Engine {
   destroy() {
     this.destroyed = true;
     this.sleep();
+    window.clearTimeout(this.fadeTimer);
+    for (const el of this.fadeAt.keys()) el.classList.remove('o-fading');
+    this.fadeAt.clear();
     window.removeEventListener('pointermove', this.onPointer);
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('scroll', this.onScroll);
@@ -593,6 +601,29 @@ export class Engine {
     this.skies[i].style.visibility = on ? '' : 'hidden';
     this.skies[i].classList.toggle('o-sky-live', on);
   }
+
+  /**
+   * Opacité qui varie (fondu écrit par le script : fonds des lieux, anneaux ; ordinateur) : l'élément a son calque le
+   * temps du fondu (will-change, classe o-fading), sa nouvelle valeur passe alors directement au compositeur. Sans
+   * calque, chaque image du fondu refaisait la mise en calques de toute la page. Retiré 0,4 s après la dernière
+   * variation (un calque de moins au repos).
+   */
+  private fading(el: HTMLElement) {
+    if (!this.fadeAt.has(el)) el.classList.add('o-fading');
+    this.fadeAt.set(el, performance.now());
+    if (!this.fadeTimer) this.fadeTimer = window.setTimeout(this.sweepFades, 450);
+  }
+
+  private sweepFades = () => {
+    this.fadeTimer = 0;
+    const now = performance.now();
+    for (const [el, t] of this.fadeAt) {
+      if (now - t < 400) continue;
+      el.classList.remove('o-fading');
+      this.fadeAt.delete(el);
+    }
+    if (this.fadeAt.size) this.fadeTimer = window.setTimeout(this.sweepFades, 200);
+  };
 
   /** Ciel montré (mode natif) : son fondu est une animation, créée quand il apparaît. */
   private showSky(i: number, on: boolean) {
@@ -1095,7 +1126,15 @@ export class Engine {
       for (let i = 0; i < sc.els.length; i++) {
         const el = sc.els[i];
         const back = el.dataset.part === 'back';
-        if (!native && visible && back) el.style.opacity = op.toFixed(3);
+        if (!native && visible && back) {
+          // Écrite seulement quand elle change ; pendant le fondu, le fond a son calque (fading)
+          const v = op.toFixed(3);
+          if (this.backOp.get(el) !== v) {
+            this.backOp.set(el, v);
+            el.style.opacity = v;
+            if (op > 0 && op < 1) this.fading(el);
+          }
+        }
         // Un décor transparent ou lointain n'est pas peint, et ses animations sont en pause : elles ne coûtent rien
         let state: 0 | 1 | 2 = visible && (native || !back || op >= 0.004) ? 2 : 0;
         if (native && back && visible) {
@@ -1241,11 +1280,13 @@ export class Engine {
       if (orb !== a.orb && this.els.orbits) {
         a.orb = orb;
         this.els.orbits.style.opacity = String(orb);
+        if (!native && !flying) this.fading(this.els.orbits);
       }
       const front = Math.round(p.front * 1000) / 1000;
       if (front !== a.front && this.els.front) {
         a.front = front;
         this.els.front.style.opacity = String(front);
+        if (!native && !flying) this.fading(this.els.front);
       }
     }
     // Inclinaison. Mode natif : elle ne change pas pendant que l'échiquier est visible (tout l'astre serait restylé à

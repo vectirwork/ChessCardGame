@@ -255,6 +255,22 @@ disparu.
   neige, de sable et de poussières en particules (4 à 5 Mo de mémoire graphique gagnés sur téléphone, environ 2 %,
   pour 46 calques animés de plus et un compositeur un peu plus chargé : pas un gain net).
 
-Mesure comparative avec la version en ligne : en cours.
+Mesure comparative avec la version en ligne (même banc Pixel 7 simulé que plus haut, processeur ×4, deux passages
+de chaque, alternés) :
+
+| | En ligne (4a6e022) | Après ce lot |
+|---|---|---|
+| Images lentes du fil principal (> 33 ms) | 707 et 763 | 549 et 564 |
+| Images avec des tuiles manquantes | 3 et 4 | 1 et 0 |
+| Premier écran (fluidité) | 90 % | 97 à 98 % |
+| Images du compositeur présentées | 74 % | 73 à 75 % |
+| Images lentes sans sort à l'écran | 17 % | 11 % |
+| Images lentes avec un sort à l'écran | 67 % | 57 % |
+
+Le chiffre global du compositeur ne bouge pas, et il était de 82 % ce matin : la différence vient des sorts de la
+démonstration, qui partent maintenant à chaque arrêt du pouce (scène 3D prête d'avance), donc bien plus souvent
+pendant le banc (735 images avec un sort à l'écran contre 546). Or le banc n'a pas de vraie carte graphique : la 3D
+des sorts y est calculée par le processeur, déjà ralenti ×4, et fait à elle seule la plupart des images perdues. À
+situation égale (avec ou sans sort à l'écran), chaque image est nettement plus souvent à l'heure qu'en ligne.
 
 Rien n'a encore été vérifié sur le vrai Pixel 7.

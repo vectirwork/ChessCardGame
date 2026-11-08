@@ -415,6 +415,8 @@ interface RunOpts {
 function runScene(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks: CastHooks, opts: RunOpts): Promise<void> {
   const reduced = stage.reduced || !stage.ok;
   const impactAt = reduced ? 0.15 : opts.impactAt ?? IMPACT_AT[info.card] ?? 0.85;
+  // Famille de l'échiquier qui lance le sort (scène partagée de l'accueil, voir VfxStage.family)
+  const family = stage.family;
   return new Promise(resolve => {
     let fired = false;
     let ended = false;
@@ -440,7 +442,7 @@ function runScene(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks: CastH
       for (const t of timers) clearTimeout(t);
       // L'inclinaison finit d'elle-même (≈ 2,5 s) ; ce garde-fou la retire si la boucle s'est arrêtée
       const c = cine;
-      if (c) window.setTimeout(() => stage.release(c), 2600);
+      if (c) stage.later(() => stage.release(c), 2600, family);
       resolve();
     };
     const fire = () => {
@@ -561,7 +563,7 @@ function duelScene(sc: Scene) {
         converge(stage, skin, t0, 40, 1.2, impactAt);
         onImpact(() => {
           lightning(stage, skin, t0);
-          setTimeout(() => lightning(stage, skin, t0, 0.25), 140);
+          stage.later(() => lightning(stage, skin, t0, 0.25), 140);
           scorch(stage, skin, t0);
           burst(stage, skin, t0, 140, 4.5, 1.1, 0.14, { up: 0.95, gravity: -6 });
           shockwave(stage, C(skin.accent), t0, 2.6, 0.6, 0, 0.12);
@@ -949,7 +951,7 @@ function blastScene({ stage, skin, impactAt, center, onImpact, mood }: Scene) {
     // Quelques cases soufflées à travers le plateau
     for (let i = 0; i < 5; i++) {
       const at = new THREE.Vector3(Math.floor(rnd(0, 8)) - 3.5, Math.floor(rnd(0, 8)) - 3.5, 0.1);
-      window.setTimeout(() => burst(stage, fire, at, 24, 2.4, 0.6, 0.12, { up: 0.9 }), 120 + i * 90);
+      stage.later(() => burst(stage, fire, at, 24, 2.4, 0.6, 0.12, { up: 0.9 }), 120 + i * 90);
     }
   });
 }

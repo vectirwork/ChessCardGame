@@ -243,11 +243,13 @@ export const StageBoard = memo(function StageBoard({ act, catalog, theme, resetS
     const prep = prepareCast(card, a.skin);
     if (!prep) return;
     const epoch = epochRef.current;
+    const family = vfx.stage.family;
     const show = (n: GameState) => {
       if (epoch !== epochRef.current) return;
       sRef.current = n;
       setState(n);
-      vfx.stage.syncMarkers(n.effects, n.pos);
+      // Impact forcé après la sortie du lieu (garde-fou du sort) : la scène peut être passée à la partie de l'accueil
+      if (vfx.stage.family === family) vfx.stage.syncMarkers(n.effects, n.pos);
     };
     castRef.current?.(card, a.skin);
     if (!playSignal) {
@@ -277,11 +279,14 @@ export const StageBoard = memo(function StageBoard({ act, catalog, theme, resetS
           resolve();
         };
       });
+    const family = vfx.stage.family;
     const apply = (n: GameState, epoch: number) => {
       if (epoch !== epochRef.current) return;
       sRef.current = n;
       setState(n);
-      vfx.stage.syncMarkers(n.effects, n.pos);
+      // Un sort coupé par la sortie du lieu finit par son garde-fou, après le démontage : la scène partagée peut être
+      // passée entre-temps à la partie de l'accueil (useVfx), qui ne doit pas recevoir les objets de la démonstration
+      if (vfx.stage.family === family) vfx.stage.syncMarkers(n.effects, n.pos);
     };
     /** Lance un sort ; null : remis à plus tard (défilement repris, lieu ou chapitre changé pendant l'attente). */
     const cast = async (): Promise<boolean | null> => {

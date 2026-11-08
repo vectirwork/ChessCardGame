@@ -143,6 +143,13 @@ export class VfxStage {
   private stoppedAt = 0;
   reduced = false;
   /**
+   * Famille de l'échiquier qui tient la scène quand elle est partagée (useVfx : vrai pour la partie de l'accueil, faux
+   * pour la démonstration), null sinon. Ce qu'un sort a programmé pour plus tard (later) ne vise la scène que si sa
+   * famille la tient encore : avant le partage, chaque famille avait sa scène, et ces restes ne tombaient jamais sur
+   * l'autre.
+   */
+  family: boolean | null = null;
+  /**
    * Garde-fous en temps réel des sorts (impact et fin forcés si la boucle d'animation s'arrête, onglet caché par
    * exemple). Le banc d'essai, qui avance la scène image par image, les coupe.
    */
@@ -162,6 +169,9 @@ export class VfxStage {
       this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, alpha: true, antialias: q.antialias, powerPreference: 'default' });
       this.renderer.setClearColor(0x000000, 0);
       this.renderer.setPixelRatio(q.ratio);
+      // Tampon réduit dès la création, comme après chaque sort (shrink) : sinon il garde sa taille par défaut
+      // (300 × 150, anticrénelé) jusqu'au premier sort, que la scène attende ou non. Le calque est caché d'ici là.
+      this.renderer.setSize(1, 1, false);
       this.renderer.outputColorSpace = THREE.SRGBColorSpace;
       document.body.appendChild(this.canvas);
       this.ok = true;
@@ -245,16 +255,35 @@ export class VfxStage {
 
   /** Arrête la boucle d'images et ses minuteries. */
   private halt() {
+    // Daté seulement si une boucle tournait : attach() et detach() passent ici à chaque changement d'échiquier, et une
+    // scène déjà au repos ne doit pas sembler venir de s'arrêter (useVfx attend qu'elle soit au repos pour la passer)
+    if (this.raf || this.timer) this.stoppedAt = Date.now();
     cancelAnimationFrame(this.raf);
     this.raf = 0;
     window.clearTimeout(this.timer);
     this.timer = 0;
-    this.stoppedAt = Date.now();
   }
 
   /** Depuis combien de temps (ms) la scène n'anime plus rien ; 0 tant que sa boucle tourne. */
   get idleMs() {
     return this.raf || this.timer ? 0 : Date.now() - this.stoppedAt;
+  }
+
+  /** La scène a animé quelque chose depuis `t` (horloge murale), ou anime encore. */
+  ranSince(t: number) {
+    return !!(this.raf || this.timer) || this.stoppedAt > t;
+  }
+
+  /**
+   * `fn` dans `ms` millisecondes, en temps réel (éclats différés de la Déflagration, second éclair, arrivée d'un
+   * Présage, garde-fou de l'inclinaison), seulement si la famille `family` (celle qui tient la scène maintenant, par
+   * défaut) la tient encore à ce moment-là. Entre échiquiers d'une même famille (un lieu puis le suivant), rien ne
+   * change ; sans partage, la famille ne change jamais.
+   */
+  later(fn: () => void, ms: number, family = this.family) {
+    window.setTimeout(() => {
+      if (family === this.family) fn();
+    }, ms);
   }
 
   /** Centre d'une case dans le repère de l'échiquier. */
@@ -446,10 +475,14 @@ export class VfxStage {
   async warm(objects: THREE.Object3D[], textures: (() => THREE.Texture)[] = []) {
     const r = this.renderer;
     if (!r || this.disposed) return;
-    // Moment calme, et la scène n'anime rien
+    // Moment calme, et la scène n'anime rien (pendant un sort, on repasse un peu plus tard au lieu de demander un
+    // moment libre à chaque image)
     const quiet = async () => {
-      do await calm();
-      while (!this.disposed && !this.idleMs);
+      for (;;) {
+        await calm();
+        if (this.disposed || this.idleMs) return;
+        await new Promise(res => window.setTimeout(res, 250));
+      }
     };
     try {
       if (!this.warmedPrograms && objects.length) {
@@ -575,13 +608,6 @@ export class VfxStage {
     if (W !== this.size.w || H !== this.size.h) {
       this.renderer!.setSize(W, H, false);
       this.size = { w: W, h: H };
-      // Taille affichée du calque = celle du tampon et de la caméra (innerWidth × innerHeight). board.css le dimensionne
-      // en 100vw × 100vh ; sur téléphone, 100vh est la hauteur barre d'adresse masquée : barre visible, le calque
-      // débordait sous l'écran et les effets étaient étirés et décalés vers le bas. Ailleurs, les deux sont égales.
-      if (this.canvas) {
-        this.canvas.style.width = `${W}px`;
-        this.canvas.style.height = `${H}px`;
-      }
     }
     const cx = left + w / 2;
     const cy = top + h / 2;
@@ -620,7 +646,7 @@ export class VfxStage {
         // Un peu plus tard : l'échiquier prend d'abord la teinte du Climat qui arrive (React réécrit alors ses classes,
         // ce qui effacerait l'ambiance posée par la mise en scène)
         const factory = this.arrivalFactory;
-        window.setTimeout(() => {
+        this.later(() => {
           if (!this.ok || this.disposed) return;
           try {
             factory(this, e, skinStyle(e.skin));

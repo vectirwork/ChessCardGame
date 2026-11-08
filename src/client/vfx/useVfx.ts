@@ -6,6 +6,10 @@
 // la descente et la partie de l'accueil). Celui qui cède (`yields` : la partie hors mode immersif, qui n'anime aucun
 // sort) la rend à l'autre dès que celui-ci en a besoin, et la reprend quand il la libère ; deux échiquiers qui ne
 // cèdent pas ont chacun la leur (sur l'accueil : seulement juste après un sort, voir IDLE_BEFORE_YIELD_MS).
+// Familles : la partie (qui cède) d'un côté, les échiquiers de la démonstration (qui se passent la scène d'un lieu au
+// suivant, comme avant le partage) de l'autre. La scène sait quelle famille la tient (VfxStage.family) : ce qu'un sort
+// d'une famille a programmé pour plus tard ne la vise que si cette famille la tient encore, et rien du sort d'un
+// échiquier n'apparaît sur l'autre.
 // Préparation : toute scène créée ici compile ses programmes au repos (VfxStage.warm) ; prewarmVfx() crée et prépare
 // celle d'un pool avant même que son échiquier existe.
 import { useEffect, useRef, useState } from 'react';
@@ -25,9 +29,10 @@ const POOL_KEEP_MS = 20000;
  * Un sort laisse des minuteries derrière lui qui visent la scène et son échiquier (fin d'une ambiance, jusqu'à ≈ 2,7 s
  * après le début du sort ; éclats différés de la Déflagration, ≈ 0,5 s après l'impact), à peu près jusqu'à l'arrêt de
  * sa boucle d'images. La scène n'est donc reprise à un échiquier qui cède que si elle n'anime plus rien depuis
- * IDLE_BEFORE_YIELD_MS, et une scène libérée n'est rendue à l'échiquier qui l'attendait qu'au bout de HANDOFF_MS
- * (détachée entre-temps : les éclats tardifs sont effacés en la rattachant) : rien du sort d'un échiquier n'apparaît
- * sur l'autre.
+ * IDLE_BEFORE_YIELD_MS (ou s'il ne s'en est pas servi), et une scène libérée n'est rendue à l'échiquier qui l'attendait
+ * qu'au bout de HANDOFF_MS (détachée entre-temps : les éclats tardifs sont effacés en la rattachant). Quand elle change
+ * de famille plus tôt (la partie qui la réclame ou la demande juste après la sortie d'un lieu), ce que les sorts de
+ * l'autre famille avaient programmé ne la vise plus (VfxStage.family, later).
  */
 const IDLE_BEFORE_YIELD_MS = 1500;
 const HANDOFF_MS = 900;
@@ -38,6 +43,8 @@ interface Holder {
   orientation: Color;
   /** N'anime aucun sort : la scène peut lui être reprise. */
   yields: boolean;
+  /** Famille : vrai pour un échiquier qui partage la scène en la cédant (la partie), faux pour la démonstration. */
+  shares: boolean;
   grant: (v: Vfx | null) => void;
 }
 interface Slot {
@@ -48,6 +55,8 @@ interface Slot {
   waiting: Holder[];
   /** Libération (POOL_KEEP_MS) ou passage à l'échiquier qui attend (HANDOFF_MS). */
   timer: number;
+  /** Quand le détenteur actuel l'a reçue (horloge murale). */
+  since: number;
 }
 const slots = new Map<string, Slot>();
 
@@ -69,6 +78,8 @@ function give(slot: Slot, h: Holder) {
   slot.timer = 0;
   slot.holder = h;
   slot.stage.attach(h.wrap, h.orientation);
+  slot.stage.family = h.shares;
+  slot.since = Date.now();
   h.grant({ stage: slot.stage, m: slot.m });
 }
 
@@ -82,8 +93,13 @@ function park(key: string, slot: Slot) {
   }, POOL_KEEP_MS);
 }
 
-/** La scène peut être reprise à celui qui la tient : il n'anime aucun sort et elle est au repos depuis assez longtemps. */
-const takeable = (slot: Slot) => !slot.holder || (slot.holder.yields && slot.stage.idleMs >= IDLE_BEFORE_YIELD_MS);
+/**
+ * La scène peut être reprise à celui qui la tient : il n'anime aucun sort, et elle est au repos depuis assez longtemps
+ * ou il ne s'en est pas servi depuis qu'il l'a reçue (la partie qui l'a récupérée en haut de page : la démonstration
+ * peut la reprendre aussitôt qu'elle redescend).
+ */
+const takeable = (slot: Slot) =>
+  !slot.holder || (slot.holder.yields && (slot.stage.idleMs >= IDLE_BEFORE_YIELD_MS || !slot.stage.ranSince(slot.since)));
 
 /** Demande la scène du pool `key` pour `h` ; renvoie une scène propre à `h` quand elle ne peut pas être partagée. */
 function request(key: string, m: VfxModule, h: Holder): VfxStage | null {
@@ -92,7 +108,8 @@ function request(key: string, m: VfxModule, h: Holder): VfxStage | null {
     const stage = create(m, h.wrap, h.orientation);
     // Sans WebGL, rien à partager
     if (!stage.ok) return stage;
-    slots.set(key, { stage, m, holder: h, waiting: [], timer: 0 });
+    stage.family = h.shares;
+    slots.set(key, { stage, m, holder: h, waiting: [], timer: 0, since: Date.now() });
     h.grant({ stage, m });
     return null;
   }
@@ -140,8 +157,8 @@ function leave(key: string, h: Holder) {
 
 /**
  * `h`, qui attendait la scène, en a besoin maintenant (partie de l'accueil passée en mode immersif) : elle lui revient
- * si personne ne la tient ou si celui qui la tient cède ; sinon (deux échiquiers qui animent) `h` a sa propre scène,
- * renvoyée ici.
+ * si personne ne la tient (même pendant le délai de passage : les restes du sort de la démonstration ne la visent
+ * plus, VfxStage.family) ou si celui qui la tient cède ; sinon (deux échiquiers qui animent) `h` a sa propre scène, renvoyée ici.
  */
 function claim(key: string, m: VfxModule, h: Holder): VfxStage | null {
   const slot = slots.get(key);
@@ -163,9 +180,12 @@ function claim(key: string, m: VfxModule, h: Holder): VfxStage | null {
  * puis textures des `skins` (identifiants du catalogue). Rien de visible (calque caché, rien de dessiné). Si une scène
  * existe déjà dans le pool, seules les textures sont préparées. Sans échiquier pour la prendre, elle est libérée au
  * bout de POOL_KEEP_MS.
- * Appel prévu : à l'accueil, au premier défilement, à côté du préchargement de '../vfx/index' (OdysseeHome), avec les
- * skins des lieux : prewarmVfx('odyssee-stage', PLACES.map(p => p.skin)). La démonstration du premier lieu trouve
- * alors une scène prête au lieu de la créer pendant l'arrivée dans la Forêt.
+ * Appel prévu (pas encore fait : OdysseeHome relève d'un autre chantier) : à l'accueil, à côté du préchargement de
+ * '../vfx/index', avec les skins des lieux : prewarmVfx('odyssee-stage', PLACES.map(p => p.skin)). La démonstration du
+ * premier lieu trouve alors une scène prête au lieu de la créer pendant l'arrivée dans la Forêt. Attention au moment :
+ * créer le contexte WebGL coûte quelques dizaines de millisecondes au fil principal (pas pendant le geste du pouce), et
+ * une scène préparée qu'aucun échiquier ne prend dans les POOL_KEEP_MS est libérée (un lecteur qui reste sur le héros
+ * perd la préparation).
  */
 export function prewarmVfx(poolKey: string, skins: string[] = []): void {
   void load()
@@ -178,7 +198,7 @@ export function prewarmVfx(poolKey: string, skins: string[] = []): void {
           stage.dispose();
           return;
         }
-        slot = { stage, m, holder: null, waiting: [], timer: 0 };
+        slot = { stage, m, holder: null, waiting: [], timer: 0, since: 0 };
         slots.set(poolKey, slot);
         park(poolKey, slot);
       }
@@ -187,34 +207,82 @@ export function prewarmVfx(poolKey: string, skins: string[] = []): void {
     .catch(() => undefined);
 }
 
+/** Scène d'un échiquier qui partage celle de son pool en la cédant (useSharedVfx). */
+export interface VfxShare {
+  /**
+   * Vrai dès que la scène de cet échiquier est prête, même s'il l'a cédée pour l'instant : c'est le moment où, avant le
+   * partage, il avait la sienne pour de bon.
+   */
+  ready: boolean;
+  /**
+   * La scène quand cet échiquier la tient, null sinon (changée dès qu'elle est cédée ou rendue, sans rendu React) :
+   * lue au moment de s'en servir.
+   */
+  now: { readonly current: Vfx | null };
+}
+
 /**
- * Scène d'effets de l'échiquier `wrap` (null tant qu'elle se prépare, ou quand un autre échiquier l'a reprise).
- * `yields` (avec `poolKey`) : l'échiquier n'anime aucun sort pour l'instant ; la scène du pool peut lui être reprise
- * (une fois au repos), et lui revient quand l'autre la libère ou quand `yields` repasse à faux.
+ * Scène d'effets de l'échiquier `wrap` (null tant qu'elle se prépare). `poolKey` : voir l'en-tête (scène gardée pour
+ * le prochain échiquier du même nom).
  */
-export function useVfx(wrap: HTMLElement | null, orientation: Color, poolKey?: string, yields = false): Vfx | null {
+export function useVfx(wrap: HTMLElement | null, orientation: Color, poolKey?: string): Vfx | null {
+  return useVfxCore(wrap, orientation, poolKey, undefined, undefined).vfx;
+}
+
+/**
+ * Scène d'effets d'un échiquier qui partage celle du pool `poolKey` en la cédant (la partie de l'accueil). `yields` :
+ * l'échiquier n'anime aucun sort pour l'instant ; la scène du pool peut lui être reprise (une fois au repos), et lui
+ * revient quand l'autre la libère ou quand `yields` repasse à faux. `onGrant` est appelé à chaque passage (la scène,
+ * ou null quand elle est reprise), sans rendu React : seul `ready` en provoque un, une fois.
+ */
+export function useSharedVfx(wrap: HTMLElement | null, orientation: Color, poolKey: string, yields: boolean, onGrant: (v: Vfx | null) => void): VfxShare {
+  const { ready, now } = useVfxCore(wrap, orientation, poolKey, yields, onGrant);
+  return { ready, now };
+}
+
+/** `yields` indéfini : l'échiquier ne cède jamais la scène (famille de la démonstration). */
+function useVfxCore(
+  wrap: HTMLElement | null,
+  orientation: Color,
+  poolKey: string | undefined,
+  yields: boolean | undefined,
+  onGrant: ((v: Vfx | null) => void) | undefined,
+): VfxShare & { vfx: Vfx | null } {
   const [vfx, setVfx] = useState<Vfx | null>(null);
-  const yieldsRef = useRef(yields);
-  yieldsRef.current = yields;
+  const [ready, setReady] = useState(false);
+  const nowRef = useRef<Vfx | null>(null);
+  const onGrantRef = useRef(onGrant);
+  onGrantRef.current = onGrant;
+  const shares = yields !== undefined;
+  const yieldsRef = useRef(!!yields);
+  yieldsRef.current = !!yields;
   const holderRef = useRef<Holder | null>(null);
   /** Scène propre à cet échiquier (sans pool, ou pool tenu par un échiquier qui ne cède pas) : détruite au démontage. */
   const ownRef = useRef<VfxStage | null>(null);
   useEffect(() => {
     if (!wrap) return;
     let dead = false;
-    const h: Holder = { wrap, orientation, yields: yieldsRef.current, grant: v => !dead && setVfx(v) };
+    const show = (v: Vfx | null) => {
+      if (dead) return;
+      nowRef.current = v;
+      if (onGrantRef.current) onGrantRef.current(v);
+      else setVfx(v);
+    };
+    const h: Holder = { wrap, orientation, yields: yieldsRef.current, shares, grant: show };
     holderRef.current = h;
     void load().then(m => {
       if (dead) return;
+      setReady(true);
       const own = poolKey ? request(poolKey, m, h) : create(m, wrap, orientation);
       if (!own) return;
       ownRef.current = own;
-      setVfx({ stage: own, m });
+      show({ stage: own, m });
     });
     return () => {
+      show(null);
       dead = true;
       holderRef.current = null;
-      setVfx(null);
+      setReady(false);
       const own = ownRef.current;
       ownRef.current = null;
       if (own) own.dispose();
@@ -226,16 +294,16 @@ export function useVfx(wrap: HTMLElement | null, orientation: Color, poolKey?: s
   useEffect(() => {
     const h = holderRef.current;
     if (!h || !poolKey) return;
-    h.yields = yields;
+    h.yields = !!yields;
     if (yields) return;
     const slot = slots.get(poolKey);
     if (ownRef.current || !slot) return;
     const own = claim(poolKey, slot.m, h);
     if (own) {
       ownRef.current = own;
-      setVfx({ stage: own, m: slot.m });
+      h.grant({ stage: own, m: slot.m });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [yields]);
-  return vfx;
+  return { vfx, ready, now: nowRef };
 }

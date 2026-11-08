@@ -31,7 +31,8 @@ import { checkSquare } from '../components/Board';
 import type { BoardHandle } from '../components/Board';
 import { matedKing } from '../components/mate';
 import { playCardSound, playSound } from '../sound';
-import { useVfx } from '../vfx/useVfx';
+import { useSharedVfx } from '../vfx/useVfx';
+import type { Vfx } from '../vfx/useVfx';
 import { castSafely } from './castSafely';
 import { liveCatalog } from './data';
 
@@ -178,11 +179,25 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
   const meRef = useRef(me);
   meRef.current = me;
   // Même scène 3D que la démonstration de la descente (un seul contexte WebGL pour l'accueil) : hors mode immersif, la
-  // partie la lui cède (une fois ses sorts finis) et la reprend ensuite (useVfx)
-  const vfx = useVfx(armed ? wrapEl : null, PLAYER, 'odyssee-stage', !active);
+  // partie la lui cède (une fois ses sorts finis) et la reprend ensuite (useVfx). Sans état React : un passage de la
+  // scène ne re-rend pas tout l'accueil (ce hook fait partie d'OdysseeHome) et ne refait ni runCast ni le tour de l'IA.
+  // Quand la partie la reçoit, onVfx la prépare (orientation, classe du calque, objets persistants) ; les sorts et les
+  // objets persistants la lisent au moment de s'en servir (vfxNow), et seulement si elle était prête quand leur fonction
+  // a été faite (vfxReady, qui ne change qu'une fois) : comme avant le partage, où la partie gardait sa scène dès
+  // qu'elle était prête. Ainsi un tour de l'IA commencé pendant que la scène est cédée s'anime quand même, et rien ne
+  // vise la scène quand elle est chez la démonstration.
+  const onVfx = useCallback((v: Vfx | null) => {
+    if (!v) return;
+    const s = stateRef.current;
+    v.stage.setOrientation(meRef.current, s.effects, s.pos);
+    // Calque WebGL de la partie : masqué hors mode immersif (voir odyssee.css)
+    (v.stage as unknown as { canvas?: HTMLCanvasElement | null }).canvas?.classList.add('o-live-canvas');
+    v.stage.syncMarkers(activeRef.current ? s.effects : [], s.pos);
+  }, []);
+  const { ready: vfxReady, now: vfxNow } = useSharedVfx(armed ? wrapEl : null, PLAYER, 'odyssee-stage', !active, onVfx);
   useEffect(() => {
-    if (vfx) vfx.stage.setOrientation(me, stateRef.current.effects, stateRef.current.pos);
-  }, [vfx, me]);
+    vfxNow.current?.stage.setOrientation(me, stateRef.current.effects, stateRef.current.pos);
+  }, [vfxNow, me]);
 
   const stateRef = useRef(state);
   const activeRef = useRef(active);
@@ -199,18 +214,12 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
   }, []);
   const clearPremoves = useCallback(() => handleRef.current?.clearPremoves(), []);
 
-  // Calque WebGL de la partie : masqué hors mode immersif (voir odyssee.css)
-  useEffect(() => {
-    const canvas = (vfx?.stage as unknown as { canvas?: HTMLCanvasElement | null } | undefined)?.canvas;
-    canvas?.classList.add('o-live-canvas');
-  }, [vfx]);
-
   /** Effets persistants dans la scène 3D : seulement quand on regarde la partie. */
   const syncScene = useCallback(
     (s: GameState) => {
-      vfx?.stage.syncMarkers(activeRef.current ? s.effects : [], s.pos);
+      if (vfxReady) vfxNow.current?.stage.syncMarkers(activeRef.current ? s.effects : [], s.pos);
     },
-    [vfx],
+    [vfxReady, vfxNow],
   );
 
   const apply = useCallback(
@@ -252,9 +261,10 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
     async (n: GameState, info: CardInfo, skinId: string, relay = false) => {
       playCardSound(info.card);
       setLastCast({ card: info.card, by: relay ? 'relay' : info.caster === meRef.current ? 'player' : 'bot', key: Date.now() });
-      if (vfx && activeRef.current) {
+      const v = vfxReady ? vfxNow.current : null;
+      if (v && activeRef.current) {
         // Garde-fou : une carte sans animation (carte nouvelle) ou une scène 3D qui rame ne bloquent jamais la partie
-        await castSafely(vfx, info, skinStyle(skinId), {
+        await castSafely(v, info, skinStyle(skinId), {
           impact: () => apply(n),
           hide: ids => setHidden(new Set(ids)),
           show: () => setHidden(new Set()),
@@ -265,7 +275,7 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
       }
       setHidden(new Set());
     },
-    [vfx, apply],
+    [vfxReady, vfxNow, apply],
   );
 
   // Tour de l'IA : la décision est calculée tout de suite (Worker), elle n'est jouée qu'en mode immersif

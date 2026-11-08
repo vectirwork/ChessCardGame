@@ -12,6 +12,18 @@
   user-select: none;
   -webkit-touch-callout: none;
 }
+/* Coque rendue d'avance (prop prepare) : mise en page mais ni peinte ni touchable. Ses animations CSS attendent à leur
+   début : elles partent quand la coque apparaît, comme si elle venait d'être montée */
+.gs.is-prep {
+  visibility: hidden;
+}
+.gs.is-prep::before,
+.gs.is-prep::after,
+.gs.is-prep *,
+.gs.is-prep *::before,
+.gs.is-prep *::after {
+  animation-play-state: paused !important;
+}
 .gs-backdrop {
   position: fixed;
   inset: 0;

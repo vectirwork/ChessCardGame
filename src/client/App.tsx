@@ -97,6 +97,9 @@ export function preloadRoute(pathname: string): Promise<unknown> {
 function usePrefetchOnIntent() {
   useEffect(() => {
     const onIntent = (e: Event) => {
+      // Au doigt, pointerover arrive aussi quand on pose le doigt sur un lien pour faire défiler la page : charger et
+      // évaluer la page visée (et injecter sa feuille de style) tomberait en plein geste. Le clic suit de toute façon.
+      if (e instanceof PointerEvent && e.pointerType !== 'mouse') return;
       const a = e.target instanceof Element ? e.target.closest('a[href]') : null;
       if (!(a instanceof HTMLAnchorElement) || a.origin !== window.location.origin || a.target === '_blank') return;
       if (a.pathname.startsWith('/api/') || /\.\w+$/.test(a.pathname)) return;

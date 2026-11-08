@@ -272,6 +272,8 @@ export default function OdysseeHome() {
         .to('.o-falling-star', { x: p.x, y: p.y, duration: 0.7, ease: 'power3.in' }, 0.15)
         .set('.o-falling-star', { display: 'none' }, 0.85)
         .fromTo('.o-impact', { scale: 0.08, opacity: 1 }, { scale: 2.6, opacity: 0, duration: 1.2, ease: 'expo.out' }, 0.84)
+        // Éclair fini : retiré (transparent, il restait un calque plein écran pour toute la visite)
+        .set('.o-impact', { display: 'none' }, 2.04)
         .from('.o-orbits', { scale: 0.55, rotation: -50, opacity: 0, duration: 2, ease: 'expo.out' }, 0.8)
         .from('.o-astro-front-in', { scale: 0.55, opacity: 0, duration: 1.8, ease: 'expo.out' }, 0.88)
         .from('.o-astre-wake', { y: -60, scale: 0.7, opacity: 0, duration: 1.5, ease: 'expo.out' }, 0.84)
@@ -291,24 +293,34 @@ export default function OdysseeHome() {
     };
   }, []);
 
-  // Code des démonstrations des lieux II à V : préchargé au repos après le chargement, ou au premier défilement
+  // Code des démonstrations des lieux II à V : préchargé au repos après le chargement, ou au premier défilement.
+  // Au premier défilement, aussi la scène 3D des sorts (three.js) : elle est analysée pendant la lecture du premier
+  // écran, pas à l'entrée de la Forêt, quand le lieu doit apparaître (un lecteur qui ne défile pas ne la charge pas)
   useEffect(() => {
     const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number };
     let done = false;
+    let vfx = false;
     const go = () => {
       if (done) return;
       done = true;
-      window.removeEventListener('scroll', go, true);
-      window.removeEventListener('wheel', go, true);
       void loadStageBoard().catch(() => undefined);
     };
+    const onScroll = () => {
+      go();
+      if (!vfx) {
+        vfx = true;
+        void import('../vfx/index').catch(() => undefined);
+      }
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('wheel', onScroll, true);
+    };
     const t = window.setTimeout(() => (w.requestIdleCallback ? w.requestIdleCallback(go, { timeout: 3000 }) : go()), 2500);
-    window.addEventListener('scroll', go, { passive: true, capture: true });
-    window.addEventListener('wheel', go, { passive: true, capture: true });
+    window.addEventListener('scroll', onScroll, { passive: true, capture: true });
+    window.addEventListener('wheel', onScroll, { passive: true, capture: true });
     return () => {
       window.clearTimeout(t);
-      window.removeEventListener('scroll', go, true);
-      window.removeEventListener('wheel', go, true);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('wheel', onScroll, true);
     };
   }, []);
 

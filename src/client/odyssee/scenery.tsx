@@ -303,8 +303,10 @@ export function SceneObservatoire({ part }: { part: 'back' | 'front' }) {
         <Stars seed={3} n={420} maxR={1.1} yMax={VH * 1.1} />
       </Layer>
       <Layer d={0.09}>
-        <Stars seed={7} n={90} maxR={1.9} twinkle={26} yMax={VH * 0.9} warm={0.3} />
+        {/* Voie lactée d'abord : peinte sous les étoiles qui scintillent (animées, chacune son calque), elle reste
+            dans le calque du plan au lieu d'en devenir un à elle seule, plein écran, par chevauchement */}
         <div className="o-milky" />
+        <Stars seed={7} n={90} maxR={1.9} twinkle={26} yMax={VH * 0.9} warm={0.3} />
       </Layer>
       <Layer d={0.16}>
         <Svg anchor="xMidYMin">

@@ -125,19 +125,17 @@ html.ody-home #root {
 /* Sobriété (D6) : décor caché, sorti de l'écran ou recouvert par la partie. Ses animations sont en pause (elles
    reprennent là où elles en étaient) : Blink ne recalcule plus leur style à chaque image du fil principal. La classe
    o-paused est posée par le moteur (scènes, calques), l'attribut data-offscreen par l'accueil (lieux et chapitres
-   hors de l'écran), l'attribut data-still par l'accueil après 30 s sans aucun geste (OdysseeHome). */
+   hors de l'écran), l'attribut data-still par l'accueil après 30 s sans aucun geste (OdysseeHome). Dans le texte,
+   seuls les éléments qui s'animent sont visés : un sélecteur universel faisait recalculer tout un lieu (des
+   centaines d'éléments) à chaque entrée ou sortie de l'écran. */
 .ody .o-paused,
 .ody .o-paused *,
 .ody .o-paused::before,
 .ody .o-paused::after,
 .ody .o-paused *::before,
 .ody .o-paused *::after,
-.ody [data-offscreen],
-.ody [data-offscreen] *,
-.ody [data-offscreen]::before,
-.ody [data-offscreen]::after,
-.ody [data-offscreen] *::before,
-.ody [data-offscreen] *::after,
+.ody [data-offscreen] :is(.o-live-dot, .o-seal-text, .sc-halo, .spell-card),
+.ody [data-offscreen] .o-cue-line::after,
 .ody.is-game .o-world-shift *,
 .ody.is-game .o-world-shift *::before,
 .ody.is-game .o-world-shift *::after,
@@ -147,9 +145,8 @@ html.ody-home #root {
 .ody[data-still] .o-world-shift *,
 .ody[data-still] .o-world-shift *::before,
 .ody[data-still] .o-world-shift *::after,
-.ody[data-still] .o-content *,
-.ody[data-still] .o-content *::before,
-.ody[data-still] .o-content *::after,
+.ody[data-still] .o-content :is(.o-live-dot, .o-seal-text, .sc-halo, .spell-card),
+.ody[data-still] .o-content .o-cue-line::after,
 .ody[data-still] .o-falling-star *,
 .ody[data-still] :is(.o-orbit, .o-eq-spin, .o-astre-shadow, .o-astre-float, .o-hint-arrow, .o-live-dot) {
   animation-play-state: paused !important;
@@ -1235,7 +1232,9 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
   opacity: 1;
   transform: none;
   transition: none;
-  animation: o-hero-in 1.1s var(--ease) both;
+  /* backwards et non both : l'état final est le style de base ; une animation qui reste « en vigueur » après sa fin
+     gardait chaque bloc du héros en calque composé pour toute la visite */
+  animation: o-hero-in 1.1s var(--ease) backwards;
   animation-delay: calc(var(--i, 0) * 90ms);
 }
 .ody .o-hero .o-lede {
@@ -1245,7 +1244,7 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
 .ody .o-hero .o-rv-lines .o-ln > span {
   transform: none;
   transition: none;
-  animation: o-hero-line 1.4s var(--ease) both;
+  animation: o-hero-line 1.4s var(--ease) backwards;
   animation-delay: calc(var(--l, 0) * 110ms);
 }
 @keyframes o-hero-in {
@@ -1438,13 +1437,26 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
 }
 .ody .o-chapter-card .spell-card {
   --w: 204px;
-  transition: transform 0.8s var(--ease), box-shadow 0.8s var(--ease), filter 0.3s;
+  transition: transform 0.8s var(--ease), filter 0.3s;
 }
-.ody .o-chapter.on .o-chapter-card .spell-card {
+/* Halo du chapitre actif : une ombre fixe, dans un pseudo-élément qui apparaît en fondu d'opacité (compositeur), au
+   lieu d'une ombre interpolée, repeinte et retramée à chaque image pendant 0,8 s à chaque changement de chapitre */
+.ody .o-chapter-card .spell-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
   box-shadow:
     0 0 0 1px hsl(var(--h) 90% 70% / 0.55),
     0 40px 90px -24px hsl(var(--h) 90% 50% / 0.85),
     0 0 60px -10px hsl(var(--h) 90% 60% / 0.45);
+  opacity: 0;
+  transition: opacity 0.8s var(--ease);
+  pointer-events: none;
+}
+.ody .o-chapter.on .o-chapter-card .spell-card::after {
+  opacity: 1;
 }
 .ody .o-chapter-meta {
   display: flex;
@@ -3034,7 +3046,7 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
   background: none;
   border-radius: 99px;
   cursor: pointer;
-  animation: o-pip-in 0.6s var(--ease) both;
+  animation: o-pip-in 0.6s var(--ease) backwards;
   transition: opacity 0.4s, transform 0.5s var(--ease);
 }
 @keyframes o-pip-in {
@@ -3469,6 +3481,15 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
   }
   .ody .o-ln > span {
     transform: translate(0, 112%);
+  }
+  /* Cartes de la page : le halo garde son état de repos (celui qu'il retrouve après ses trois pulsations) et le reflet
+     invisible (opacité nulle) n'est pas dessiné ; animés, ils faisaient de chaque carte une pile de calques composés
+     (halo, puis emblème et pastilles par-dessus, par chevauchement) */
+  .ody .o-content .spell-card:not(.selected):not([aria-expanded='true']) .sc-halo {
+    animation: none;
+  }
+  .ody .o-content .spell-card:not(.selected):not(.r-legendaire) .sc-foil {
+    display: none;
   }
   /* En-tête : sans flou d'arrière-plan (relu et flouté à chaque image au-dessus d'un décor qui bouge) */
   html.ody-home .site-header.is-scrolled::before {

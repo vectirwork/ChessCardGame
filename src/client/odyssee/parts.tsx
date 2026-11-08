@@ -86,6 +86,24 @@ export const Chapter = memo(function Chapter({ id, active }: { id: CardId; activ
 export const OrbitRings = memo(function OrbitRings() {
   return (
     <div className="o-orbits" aria-hidden="true">
+      {/* Anneaux immobiles d'abord, l'anneau qui tourne en dernier : peints sous lui, les anneaux fixes restent dans
+          le calque de l'astre au lieu de devenir chacun un calque (chevauchement), sans rien changer à l'image :
+          les anneaux sont concentriques */}
+      <div className="o-orbit o-o2">
+        <svg className="o-spin-svg" viewBox="0 0 200 200">
+          <circle cx="100" cy="100" r="86" fill="none" stroke="rgba(127,231,255,.36)" strokeWidth="0.22" />
+          <circle cx="14" cy="100" r="1.3" fill="#bff3ff" />
+          <circle cx="186" cy="100" r="0.9" fill="#bff3ff" />
+        </svg>
+      </div>
+      <svg className="o-orbit o-o3" viewBox="0 0 200 200">
+        <circle cx="100" cy="100" r="78" fill="none" stroke="rgba(243,201,105,.24)" strokeWidth="0.16" />
+        {['N', 'E', 'S', 'O'].map((t, i) => (
+          <text key={t} x={100 + [0, 81, 0, -81][i]} y={100 + [-80, 1.2, 82.6, 1.2][i]} fill="rgba(243,201,105,.75)" fontSize="3.4" textAnchor="middle" fontFamily="Cinzel">
+            {t}
+          </text>
+        ))}
+      </svg>
       <div className="o-orbit o-o1">
         <svg className="o-spin-svg" viewBox="0 0 200 200">
           <circle cx="100" cy="100" r="98" fill="none" stroke="rgba(243,201,105,.55)" strokeWidth="0.3" />
@@ -108,21 +126,6 @@ export const OrbitRings = memo(function OrbitRings() {
           <circle cx="198" cy="100" r="1.6" fill="#ffe1a0" />
         </svg>
       </div>
-      <div className="o-orbit o-o2">
-        <svg className="o-spin-svg" viewBox="0 0 200 200">
-          <circle cx="100" cy="100" r="86" fill="none" stroke="rgba(127,231,255,.36)" strokeWidth="0.22" />
-          <circle cx="14" cy="100" r="1.3" fill="#bff3ff" />
-          <circle cx="186" cy="100" r="0.9" fill="#bff3ff" />
-        </svg>
-      </div>
-      <svg className="o-orbit o-o3" viewBox="0 0 200 200">
-        <circle cx="100" cy="100" r="78" fill="none" stroke="rgba(243,201,105,.24)" strokeWidth="0.16" />
-        {['N', 'E', 'S', 'O'].map((t, i) => (
-          <text key={t} x={100 + [0, 81, 0, -81][i]} y={100 + [-80, 1.2, 82.6, 1.2][i]} fill="rgba(243,201,105,.75)" fontSize="3.4" textAnchor="middle" fontFamily="Cinzel">
-            {t}
-          </text>
-        ))}
-      </svg>
     </div>
   );
 });

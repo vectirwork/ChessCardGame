@@ -79,7 +79,8 @@ html.lenis body {
 .lenis.lenis-smooth {
   scroll-behavior: auto !important;
 }
-.lenis.lenis-stopped {
+.lenis.lenis-stopped,
+html.o-locked {
   overflow: hidden;
 }
 html.is-immersive,

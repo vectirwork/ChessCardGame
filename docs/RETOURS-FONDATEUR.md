@@ -171,3 +171,44 @@ faut une neuvième carte ou en remplacer une.
   en jouant un coup ou avec « Prendre la main ». Chacun voit qui joue : « Vous ne jouiez pas : l'IA joue pour vous en
   attendant » / « Elle ne joue pas pour l'instant : l'IA joue à sa place ». L'IA ne joue jamais contre elle-même : si
   les deux joueurs sont absents, la partie s'arrête.
+
+## 8 novembre : vue mobile, lag et artefacts
+
+> « Là la priorité c'est de fix les problèmes sur la page mobile ! Lag et artefacts à souhait ! […] c'est pas normal
+> que ça lag sachant que le Pixel 7 est un bon téléphone. […] je cherche vraiment l'excellence de la performance en
+> vue mobile sans sacrifier le visuel. »
+
+Vidéo du fondateur (Pixel 7, 83 s) analysée image par image : dalles sombres et pièces debout sans plateau dans les
+emplacements de l'échiquier (V1), rectangles de tuiles (V2), lieux vides qui surgissent tard (V3), saccades de 3 à 8
+images figées par seconde (V4), barre dorée au bord de l'écran à l'entrée et à la sortie de la partie (V5).
+
+Causes (mesures au banc et audit du code) :
+- le décor et l'échiquier suivaient le doigt par un script, avec au moins une image de retard, et tout se figeait dès
+  que le fil principal était pris (rendu complet de l'accueil à chaque seuil, ≈ 80 fois par descente) ;
+- la mémoire graphique (tuiles) était presque pleine (≈ 230 à 250 Mo pour ≈ 256 Mo) : chaque calque SVG du décor
+  faisait 3,5 fois la largeur du téléphone, les étoiles scintillantes occupaient deux calques plein écran, le lieu
+  suivant était peint d'un coup au début de son fondu ; Chrome laissait alors des tuiles vides (V1, V2, V3) ;
+- dans les emplacements, l'échiquier changeait de taille à chaque image (tout l'astre retramé) et son cadre formait
+  un calque à part sous les cases : seul le cadre restait quand la mémoire manquait (la « dalle sombre ») ;
+- Lenis (molette douce) posait des écouteurs tactiles non passifs : chaque début de geste attendait le fil principal.
+
+- [x] **Défilement natif sur téléphone** : calques en parallaxe, fondus des lieux et des ciels, position, taille et
+  opacité de l'échiquier sont des animations liées au défilement (ScrollTimeline), jouées par le compositeur avec le
+  défilement lui-même. Mêmes valeurs qu'avant (les fondus « smooth » sont exactement cubic-bezier(1/3, 0, 2/3, 1)).
+  L'échiquier est placé dans le document et défile avec son texte ; sa taille ne change plus pendant le geste.
+- [x] **Lieux montés pendant la traversée des nuées** : mis en page à 1,7 écran, peints un demi-écran avant leur
+  fondu, éteints à la fin de leur fondu de sortie ; au plus deux lieux peints. Nuées décodées d'avance.
+- [x] **Mémoire graphique** : calques coupés à la largeur de l'écran ; étoiles scintillantes en petits points ;
+  anneaux fixes peints sous l'anneau qui tourne ; rayons du Seuil sans fusion ; grain dans la vignette ; en-tête sans
+  flou ; cartes, apparitions de texte et cadre de l'échiquier sans 3D permanente ; halo des cartes au repos.
+  Calques composés : 80 à 163 avant, 38 (premier écran) à 55 (chapitre) après.
+- [x] **Fil principal** : décors, chapitres, anneaux et échiquier de démonstration mémoïsés ; la barre d'adresse ne
+  relance plus la mesure ; teinte du lieu écrite au repos ; sorts de démonstration lancés une fois le défilement
+  arrêté ; scène 3D (three.js) préchargée au premier défilement ; pas de préchargement de page au toucher d'un lien ;
+  plus de Lenis sur écran tactile.
+- [x] **Rideau d'or** (V5) : sa lisière part et revient vraiment hors de l'écran (elle restait collée au bord droit) ;
+  glissements joués par le compositeur ; sur téléphone, la page glisse sans fondu et le décor ne bouge pas.
+
+Pistes encore ouvertes, à valider visuellement : précuire en images l'aurore floutée de la Forêt, les anneaux qui
+tournent et les dégradés doux (≈ 50 à 100 Mo de mémoire graphique en moins) ; remplacer les nappes de neige, de sable
+et de poussières par des particules ; garder un seul échiquier de démonstration d'un lieu à l'autre.

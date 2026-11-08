@@ -196,6 +196,8 @@ export class Engine {
   /** Hauteur de la grande fenêtre (100lvh, barre d'adresse masquée) : ne bouge pas quand la barre apparaît. */
   private lvhProbe: HTMLElement | null = null;
   private docH = 0;
+  private rootW = -1;
+  private rootH = -1;
   /** Mode natif : ciels montrés (les autres sont cachés : ni peints ni composés). */
   private skyShown: (boolean | null)[] = [];
   private tick = (time: number) => {
@@ -225,9 +227,13 @@ export class Engine {
     private hooks: EngineHooks,
   ) {
     this.reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // Lenis ne sert qu'à adoucir la molette d'une souris. Sur un écran tactile, il ne ferait rien d'utile et ses
+    // écouteurs touchstart/touchmove non passifs (sur window) feraient attendre le fil principal à chaque début de
+    // geste : le défilement est alors entièrement natif.
     // autoResize: false : Lenis ne relit plus la hauteur de la page à chaque changement de taille du contenu (mise
     // en page forcée, ≈ 120 ms au chargement) ; measure() la lui donne, au moment où la mise en page est déjà faite
-    if (!this.reduced) this.lenis = new Lenis({ lerp: 0.085, wheelMultiplier: 1, smoothWheel: true, autoResize: false });
+    const finePointer = window.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? true;
+    if (!this.reduced && finePointer) this.lenis = new Lenis({ lerp: 0.085, wheelMultiplier: 1, smoothWheel: true, autoResize: false });
     gsap.ticker.lagSmoothing(0);
     window.addEventListener('pointermove', this.onPointer, { passive: true });
     window.addEventListener('resize', this.onResize);
@@ -237,9 +243,23 @@ export class Engine {
     window.addEventListener('wheel', this.onScroll, { passive: true });
     if (document.readyState === 'complete') this.onLoad();
     else window.addEventListener('load', this.onLoad);
-    this.ro = new ResizeObserver(() => this.measure());
-    this.ro.observe(root);
+    // Seul un vrai changement de taille de la page remesure (le premier rapport, à l'observation, n'en est pas un)
+    this.ro = new ResizeObserver(entries => {
+      const r = entries[entries.length - 1]?.contentRect;
+      if (r && Math.abs(r.width - this.rootW) < 1 && Math.abs(r.height - this.rootH) < 1) return;
+      if (r) {
+        this.rootW = r.width;
+        this.rootH = r.height;
+      }
+      this.measure();
+    });
     this.measure();
+    // Taille au moment de cette première mesure : le rapport initial de l'observateur ne la refait pas
+    const r0 = root.getBoundingClientRect();
+    const cs = getComputedStyle(root);
+    this.rootW = r0.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth);
+    this.rootH = r0.height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - parseFloat(cs.borderTopWidth) - parseFloat(cs.borderBottomWidth);
+    this.ro.observe(root);
   }
 
   private onScroll = () => {
@@ -287,6 +307,7 @@ export class Engine {
     this.dropNative();
     this.lvhProbe?.remove();
     this.lenis?.destroy();
+    document.documentElement.classList.remove('o-locked');
     this.els.header?.classList.remove('is-hidden', 'is-scrolled');
   }
 
@@ -462,6 +483,9 @@ export class Engine {
     if (this.flow) this.flowTop = this.flowOrigin();
     this.buildNative();
     this.markDirty();
+    // Mode natif : les animations des lieux viennent d'être annulées ; elles sont recréées tout de suite, dans le même
+    // rendu (sinon une image passerait avec le décor à sa position de repos et les fonds pleinement opaques)
+    if (this.native) this.frame();
   };
 
   /** Haut du parent de positionnement de l'échiquier, dans le document (échiquier placé dans le document). */
@@ -642,16 +666,34 @@ export class Engine {
       // Défilement animé par Lenis : il a besoin de la boucle d'images
       this.wake();
       this.lenis.scrollTo(el ?? (typeof target === 'number' ? target : 0), { duration: 2.2, easing: (t: number) => 1 - Math.pow(1 - t, 4), onComplete: () => done?.() });
-    } else {
+    } else if (this.reduced) {
       if (typeof target === 'number') window.scrollTo(0, target);
       else el?.scrollIntoView();
       done?.();
+    } else {
+      // Écran tactile (sans Lenis) : défilement doux du navigateur ; la suite attend sa fin (scrollend)
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        window.removeEventListener('scrollend', finish);
+        done?.();
+      };
+      window.addEventListener('scrollend', finish);
+      window.setTimeout(finish, 2400);
+      if (typeof target === 'number') window.scrollTo({ top: target, behavior: 'smooth' });
+      else el?.scrollIntoView({ behavior: 'smooth' });
     }
   }
 
   lock(on: boolean) {
-    if (on) this.lenis?.stop();
-    else this.lenis?.start();
+    if (this.lenis) {
+      if (on) this.lenis.stop();
+      else this.lenis.start();
+    } else {
+      // Sans Lenis : la même règle que sa classe lenis-stopped (overflow: hidden sur la page)
+      document.documentElement.classList.toggle('o-locked', on);
+    }
   }
 
   /** Fige la pose de départ (ou d'arrivée) de la transition vers la partie. */
@@ -671,9 +713,15 @@ export class Engine {
     for (const c of sc.els) {
       c.querySelectorAll<HTMLElement>('[data-bg]').forEach(el => {
         const url = el.dataset.bg!;
-        new Image().src = url;
-        el.style.backgroundImage = `url(${url})`;
         el.removeAttribute('data-bg');
+        // Décodée d'avance, hors du tramage (le premier tramage de la nuée la trouve prête) ; posée une fois prête,
+        // ou tout de suite si le décodage échoue
+        const img = new Image();
+        img.src = url;
+        const put = () => {
+          el.style.backgroundImage = `url(${url})`;
+        };
+        img.decode().then(put, put);
       });
     }
   }
@@ -786,7 +834,8 @@ export class Engine {
     if (this.awake > 0) {
       const a = smooth(this.awake);
       p.tilt *= 1 - a;
-      p.s *= 1 + 0.025 * a;
+      // Mode natif : la taille vient de l'animation liée au défilement, sans cet agrandissement (même pose partout)
+      if (!this.native) p.s *= 1 + 0.025 * a;
     }
     return p;
   }
@@ -858,7 +907,8 @@ export class Engine {
           // graphique), peints juste avant leur fondu d'entrée (0,6 écran avant le lieu), éteints dès leur fondu de
           // sortie fini. Au plus deux lieux peints, et seulement le temps du fondu enchaîné.
           const was = sc.live[i] === 2;
-          const from = sc.start === 0 ? -Infinity : sc.start - vh * (was ? 0.8 : 0.75);
+          // Peint un demi-écran avant son fondu (0,6 écran avant le lieu) : le temps de le tramer, encore transparent
+          const from = sc.start === 0 ? -Infinity : sc.start - vh * (was ? 1.15 : 1.1);
           const to = sc.end + vh * (was ? 0.75 : 0.7);
           state = y > from && y < to ? 2 : 1;
         }
@@ -976,7 +1026,8 @@ export class Engine {
     // chaque image) : celle du héros jusqu'à la fin de son fondu, puis celle des emplacements, posée échiquier caché
     let tiltRad: number | null = p.tilt;
     if (anim && inHero) tiltRad = this.pose('hero').tilt * (1 - smooth(this.awake));
-    else if (anim && p.o > 0.03) tiltRad = null;
+    // (sauf la toute première fois : page rechargée au milieu de la descente, échiquier déjà posé et visible)
+    else if (anim && p.o > 0.03 && a.tilt !== -99) tiltRad = null;
     const tilt = tiltRad === null ? a.tilt : Math.round(((tiltRad * 180) / Math.PI) * 10) / 10;
     if (tilt !== a.tilt) {
       a.tilt = tilt;

@@ -209,6 +209,23 @@ Causes (mesures au banc et audit du code) :
 - [x] **Rideau d'or** (V5) : sa lisière part et revient vraiment hors de l'écran (elle restait collée au bord droit) ;
   glissements joués par le compositeur ; sur téléphone, la page glisse sans fondu et le décor ne bouge pas.
 
+- [x] **« Touchez l'échiquier pour jouer »** : l'échiquier posé dans le texte ouvre enfin la partie au toucher (le
+  bouton qui devait le couvrir n'avait aucune surface, depuis le début).
+
+Mesure comparative (banc Pixel 7 simulé : 412 × 915, densité 2,625, processeur ×4, mêmes gestes du pouce sur toute la
+descente ; le GPU y est émulé par le processeur, la 3D des sorts y coûte bien plus que sur le téléphone) :
+
+| | Avant | Après |
+|---|---|---|
+| Images du compositeur présentées / perdues | 4 369 / 1 407 (76 %) | 3 732 / 844 (82 %) |
+| Images avec des tuiles manquantes | 4 | 0 |
+| Images lentes du fil principal (> 33 ms) | 699 | 465 |
+| Premier écran (fluidité) | 78 % | 98 % |
+| Calques composés | 80 à 163 | 38 à 55 |
+
+Rien n'a encore été vérifié sur le vrai Pixel 7 : une nouvelle vidéo dira si les dalles, rectangles et saccades ont
+disparu.
+
 Pistes encore ouvertes, à valider visuellement : précuire en images l'aurore floutée de la Forêt, les anneaux qui
 tournent et les dégradés doux (≈ 50 à 100 Mo de mémoire graphique en moins) ; remplacer les nappes de neige, de sable
 et de poussières par des particules ; garder un seul échiquier de démonstration d'un lieu à l'autre.

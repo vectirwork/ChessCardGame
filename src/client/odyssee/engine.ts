@@ -202,6 +202,7 @@ export class Engine {
   private rootH = -1;
   /** Mode natif : ciels montrés (les autres sont cachés : ni peints ni composés). */
   private skyShown: (boolean | null)[] = [];
+  private touchable = true;
   private tick = (time: number) => {
     if (this.lenis) {
       if (this.resync) this.lenis.time = time * 1000;
@@ -1046,6 +1047,13 @@ export class Engine {
         this.els.caption.style.opacity = String(show);
         this.els.caption.style.visibility = show ? 'visible' : 'hidden';
       }
+    }
+    // Échiquier effacé (entre deux emplacements, ou dans la nuée) : il ne capte plus les touchers, qui vont au texte
+    // dessous (sinon toucher un lien par-dessus l'échiquier invisible ouvrirait la partie)
+    const touchable = p.o > 0.05 || this.gameMix > 0;
+    if (touchable !== this.touchable) {
+      this.touchable = touchable;
+      this.astre.style.pointerEvents = touchable ? '' : 'none';
     }
     const inTransit = p.o < 0.75 && this.gameMix === 0;
     if (inTransit !== this.transit) {

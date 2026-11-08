@@ -3,7 +3,7 @@
 // une pièce ; au premier coup, la page s'efface vers la gauche et la partie passe en plein écran.
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as RPointerEvent, ReactNode } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import gsap from 'gsap';
 import { CARDS, CATALOGS, offeredCatalog } from '../../shared/cards';
@@ -51,7 +51,8 @@ function slides(root: HTMLElement, list: Slide[]) {
     const frames: Keyframe[] = typeof a === 'string' ? [{ transform: a }, { transform: b as string }] : [a, b as Keyframe];
     root.querySelectorAll(sel).forEach(el => {
       SLIDE_ANIMS.get(el)?.cancel();
-      SLIDE_ANIMS.set(el, el.animate(frames, { duration: dur * 1000, delay: delay * 1000, easing: EXPO_IN_OUT, fill: 'both' }));
+      // Nommée : la trace des performances (catégorie blink.animations) dit si le compositeur la joue
+      SLIDE_ANIMS.set(el, el.animate(frames, { id: `glissement ${sel}`, duration: dur * 1000, delay: delay * 1000, easing: EXPO_IN_OUT, fill: 'both' }));
     });
   }
 }
@@ -413,7 +414,9 @@ export default function OdysseeHome() {
       e.captureGameFrom();
       e.setAwake(false);
       e.lock(true);
-      setMode('entering');
+      // Rendu immédiat : le rideau doit être visible (sans is-off) quand ses glissements sont créés, sinon le
+      // compositeur les refuse et le fil principal les joue image par image
+      flushSync(() => setMode('entering'));
       applyTint();
       document.documentElement.classList.add('is-immersive');
       const k = reduced ? 0.25 : 1;
@@ -450,7 +453,9 @@ export default function OdysseeHome() {
     gsap.to(root.querySelectorAll('.gs-fan-slot'), { y: 360, opacity: 0, duration: 0.5 * k, ease: 'expo.in', stagger: 0.04 * k });
     gsap.to(root.querySelectorAll('.gs-in, .gs-toast, .gs-opponent'), { opacity: 0, y: 14, duration: 0.35 * k, ease: 'power2.in' });
     gsap.delayedCall(0.42 * k, () => {
-      setMode('leaving');
+      // Rendu immédiat : la page et le décor redeviennent visibles (plus de is-game) avant que leurs glissements soient
+      // créés, pour que le compositeur les joue
+      flushSync(() => setMode('leaving'));
       e.captureGameFrom();
       const live = liveRef.current;
       const toDemo = placeRef.current !== 0;

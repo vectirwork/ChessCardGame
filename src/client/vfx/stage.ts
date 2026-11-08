@@ -189,6 +189,7 @@ export class VfxStage {
     for (const ps of this.systems.values()) ps.clear();
     this.renderer?.clear();
     if (this.canvas) this.canvas.style.display = 'none';
+    this.shrink();
     this.tilt = 0;
     this.zoom = 1;
     this.wrap.style.translate = '';
@@ -368,8 +369,20 @@ export class VfxStage {
       this.wrap.style.translate = '';
       this.applied = { x: 0, y: 0 };
       if (this.canvas) this.canvas.style.display = 'none';
+      this.shrink();
     }
   };
+
+  /**
+   * Plus rien à dessiner : le tampon de dessin (plein écran, densité 2, anticrénelé : ≈ 12 à 25 Mo de mémoire
+   * graphique) est réduit à un pixel, au lieu de rester alloué jusqu'au sort suivant (syncCamera le remet à la taille
+   * de la fenêtre au premier rendu, ≈ 1 ms ; le calque est en display: none entre-temps, rien ne se voit).
+   */
+  private shrink() {
+    if (!this.renderer || !this.size.w) return;
+    this.renderer.setSize(1, 1, false);
+    this.size = { w: 0, h: 0 };
+  }
 
   /** Une image. Renvoie la suite de la boucle. */
   private step(now: number): Next {

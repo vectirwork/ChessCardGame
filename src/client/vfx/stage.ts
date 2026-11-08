@@ -246,6 +246,7 @@ export class VfxStage {
       // Ni placement dans le document (anchor) ni taille imposée : le prochain rendu les repose pour son échiquier
       this.canvas.style.position = '';
       this.canvas.style.inset = '';
+      this.canvas.style.maxWidth = '';
       this.canvas.style.transform = '';
       this.anchored = null;
       this.anchoredAt = '';
@@ -627,6 +628,11 @@ export class VfxStage {
       this.anchored = on;
       c.style.position = on ? 'absolute' : '';
       c.style.inset = on ? '0 auto auto 0' : '';
+      // Placé dans le document, le calque compte dans la largeur de la page : après une rotation, il garderait la
+      // largeur de l'ancienne fenêtre jusqu'au rendu suivant, la page s'élargirait, le navigateur la dézoomerait, et
+      // innerWidth (qui fixe la taille du calque) resterait à cette largeur : page bloquée en paysage. Jamais plus
+      // large que la fenêtre (100vw : la largeur de mise en page, que le contenu ne change pas).
+      c.style.maxWidth = on ? '100vw' : '';
       c.style.transform = '';
       this.anchoredAt = '';
     }

@@ -893,7 +893,9 @@ export default function OdysseeHome() {
           </div>
           {showHit && (
             <button
-              className="o-astre-hit"
+              // Lieux II à VI : tout le plateau de démonstration ouvre la partie (« Touchez l'échiquier pour jouer ») ;
+              // sur l'échiquier du héros, le bouton reste un accès clavier sans surface (les pré-coups s'y jouent)
+              className={`o-astre-hit ${place !== 0 ? 'is-cover' : ''}`}
               onClick={() => play()}
               onFocus={() => setHover(true)}
               onBlur={() => setHover(false)}

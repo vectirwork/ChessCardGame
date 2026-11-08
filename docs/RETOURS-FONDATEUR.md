@@ -226,6 +226,35 @@ descente ; le GPU y est émulé par le processeur, la 3D des sorts y coûte bien
 Rien n'a encore été vérifié sur le vrai Pixel 7 : une nouvelle vidéo dira si les dalles, rectangles et saccades ont
 disparu.
 
-Pistes encore ouvertes, à valider visuellement : précuire en images l'aurore floutée de la Forêt, les anneaux qui
-tournent et les dégradés doux (≈ 50 à 100 Mo de mémoire graphique en moins) ; remplacer les nappes de neige, de sable
-et de poussières par des particules ; garder un seul échiquier de démonstration d'un lieu à l'autre.
+### 8 novembre, suite : échec et mat, et lot « sans changer l'image »
+
+> « Pour l'échec et mat à la fin il faut une petite animation, genre le roi tombe […] à l'horizontale sur sa case. »
+> « Fais tout ce qui ne change pas l'image […] je suis pas au pixel près si visuellement ça ne change rien pour un
+> humain c'est OK. »
+
+- [x] **Échec et mat** : le roi maté vacille puis tombe couché sur sa case, avec un peu de poussière (côté de la chute
+  figé pour la partie ; mouvement réduit respecté).
+- [x] **Scène 3D des sorts** : un seul contexte WebGL pour l'accueil (partie et démonstration se le passent) ;
+  programmes des effets préparés au repos (2 à 6 compilations bloquantes par sort auparavant, 0 désormais) ; tampon
+  libéré entre deux sorts ; calque à la taille réelle de la fenêtre et qui défile avec l'échiquier posé dans le texte
+  (les effets restaient décalés d'une image pendant le geste, et étirés quand la barre d'adresse était visible).
+- [x] **Échiquier de démonstration** : une seule instance remise à neuf d'un lieu à l'autre (≈ 160 nœuds recréés et
+  un plateau retramé en pleine nuée auparavant) ; ses coups attendent l'arrêt du défilement, comme ses sorts.
+- [x] **Passage en partie** : le vol de l'échiquier est joué par le compositeur (plus d'écriture image par image
+  pendant le moment le plus chargé) ; la coque de la partie est préparée pendant le glissement du rideau.
+- [x] **Chargement** : Lenis (molette douce, ≈ 19 Ko) n'est plus téléchargé sur écran tactile ; la connexion temps
+  réel de l'accueil s'ouvre au repos ou au premier geste (tout de suite si l'on cherche un joueur) ; la face
+  italique du décor est demandée au repos, pas en pleine Forêt.
+- [x] **Décor** : l'aurore floutée de la Forêt et les lueurs des éclairs des Pics sont remplacées, au repos, par
+  leur propre image précalculée (un flou SVG était recalculé à chaque tramage ; écart de 3 à 7 niveaux sur 255) ;
+  graduations des anneaux en un seul tracé (377 traits → 10).
+- [x] **Rotation du téléphone pendant un sort** : la page ne s'élargit plus (elle restait bloquée en largeur
+  paysage, dézoomée).
+- Écarté après relecture et mesure : étoiles regroupées en tracés (en tramée GPU, celle des vrais appareils, des
+  étoiles faibles perdaient la moitié de leur lumière, et la carte graphique travaillait 2,3 fois plus) ; nappes de
+  neige, de sable et de poussières en particules (4 à 5 Mo de mémoire graphique gagnés sur téléphone, environ 2 %,
+  pour 46 calques animés de plus et un compositeur un peu plus chargé : pas un gain net).
+
+Mesure comparative avec la version en ligne : en cours.
+
+Rien n'a encore été vérifié sur le vrai Pixel 7.

@@ -95,10 +95,12 @@ function slides(root: HTMLElement, list: Slide[]) {
 /**
  * Fondu d'opacité joué par le compositeur ; fini, sa valeur d'arrivée passe dans le style de l'élément et l'animation
  * est retirée (tenue, elle ferait composer à part tout l'échiquier jusqu'à la fin du passage). Comme le fondu de gsap
- * qu'il remplace, qui laissait cette valeur dans le style.
+ * qu'il remplace, qui laissait cette valeur dans le style. `start` : départ de la timeline de gsap où il était placé
+ * (Engine.clockAt), son délai compté de là comme dans la timeline.
  */
-function fade(el: HTMLElement, from: number, to: number, duration: number, delay: number, easing: string) {
+function fade(el: HTMLElement, from: number, to: number, duration: number, delay: number, easing: string, start: number) {
   const a = el.animate([{ opacity: from }, { opacity: to }], { id: 'fondu partie', duration, delay, easing, fill: 'both' });
+  a.startTime = start;
   a.onfinish = () => {
     el.style.opacity = String(to);
     a.cancel();
@@ -487,9 +489,11 @@ export default function OdysseeHome() {
       });
       // Vol de l'échiquier : position, échelle et inclinaison jouées par le compositeur (engine.fly) quand le navigateur
       // sait en échantillonner la courbe ; gsap avance gameMix (fondu des anneaux, arrivée). Sinon, le moteur joue tout
-      // le vol image par image, comme avant
+      // le vol image par image, comme avant. Le vol et le fondu de l'échiquier de la partie partent avec la timeline
+      // (t0), pas à la première image validée après eux
       const ease = live ? flightEase() : null;
-      if (ease) e.fly(1, 1450 * k, ease, live!.querySelector<HTMLElement>('.board'));
+      const t0 = e.clockAt(tl.startTime());
+      if (ease) e.fly(1, 1450 * k, ease, t0, live!.querySelector<HTMLElement>('.board'), live!.querySelector<HTMLElement>('.o-live-plane'));
       const flown = !!ease;
       tl.to(e, { gameMix: 1, duration: 1.45 * k, ease: 'expo.inOut', onUpdate: () => e.markDirty() }, 0);
       // Rideau, voile, page et décor : animations du compositeur (fluides même pendant le montage de la partie).
@@ -505,7 +509,7 @@ export default function OdysseeHome() {
       // L'échiquier de la partie remplace celui de la démonstration en fondu (le compositeur le joue avec le vol)
       if (fromDemo && live) {
         liveFade.current?.cancel();
-        if (flown) liveFade.current = fade(live, 0, 1, 700 * k, 150 * k, LIVE_IN_EASE);
+        if (flown) liveFade.current = fade(live, 0, 1, 700 * k, 150 * k, LIVE_IN_EASE, t0);
         else tl.fromTo(live, { opacity: 0 }, { opacity: 1, duration: 0.7 * k, ease: 'power2.out' }, 0.15 * k);
       }
       // Coque de la partie rendue d'avance, cachée, pendant le glissement du rideau : à l'arrivée, il ne reste qu'à la
@@ -548,15 +552,16 @@ export default function OdysseeHome() {
           if (gRef.current.result) gRef.current.newGame();
         },
       });
-      // Retour de l'échiquier : même vol, à l'envers (voir play)
+      // Retour de l'échiquier : même vol, à l'envers, parti avec la timeline (voir play)
       const ease = live ? flightEase() : null;
-      if (ease) e.fly(0, 1300 * k, ease, live!.querySelector<HTMLElement>('.board'));
+      const t0 = e.clockAt(tl.startTime());
+      if (ease) e.fly(0, 1300 * k, ease, t0, live!.querySelector<HTMLElement>('.board'), live!.querySelector<HTMLElement>('.o-live-plane'));
       const flown = !!ease;
       tl.to(e, { gameMix: 0, duration: 1.3 * k, ease: 'expo.inOut', onUpdate: () => e.markDirty() }, 0);
       if (toDemo && live) {
         const out = flown ? liveOutEase() : null;
         liveFade.current?.cancel();
-        if (out) liveFade.current = fade(live, 1, 0, 600 * k, 100 * k, out);
+        if (out) liveFade.current = fade(live, 1, 0, 600 * k, 100 * k, out, t0);
         else tl.to(live, { opacity: 0, duration: 0.6 * k, ease: 'power2.inOut' }, 0.1 * k);
       }
       const phone = isMobile(window.innerWidth);
@@ -935,7 +940,8 @@ export default function OdysseeHome() {
             <div className="o-astre-wake">
               <div className="o-astre-board">
                 {/* Une seule instance pour les lieux II à VI, remise à neuf à chaque lieu (resetSignal) pendant que
-                    l'échiquier traverse la nuée. Téléphone : en pause tant qu'il n'est pas posé dans le texte */}
+                    l'échiquier traverse la nuée. En pause pendant les traversées (transit ; sur téléphone, il dure
+                    jusqu'à ce que l'échiquier soit posé dans le texte, presque opaque) */}
                 {place !== 0 && mode === 'page' && (
                   <Suspense fallback={null}>
                     <StageBoard
@@ -943,7 +949,7 @@ export default function OdysseeHome() {
                       catalog={catalog}
                       theme={stageTheme}
                       resetSignal={place}
-                      paused={mode !== 'page' || transit || (mobile && !docked)}
+                      paused={mode !== 'page' || transit}
                       tilt={castTilt}
                       still={reduced}
                       playSignal={playSignal}

@@ -15,6 +15,7 @@ import path from 'node:path';
 interface ManifestChunk {
   file: string;
   imports?: string[];
+  dynamicImports?: string[];
   css?: string[];
   isEntry?: boolean;
 }
@@ -44,6 +45,17 @@ const PAGES: [RegExp, string][] = [
   [/^\/(cgu|cgv|confidentialite|mentions-legales)\/?$/i, 'src/client/pages/Legal.tsx'],
 ];
 const NOT_FOUND = 'src/client/pages/NotFound.tsx';
+
+/**
+ * Code chargé à la demande par une page, mais seulement sur certains appareils : préchargé dès le HTML avec une requête
+ * média (le navigateur ne le télécharge que si elle est vraie). Lenis (adoucissement de la molette, odyssee/engine.ts) :
+ * pointeur fin, hors mouvement réduit, comme la condition du moteur. Il arrive ainsi avec le reste de la page, comme
+ * quand il en faisait partie, au lieu d'être demandé à l'exécution de l'accueil (la molette n'aurait pas été adoucie
+ * pendant ce délai).
+ */
+const MEDIA_PRELOADS: Record<string, [RegExp, string][]> = {
+  'src/client/pages/Home.tsx': [[/(^|\/)node_modules\/lenis\//, '(hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)']],
+};
 
 const YEAR = 'public, max-age=31536000, immutable';
 const DAY = 'public, max-age=86400';
@@ -106,9 +118,16 @@ function pageHints(manifest: Manifest, key: string, inMain: Set<string>) {
     for (const f of chunk.css ?? []) if (!css.includes(f)) css.push(f);
   };
   visit(key);
+  // Code à la demande des morceaux de la page, préchargé seulement si sa requête média est vraie (MEDIA_PRELOADS)
+  const media: string[] = [];
+  for (const [re, query] of MEDIA_PRELOADS[key] ?? []) {
+    const dyn = [...seen].flatMap(k => manifest[k].dynamicImports ?? []).find(d => re.test(d) && !inMain.has(d) && manifest[d]);
+    if (dyn) media.push(`<link rel="modulepreload" crossorigin href="/${manifest[dyn].file}" media="${query}">`);
+  }
   return [
     ...css.map(f => `<link rel="stylesheet" crossorigin href="/${f}">`),
     ...js.map(f => `<link rel="modulepreload" crossorigin href="/${f}">`),
+    ...media,
   ].join('\n    ');
 }
 

@@ -224,8 +224,18 @@ export class Engine {
   private touchable = true;
   /** Défilement figé (feuille ouverte, partie) : repris par Lenis s'il arrive après. */
   private locked = false;
+  /** Module de Lenis encore en route (pointeur fin) ; résolue une fois Lenis créé (ou son chargement échoué). */
+  private lenisWait: Promise<void> | null = null;
   private destroyed = false;
+  /**
+   * Origine de l'horloge de gsap (ms, en Date.now) : sans lissage des à-coups (lagSmoothing(0)), le temps de gsap est
+   * Date.now() à son image moins cette origine, qui ne bouge plus. Relevée à chaque image ; la plus petite est celle d'un
+   * appel sans retard sur le début de l'image. Sert à faire partir une animation du compositeur avec un tween (clockAt).
+   */
+  private gsapEpoch = Infinity;
   private tick = (time: number) => {
+    const epoch = Date.now() - time * 1000;
+    if (epoch < this.gsapEpoch) this.gsapEpoch = epoch;
     if (this.lenis) {
       if (this.resync) this.lenis.time = time * 1000;
       this.lenis.raf(time * 1000);
@@ -253,9 +263,13 @@ export class Engine {
   ) {
     this.reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     // Lenis (pointeur fin seulement, voir lenisModule) : créé dès que son module est là
-    void lenisModule?.then(m => {
-      if (m && !this.destroyed && !this.reduced) this.attachLenis(m.default);
-    });
+    this.lenisWait =
+      lenisModule && !this.reduced
+        ? lenisModule.then(m => {
+            this.lenisWait = null;
+            if (m && !this.destroyed) this.attachLenis(m.default);
+          })
+        : null;
     gsap.ticker.lagSmoothing(0);
     window.addEventListener('pointermove', this.onPointer, { passive: true });
     window.addEventListener('resize', this.onResize);
@@ -702,6 +716,14 @@ export class Engine {
   }
 
   scrollTo(target: string | number, done?: () => void) {
+    if (!this.lenis && this.lenisWait) {
+      // Lenis encore en route (pointeur fin, premiers instants de la page) : le défilement l'attend, pour garder sa
+      // durée et sa courbe, au lieu de prendre celles du navigateur (chemin des écrans tactiles)
+      void this.lenisWait.then(() => {
+        if (!this.destroyed) this.scrollTo(target, done);
+      });
+      return;
+    }
     const el = typeof target === 'string' ? this.root.querySelector<HTMLElement>(target) : null;
     if (this.lenis) {
       // Défilement animé par Lenis : il a besoin de la boucle d'images
@@ -755,10 +777,23 @@ export class Engine {
   }
 
   /**
+   * Instant d'un temps de gsap (secondes) dans l'horloge des animations (ms : celle de document.timeline et de
+   * performance.now). Une animation du compositeur qui doit partir avec un tween prend pour startTime l'instant de son
+   * départ : sinon elle ne partirait qu'à la première image validée après sa création, en retard sur gsap de tout le
+   * travail de cette image (rendu du rideau, montage de la partie : 0,2 s, bien plus sur un téléphone lent), alors que
+   * gsap, lui, rattrape ce retard à sa première image.
+   */
+  clockAt(t: number) {
+    if (!Number.isFinite(this.gsapEpoch)) return performance.now();
+    return this.gsapEpoch + t * 1000 - (Date.now() - performance.now());
+  }
+
+  /**
    * Vol de l'échiquier vers la partie (to = 1) ou vers la page (to = 0) : position, échelle, inclinaison du plateau
    * (et opacité de l'échiquier si elle change) jouées par le compositeur au lieu du fil principal, au moment où celui-ci
    * est le plus chargé (rideau, montage ou démontage de la partie). Mêmes poses que lerpPose aux deux bouts (gameMix 0
-   * et 1), même courbe que gameMix (`easing` : celle de gsap, échantillonnée), même durée, partis ensemble :
+   * et 1), même courbe que gameMix (`easing` : celle de gsap, échantillonnée), même durée, même départ (`start` : celui
+   * du tween de gameMix, voir clockAt ; le vol rattrape comme lui le travail de sa première image, et finit avec lui) :
    * l'interpolation d'un translate3d + scale, d'une opacité ou d'une rotation est celle de lerpPose. Pendant le vol,
    * frame() n'écrit plus ni la position, ni --k, ni --base-tilt (chaque propriété personnalisée restylait tout l'astre à
    * chaque image) ; il n'écrit plus que l'opacité des anneaux : animée par le compositeur, l'opacité de ces groupes de
@@ -766,16 +801,20 @@ export class Engine {
    * opaque ou transparente, quand le script ne la crée qu'entre les deux (mesuré : plus d'images sautées au retour). À
    * l'arrivée de gameMix, les valeurs finales sont écrites et les animations retirées, dans la même image.
    * `board` : plateau de la partie, dont l'inclinaison (--base-tilt) est jouée par la même rotation (board.css :
-   * rotateX(var(--tilt)), --tilt suivant --base-tilt hors partie).
+   * rotateX(var(--tilt)), --tilt suivant --base-tilt hors partie). `plane` : calque du halo de survol, incliné lui aussi
+   * par --base-tilt (odyssee.css, .o-live-plane) ; il suit la même rotation quand il montre quelque chose (au retour, le
+   * halo d'une pièce encore survolée à l'Échap), sinon il n'est pas animé (rien n'y est peint).
    */
-  fly(to: 0 | 1, ms: number, easing: string, board: HTMLElement | null) {
+  fly(to: 0 | 1, ms: number, easing: string, start: number, board: HTMLElement | null, plane: HTMLElement | null) {
     this.dropFlight();
     const page = this.gameFrom ?? this.pagePose(window.scrollY);
     const game = this.gamePose();
     const [a, b] = to === 1 ? [page, game] : [game, page];
     // En vol, l'échiquier est fixe (hors du document) : il y passe tout de suite, comme à la première image du vol
     this.setFlow(false);
-    const opts: KeyframeAnimationOptions = { duration: ms, easing, fill: 'forwards' };
+    // fill: 'both' : un départ relevé à la milliseconde près peut tomber un rien après l'image en cours ; la pose de
+    // départ y est tenue (sans elle, l'échiquier montrerait un instant son style, celui d'avant le vol)
+    const opts: KeyframeAnimationOptions = { duration: ms, easing, fill: 'both' };
     const r3 = (v: number) => Math.round(v * 1000) / 1000;
     const deg = (rad: number) => Math.round(((rad * 180) / Math.PI) * 10) / 10;
     const from: Keyframe = { transform: this.astreTransform(a, 0) };
@@ -789,9 +828,13 @@ export class Engine {
     const anims = [this.astre.animate([from, end], { ...opts, id: 'vol astre' })];
     // Inclinaison de départ, comme à la première image du vol (sans rotation à jouer, c'est celle de tout le vol)
     this.astre.style.setProperty('--base-tilt', `${deg(a.tilt)}deg`);
-    if (board && deg(a.tilt) !== deg(b.tilt)) {
-      anims.push(board.animate([{ transform: `rotateX(${deg(a.tilt)}deg) scale(1)` }, { transform: `rotateX(${deg(b.tilt)}deg) scale(1)` }], { ...opts, id: 'vol inclinaison' }));
+    if (deg(a.tilt) !== deg(b.tilt)) {
+      if (board) anims.push(board.animate([{ transform: `rotateX(${deg(a.tilt)}deg) scale(1)` }, { transform: `rotateX(${deg(b.tilt)}deg) scale(1)` }], { ...opts, id: 'vol inclinaison' }));
+      if (plane && plane.childElementCount > 0) {
+        anims.push(plane.animate([{ transform: `rotateX(${deg(a.tilt)}deg)` }, { transform: `rotateX(${deg(b.tilt)}deg)` }], { ...opts, id: 'vol halo' }));
+      }
     }
+    for (const x of anims) x.startTime = start;
     this.flight = { anims, to };
     this.markDirty();
   }

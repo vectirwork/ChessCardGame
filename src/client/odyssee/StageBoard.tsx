@@ -5,8 +5,8 @@
 // attente, effets, scène 3D et position repartent de zéro, et la démonstration reprend comme au premier montage.
 // Il distribue les huit pouvoirs (catalogue « climats ») aux deux camps ; un autre catalogue reste accepté.
 // Sobriété (D6) : la scène 3D est partagée d'un lieu à l'autre (un seul contexte WebGL, gardé par useVfx) ; la
-// démonstration se met en pause quand l'onglet est caché, pendant les traversées (téléphone : tant que l'échiquier
-// n'est pas posé dans le texte), et quand le visiteur ne fait plus rien depuis IDLE_MS (elle reprend au premier geste).
+// démonstration se met en pause quand l'onglet est caché, pendant les traversées, et quand le visiteur ne fait plus
+// rien depuis IDLE_MS (elle reprend au premier geste).
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Board } from '../components/Board';
 import type { BoardHandle } from '../components/Board';
@@ -72,8 +72,11 @@ function showsPosition(wrap: HTMLElement, pos: Position) {
  * déclencherait des transitions (couleurs des cases au changement de thème, pièces qui rentrent chez elles, pièces
  * prises qui réapparaissent, effets qui s'effacent) : elles sont menées à leur terme avant la première image
  * (getAnimations() lance celles qui sont dues, finish() les achève). Jusqu'à ce que l'échiquier montre la position
- * neuve, tout est achevé ; ensuite et jusqu'au coup suivant, seules les apparitions (une pièce revenue, cachée puis
- * remontrée pendant un sort, réapparaît sans animation, comme sur un échiquier neuf). Renvoie l'arrêt.
+ * neuve, tout est achevé. Ensuite et jusqu'au coup suivant, les pièces revenues gardent dans Board l'état « appear » :
+ * une telle pièce remontée (cachée puis remontrée pendant un sort) ou dont une classe a remplacé puis rendu l'animation
+ * de .pi la rejouerait ; seules celles-là sont achevées, comme sur un échiquier neuf où elle n'existe pas. Rien d'autre
+ * n'est lu pendant ce temps (le premier sort d'un lieu change les classes de tout l'échiquier : chaque lot de mutations
+ * ne coûte qu'un parcours de ses enregistrements, sans calcul de style). Renvoie l'arrêt.
  * Bornes de sûreté (si l'échiquier ne disait plus où sont ses pièces, data-at et data-piece) : la première phase dure
  * au plus 600 ms (la position neuve est affichée en une ou deux images), le tout au plus 15 s.
  */
@@ -89,12 +92,28 @@ function settleFresh(wrap: HTMLElement, current: () => Position): () => void {
       a.finish();
     }
   };
-  const check = () => {
+  /** Apparitions relancées par ce lot : pièces encore « appear » ajoutées au DOM, ou dont la classe a changé. */
+  const settleAppear = (records: MutationRecord[]) => {
+    const pieces = new Set<Element>();
+    for (const r of records) {
+      if (r.type === 'childList') {
+        r.addedNodes.forEach(n => {
+          if (!(n instanceof Element)) return;
+          if (n.matches('.piece.appear')) pieces.add(n);
+          n.querySelectorAll('.piece.appear').forEach(el => pieces.add(el));
+        });
+      } else if (r.attributeName === 'class' && r.target instanceof Element && r.target.matches('.piece.appear')) pieces.add(r.target);
+    }
+    for (const el of pieces) {
+      for (const a of el.getAnimations({ subtree: true })) if (a instanceof CSSAnimation && a.animationName === 'appear') a.finish();
+    }
+  };
+  const check = (records: MutationRecord[] = []) => {
     const pos = current();
     if (first) {
-      // Coup suivant affiché : l'échiquier vit de nouveau sa vie
+      // Coup suivant affiché : l'échiquier vit de nouveau sa vie (la position n'est relue qu'une fois changée)
       if (pos !== first && showsPosition(wrap, pos)) return stop();
-      finish(false);
+      settleAppear(records);
       return;
     }
     if (performance.now() - t0 > 600) {

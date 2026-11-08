@@ -1,8 +1,8 @@
 // Spellmate · L'Odyssée : une descente verticale à travers six lieux, avec un échiquier-astre qui l'accompagne.
 // Zéro clic : l'échiquier du premier écran est une vraie partie. Le visiteur joue les Blancs dès qu'il touche
 // une pièce ; au premier coup, la page s'efface vers la gauche et la partie passe en plein écran.
-import { Suspense, lazy, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, PointerEvent as RPointerEvent, ReactNode } from 'react';
+import { Suspense, lazy, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties, MutableRefObject, PointerEvent as RPointerEvent, ReactNode } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import gsap from 'gsap';
@@ -127,6 +127,21 @@ const INTRO_KEY = 'sm:intro';
 
 const levelName = (l: BotLevel) => BOT_PROFILES[l].name;
 
+/**
+ * Halo sous la pièce jouable survolée (échiquier du héros, souris). Son propre état : passer d'une case à l'autre ne
+ * rend que ce span, au lieu de tout l'accueil (décor, chapitres, échiquiers) à chaque case franchie.
+ */
+function HoverHalo({ setRef }: { setRef: MutableRefObject<((sq: number | null) => void) | null> }) {
+  const [sq, setSq] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    setRef.current = setSq;
+    return () => {
+      setRef.current = null;
+    };
+  }, [setRef]);
+  return sq === null ? null : <span className="o-halo" style={{ left: `${(sq & 7) * 12.5}%`, top: `${(7 - (sq >> 3)) * 12.5}%` }} />;
+}
+
 function fmtWait(since: number | null) {
   const s = Math.max(0, Math.floor((Date.now() - (since ?? Date.now())) / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -218,7 +233,12 @@ export default function OdysseeHome() {
   /** Fondu de l'échiquier de la partie joué par le compositeur (passage depuis un lieu de démonstration, ou retour). */
   const liveFade = useRef<Animation | null>(null);
   const [hover, setHover] = useState(false);
-  const [hoverSq, setHoverSq] = useState<number | null>(null);
+  /** Case jouable survolée (souris, échiquier du héros) : rendue par HoverHalo seul, pas par tout l'accueil. */
+  const haloRef = useRef<((sq: number | null) => void) | null>(null);
+  const hoverTo = (sq: number | null) => {
+    haloRef.current?.(sq);
+    liveRef.current?.classList.toggle('is-grab', sq !== null);
+  };
   const [sheet, setSheet] = useState<SheetKind>(null);
   const [cast, setCast] = useState<{ card: CardId; skin: string } | null>(null);
   const [playSignal, setPlaySignal] = useState(0);
@@ -483,7 +503,7 @@ export default function OdysseeHome() {
       setIntent(true);
       setSheet(null);
       setHover(false);
-      setHoverSq(null);
+      hoverTo(null);
       e.captureGameFrom();
       e.setAwake(false);
       e.lock(true);
@@ -750,7 +770,7 @@ export default function OdysseeHome() {
   };
   const onAstreLeave = () => {
     setHover(false);
-    setHoverSq(null);
+    hoverTo(null);
     if (modeRef.current === 'page') wake(false);
   };
   const onAstreDownCapture = (e: RPointerEvent) => {
@@ -778,7 +798,7 @@ export default function OdysseeHome() {
     const sq = x < 0 || x > 7 || y < 0 || y > 7 ? null : (7 - y) * 8 + x;
     // La souris passe sur une pièce jouable : la scène 3D se prépare pendant que le visiteur hésite
     if (sq !== null && movers.has(sq) && !intent) setIntent(true);
-    setHoverSq(sq !== null && movers.has(sq) && g.selected === null ? sq : null);
+    hoverTo(sq !== null && movers.has(sq) && g.selected === null ? sq : null);
   };
 
   /** Une carte de la main, touchée depuis l'accueil : la partie s'ouvre, la carte est prête à lancer. */
@@ -985,11 +1005,11 @@ export default function OdysseeHome() {
                   </Suspense>
                 )}
               </div>
-              <div className={`o-astre-game ${hoverSq !== null ? 'is-grab' : ''}`} ref={liveRef}>
+              <div className="o-astre-game" ref={liveRef}>
                 <Board ref={g.boardRef} {...liveBoardProps} />
                 <div className="o-live-overlay" aria-hidden="true">
                   <div className="o-live-plane">
-                    {hoverSq !== null && <span className="o-halo" style={{ left: `${(hoverSq & 7) * 12.5}%`, top: `${(7 - (hoverSq >> 3)) * 12.5}%` }} />}
+                    <HoverHalo setRef={haloRef} />
                     {g.state.ply === 0 && mode === 'page' && place === 0 && (
                       <svg className="o-hint-arrow" viewBox="0 0 8 8" preserveAspectRatio="none">
                         <defs>

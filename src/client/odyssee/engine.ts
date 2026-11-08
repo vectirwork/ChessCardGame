@@ -1112,10 +1112,22 @@ export class Engine {
           state = y > from && y < to ? 2 : 1;
         }
         if (state !== sc.live[i]) {
+          // Peint jusqu'ici (ou rendu au premier affichage, sans o-paused) : ses animations ont démarré
+          const painted = sc.live[i] === 2 || (sc.live[i] === null && !el.classList.contains('o-paused'));
           sc.live[i] = state;
           el.style.visibility = state === 2 ? 'visible' : 'hidden';
           el.classList.toggle('o-paused', state !== 2);
-          el.classList.toggle('o-laid', state === 1);
+          if (state === 0 && painted) {
+            // Éteint depuis l'état peint : ses animations sont mises en pause pendant une image où son contenu est
+            // encore stylé (o-laid : content-visibility: visible), puis il passe en content-visibility: hidden. En
+            // bascule directe, le style du contenu n'est plus recalculé : les animations restent « en cours », et
+            // Blink les fait avancer sur le fil principal à chaque image (invisibles, donc non composées), ce qui
+            // refaisait la mise en calques de toute la page à chaque image de défilement (mesuré à l'ordinateur)
+            el.classList.add('o-laid');
+            requestAnimationFrame(() => {
+              if (sc.live[i] === 0) el.classList.remove('o-laid');
+            });
+          } else el.classList.toggle('o-laid', state === 1);
         }
       }
       if (native) {
@@ -1188,11 +1200,16 @@ export class Engine {
     const between = flying || (this.gameMix > 0 && this.gameMix < 1);
     if (!anim && !flying) this.astre.style.transform = this.astreTransform(p, docY);
     const a = this.applied;
-    const kr = Math.round(k * 1000) / 1000;
-    // Échelle de l'échiquier : la pièce glissée la compense pour rester sous le doigt. Mode natif : seule la partie
-    // du héros se joue sur la page, à taille fixe ; ailleurs, rien à écrire (le style de tout l'astre serait recalculé).
-    // En vol, aucune pièce n'est glissée (échiquier verrouillé) : elle est écrite à l'arrivée
-    if (kr !== a.k && !between && (!anim || y <= (hero?.end ?? 0))) {
+    // Échelle écrite pour la pièce glissée : pendant la rampe d'éveil (survol de l'échiquier du héros, ordinateur),
+    // celle de l'arrivée, écrite une fois au lieu de restyler tout l'astre à chaque image de la rampe
+    const kd = this.gameMix === 0 && !this.native ? (k * (1 + 0.025 * this.awakeTarget)) / (1 + 0.025 * smooth(this.awake)) : k;
+    const kr = Math.round(kd * 1000) / 1000;
+    // Échelle de l'échiquier : la pièce glissée la compense pour rester sous le doigt. Seule la partie du héros se joue
+    // sur la page (et la partie elle-même) : ailleurs, rien à écrire, le style de tout l'astre (300 à 500 éléments)
+    // serait recalculé à chaque image d'une traversée, où l'échiquier change de taille. Mode natif : la partie du héros
+    // est à taille fixe. En vol, aucune pièce n'est glissée (échiquier verrouillé) : elle est écrite à l'arrivée
+    const playable = this.gameMix > 0 || (anim ? y <= (hero?.end ?? 0) : inHero);
+    if (kr !== a.k && !between && playable) {
       a.k = kr;
       this.astre.style.setProperty('--k', String(kr));
       this.astre.style.setProperty('--inv-k', String(Math.round((1 / Math.max(0.05, kr)) * 1000) / 1000));
@@ -1246,12 +1263,17 @@ export class Engine {
       const show = this.gameMix === 0 && !flying && p.s > 200 && p.o > 0.9 && (p.cap > 0.5 || this.hover) ? 1 : 0;
       // Mobile : la perspective agrandit le bas du cadre ; la légende garde un peu d'air dessous
       const below = mobile ? p.s * 0.5 * Math.cos(p.tilt) + 36 : p.s * 0.5 + 34;
-      // Légende cachée : elle ne bouge pas (rien à écrire), ni pendant le vol (elle est cachée dès sa première image)
-      if (show || ((a.cap !== 0 || !anim) && !between)) this.els.caption.style.transform = `translate3d(${p.x.toFixed(1)}px, ${(p.y + below + docY).toFixed(1)}px, 0) translateX(-50%)`;
+      // Légende cachée (visibility: hidden, sans transition) : elle ne bouge pas, rien à écrire (ordinateur compris :
+      // une écriture par image de traversée), ni pendant le vol (elle est cachée dès sa première image)
+      if (show || (a.cap !== 0 && !between)) this.els.caption.style.transform = `translate3d(${p.x.toFixed(1)}px, ${(p.y + below + docY).toFixed(1)}px, 0) translateX(-50%)`;
       if (show !== a.cap) {
         a.cap = show;
         this.els.caption.style.opacity = String(show);
         this.els.caption.style.visibility = show ? 'visible' : 'hidden';
+        // Cachée : le point qui clignote dedans est mis en pause (odyssee.css). Invisible, son animation n'est pas
+        // composée : Blink la faisait avancer sur le fil principal, et refaisait la mise en calques de toute la page
+        // à chaque image (mesuré à l'ordinateur pendant la descente : 750 ms sur une glissade du Bazar)
+        this.els.caption.toggleAttribute('data-off', !show);
       }
     }
     // Échiquier effacé (entre deux emplacements, ou dans la nuée) : il ne capte plus les touchers, qui vont au texte

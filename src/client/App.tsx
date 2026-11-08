@@ -91,13 +91,13 @@ export function preloadRoute(pathname: string): Promise<unknown> {
 }
 
 /**
- * Intention de navigation (survol, toucher ou focus d'un lien interne) : le code de la page visée est chargé
- * d'avance, la navigation n'attend pas le réseau. Rien ne se passe au repos (événements de l'utilisateur seulement).
+ * Intention de navigation (souris qui bouge au-dessus d'un lien interne, ou focus clavier) : le code de la page
+ * visée est chargé d'avance, la navigation n'attend pas le réseau. Rien ne se passe au repos (événements de l'utilisateur seulement).
  */
 function usePrefetchOnIntent() {
   useEffect(() => {
     const onIntent = (e: Event) => {
-      // Au doigt, pointerover arrive aussi quand on pose le doigt sur un lien pour faire défiler la page : charger et
+      // Au doigt, le pointeur passe aussi sur un lien quand on pose le doigt pour faire défiler la page : charger et
       // évaluer la page visée (et injecter sa feuille de style) tomberait en plein geste. Le clic suit de toute façon.
       if (e instanceof PointerEvent && e.pointerType !== 'mouse') return;
       const a = e.target instanceof Element ? e.target.closest('a[href]') : null;
@@ -105,11 +105,21 @@ function usePrefetchOnIntent() {
       if (a.pathname.startsWith('/api/') || /\.\w+$/.test(a.pathname)) return;
       void preloadRoute(a.pathname);
     };
+    // Souris : un vrai mouvement au-dessus du lien (pointermove), pas pointerover. Pendant un défilement à la molette
+    // sous un curseur immobile, les liens qui passent sous lui émettent pointerover : chaque page visée était alors
+    // chargée, évaluée et sa feuille de style injectée (restyle de tout l'accueil) en pleine glissade. Seul un
+    // changement d'élément survolé est examiné.
+    let last: EventTarget | null = null;
+    const onMove = (e: PointerEvent) => {
+      if (e.target === last) return;
+      last = e.target;
+      onIntent(e);
+    };
     const opts = { capture: true, passive: true };
-    document.addEventListener('pointerover', onIntent, opts);
+    document.addEventListener('pointermove', onMove, opts);
     document.addEventListener('focusin', onIntent, opts);
     return () => {
-      document.removeEventListener('pointerover', onIntent, opts);
+      document.removeEventListener('pointermove', onMove, opts);
       document.removeEventListener('focusin', onIntent, opts);
     };
   }, []);

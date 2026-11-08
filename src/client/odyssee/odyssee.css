@@ -135,8 +135,9 @@ html.ody-home body {
 
 /* Sobriété (D6) : décor caché, sorti de l'écran ou recouvert par la partie. Ses animations sont en pause (elles
    reprennent là où elles en étaient) : Blink ne recalcule plus leur style à chaque image du fil principal. La classe
-   o-paused est posée par le moteur (scènes, calques), l'attribut data-offscreen par l'accueil (lieux et chapitres
-   hors de l'écran), l'attribut data-still par l'accueil après 30 s sans aucun geste (OdysseeHome). Dans le texte,
+   o-paused est posée par le moteur (scènes, calques), data-off sur la légende cachée de l'échiquier (une animation
+   invisible n'est pas composée : Blink la fait avancer sur le fil principal et refait la mise en calques de toute la
+   page à chaque image), l'attribut data-offscreen par l'accueil (lieux et chapitres hors de l'écran), l'attribut data-still par l'accueil après 30 s sans aucun geste (OdysseeHome). Dans le texte,
    seuls les éléments qui s'animent sont visés : un sélecteur universel faisait recalculer tout un lieu (des
    centaines d'éléments) à chaque entrée ou sortie de l'écran. */
 .ody .o-paused,
@@ -147,6 +148,7 @@ html.ody-home body {
 .ody .o-paused *::after,
 .ody [data-offscreen] :is(.o-live-dot, .o-seal-text, .sc-halo, .spell-card),
 .ody [data-offscreen] .o-cue-line::after,
+.ody .o-astre-caption[data-off] .o-live-dot,
 .ody.is-game .o-world-shift *,
 .ody.is-game .o-world-shift *::before,
 .ody.is-game .o-world-shift *::after,

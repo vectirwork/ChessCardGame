@@ -605,6 +605,30 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
   // Catalogue absent : ancienne sauvegarde (Duel) ; les nouvelles parties sont toujours aux Pouvoirs
   const catalog: Catalog = state.catalog ?? 'duel';
 
+  // Propriétés de l'échiquier jouable : le même objet tant que la partie ne change pas. Recréées à chaque rendu, elles
+  // rendaient inutile la mémoïsation de Board, réconcilié (64 cases, pièces, coordonnées) à chaque rendu de l'accueil :
+  // seuils de la descente, sorts de la démonstration, survols, même caché hors du héros
+  const boardProps = useMemo(
+    () => ({
+      pos: state.pos,
+      orientation: me,
+      theme,
+      legal,
+      onMove: (from: number, to: number, promo?: PieceType) => void onMove(from, to, promo),
+      lastMove,
+      check: state.result ? null : checkSquare(state.pos, sideInCheck(state) ? state.pos.turn : null),
+      mated: matedKing(state),
+      effects: state.effects,
+      targets: options,
+      targetHue: selectedDef?.hue,
+      chosen: partial,
+      onTarget,
+      hidden,
+      locked: !myTurn,
+    }),
+    [state, me, theme, legal, onMove, lastMove, options, selectedDef, partial, onTarget, hidden, myTurn],
+  );
+
   return {
     state,
     catalog,
@@ -630,23 +654,7 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
     boardRef,
     /** Annule les pré-coups en attente sur l'échiquier de la partie. */
     clearPremoves,
-    boardProps: {
-      pos: state.pos,
-      orientation: me,
-      theme,
-      legal,
-      onMove: (from: number, to: number, promo?: PieceType) => void onMove(from, to, promo),
-      lastMove,
-      check: state.result ? null : checkSquare(state.pos, sideInCheck(state) ? state.pos.turn : null),
-      mated: matedKing(state),
-      effects: state.effects,
-      targets: options,
-      targetHue: selectedDef?.hue,
-      chosen: partial,
-      onTarget,
-      hidden,
-      locked: !myTurn,
-    },
+    boardProps,
     /** Joue un coup du joueur (renvoie faux s'il est refusé). */
     move: onMove,
     hand,

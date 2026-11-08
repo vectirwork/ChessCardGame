@@ -1,7 +1,7 @@
 // Spellmate · L'Odyssée : une descente verticale à travers six lieux, avec un échiquier-astre qui l'accompagne.
 // Zéro clic : l'échiquier du premier écran est une vraie partie. Le visiteur joue les Blancs dès qu'il touche
 // une pièce ; au premier coup, la page s'efface vers la gauche et la partie passe en plein écran.
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as RPointerEvent, ReactNode } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
@@ -40,6 +40,42 @@ const EXPO_IN_OUT = (() => {
   const pts = Array.from({ length: 33 }, (_, i) => `${f(i / 32).toFixed(4)} ${((i / 32) * 100).toFixed(2)}%`);
   return typeof CSS !== 'undefined' && CSS.supports?.('animation-timing-function', 'linear(0, 1)') ? `linear(${pts.join(', ')})` : 'cubic-bezier(0.87, 0, 0.13, 1)';
 })();
+/**
+ * Courbe d'une animation gsap, pour une animation du compositeur : la fonction de gsap elle-même (son expo n'est pas
+ * le 2^(10(p − 1)) classique), échantillonnée finement puis réduite aux points où elle change d'allure (écart à la
+ * courbe ≤ 0,0002 : moins d'un dixième de pixel sur un vol de 400 px). null sans linear() (Chrome 113+, Safari 17.2+) :
+ * l'animation reste alors à gsap.
+ */
+function gsapEasing(name: string): string | null {
+  if (typeof CSS === 'undefined' || !CSS.supports?.('animation-timing-function', 'linear(0, 1)')) return null;
+  const f = gsap.parseEase(name);
+  const N = 1024;
+  const v = Array.from({ length: N + 1 }, (_, i) => f(i / N));
+  const kept = [0];
+  let a = 0;
+  for (let b = 2; b <= N; b++) {
+    for (let i = a + 1; i < b; i++) {
+      if (Math.abs(v[a] + ((v[b] - v[a]) * (i - a)) / (b - a) - v[i]) > 0.0002) {
+        a = b - 1;
+        kept.push(a);
+        break;
+      }
+    }
+  }
+  kept.push(N);
+  return `linear(${kept.map(i => `${Number(v[i].toFixed(5))} ${Number(((i / N) * 100).toFixed(3))}%`).join(', ')})`;
+}
+/** Calculée au premier passage en partie (rien à l'évaluation du module, sur le chemin du premier affichage). */
+const lazyEasing = (name: string) => {
+  let e: string | null | undefined;
+  return () => (e === undefined ? (e = gsapEasing(name)) : e);
+};
+/** Vol de l'échiquier vers la partie et retour (gameMix, expo.inOut de gsap). */
+const flightEase = lazyEasing('expo.inOut');
+/** Fondus de l'échiquier de la partie quand il remplace celui de la démonstration (power2.out et power2.inOut de gsap ;
+ *  power2.out, 1 − (1 − t)³, est exactement cette courbe de Bézier). */
+const LIVE_IN_EASE = 'cubic-bezier(0.33333, 1, 0.66667, 1)';
+const liveOutEase = lazyEasing('power2.inOut');
 /** Rideau hors de l'écran : sa lisière dorée (150 px à sa gauche) comprise, sinon elle reste en bordure d'écran. */
 const CURTAIN_OUT = 'translateX(calc(101% + 160px))';
 /** Glissement : sélecteur, deux états (transform seule ou images clés), durée et délai en secondes. */
@@ -55,6 +91,19 @@ function slides(root: HTMLElement, list: Slide[]) {
       SLIDE_ANIMS.set(el, el.animate(frames, { id: `glissement ${sel}`, duration: dur * 1000, delay: delay * 1000, easing: EXPO_IN_OUT, fill: 'both' }));
     });
   }
+}
+/**
+ * Fondu d'opacité joué par le compositeur ; fini, sa valeur d'arrivée passe dans le style de l'élément et l'animation
+ * est retirée (tenue, elle ferait composer à part tout l'échiquier jusqu'à la fin du passage). Comme le fondu de gsap
+ * qu'il remplace, qui laissait cette valeur dans le style.
+ */
+function fade(el: HTMLElement, from: number, to: number, duration: number, delay: number, easing: string) {
+  const a = el.animate([{ opacity: from }, { opacity: to }], { id: 'fondu partie', duration, delay, easing, fill: 'both' });
+  a.onfinish = () => {
+    el.style.opacity = String(to);
+    a.cancel();
+  };
+  return a;
 }
 function clearSlides(root: HTMLElement, sel: string) {
   root.querySelectorAll(sel).forEach(el => {
@@ -160,6 +209,10 @@ export default function OdysseeHome() {
   };
   const [transit, setTransit] = useState(false);
   const [docked, setDocked] = useState(false);
+  /** Coque de la partie montée d'avance (cachée) pendant le passage en partie, voir play. */
+  const [shellPrep, setShellPrep] = useState(false);
+  /** Fondu de l'échiquier de la partie joué par le compositeur (passage depuis un lieu de démonstration, ou retour). */
+  const liveFade = useRef<Animation | null>(null);
   const [hover, setHover] = useState(false);
   const [hoverSq, setHoverSq] = useState<number | null>(null);
   const [sheet, setSheet] = useState<SheetKind>(null);
@@ -425,10 +478,19 @@ export default function OdysseeHome() {
       const tl = gsap.timeline({
         onComplete: () => {
           if (live) gsap.set(live, { opacity: 1 });
+          liveFade.current?.cancel();
+          liveFade.current = null;
+          setShellPrep(false);
           setMode('game');
           after?.();
         },
       });
+      // Vol de l'échiquier : position, échelle et inclinaison jouées par le compositeur (engine.fly) quand le navigateur
+      // sait en échantillonner la courbe ; gsap avance gameMix (fondu des anneaux, arrivée). Sinon, le moteur joue tout
+      // le vol image par image, comme avant
+      const ease = live ? flightEase() : null;
+      if (ease) e.fly(1, 1450 * k, ease, live!.querySelector<HTMLElement>('.board'));
+      const flown = !!ease;
       tl.to(e, { gameMix: 1, duration: 1.45 * k, ease: 'expo.inOut', onUpdate: () => e.markDirty() }, 0);
       // Rideau, voile, page et décor : animations du compositeur (fluides même pendant le montage de la partie).
       // Téléphone : la page glisse sans fondu et le décor ne bouge pas (le rideau les couvre ; un fondu ou un zoom de
@@ -440,7 +502,21 @@ export default function OdysseeHome() {
         ['.o-content', phone ? ['none', 'translateX(-18%)'] : [{ transform: 'none', opacity: 1 }, { transform: 'translateX(-18%)', opacity: 0 }], 1.2 * k, 0],
         ...(phone ? [] : ([['.o-world-shift', [{ transform: 'none', opacity: 1 }, { transform: 'translateX(-10%) scale(1.2)', opacity: 0.85 }], 1.45 * k, 0]] as Slide[])),
       ]);
-      if (fromDemo && live) tl.fromTo(live, { opacity: 0 }, { opacity: 1, duration: 0.7 * k, ease: 'power2.out' }, 0.15 * k);
+      // L'échiquier de la partie remplace celui de la démonstration en fondu (le compositeur le joue avec le vol)
+      if (fromDemo && live) {
+        liveFade.current?.cancel();
+        if (flown) liveFade.current = fade(live, 0, 1, 700 * k, 150 * k, LIVE_IN_EASE);
+        else tl.fromTo(live, { opacity: 0 }, { opacity: 1, duration: 0.7 * k, ease: 'power2.out' }, 0.15 * k);
+      }
+      // Coque de la partie rendue d'avance, cachée, pendant le glissement du rideau : à l'arrivée, il ne reste qu'à la
+      // montrer. Une image après le départ, en transition (interruptible) : rien ne retarde le rideau ni le vol, que le
+      // compositeur joue même si le fil principal est occupé (sans vol du compositeur, elle est montée à l'arrivée, comme
+      // avant : son rendu ne doit pas retarder un vol joué image par image)
+      if (flown) {
+        requestAnimationFrame(() => {
+          if (modeRef.current === 'entering') startTransition(() => setShellPrep(true));
+        });
+      }
     },
     [reduced, applyTint],
   );
@@ -466,12 +542,23 @@ export default function OdysseeHome() {
           // Page et décor reviennent à leur style propre (le rideau, caché, garde sa position hors de l'écran)
           clearSlides(root, '.o-content, .o-world-shift');
           if (live) gsap.set(live, { clearProps: 'opacity' });
+          liveFade.current?.cancel();
+          liveFade.current = null;
           // Partie terminée : l'échiquier de l'accueil se réinitialise, prêt pour le prochain premier coup
           if (gRef.current.result) gRef.current.newGame();
         },
       });
+      // Retour de l'échiquier : même vol, à l'envers (voir play)
+      const ease = live ? flightEase() : null;
+      if (ease) e.fly(0, 1300 * k, ease, live!.querySelector<HTMLElement>('.board'));
+      const flown = !!ease;
       tl.to(e, { gameMix: 0, duration: 1.3 * k, ease: 'expo.inOut', onUpdate: () => e.markDirty() }, 0);
-      if (toDemo && live) tl.to(live, { opacity: 0, duration: 0.6 * k, ease: 'power2.inOut' }, 0.1 * k);
+      if (toDemo && live) {
+        const out = flown ? liveOutEase() : null;
+        liveFade.current?.cancel();
+        if (out) liveFade.current = fade(live, 1, 0, 600 * k, 100 * k, out);
+        else tl.to(live, { opacity: 0, duration: 0.6 * k, ease: 'power2.inOut' }, 0.1 * k);
+      }
       const phone = isMobile(window.innerWidth);
       slides(root, [
         ['.o-curtain', ['translateX(0)', CURTAIN_OUT], 1.2 * k, 0],
@@ -1344,6 +1431,7 @@ export default function OdysseeHome() {
 
       <GameShell
         active={mode === 'game'}
+        prepare={mode === 'entering' && shellPrep}
         onBack={leave}
         backLabel="Retour à la page"
         badge={g.duel ? 'En direct · aucun compte' : 'Contre l’IA · aucun compte'}

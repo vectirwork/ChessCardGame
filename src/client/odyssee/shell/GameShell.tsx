@@ -72,6 +72,10 @@ export interface ShellAction {
 export interface GameShellProps {
   /** Faux : le HUD est retiré (l'accueil revient à la page, la partie reste en vie). */
   active: boolean;
+  /** Vrai avant `active` (accueil, pendant le glissement du rideau) : la coque est rendue d'avance, cachée (ni peinte
+   *  ni touchable, ses animations CSS en attente à leur début) ; à `active`, il ne reste qu'à la montrer, et tout se
+   *  passe comme si elle venait d'être montée (arrivée des cartes, animations CSS). */
+  prepare?: boolean;
   /** Échiquier à placer par la coque, à la géométrie de gameLayout(). */
   board?: ReactNode;
   /** Fond d'arène (nuit, étoiles) derrière la partie : utile hors de l'accueil, qui a son propre rideau. */
@@ -492,7 +496,7 @@ export function GameShell(p: GameShellProps) {
     }
   }, [oppBubble?.i, oppBubble?.mode, layout]);
 
-  if (!active) return null;
+  if (!active && !p.prepare) return null;
 
   const shownActions = !p.result && p.actions ? p.actions.filter(a => !a.hidden) : [];
   const hasMore = !!p.statusExtra || shownActions.length > 0;
@@ -630,7 +634,7 @@ export function GameShell(p: GameShellProps) {
   return (
     <div
       ref={rootRef}
-      className={`gs ${layout.mobile ? 'is-mobile' : ''} ${sel !== null ? 'has-prompt' : ''} ${moreOpen ? 'more-open' : ''} ${castDef || showInvite ? 'has-fan-note' : ''} ${castDef ? 'has-cast' : ''} ${p.className ?? ''}`}
+      className={`gs ${active ? '' : 'is-prep'} ${layout.mobile ? 'is-mobile' : ''} ${sel !== null ? 'has-prompt' : ''} ${moreOpen ? 'more-open' : ''} ${castDef || showInvite ? 'has-fan-note' : ''} ${castDef ? 'has-cast' : ''} ${p.className ?? ''}`}
       style={{ '--gs-g': `${layout.G}px`, '--gs-top': `${layout.y - layout.G / 2}px`, '--gs-left': `${layout.x - layout.G / 2}px` } as CSSProperties}
     >
       {p.backdrop && (

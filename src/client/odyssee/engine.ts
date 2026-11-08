@@ -180,6 +180,9 @@ export class Engine {
   private flow = false;
   private flowTop = 0;
   private alt = -1;
+  private descent = '';
+  /** Défilement, souris et images de la dernière mise à jour du décor (frame). */
+  private decorKey = '';
   private G = 0;
   private canvas: HTMLCanvasElement | null = null;
   private applied = { o: -1, co: -1, orb: -1, front: -1, tilt: -99, cap: -1, k: -1 };
@@ -207,6 +210,8 @@ export class Engine {
   private sceneAnims: (Animation[] | null)[] = [];
   private skyAnims: (Animation | null)[] = [];
   private astreAnims: Animation[] = [];
+  /** Vol vers la partie (to = 1) ou vers la page (to = 0) joué par le compositeur (fly), jusqu'à l'arrivée de gameMix. */
+  private flight: { anims: Animation[]; to: 0 | 1 } | null = null;
   /** Poses de l'échiquier relevées pour le mode natif (positions de défilement et valeurs). */
   private astrePts: { y: number; x: number; ty: number; k: number; o: number; orb: number; front: number }[] = [];
   /** Hauteur de la grande fenêtre (100lvh, barre d'adresse masquée) : ne bouge pas quand la barre apparaît. */
@@ -337,6 +342,7 @@ export class Engine {
     window.removeEventListener('load', this.onLoad);
     window.clearTimeout(this.imagesTimer);
     this.ro.disconnect();
+    this.dropFlight();
     this.dropNative();
     this.lvhProbe?.remove();
     this.lenis?.destroy();
@@ -513,6 +519,8 @@ export class Engine {
     this.astre.style.width = `${this.G}px`;
     this.astre.style.height = `${this.G}px`;
     this.applied = { o: -1, co: -1, orb: -1, front: -1, tilt: -99, cap: -1, k: -1 };
+    // Décor remesuré : tout est recalculé et réécrit à la prochaine image
+    this.decorKey = '';
     if (this.flow) this.flowTop = this.flowOrigin();
     this.buildNative();
     this.markDirty();
@@ -735,6 +743,77 @@ export class Engine {
     this.gameFrom = this.pagePose(window.scrollY);
   }
 
+  /** Pose de l'échiquier en partie (gameMix = 1). */
+  private gamePose(): Pose {
+    const g = gameLayout(this.vw, window.innerHeight);
+    return { x: g.x, y: g.y, s: g.G, orb: 1, front: 0, o: 1, tilt: 0, cap: 0 };
+  }
+
+  /** Transformation de l'astre pour une pose (`docY` : décalage dans le document, échiquier placé dans la page). */
+  private astreTransform(p: Pose, docY: number) {
+    return `translate3d(${(p.x - this.G / 2).toFixed(2)}px, ${(p.y + docY - this.G / 2).toFixed(2)}px, 0) scale(${(p.s / this.G).toFixed(4)})`;
+  }
+
+  /**
+   * Vol de l'échiquier vers la partie (to = 1) ou vers la page (to = 0) : position, échelle, inclinaison du plateau
+   * (et opacité de l'échiquier si elle change) jouées par le compositeur au lieu du fil principal, au moment où celui-ci
+   * est le plus chargé (rideau, montage ou démontage de la partie). Mêmes poses que lerpPose aux deux bouts (gameMix 0
+   * et 1), même courbe que gameMix (`easing` : celle de gsap, échantillonnée), même durée, partis ensemble :
+   * l'interpolation d'un translate3d + scale, d'une opacité ou d'une rotation est celle de lerpPose. Pendant le vol,
+   * frame() n'écrit plus ni la position, ni --k, ni --base-tilt (chaque propriété personnalisée restylait tout l'astre à
+   * chaque image) ; il n'écrit plus que l'opacité des anneaux : animée par le compositeur, l'opacité de ces groupes de
+   * calques eux-mêmes animés (anneaux qui tournent) imposerait une surface intermédiaire pendant tout le vol, même
+   * opaque ou transparente, quand le script ne la crée qu'entre les deux (mesuré : plus d'images sautées au retour). À
+   * l'arrivée de gameMix, les valeurs finales sont écrites et les animations retirées, dans la même image.
+   * `board` : plateau de la partie, dont l'inclinaison (--base-tilt) est jouée par la même rotation (board.css :
+   * rotateX(var(--tilt)), --tilt suivant --base-tilt hors partie).
+   */
+  fly(to: 0 | 1, ms: number, easing: string, board: HTMLElement | null) {
+    this.dropFlight();
+    const page = this.gameFrom ?? this.pagePose(window.scrollY);
+    const game = this.gamePose();
+    const [a, b] = to === 1 ? [page, game] : [game, page];
+    // En vol, l'échiquier est fixe (hors du document) : il y passe tout de suite, comme à la première image du vol
+    this.setFlow(false);
+    const opts: KeyframeAnimationOptions = { duration: ms, easing, fill: 'forwards' };
+    const r3 = (v: number) => Math.round(v * 1000) / 1000;
+    const deg = (rad: number) => Math.round(((rad * 180) / Math.PI) * 10) / 10;
+    const from: Keyframe = { transform: this.astreTransform(a, 0) };
+    const end: Keyframe = { transform: this.astreTransform(b, 0) };
+    // Opacité de l'échiquier : le plus souvent opaque d'un bout à l'autre, elle n'est alors pas animée (animée, elle
+    // ferait composer à part tout l'échiquier à chaque image) mais écrite une fois
+    if (r3(a.o) !== r3(b.o)) {
+      from.opacity = r3(a.o);
+      end.opacity = r3(b.o);
+    } else this.astre.style.opacity = String(r3(a.o));
+    const anims = [this.astre.animate([from, end], { ...opts, id: 'vol astre' })];
+    // Inclinaison de départ, comme à la première image du vol (sans rotation à jouer, c'est celle de tout le vol)
+    this.astre.style.setProperty('--base-tilt', `${deg(a.tilt)}deg`);
+    if (board && deg(a.tilt) !== deg(b.tilt)) {
+      anims.push(board.animate([{ transform: `rotateX(${deg(a.tilt)}deg) scale(1)` }, { transform: `rotateX(${deg(b.tilt)}deg) scale(1)` }], { ...opts, id: 'vol inclinaison' }));
+    }
+    this.flight = { anims, to };
+    this.markDirty();
+  }
+
+  private dropFlight() {
+    this.flight?.anims.forEach(x => x.cancel());
+    this.flight = null;
+  }
+
+  /** Échiquier placé dans le document (téléphone : il défile avec la page) ou fixe (ailleurs, et en partie). */
+  private setFlow(flow: boolean) {
+    if (flow === this.flow) return;
+    this.flow = flow;
+    this.astre.style.position = flow ? 'absolute' : '';
+    if (this.els.caption) this.els.caption.style.position = flow ? 'absolute' : '';
+    this.flowTop = flow ? this.flowOrigin() : 0;
+    if (flow && this.native) this.buildAstreNative();
+    else this.dropAstreNative();
+    // Le script reprend (ou rend) la main : tout est réécrit à la prochaine image
+    this.applied = { o: -1, co: -1, orb: -1, front: -1, tilt: -99, cap: -1, k: -1 };
+  }
+
   markDirty() {
     this.dirty = true;
     this.wake();
@@ -913,10 +992,16 @@ export class Engine {
     const mx = this.reduced || mobile ? 0 : m.x;
     const my = this.reduced || mobile ? 0 : m.y;
 
+    // Décor (lieux et ciels) : mêmes défilement, souris et images qu'à l'image précédente, rien n'y change (images d'un
+    // éveil, d'un survol, du vol vers la partie) : rien n'est recalculé ni réécrit. La mesure efface la clé
+    const decorKey = `${y}|${mx}|${my}|${this.imagesOk}|${this.gameMix >= 1}`;
+    const decor = decorKey !== this.decorKey;
+    this.decorKey = decorKey;
+
     // Calques des lieux (en partie, le décor est caché sous le rideau : rien à recalculer)
     const native = this.native;
     for (const sc of this.scenes) {
-      if (this.gameMix >= 1) break;
+      if (this.gameMix >= 1 || !decor) break;
       if (!sc.loaded && this.imagesOk && y > sc.start - vh * PRELOAD_SCREENS && y < sc.end + vh * PRELOAD_SCREENS) this.loadImages(sc);
       // Mode natif : le lieu est monté (peint, tramé) dès 1,7 écran avant lui, encore transparent, pendant la
       // traversée de la nuée ; il reste monté jusqu'à 2 écrans (pas de bascule à chaque pixel au retour)
@@ -981,7 +1066,7 @@ export class Engine {
     // Ciel : fondu enchaîné d'une teinte à l'autre. Mode natif : les fondus sont des animations ; le script ne
     // montre que les ciels utiles (celui qui apparaît et celui qu'il recouvre), les autres ne sont ni peints ni composés
     let covered = false;
-    for (let i = this.skies.length - 1; i >= 1; i--) {
+    for (let i = this.skies.length - 1; i >= 1 && decor; i--) {
       const sc = this.scenes[i];
       if (!sc) continue;
       const k = mobile ? smooth(clamp01((y - (sc.start - vh * 0.6)) / (vh * 0.6))) : smooth(clamp01((y - (sc.start - vh * 1.0)) / (vh * 0.9)));
@@ -989,42 +1074,40 @@ export class Engine {
       else this.showSky(i, k > 0 && !covered);
       if (k >= 1) covered = true;
     }
-    if (native) this.showSky(0, !covered);
+    if (native && decor) this.showSky(0, !covered);
 
     // Échiquier
+    // Vol joué par le compositeur (fly) : rien à écrire de l'échiquier tant qu'il dure ; à l'arrivée de gameMix, les
+    // animations sont retirées et les valeurs finales écrites dans la même image (elles sont tenues jusque-là)
+    const fl = this.flight;
+    if (fl && (fl.to === 1 ? this.gameMix >= 1 : this.gameMix <= 0)) {
+      this.dropFlight();
+      this.applied = { o: -1, co: -1, orb: -1, front: -1, tilt: -99, cap: -1, k: -1 };
+    }
+    const flying = this.flight !== null;
     const pose = this.pagePose(y);
     let p = pose;
-    if (this.gameMix > 0) {
-      const g = gameLayout(this.vw, window.innerHeight);
-      const from = this.gameFrom ?? pose;
-      p = lerpPose(from, { x: g.x, y: g.y, s: g.G, orb: 1, front: 0, o: 1, tilt: 0, cap: 0 }, this.gameMix);
-    }
+    if (this.gameMix > 0) p = lerpPose(this.gameFrom ?? pose, this.gamePose(), this.gameMix);
     const k = p.s / this.G;
     // Téléphone, premier écran : l'échiquier (et sa légende) défilent avec la page, placés dans le document, au lieu
     // d'être replacés par le script à chaque image : le défilement natif va plus vite que le script, l'échiquier
     // sautait (vidéo du fondateur, Pixel 7). Dans ce lieu, sa position dans le document ne change pas. Mode natif :
     // sur toute la page (hors partie), ses poses étant jouées par une animation liée au défilement.
     const hero = this.sections[0];
-    const flow = mobile && this.gameMix === 0 && !!hero && (native || y <= hero.end);
-    if (flow !== this.flow) {
-      this.flow = flow;
-      this.astre.style.position = flow ? 'absolute' : '';
-      if (this.els.caption) this.els.caption.style.position = flow ? 'absolute' : '';
-      this.flowTop = flow ? this.flowOrigin() : 0;
-      if (flow && native) this.buildAstreNative();
-      else this.dropAstreNative();
-      // Le script reprend (ou rend) la main : tout est réécrit à la prochaine image
-      this.applied = { o: -1, co: -1, orb: -1, front: -1, tilt: -99, cap: -1, k: -1 };
-    }
+    this.setFlow(mobile && this.gameMix === 0 && !flying && !!hero && (native || y <= hero.end));
     const docY = this.flow ? y - this.flowTop : 0;
     const anim = this.flow && this.astreAnims.length > 0;
     const inHero = !!hero && y <= hero.end + vh * 0.36;
-    if (!anim) this.astre.style.transform = `translate3d(${(p.x - this.G / 2).toFixed(2)}px, ${(p.y + docY - this.G / 2).toFixed(2)}px, 0) scale(${k.toFixed(4)})`;
+    // Vol vers la partie ou retour (gameMix entre 0 et 1) : seules la position, l'échelle, les opacités et l'inclinaison
+    // bougent ; le reste ne change qu'aux deux bouts
+    const between = flying || (this.gameMix > 0 && this.gameMix < 1);
+    if (!anim && !flying) this.astre.style.transform = this.astreTransform(p, docY);
     const a = this.applied;
     const kr = Math.round(k * 1000) / 1000;
     // Échelle de l'échiquier : la pièce glissée la compense pour rester sous le doigt. Mode natif : seule la partie
-    // du héros se joue sur la page, à taille fixe ; ailleurs, rien à écrire (le style de tout l'astre serait recalculé)
-    if (kr !== a.k && (!anim || y <= (hero?.end ?? 0))) {
+    // du héros se joue sur la page, à taille fixe ; ailleurs, rien à écrire (le style de tout l'astre serait recalculé).
+    // En vol, aucune pièce n'est glissée (échiquier verrouillé) : elle est écrite à l'arrivée
+    if (kr !== a.k && !between && (!anim || y <= (hero?.end ?? 0))) {
       a.k = kr;
       this.astre.style.setProperty('--k', String(kr));
       this.astre.style.setProperty('--inv-k', String(Math.round((1 / Math.max(0.05, kr)) * 1000) / 1000));
@@ -1039,12 +1122,19 @@ export class Engine {
     } else {
       const o = Math.round(p.o * 1000) / 1000;
       const co = Math.round(o * Math.max(0, 1 - this.gameMix * 5) * 1000) / 1000;
-      if (o !== a.o || co !== a.co) {
+      if (flying) {
+        // L'opacité de l'échiquier est jouée par le vol ; celle du calque 3D des sorts (s'il y en a un) reste écrite ici
+        if (co !== a.co && this.canvas) {
+          a.co = co;
+          this.canvas.style.opacity = String(co);
+        }
+      } else if (o !== a.o || co !== a.co) {
         a.o = o;
         a.co = co;
         this.astre.style.opacity = String(o);
         if (this.canvas) this.canvas.style.opacity = String(co);
       }
+      // Anneaux : écrits ici, vol compris (voir fly)
       const orb = Math.round(p.orb * 1000) / 1000;
       if (orb !== a.orb && this.els.orbits) {
         a.orb = orb;
@@ -1059,20 +1149,20 @@ export class Engine {
     // Inclinaison. Mode natif : elle ne change pas pendant que l'échiquier est visible (tout l'astre serait restylé à
     // chaque image) : celle du héros jusqu'à la fin de son fondu, puis celle des emplacements (le héros fini,
     // l'échiquier n'est plus visible que posé dans le texte). Elle ne dépend que de la zone, jamais d'une opacité
-    // qu'un geste rapide pourrait sauter
+    // qu'un geste rapide pourrait sauter. En vol, elle est jouée par le compositeur
     let tiltRad = p.tilt;
     if (anim) tiltRad = inHero ? this.pose('hero').tilt * (1 - smooth(this.awake)) : SLOT_TILT;
     const tilt = Math.round(((tiltRad * 180) / Math.PI) * 10) / 10;
-    if (tilt !== a.tilt) {
+    if (tilt !== a.tilt && !flying) {
       a.tilt = tilt;
       this.astre.style.setProperty('--base-tilt', `${tilt}deg`);
     }
     if (this.els.caption) {
-      const show = this.gameMix === 0 && p.s > 200 && p.o > 0.9 && (p.cap > 0.5 || this.hover) ? 1 : 0;
+      const show = this.gameMix === 0 && !flying && p.s > 200 && p.o > 0.9 && (p.cap > 0.5 || this.hover) ? 1 : 0;
       // Mobile : la perspective agrandit le bas du cadre ; la légende garde un peu d'air dessous
       const below = mobile ? p.s * 0.5 * Math.cos(p.tilt) + 36 : p.s * 0.5 + 34;
-      // Légende cachée : elle ne bouge pas (rien à écrire)
-      if (show || a.cap !== 0 || !anim) this.els.caption.style.transform = `translate3d(${p.x.toFixed(1)}px, ${(p.y + below + docY).toFixed(1)}px, 0) translateX(-50%)`;
+      // Légende cachée : elle ne bouge pas (rien à écrire), ni pendant le vol (elle est cachée dès sa première image)
+      if (show || ((a.cap !== 0 || !anim) && !between)) this.els.caption.style.transform = `translate3d(${p.x.toFixed(1)}px, ${(p.y + below + docY).toFixed(1)}px, 0) translateX(-50%)`;
       if (show !== a.cap) {
         a.cap = show;
         this.els.caption.style.opacity = String(show);
@@ -1081,12 +1171,12 @@ export class Engine {
     }
     // Échiquier effacé (entre deux emplacements, ou dans la nuée) : il ne capte plus les touchers, qui vont au texte
     // dessous (sinon toucher un lien par-dessus l'échiquier invisible ouvrirait la partie)
-    const touchable = p.o > 0.05 || this.gameMix > 0;
+    const touchable = p.o > 0.05 || this.gameMix > 0 || flying;
     if (touchable !== this.touchable) {
       this.touchable = touchable;
       this.astre.style.pointerEvents = touchable ? '' : 'none';
     }
-    const inTransit = p.o < 0.75 && this.gameMix === 0;
+    const inTransit = p.o < 0.75 && this.gameMix === 0 && !flying;
     if (inTransit !== this.transit) {
       this.transit = inTransit;
       this.hooks.onTransit(inTransit);
@@ -1129,7 +1219,12 @@ export class Engine {
         this.els.alt.textContent = rounded.toLocaleString('fr-FR');
       }
       const total = firsts[firsts.length - 1] || 1;
-      this.els.altRoot?.style.setProperty('--descent', clamp01(y / total).toFixed(4));
+      // Écrite seulement quand elle change (pas à chaque image d'un éveil, d'un survol ou du vol, défilement arrêté)
+      const descent = clamp01(y / total).toFixed(4);
+      if (descent !== this.descent) {
+        this.descent = descent;
+        this.els.altRoot?.style.setProperty('--descent', descent);
+      }
     }
     return true;
   }

@@ -363,6 +363,8 @@ export default function OdysseeHome() {
       if (done) return;
       done = true;
       void loadStageBoard().catch(() => undefined);
+      // Face des grands mots du décor (italique 300) : demandée au repos, pas en pleine traversée de la Forêt
+      void (document as Document & { fonts?: FontFaceSet }).fonts?.load('italic 300 1em "Cormorant Garamond"').catch(() => undefined);
     };
     // Un geste du visiteur (doigt, molette, clavier), pas un défilement quelconque : le retour en haut de page fait par
     // le routeur (App.tsx) en déclenche un sans que personne n'ait rien touché

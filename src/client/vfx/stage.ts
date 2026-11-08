@@ -130,6 +130,9 @@ export class VfxStage {
   private shakeDecay = 0;
   private applied = { x: 0, y: 0 };
   private size = { w: 0, h: 0 };
+  /** Calque placé dans le document (anchor) : état appliqué, et décalage écrit. */
+  private anchored: boolean | null = null;
+  private anchoredAt = '';
   private perspective = 1400;
   private lastMarkerRender = 0;
   private lastLayout = '';
@@ -240,6 +243,12 @@ export class VfxStage {
       // (« o-live-canvas » le cacherait hors mode immersif ; l'opacité vient du moteur de l'accueil, qui la repose)
       this.canvas.className = 'vfx-canvas';
       this.canvas.style.opacity = '';
+      // Ni placement dans le document (anchor) ni taille imposée : le prochain rendu les repose pour son échiquier
+      this.canvas.style.position = '';
+      this.canvas.style.inset = '';
+      this.canvas.style.transform = '';
+      this.anchored = null;
+      this.anchoredAt = '';
     }
     this.shrink();
     this.tilt = 0;
@@ -546,6 +555,7 @@ export class VfxStage {
 
     // Position du plateau (hors secousse) puis application de la nouvelle secousse
     const r = this.wrap.getBoundingClientRect();
+    this.anchor();
     const baseX = r.left - this.applied.x;
     const baseY = r.top - this.applied.y;
     this.setTilt(tilt, zoom);
@@ -602,12 +612,45 @@ export class VfxStage {
     return ++this.still < 12 ? Next.Frame : Next.Park;
   }
 
+  /**
+   * Accueil sur téléphone (mode natif, engine.ts) : l'échiquier est placé dans le document et défile sur le
+   * compositeur, avec le doigt. Le calque le suit : placé lui aussi dans le document, recalé sur la fenêtre à chaque
+   * rendu (même image que la position lue du plateau), il défile entre deux rendus exactement comme l'échiquier, au lieu
+   * de rester fixe à l'écran en attendant le rendu suivant (effets décalés d'une ou deux images pendant le geste).
+   */
+  private anchor() {
+    const c = this.canvas;
+    if (!c) return;
+    const host = this.wrap.closest<HTMLElement>('.o-astre');
+    const on = !!host && getComputedStyle(host).position === 'absolute';
+    if (on !== this.anchored) {
+      this.anchored = on;
+      c.style.position = on ? 'absolute' : '';
+      c.style.inset = on ? '0 auto auto 0' : '';
+      c.style.transform = '';
+      this.anchoredAt = '';
+    }
+    if (on) {
+      const at = `translate3d(${window.scrollX}px, ${window.scrollY}px, 0)`;
+      if (at !== this.anchoredAt) {
+        this.anchoredAt = at;
+        c.style.transform = at;
+      }
+    }
+  }
+
   private syncCamera(left: number, top: number, w: number, h: number) {
     const W = window.innerWidth;
     const H = window.innerHeight;
     if (W !== this.size.w || H !== this.size.h) {
       this.renderer!.setSize(W, H, false);
       this.size = { w: W, h: H };
+      // Taille affichée = taille du tampon et de la caméra (la fenêtre visible) : avec 100vw × 100vh (board.css), un
+      // téléphone dont la barre d'adresse est visible étirait les effets et les décalait vers le bas
+      if (this.canvas) {
+        this.canvas.style.width = `${W}px`;
+        this.canvas.style.height = `${H}px`;
+      }
     }
     const cx = left + w / 2;
     const cy = top + h / 2;

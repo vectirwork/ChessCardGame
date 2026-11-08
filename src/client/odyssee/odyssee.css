@@ -1215,7 +1215,8 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
 
 .ody .o-rv {
   opacity: 0;
-  transform: translate3d(0, 34px, 0);
+  /* En 2D : un décalage 3D faisait de chaque bloc encore caché un calque composé */
+  transform: translate(0, 34px);
   transition:
     opacity 1.1s var(--ease),
     transform 1.3s var(--ease);
@@ -1233,7 +1234,7 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
 }
 .ody .o-ln > span {
   display: block;
-  transform: translate3d(0, 112%, 0);
+  transform: translate(0, 112%);
   transition: transform 1.4s var(--ease);
   transition-delay: calc(var(--l, 0) * 110ms);
 }
@@ -1473,6 +1474,31 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
 }
 .ody .o-chapter.on .o-chapter-card .spell-card::after {
   opacity: 1;
+}
+/* L'ombre de repos de la carte s'efface pendant que le halo apparaît (le halo la remplaçait) : elle passe elle aussi
+   dans un pseudo-élément, en fondu d'opacité */
+.ody .o-chapter-card .spell-card {
+  box-shadow: none;
+}
+.ody .o-chapter-card .spell-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  box-shadow:
+    0 18px 40px -16px hsl(var(--h) 80% 40% / 0.7),
+    0 2px 8px rgba(0, 0, 0, 0.5);
+  transition: opacity 0.8s var(--ease);
+  pointer-events: none;
+}
+.ody .o-chapter-card .spell-card.r-legendaire::before {
+  box-shadow:
+    0 18px 44px -14px rgba(243, 190, 90, 0.75),
+    0 2px 8px rgba(0, 0, 0, 0.5);
+}
+.ody .o-chapter.on .o-chapter-card .spell-card::before {
+  opacity: 0;
 }
 .ody .o-chapter-meta {
   display: flex;
@@ -3062,7 +3088,9 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
   background: none;
   border-radius: 99px;
   cursor: pointer;
-  animation: o-pip-in 0.6s var(--ease) backwards;
+  /* both : l'animation reste en vigueur et la pastille s'efface et revient d'un coup à l'amarrage (ses transitions
+     ne jouent pas), comme toujours */
+  animation: o-pip-in 0.6s var(--ease) both;
   transition: opacity 0.4s, transform 0.5s var(--ease);
 }
 @keyframes o-pip-in {
@@ -3453,22 +3481,17 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
   .ody .o-layer {
     overflow-x: clip;
   }
-  /* Anneau cyan de l'astrolabe : immobile (deux points sur un cercle, 70 s par tour) ; un calque de moins à garder */
+  /* Anneau cyan de l'astrolabe : immobile (deux points sur un cercle, 70 s par tour) ; un calque de moins à garder.
+     Figé à 70° : un de ses deux points reste dans l'écran (à 0°, ils seraient tous deux hors des bords) */
   .ody .o-o2 {
     animation: none;
+    transform: rotate(70deg);
   }
-  /* Rayons du Seuil : sans fusion « screen » (presque identique sur ce fond noir) ni opacité de groupe, chacune
-     imposait un passage hors écran à chaque image ; l'opacité de groupe est reportée dans le dégradé */
-  .ody .o-beams {
-    opacity: 1;
-  }
+  /* Rayons du Seuil : sans fusion « screen » (presque identique sur ce fond noir), qui imposait un passage hors écran
+     par rayon à chaque image. L'opacité de groupe (0,35) reste : reportée rayon par rayon, elle éclaircissait le pied
+     du faisceau, où les rayons se chevauchent */
   .ody .o-beam {
     mix-blend-mode: normal;
-    background: linear-gradient(0deg, rgba(255, 226, 160, 0.077), rgba(255, 226, 160, 0) 80%);
-  }
-  /* Second éclair : hors de l'écran d'un téléphone */
-  .ody .o-bolt.o-b2 {
-    display: none;
   }
   /* Grain : dans le calque de la vignette (un calque plein écran de moins) */
   html.ody-home body::after {
@@ -3491,13 +3514,6 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
     opacity: 1;
     transition: none;
   }
-  /* Apparitions du texte en 2D : un décalage 3D faisait de chaque bloc encore caché un calque composé */
-  .ody .o-rv {
-    transform: translate(0, 34px);
-  }
-  .ody .o-ln > span {
-    transform: translate(0, 112%);
-  }
   /* Plaque de secours sous l'échiquier de l'accueil : une couleur unie, avec la même projection que le plateau,
      cachée sous le cadre et les cases. Un calque d'une seule couleur ne coûte aucune tuile : il est dessiné même
      mémoire graphique pleine. Si une tuile des cases manque un instant, on voit la couleur du plateau, pas un trou. */
@@ -3516,13 +3532,25 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
   .ody .o-content .spell-card:not(.selected):not([aria-expanded='true']) .sc-halo {
     animation: none;
   }
-  .ody .o-content .spell-card:not(.selected):not(.r-legendaire) .sc-foil {
+  /* … sauf la carte du chapitre actif, une seule à la fois : ses trois respirations, comme à son arrivée à l'écran */
+  .ody .o-content .o-chapter.on .spell-card .sc-halo {
+    animation: halo 4s ease-in-out 3;
+  }
+  .ody .o-content .spell-card:not(.selected):not(.r-legendaire):not(:hover) .sc-foil {
     display: none;
   }
   /* En-tête : sans flou d'arrière-plan (relu et flouté à chaque image au-dessus d'un décor qui bouge) */
   html.ody-home .site-header.is-scrolled::before {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
-    background: rgba(4, 5, 15, 0.94);
+    background: rgba(4, 5, 15, 0.96);
+  }
+}
+
+/* Second éclair des Pics : hors de l'écran d'un téléphone en portrait (en paysage, le cadrage montre toute la
+   largeur du dessin : il reste) */
+@media (max-width: 819.98px) and (max-aspect-ratio: 1/1) {
+  .ody .o-bolt.o-b2 {
+    display: none;
   }
 }

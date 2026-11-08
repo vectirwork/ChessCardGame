@@ -209,7 +209,8 @@ export default function OdysseeHome() {
           setPlace(p);
           setCast(null);
           setPlaySignal(0);
-          if (p !== 0) engine.setAwake(false);
+          // engineRef et non engine : ce rappel peut venir du constructeur même du moteur (page ouverte déjà défilée)
+          if (p !== 0) engineRef.current?.setAwake(false);
         },
         onChapter: setChapter,
         onTransit: setTransit,

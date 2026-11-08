@@ -66,7 +66,12 @@ export function poseFor(key: PoseKey, vw: number, vh: number): Pose {
 
 /** Chronologie liée au défilement (Chrome 115+, Safari 26+) : absente des types DOM de TypeScript. */
 type ScrollTimelineCtor = new (o: { source: Element; axis: 'block' }) => AnimationTimeline;
-const scrollTimelineCtor = () => (globalThis as { ScrollTimeline?: ScrollTimelineCtor }).ScrollTimeline;
+const scrollTimelineCtor = () => {
+  const Ctor = (globalThis as { ScrollTimeline?: ScrollTimelineCtor }).ScrollTimeline;
+  // Toutes les animations reposent sur des plages en pixels (rangeStart / rangeEnd) : un navigateur qui exposerait
+  // ScrollTimeline sans elles étalerait tout sur la page entière ; il garde le chemin script
+  return Ctor && typeof CSS !== 'undefined' && CSS.supports?.('animation-range', '0px 1px') ? Ctor : undefined;
+};
 /** La courbe smooth (3t² − 2t³) est exactement cubic-bezier(1/3, 0, 2/3, 1) : un fondu natif identique au script. */
 const SMOOTH = 'cubic-bezier(0.33333, 0, 0.66667, 1)';
 /** Point d'une animation liée au défilement : position de défilement (px) et valeurs CSS à cette position. */
@@ -203,6 +208,10 @@ export class Engine {
   /** Mode natif : ciels montrés (les autres sont cachés : ni peints ni composés). */
   private skyShown: (boolean | null)[] = [];
   private touchable = true;
+  /** Constructeur fini : frame() peut appeler les rappels de l'accueil. */
+  private ready = false;
+  /** Sens du dernier défilement (mode natif : les lieux sont peints en avance dans les deux sens). */
+  private goingUp = false;
   private tick = (time: number) => {
     if (this.lenis) {
       if (this.resync) this.lenis.time = time * 1000;
@@ -263,6 +272,7 @@ export class Engine {
     this.rootW = r0.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth);
     this.rootH = r0.height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - parseFloat(cs.borderTopWidth) - parseFloat(cs.borderBottomWidth);
     this.ro.observe(root);
+    this.ready = true;
   }
 
   private onScroll = () => {
@@ -372,7 +382,9 @@ export class Engine {
    */
   private onResize = () => {
     const vw = document.documentElement.clientWidth || window.innerWidth;
-    if (this.native && vw === this.vw && gameLayout(vw, window.innerHeight).G === this.G && this.largeViewportHeight() === this.vh) {
+    // La taille de l'échiquier de partie (G) peut dépendre de la hauteur visible (téléphones étroits) : en page, elle
+    // n'est pas reprise à chaque passage de la barre (captureGameFrom remesure, si besoin, au passage en partie)
+    if (this.native && this.gameMix === 0 && vw === this.vw && this.largeViewportHeight() === this.vh) {
       this.markDirty();
       return;
     }
@@ -466,7 +478,9 @@ export class Engine {
         const head = s.el.querySelector<HTMLElement>('.o-place-head');
         if (!head || i === 0) return null;
         const prev = this.sections[i - 1];
-        const at = s.start - 0.2 * Math.max(1, s.start - prev.end) - (isMobile(vw) ? vh * 0.4 : 0);
+        // Mobile : révélé quand il entre à l'écran, avec le voile sombre qui l'accompagne (présent d'emblée sur
+        // téléphone, odyssee.css) : pas de voile sans texte en bas de l'écran
+        const at = s.start - 0.2 * Math.max(1, s.start - prev.end) - (isMobile(vw) ? vh * 0.85 : 0);
         const done = this.heads.find(h => h.els[0] === head)?.done ?? false;
         return { els: [head, ...Array.from(head.querySelectorAll<HTMLElement>('.o-rv, .o-rv-lines'))], at, done };
       })
@@ -487,8 +501,9 @@ export class Engine {
     this.buildNative();
     this.markDirty();
     // Mode natif : les animations des lieux viennent d'être annulées ; elles sont recréées tout de suite, dans le même
-    // rendu (sinon une image passerait avec le décor à sa position de repos et les fonds pleinement opaques)
-    if (this.native) this.frame();
+    // rendu (sinon une image passerait avec le décor à sa position de repos et les fonds pleinement opaques). Pas
+    // pendant le constructeur : les rappels (onPlace…) ne doivent pas partir avant que le moteur existe pour l'accueil
+    if (this.native && this.ready) this.frame();
   };
 
   /** Haut du parent de positionnement de l'échiquier, dans le document (échiquier placé dans le document). */
@@ -701,6 +716,9 @@ export class Engine {
 
   /** Fige la pose de départ (ou d'arrivée) de la transition vers la partie. */
   captureGameFrom() {
+    // Barre d'adresse apparue ou disparue depuis la dernière mesure (téléphone) : l'échiquier de partie a peut-être
+    // une autre taille ; on remesure avant de figer la pose de départ
+    if (this.native && gameLayout(this.vw, window.innerHeight).G !== this.G) this.measure();
     this.gameFrom = this.pagePose(window.scrollY);
   }
 
@@ -875,6 +893,7 @@ export class Engine {
       else if (dy < -3 || y < 240) this.els.header.classList.remove('is-hidden');
       this.els.header.classList.toggle('is-scrolled', y > 40);
     }
+    if (y !== this.lastY && this.lastY >= 0) this.goingUp = y < this.lastY;
     this.lastY = y;
     this.dirty = false;
     const { vh } = this;
@@ -910,9 +929,12 @@ export class Engine {
           // graphique), peints juste avant leur fondu d'entrée (0,6 écran avant le lieu), éteints dès leur fondu de
           // sortie fini. Au plus deux lieux peints, et seulement le temps du fondu enchaîné.
           const was = sc.live[i] === 2;
-          // Peint un demi-écran avant son fondu (0,6 écran avant le lieu) : le temps de le tramer, encore transparent
+          // Peint un demi-écran avant son fondu, dans le sens du geste : en descendant, avant son fondu d'entrée (0,6
+          // écran avant le lieu) ; en remontant, avant que son fondu de sortie ne le fasse réapparaître (0,7 écran
+          // après lui). Éteint à la fin de son fondu de sortie quand on descend. Le temps de le tramer, encore
+          // transparent ; la marge supplémentaire (was) évite de basculer à chaque image.
           const from = sc.start === 0 ? -Infinity : sc.start - vh * (was ? 1.15 : 1.1);
-          const to = sc.end + vh * (was ? 0.75 : 0.7);
+          const to = sc.end + vh * (this.goingUp ? (was ? 1.25 : 1.2) : was ? 0.75 : 0.7);
           state = y > from && y < to ? 2 : 1;
         }
         if (state !== sc.live[i]) {

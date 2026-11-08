@@ -81,6 +81,21 @@ export const Chapter = memo(function Chapter({ id, active }: { id: CardId; activ
   );
 });
 
+/**
+ * Graduations d'un anneau (viewBox 200 × 200, rayon 98) : un seul chemin, un segment par graduation, aux mêmes
+ * extrémités (arrondies au centième) que les <line> d'avant. Même trait, mêmes bouts nets, et les graduations ne se
+ * touchent pas : même image, avec un élément au lieu de 48 ou 72 à créer, styler et peindre.
+ */
+function ticks(n: number, len: (i: number) => number) {
+  let d = '';
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const l = len(i);
+    d += `M${(100 + Math.cos(a) * 98).toFixed(2)} ${(100 + Math.sin(a) * 98).toFixed(2)}L${(100 + Math.cos(a) * (98 - l)).toFixed(2)} ${(100 + Math.sin(a) * (98 - l)).toFixed(2)}`;
+  }
+  return d;
+}
+
 /** Anneaux méridiens de l'astrolabe, derrière l'échiquier. Les anneaux qui tournent sont des conteneurs HTML : un
  *  <svg> qui tourne lui-même serait remis en page et repeint à chaque image du fil principal. */
 export const OrbitRings = memo(function OrbitRings() {
@@ -108,21 +123,7 @@ export const OrbitRings = memo(function OrbitRings() {
         <svg className="o-spin-svg" viewBox="0 0 200 200">
           <circle cx="100" cy="100" r="98" fill="none" stroke="rgba(243,201,105,.55)" strokeWidth="0.3" />
           <circle cx="100" cy="100" r="93" fill="none" stroke="rgba(243,201,105,.4)" strokeWidth="0.2" strokeDasharray="0.6 2.2" />
-          {Array.from({ length: 72 }, (_, i) => {
-            const a = (i / 72) * Math.PI * 2;
-            const l = i % 6 === 0 ? 4 : 1.8;
-            return (
-              <line
-                key={i}
-                x1={(100 + Math.cos(a) * 98).toFixed(2)}
-                y1={(100 + Math.sin(a) * 98).toFixed(2)}
-                x2={(100 + Math.cos(a) * (98 - l)).toFixed(2)}
-                y2={(100 + Math.sin(a) * (98 - l)).toFixed(2)}
-                stroke="rgba(243,201,105,.7)"
-                strokeWidth="0.24"
-              />
-            );
-          })}
+          <path d={ticks(72, i => (i % 6 === 0 ? 4 : 1.8))} fill="none" stroke="rgba(243,201,105,.7)" strokeWidth="0.24" />
           <circle cx="198" cy="100" r="1.6" fill="#ffe1a0" />
         </svg>
       </div>
@@ -142,11 +143,7 @@ export const EqRing = memo(function EqRing({ part, w, r, rot, dur, reverse, hue 
         <svg className="o-spin-svg" viewBox="0 0 200 200">
           <circle cx="100" cy="100" r="98" fill="none" stroke={stroke} strokeWidth="0.55" />
           <circle cx="100" cy="100" r="94.5" fill="none" stroke={stroke} strokeWidth="0.2" opacity="0.6" />
-          {Array.from({ length: 48 }, (_, i) => {
-            const a = (i / 48) * Math.PI * 2;
-            const l = i % 4 === 0 ? 3.5 : 1.6;
-            return <line key={i} x1={(100 + Math.cos(a) * 98).toFixed(2)} y1={(100 + Math.sin(a) * 98).toFixed(2)} x2={(100 + Math.cos(a) * (98 - l)).toFixed(2)} y2={(100 + Math.sin(a) * (98 - l)).toFixed(2)} stroke={stroke} strokeWidth="0.4" />;
-          })}
+          <path d={ticks(48, i => (i % 4 === 0 ? 3.5 : 1.6))} fill="none" stroke={stroke} strokeWidth="0.4" />
           <circle cx="198" cy="100" r="3" fill={hue === 'gold' ? '#fff1c4' : '#d8f8ff'} />
           <circle cx="198" cy="100" r="6" fill={hue === 'gold' ? 'rgba(255,225,160,.25)' : 'rgba(190,240,255,.25)'} />
           <circle cx="30" cy="170" r="2" fill={hue === 'gold' ? '#ffd68a' : '#bff3ff'} />

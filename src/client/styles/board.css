@@ -515,19 +515,18 @@
   }
 }
 
-/* Échec et mat (Board, prop `mated`) : le roi vacille (0,4 s), bascule de 90° autour de son pied en accélérant, rebondit
-   deux fois et reste couché dans sa case. L'image passe dans .pi-fall, à l'intérieur de .pi : la chute se fait dans le
-   plan de .pi, qui garde sa propre rotation (pièces redressées sur l'échiquier incliné, is-tilting), et son ombre
-   portée suit la pièce couchée. Seuls rotate et translate bougent (compositeur) ; l'état couché est la règle de base,
-   l'animation n'y ajoute que le trajet : sans elle (mouvement réduit), le roi est couché d'emblée, et une fois finie
-   il ne reste qu'une rotation 2D peinte avec le reste, sans calque à part.
+/* Échec et mat (Board, prop `mated`) : le roi attend que la pièce qui mate ait fini de glisser (0,18 s), frissonne,
+   bascule de 90° autour de son pied en accélérant, rebondit deux fois et reste couché dans sa case. L'image passe dans
+   .pi-fall, à l'intérieur de .pi : la chute se fait dans le plan de .pi, qui garde sa propre rotation (pièces
+   redressées sur l'échiquier incliné, is-tilting), et son ombre portée suit la pièce couchée. Seuls rotate et
+   translate bougent (compositeur) ; l'état couché est la règle de base, l'animation n'y ajoute que le trajet : sans
+   elle (mouvement réduit), le roi est couché d'emblée, et une fois finie il ne reste qu'une rotation 2D peinte avec
+   le reste, sans calque à part. Durée : MATE_FALL_MS (mate.ts), qu'attendent la carte de fin et la démonstration.
    Géométrie (SVG 100 × 100, pieces.ts) : le roi occupe x 22 à 78, y 3,5 à 90 ; pivot au pied (50 %, 88 %). Couché
    vers la droite, son cadre a pour centre (91,25 ; 88) : translate -41 % -34 % le ramène au milieu de la case, un
    peu bas (50 ; 54), couché sur y 26 à 82 et x 7 à 94. En cours de chute, la tête ne dépasse pas x ≈ 98 : le roi ne
    sort jamais de sa case. Vers la gauche, tout est en miroir. */
 .pi-fall {
-  /* Positionnée, comme la poussière : peinte après elle, donc devant */
-  position: relative;
   width: 100%;
   height: 100%;
   background-size: 100% 100%;
@@ -544,24 +543,22 @@
   translate: 41% -34%;
   animation: pi-fall-l 1.25s;
 }
-/* Vacillement (0 à 32 %), chute en accélérant (jusqu'à 67 % : l'impact, à 0,84 s), deux rebonds de la tête autour du
-   pied, de plus en plus petits. La translation suit la rotation (même courbe) : le roi se recentre en tombant. */
+/* Immobile jusqu'à 14 % (la pièce qui mate arrive), frisson d'abord à l'opposé d'elle, comme sous le choc (14 à 32 %),
+   chute en accélérant (jusqu'à 67 % : l'impact, à 0,84 s), deux rebonds de la tête autour du pied, de plus en plus
+   petits. La translation suit la rotation (même courbe) : le roi se recentre en tombant. */
 @keyframes pi-fall-r {
-  0% {
+  0%,
+  14% {
     rotate: 0deg;
     translate: 0% 0%;
+    animation-timing-function: ease-out;
+  }
+  20% {
+    rotate: 8deg;
     animation-timing-function: ease-in-out;
   }
-  9% {
-    rotate: -6deg;
-    animation-timing-function: ease-in-out;
-  }
-  19% {
-    rotate: 5deg;
-    animation-timing-function: ease-in-out;
-  }
-  27% {
-    rotate: -3deg;
+  26% {
+    rotate: -5deg;
     animation-timing-function: ease-in-out;
   }
   32% {
@@ -593,21 +590,18 @@
   }
 }
 @keyframes pi-fall-l {
-  0% {
+  0%,
+  14% {
     rotate: 0deg;
     translate: 0% 0%;
+    animation-timing-function: ease-out;
+  }
+  20% {
+    rotate: -8deg;
     animation-timing-function: ease-in-out;
   }
-  9% {
-    rotate: 6deg;
-    animation-timing-function: ease-in-out;
-  }
-  19% {
-    rotate: -5deg;
-    animation-timing-function: ease-in-out;
-  }
-  27% {
-    rotate: 3deg;
+  26% {
+    rotate: 5deg;
     animation-timing-function: ease-in-out;
   }
   32% {
@@ -638,11 +632,11 @@
     translate: 41% -34%;
   }
 }
-/* Poussière à l'impact : une bouffée pâle derrière le bas du roi couché, qui s'étale et s'efface (opacity et
-   transform, une seule animation). Invisible au repos (opacity 0), avant comme après. .pi, qui porte un filtre, est
-   le bloc conteneur et le contexte d'empilement : la bouffée reste dans son plan, sous .pi-fall. */
-.piece.is-mated .pi::before {
-  content: '';
+/* Poussière à l'impact : une bouffée pâle sous le bas du roi couché, qui s'étale et s'efface (opacity et transform,
+   une seule animation). Invisible au repos (opacity 0), avant comme après. Élément frère de .pi, placé avant lui :
+   hors de son filtre (le drop-shadow lui ferait une ombre sale, le filtre d'une pièce gelée la teinterait), peinte
+   dessous. Sur l'échiquier incliné, elle reste au sol, dans le plan de l'échiquier. */
+.pi-dust {
   position: absolute;
   left: 2%;
   right: 2%;
@@ -669,7 +663,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .piece.is-mated .pi-fall,
-  .piece.is-mated .pi::before {
+  .piece.is-mated .pi-dust {
     animation: none;
   }
 }

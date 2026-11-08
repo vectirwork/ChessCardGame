@@ -33,7 +33,8 @@ interface Props {
   /**
    * Échec et mat : case du roi maté (mate.ts, matedKing). Il vacille, bascule et reste couché sur sa case, à l'opposé
    * de la pièce qui vient de jouer (fallSide) ; il se relève dès que la prop change (nouvelle partie, autre position).
-   * Le roi couché n'a un élément de plus (.pi-fall) que pendant ce temps : rien ne change pour les autres pièces.
+   * Retourner l'échiquier ne rejoue pas la chute. Le roi couché n'a deux éléments de plus (.pi-fall, .pi-dust) que
+   * pendant ce temps : rien ne change pour les autres pièces.
    */
   mated?: number | null;
   effects?: Effect[];
@@ -414,8 +415,15 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
   }
 
   // Roi maté : côté de la chute à l'écran (+1 : vers la droite). fallSide raisonne en colonnes ; vus des Noirs, les
-  // colonnes vont de droite à gauche.
-  const fall = mated !== null ? fallSide(mated, lastMove?.to) * (orientation === 'w' ? 1 : -1) : 0;
+  // colonnes vont de droite à gauche. Figé à l'apparition du mat (clé : la case du roi) : retourner l'échiquier
+  // ensuite changerait la classe fall-r / fall-l, donc le nom de l'animation, et le roi se relèverait pour retomber.
+  // Couché, il garde son côté à l'écran ; que sa tête pointe alors vers l'autre colonne ne se remarque pas.
+  const fallRef = useRef<{ sq: number; side: number } | null>(null);
+  if (mated === null) fallRef.current = null;
+  else if (fallRef.current?.sq !== mated) {
+    fallRef.current = { sq: mated, side: fallSide(pos, mated, lastMove?.to) * (orientation === 'w' ? 1 : -1) };
+  }
+  const fall = fallRef.current?.side ?? 0;
 
   const boardEl = boardRef.current;
   const dragOffset = (() => {
@@ -467,6 +475,9 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
             const image = { backgroundImage: pieceUrl(p.c, p.t) };
             return (
               <div key={p.id} className={cls.join(' ')} style={{ transform }} data-piece={p.id} data-at={sq}>
+                {/* Poussière de la chute : hors de .pi, sinon le drop-shadow de .pi lui ferait une ombre sale (et le
+                    filtre d'une pièce gelée la teinterait) ; placée avant, elle est peinte sous le roi */}
+                {fallen && <span className="pi-dust" aria-hidden="true" />}
                 <div className="pi" style={fallen ? undefined : image}>
                   {fallen && <div className="pi-fall" style={image} />}
                 </div>

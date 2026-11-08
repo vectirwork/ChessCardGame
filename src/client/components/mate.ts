@@ -24,13 +24,16 @@ export function matedKing(s: { pos: Position; result: Result | null }): number |
 /**
  * Côté où tombe le roi, en colonnes : +1 vers la colonne h, -1 vers la colonne a. À l'opposé de la pièce qui vient
  * de jouer (`by`, case d'arrivée du dernier coup : d'ordinaire celle qui mate), comme si elle l'avait renversé ; sur
- * la même colonne, ou sans dernier coup (mat amené par une carte), vers le centre de l'échiquier, où la chute se
- * lit le mieux. En colonnes et non à l'écran : Board le traduit selon l'orientation, la chute reste la même vue des
- * deux côtés.
+ * la même colonne, ou sans pièce adverse en `by`, vers le centre de l'échiquier, où la chute se lit le mieux. Le
+ * dernier coup des échiquiers est la dernière entrée « move » du journal : après un mat par Rituel (Grande Marée),
+ * qui n'ajoute qu'une entrée « card », c'est le coup du camp maté lui-même, d'où la vérification de la couleur.
+ * En colonnes et non à l'écran : Board le traduit selon l'orientation, la chute reste la même vue des deux côtés.
  */
-export function fallSide(king: number, by: number | null | undefined): 1 | -1 {
+export function fallSide(pos: Position, king: number, by: number | null | undefined): 1 | -1 {
   const file = king & 7;
-  if (by != null && by >= 0) {
+  const k = pos.board[king];
+  const p = by != null && by >= 0 ? pos.board[by] : null;
+  if (by != null && k && p && p.c !== k.c) {
     const d = file - (by & 7);
     if (d) return d > 0 ? 1 : -1;
   }

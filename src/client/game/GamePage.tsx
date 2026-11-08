@@ -231,9 +231,11 @@ export default function GamePage() {
           if (ev.type === 'start') playSound('start');
           if (ev.type === 'end') {
             playSound('end');
-            // Mat : la carte de fin (sur l'échiquier, ou plein écran sur téléphone) attend que le roi soit tombé
+            // Mat : la carte de fin (sur l'échiquier, ou plein écran sur téléphone) attend que le roi soit tombé. En
+            // mouvement réduit, il est couché d'emblée (board.css) : rien à attendre de plus.
             const mate = u.view.state.result?.reason === 'checkmate';
-            setTimeout(() => setShowEnd(true), mate ? MATE_FALL_MS + 500 : 700);
+            const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+            setTimeout(() => setShowEnd(true), mate && !still ? MATE_FALL_MS + 500 : 700);
           }
         }
       }

@@ -109,6 +109,8 @@ interface SceneRec {
   loaded: boolean;
 }
 
+/** Inclinaison de l'échiquier posé dans le texte (mobile), en radians. */
+const SLOT_TILT = 0.62;
 /** Les images d'un lieu (nuées) sont demandées quand il reste moins de ce nombre d'écrans à parcourir. */
 const PRELOAD_SCREENS = 2.4;
 /** Boucle d'images arrêtée après ce temps sans aucun changement (ms). */
@@ -750,7 +752,7 @@ export class Engine {
     }
     if (!best || bestW <= 0) return { p: base, w: 0 };
     const k = smooth(bestW);
-    const target: Pose = { x: best.cx, y: best.top + best.h / 2 - y, s: best.w * 0.86 * (0.82 + 0.18 * k), orb: 0.75 * k, front: 0.8 * k, o: k, tilt: 0.62, cap: 0 };
+    const target: Pose = { x: best.cx, y: best.top + best.h / 2 - y, s: best.w * 0.86 * (0.82 + 0.18 * k), orb: 0.75 * k, front: 0.8 * k, o: k, tilt: SLOT_TILT, cap: 0 };
     return { p: base.o > k ? lerpPose(target, base, base.o) : target, w: bestW };
   }
 
@@ -1022,13 +1024,13 @@ export class Engine {
         this.els.front.style.opacity = String(front);
       }
     }
-    // Inclinaison. Mode natif : elle ne change jamais quand l'échiquier est visible (tout l'astre serait restylé à
-    // chaque image) : celle du héros jusqu'à la fin de son fondu, puis celle des emplacements, posée échiquier caché
-    let tiltRad: number | null = p.tilt;
-    if (anim && inHero) tiltRad = this.pose('hero').tilt * (1 - smooth(this.awake));
-    // (sauf la toute première fois : page rechargée au milieu de la descente, échiquier déjà posé et visible)
-    else if (anim && p.o > 0.03 && a.tilt !== -99) tiltRad = null;
-    const tilt = tiltRad === null ? a.tilt : Math.round(((tiltRad * 180) / Math.PI) * 10) / 10;
+    // Inclinaison. Mode natif : elle ne change pas pendant que l'échiquier est visible (tout l'astre serait restylé à
+    // chaque image) : celle du héros jusqu'à la fin de son fondu, puis celle des emplacements (le héros fini,
+    // l'échiquier n'est plus visible que posé dans le texte). Elle ne dépend que de la zone, jamais d'une opacité
+    // qu'un geste rapide pourrait sauter
+    let tiltRad = p.tilt;
+    if (anim) tiltRad = inHero ? this.pose('hero').tilt * (1 - smooth(this.awake)) : SLOT_TILT;
+    const tilt = Math.round(((tiltRad * 180) / Math.PI) * 10) / 10;
     if (tilt !== a.tilt) {
       a.tilt = tilt;
       this.astre.style.setProperty('--base-tilt', `${tilt}deg`);

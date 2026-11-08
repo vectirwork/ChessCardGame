@@ -3,6 +3,7 @@
 import { forwardRef } from 'react';
 import type { ReactNode } from 'react';
 import { Board, BoardHandle } from '../components/Board';
+import { matedKing } from '../components/mate';
 import type { Color, Move, PieceType } from '../../shared/chess';
 import { kingSquare } from '../../shared/chess';
 import { GameState, sideInCheck } from '../../shared/game';
@@ -96,6 +97,7 @@ export const BoardStage = forwardRef<BoardHandle, Props>(function BoardStage(pro
           onMove={props.onMove}
           lastMove={props.lastMove}
           check={checkOf(state)}
+          mated={matedKing(state)}
           effects={state.effects}
           targets={props.targets}
           targetHue={props.targetHue}

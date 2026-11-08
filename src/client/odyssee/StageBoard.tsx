@@ -8,6 +8,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Board } from '../components/Board';
 import type { BoardHandle } from '../components/Board';
+import { MATE_FALL_MS, matedKing } from '../components/mate';
 import { CARDS, cardsOf, isCardId } from '../../shared/cards';
 import type { CardId, Catalog } from '../../shared/cards';
 import { VALUE, fileOf, rankOf } from '../../shared/chess';
@@ -342,7 +343,8 @@ export const StageBoard = memo(function StageBoard({ act, catalog, theme, resetS
         }
         const s = sRef.current;
         if (s.result || s.ply > 44) {
-          await wait(900);
+          // Un mat se montre : le roi tombe (Board, mated), reste couché un instant, puis la partie repart à zéro
+          await wait(s.result?.reason === 'checkmate' ? MATE_FALL_MS + 600 : 900);
           apply(fresh(), epochRef.current);
           continue;
         }
@@ -409,6 +411,7 @@ export const StageBoard = memo(function StageBoard({ act, catalog, theme, resetS
       theme={theme}
       effects={state.effects}
       lastMove={lastMove}
+      mated={matedKing(state)}
       hidden={hidden}
       locked
       coords={false}

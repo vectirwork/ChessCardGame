@@ -515,6 +515,165 @@
   }
 }
 
+/* Échec et mat (Board, prop `mated`) : le roi vacille (0,4 s), bascule de 90° autour de son pied en accélérant, rebondit
+   deux fois et reste couché dans sa case. L'image passe dans .pi-fall, à l'intérieur de .pi : la chute se fait dans le
+   plan de .pi, qui garde sa propre rotation (pièces redressées sur l'échiquier incliné, is-tilting), et son ombre
+   portée suit la pièce couchée. Seuls rotate et translate bougent (compositeur) ; l'état couché est la règle de base,
+   l'animation n'y ajoute que le trajet : sans elle (mouvement réduit), le roi est couché d'emblée, et une fois finie
+   il ne reste qu'une rotation 2D peinte avec le reste, sans calque à part.
+   Géométrie (SVG 100 × 100, pieces.ts) : le roi occupe x 22 à 78, y 3,5 à 90 ; pivot au pied (50 %, 88 %). Couché
+   vers la droite, son cadre a pour centre (91,25 ; 88) : translate -41 % -34 % le ramène au milieu de la case, un
+   peu bas (50 ; 54), couché sur y 26 à 82 et x 7 à 94. En cours de chute, la tête ne dépasse pas x ≈ 98 : le roi ne
+   sort jamais de sa case. Vers la gauche, tout est en miroir. */
+.pi-fall {
+  /* Positionnée, comme la poussière : peinte après elle, donc devant */
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  transform-origin: 50% 88%;
+}
+.piece.fall-r .pi-fall {
+  rotate: 90deg;
+  translate: -41% -34%;
+  animation: pi-fall-r 1.25s;
+}
+.piece.fall-l .pi-fall {
+  rotate: -90deg;
+  translate: 41% -34%;
+  animation: pi-fall-l 1.25s;
+}
+/* Vacillement (0 à 32 %), chute en accélérant (jusqu'à 67 % : l'impact, à 0,84 s), deux rebonds de la tête autour du
+   pied, de plus en plus petits. La translation suit la rotation (même courbe) : le roi se recentre en tombant. */
+@keyframes pi-fall-r {
+  0% {
+    rotate: 0deg;
+    translate: 0% 0%;
+    animation-timing-function: ease-in-out;
+  }
+  9% {
+    rotate: -6deg;
+    animation-timing-function: ease-in-out;
+  }
+  19% {
+    rotate: 5deg;
+    animation-timing-function: ease-in-out;
+  }
+  27% {
+    rotate: -3deg;
+    animation-timing-function: ease-in-out;
+  }
+  32% {
+    rotate: 2deg;
+    translate: 0% 0%;
+    animation-timing-function: cubic-bezier(0.45, 0.05, 0.8, 0.35);
+  }
+  67% {
+    rotate: 90deg;
+    translate: -41% -34%;
+    animation-timing-function: cubic-bezier(0.25, 0.6, 0.5, 1);
+  }
+  76% {
+    rotate: 80deg;
+    animation-timing-function: cubic-bezier(0.5, 0, 0.75, 0.4);
+  }
+  84% {
+    rotate: 90deg;
+    animation-timing-function: cubic-bezier(0.25, 0.6, 0.5, 1);
+  }
+  90% {
+    rotate: 87deg;
+    animation-timing-function: cubic-bezier(0.5, 0, 0.75, 0.4);
+  }
+  96%,
+  100% {
+    rotate: 90deg;
+    translate: -41% -34%;
+  }
+}
+@keyframes pi-fall-l {
+  0% {
+    rotate: 0deg;
+    translate: 0% 0%;
+    animation-timing-function: ease-in-out;
+  }
+  9% {
+    rotate: 6deg;
+    animation-timing-function: ease-in-out;
+  }
+  19% {
+    rotate: -5deg;
+    animation-timing-function: ease-in-out;
+  }
+  27% {
+    rotate: 3deg;
+    animation-timing-function: ease-in-out;
+  }
+  32% {
+    rotate: -2deg;
+    translate: 0% 0%;
+    animation-timing-function: cubic-bezier(0.45, 0.05, 0.8, 0.35);
+  }
+  67% {
+    rotate: -90deg;
+    translate: 41% -34%;
+    animation-timing-function: cubic-bezier(0.25, 0.6, 0.5, 1);
+  }
+  76% {
+    rotate: -80deg;
+    animation-timing-function: cubic-bezier(0.5, 0, 0.75, 0.4);
+  }
+  84% {
+    rotate: -90deg;
+    animation-timing-function: cubic-bezier(0.25, 0.6, 0.5, 1);
+  }
+  90% {
+    rotate: -87deg;
+    animation-timing-function: cubic-bezier(0.5, 0, 0.75, 0.4);
+  }
+  96%,
+  100% {
+    rotate: -90deg;
+    translate: 41% -34%;
+  }
+}
+/* Poussière à l'impact : une bouffée pâle derrière le bas du roi couché, qui s'étale et s'efface (opacity et
+   transform, une seule animation). Invisible au repos (opacity 0), avant comme après. .pi, qui porte un filtre, est
+   le bloc conteneur et le contexte d'empilement : la bouffée reste dans son plan, sous .pi-fall. */
+.piece.is-mated .pi::before {
+  content: '';
+  position: absolute;
+  left: 2%;
+  right: 2%;
+  top: 68%;
+  height: 24%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 248, 230, 0.75), rgba(215, 196, 165, 0.35) 60%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  animation: pi-dust 0.6s ease-out 0.8s;
+}
+@keyframes pi-dust {
+  0% {
+    opacity: 0;
+    transform: scale(0.45, 0.6);
+  }
+  18% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.2, 1.05);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .piece.is-mated .pi-fall,
+  .piece.is-mated .pi::before {
+    animation: none;
+  }
+}
+
 /* États magiques */
 .piece.frozen .pi {
   filter: drop-shadow(0 0 6px rgba(150, 230, 255, 0.95)) saturate(0.4) brightness(1.15) hue-rotate(160deg);

@@ -9,6 +9,7 @@ import type { Effect } from '../../shared/game';
 import { CARDS } from '../../shared/cards';
 import type { CardId } from '../../shared/cards';
 import { boardStyle } from '../../shared/catalog';
+import { fallSide } from './mate';
 import { pieceUrl } from './pieces';
 import { fullmoveOf, premoveDests, virtualBoard } from './premoves';
 import type { Premove } from './premoves';
@@ -29,6 +30,12 @@ interface Props {
   onMove?: (from: number, to: number, promo?: PieceType) => void;
   lastMove?: { from: number; to: number } | null;
   check?: number | null;
+  /**
+   * Échec et mat : case du roi maté (mate.ts, matedKing). Il vacille, bascule et reste couché sur sa case, à l'opposé
+   * de la pièce qui vient de jouer (fallSide) ; il se relève dès que la prop change (nouvelle partie, autre position).
+   * Le roi couché n'a un élément de plus (.pi-fall) que pendant ce temps : rien ne change pour les autres pièces.
+   */
+  mated?: number | null;
   effects?: Effect[];
   /** Mode ciblage d'une carte : cases cliquables. */
   targets?: number[] | null;
@@ -67,8 +74,8 @@ function xy(sq: number, o: Color) {
 
 export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, ref) {
   const {
-    pos, orientation, theme, legal = [], onMove, lastMove, check, effects = [], targets, targetHue = 200, chosen = [],
-    onTarget, hidden, locked, coords = true, premove, onPremoves,
+    pos, orientation, theme, legal = [], onMove, lastMove, check, mated = null, effects = [], targets, targetHue = 200,
+    chosen = [], onTarget, hidden, locked, coords = true, premove, onPremoves,
   } = props;
   const boardRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -406,6 +413,10 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
     }
   }
 
+  // Roi maté : côté de la chute à l'écran (+1 : vers la droite). fallSide raisonne en colonnes ; vus des Noirs, les
+  // colonnes vont de droite à gauche.
+  const fall = mated !== null ? fallSide(mated, lastMove?.to) * (orientation === 'w' ? 1 : -1) : 0;
+
   const boardEl = boardRef.current;
   const dragOffset = (() => {
     if (!drag?.moved || !boardEl) return null;
@@ -445,12 +456,20 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
             if (dragging) cls.push('dragging');
             // Pièce qui sera prise si l'on lâche ici
             if (drag?.moved && hover === sq && !dragging && state === 'idle' && dests.get(sq)) cls.push('is-prey');
+            // Roi maté : l'image passe dans un élément intérieur, qui tombe dans le plan de .pi. Ainsi la chute se
+            // compose avec la rotation qui redresse .pi sur l'échiquier incliné (board.css, is-tilting) sans y toucher.
+            // Une pièce cachée (sort en cours) tombe quand elle réapparaît.
+            const fallen = mated === sq && p.t === 'k' && state !== 'vanish';
+            if (fallen) cls.push('is-mated', fall > 0 ? 'fall-r' : 'fall-l');
             const transform = dragging && dragOffset
               ? `translate(${dragOffset.x}px, ${dragOffset.y}px)`
               : `translate(${x * 100}%, ${y * 100}%)`;
+            const image = { backgroundImage: pieceUrl(p.c, p.t) };
             return (
               <div key={p.id} className={cls.join(' ')} style={{ transform }} data-piece={p.id} data-at={sq}>
-                <div className="pi" style={{ backgroundImage: pieceUrl(p.c, p.t) }} />
+                <div className="pi" style={fallen ? undefined : image}>
+                  {fallen && <div className="pi-fall" style={image} />}
+                </div>
               </div>
             );
           })}

@@ -29,6 +29,7 @@ import { emitAck, getSocket } from '../socket';
 import type { CardInfo, GameState, Result } from '../../shared/game';
 import { checkSquare } from '../components/Board';
 import type { BoardHandle } from '../components/Board';
+import { matedKing } from '../components/mate';
 import { playCardSound, playSound } from '../sound';
 import { useVfx } from '../vfx/useVfx';
 import { castSafely } from './castSafely';
@@ -625,6 +626,7 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
       onMove: (from: number, to: number, promo?: PieceType) => void onMove(from, to, promo),
       lastMove,
       check: state.result ? null : checkSquare(state.pos, sideInCheck(state) ? state.pos.turn : null),
+      mated: matedKing(state),
       effects: state.effects,
       targets: options,
       targetHue: selectedDef?.hue,

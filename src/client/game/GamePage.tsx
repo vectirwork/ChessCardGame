@@ -17,6 +17,7 @@ import { RESULT_TEXT, cardOptions, cardPlayable, catalogOf, legalMovesOf, playMo
 import type { Ack, GameUpdate, GameView, JoinReply } from '../../shared/protocol';
 import { EMOTES } from '../../shared/protocol';
 import { Board, BoardHandle, checkSquare } from '../components/Board';
+import { MATE_FALL_MS, matedKing } from '../components/mate';
 import { Modal, Spinner } from '../components/Layout';
 import { rememberView } from '../features/history';
 import { castSafely } from '../odyssee/castSafely';
@@ -230,7 +231,9 @@ export default function GamePage() {
           if (ev.type === 'start') playSound('start');
           if (ev.type === 'end') {
             playSound('end');
-            setTimeout(() => setShowEnd(true), 700);
+            // Mat : la carte de fin (sur l'échiquier, ou plein écran sur téléphone) attend que le roi soit tombé
+            const mate = u.view.state.result?.reason === 'checkmate';
+            setTimeout(() => setShowEnd(true), mate ? MATE_FALL_MS + 500 : 700);
           }
         }
       }
@@ -315,6 +318,7 @@ export default function GamePage() {
     return null;
   }, [state]);
   const check = state && !state.result ? checkSquare(state.pos, sideInCheck(state) ? state.pos.turn : null) : null;
+  const mated = state ? matedKing(state) : null;
   const myHand = useMemo(() => (you && state ? known(state.hands[you]) : []), [you, state]);
   const playable = useMemo(
     () =>
@@ -718,6 +722,7 @@ export default function GamePage() {
         onMove={onMove}
         lastMove={lastMove}
         check={check}
+        mated={mated}
         effects={state.effects}
         targets={options}
         targetHue={selectedDef?.hue}

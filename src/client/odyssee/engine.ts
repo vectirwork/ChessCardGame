@@ -575,8 +575,23 @@ export class Engine {
     this.skyAnims = [];
     this.dropAstreNative();
     this.native = false;
-    for (const el of this.skies) el.style.visibility = '';
+    for (const el of this.skies) {
+      el.style.visibility = '';
+      el.classList.remove('o-sky-live');
+    }
     this.skyShown = [];
+  }
+
+  /**
+   * Ciel montré (ordinateur, fondus écrits par le script) : dans son propre calque tant qu'il est visible, son opacité
+   * change sans repeindre ni retramer le calque des ciels (un dégradé plein écran retramé à chaque image d'un fondu,
+   * mesuré). Un ciel transparent ou recouvert par un ciel opaque n'est ni peint ni composé (comme en mode natif).
+   */
+  private liveSky(i: number, on: boolean) {
+    if (this.skyShown[i] === on) return;
+    this.skyShown[i] = on;
+    this.skies[i].style.visibility = on ? '' : 'hidden';
+    this.skies[i].classList.toggle('o-sky-live', on);
   }
 
   /** Ciel montré (mode natif) : son fondu est une animation, créée quand il apparaît. */
@@ -1135,11 +1150,16 @@ export class Engine {
       const sc = this.scenes[i];
       if (!sc) continue;
       const k = mobile ? smooth(clamp01((y - (sc.start - vh * 0.6)) / (vh * 0.6))) : smooth(clamp01((y - (sc.start - vh * 1.0)) / (vh * 0.9)));
-      if (!native) this.skies[i].style.opacity = k.toFixed(3);
-      else this.showSky(i, k > 0 && !covered);
+      if (!native) {
+        this.skies[i].style.opacity = k.toFixed(3);
+        this.liveSky(i, k > 0 && !covered);
+      } else this.showSky(i, k > 0 && !covered);
       if (k >= 1) covered = true;
     }
-    if (native && decor) this.showSky(0, !covered);
+    if (decor) {
+      if (native) this.showSky(0, !covered);
+      else this.liveSky(0, !covered);
+    }
 
     // Échiquier
     // Vol joué par le compositeur (fly) : rien à écrire de l'échiquier tant qu'il dure ; à l'arrivée de gameMix, les

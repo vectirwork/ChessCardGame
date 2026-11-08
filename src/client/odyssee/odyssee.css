@@ -56,6 +56,17 @@ html.ody-home #root {
   inset: 0;
   opacity: 0;
 }
+/* Ordinateur : ciel visible dans son propre calque (engine.ts, liveSky) ; son fondu ne retrame plus le calque des
+   ciels à chaque image */
+.ody .o-sky-layer.o-sky-live {
+  will-change: opacity;
+}
+/* Fond fixe de la page, entièrement caché par le ciel de l'accueil (opaque, fixe, plein écran). Un fond « fixed »
+   repeint toute la fenêtre à chaque image de défilement (mesuré à l'ordinateur : la moitié de la tramée de la descente) */
+html.ody-home body {
+  background-image: none;
+  background-attachment: scroll;
+}
 .ody .o-sky-0 {
   opacity: 1;
   background:
@@ -3502,11 +3513,6 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
       url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.045'/%3E%3C/svg%3E"),
       radial-gradient(120% 90% at 50% 50%, transparent 55%, rgba(0, 0, 4, 0.55) 100%);
     background-size: 220px 220px, auto;
-  }
-  /* Fond fixe de la page, entièrement caché par le ciel de l'accueil */
-  html.ody-home body {
-    background-image: none;
-    background-attachment: scroll;
   }
   /* Voile sombre derrière le titre d'un lieu : présent d'emblée (il apparaissait en fondu dans un calque temporaire
      large comme l'écran, retramé ensuite dans le texte, d'où des bandes rectangulaires) */

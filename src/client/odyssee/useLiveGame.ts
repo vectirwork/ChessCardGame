@@ -177,7 +177,9 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
   const them = opposite(me);
   const meRef = useRef(me);
   meRef.current = me;
-  const vfx = useVfx(armed ? wrapEl : null, PLAYER);
+  // Même scène 3D que la démonstration de la descente (un seul contexte WebGL pour l'accueil) : hors mode immersif, la
+  // partie la lui cède (une fois ses sorts finis) et la reprend ensuite (useVfx)
+  const vfx = useVfx(armed ? wrapEl : null, PLAYER, 'odyssee-stage', !active);
   useEffect(() => {
     if (vfx) vfx.stage.setOrientation(me, stateRef.current.effects, stateRef.current.pos);
   }, [vfx, me]);

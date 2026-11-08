@@ -2,10 +2,12 @@
 import * as THREE from 'three';
 import type { CardInfo, Effect } from '../../shared/game';
 import type { SkinStyle } from '../../shared/catalog';
+import { skinStyle } from '../../shared/catalog';
 import { CARDS } from '../../shared/cards';
 import type { CardId } from '../../shared/cards';
+import { Particles } from './particles';
 import { Cine, Fx, Marker, VfxStage, disposeObject, ease } from './stage';
-import { bandTexture, beamTexture, flourishTexture, softDiskTexture } from './textures';
+import { bandTexture, beamTexture, flourishTexture, particleTexture, softDiskTexture } from './textures';
 
 const C = (hex: string) => new THREE.Color(hex);
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
@@ -1241,4 +1243,40 @@ function riftMarker(stage: VfxStage, e: Effect, skin: SkinStyle, square: number)
       };
     },
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Préparation au repos (VfxStage.warm)
+
+/**
+ * Un objet témoin par programme de dessin des sorts des Pouvoirs (la partie, l'accueil) : three.js choisit le programme
+ * d'après la classe du matériau, ses options (texture, double face, ombrage plat) et les attributs de la géométrie
+ * (normales des maillages ; aucune pour les arêtes et les particules). Les témoins sont faits avec les mêmes briques
+ * que les sorts, sans tirage aléatoire (les sorts gardent la même suite de hasard). Jamais affichés. Le dôme du
+ * Bouclier et le bloc du Gel (cartes historiques du Duel) ne sont pas préparés : ils se compilent à leur premier sort.
+ */
+export function warmObjects(): THREE.Object3D[] {
+  const plane = () => new THREE.PlaneGeometry(1, 1);
+  const white = C('#ffffff');
+  return [
+    // Ornements, ondes, éclairs, horloge (mélange additif, double face, avec ou sans texture)
+    new THREE.Mesh(plane(), additive(white)),
+    new THREE.Mesh(plane(), additive(white, { map: bandTexture() })),
+    // Brûlure, lune, gouffre (mélange normal, une face) ; nappe d'eau de la Marée (texture, double face)
+    new THREE.Mesh(plane(), new THREE.MeshBasicMaterial({ color: white, transparent: true, depthWrite: false, depthTest: false })),
+    new THREE.Mesh(plane(), new THREE.MeshBasicMaterial({ color: white, map: bandTexture(), transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide })),
+    // Cristaux de l'Ère glaciaire et du Mur de glace (ombrage plat éclairé, arêtes sans normales)
+    crystal(0.5, 0.1, skinStyle(undefined)).group,
+    // Particules (un seul programme pour toutes les formes et tous les mélanges)
+    new Particles(1, particleTexture('glow'), THREE.AdditiveBlending).points,
+  ];
+}
+
+/** Textures des `skins` (ornement, particule) et des bandes et halos communs, dessinées et envoyées au repos. */
+export function warmTextures(skins: SkinStyle[]): (() => THREE.Texture)[] {
+  const out: (() => THREE.Texture)[] = [];
+  for (const f of new Set(skins.map(s => s.flourish))) out.push(() => flourishTexture(f));
+  for (const p of new Set(skins.map(s => s.particle))) out.push(() => particleTexture(p));
+  if (skins.length) out.push(bandTexture, softDiskTexture);
+  return out;
 }

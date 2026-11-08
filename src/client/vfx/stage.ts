@@ -63,6 +63,36 @@ export function renderQuality(dpr = window.devicePixelRatio || 1, modest = modes
   return { ratio: Math.min(dpr, modest ? 1.5 : 2), antialias: true };
 }
 
+/** Dernier défilement (horloge murale : le banc d'essai remplace performance.now). */
+let lastScroll = 0;
+let calmWaiters = 0;
+const onScrollMark = () => {
+  lastScroll = Date.now();
+};
+const SCROLL_EVENTS = ['scroll', 'wheel', 'touchmove'] as const;
+
+/**
+ * Attend un moment calme : fil principal libre (requestIdleCallback, sans délai maximal : sur un fil toujours occupé,
+ * la préparation attend) et aucun défilement depuis 400 ms. Les sorts attendent déjà la fin du défilement pour partir ;
+ * leur préparation aussi, pour ne rien disputer au geste du pouce.
+ */
+function calm(): Promise<void> {
+  if (calmWaiters++ === 0) for (const e of SCROLL_EVENTS) window.addEventListener(e, onScrollMark, { capture: true, passive: true });
+  const w = window as Window & { requestIdleCallback?: (cb: () => void) => number };
+  const idle = (cb: () => void) => (w.requestIdleCallback ? w.requestIdleCallback(cb) : window.setTimeout(cb, 60));
+  return new Promise(resolve => {
+    const check = () => {
+      if (Date.now() - lastScroll < 400) {
+        window.setTimeout(() => idle(check), 200);
+        return;
+      }
+      if (--calmWaiters === 0) for (const e of SCROLL_EVENTS) window.removeEventListener(e, onScrollMark, { capture: true });
+      resolve();
+    };
+    idle(check);
+  });
+}
+
 export const ease = {
   outCubic: (k: number) => 1 - (1 - k) ** 3,
   inCubic: (k: number) => k ** 3,
@@ -105,6 +135,12 @@ export class VfxStage {
   private lastLayout = '';
   private applyTilt = '';
   private pendingIds = new Set<number>();
+  /** Objets témoins de warm() : gardés avec la scène, jamais ajoutés à la scène ni dessinés. */
+  private witnesses: THREE.Object3D[] = [];
+  private warmedPrograms = false;
+  private warmedTextures = new Set<THREE.Texture>();
+  /** Arrêt de la dernière boucle d'images (horloge murale). */
+  private stoppedAt = 0;
   reduced = false;
   /**
    * Garde-fous en temps réel des sorts (impact et fin forcés si la boucle d'animation s'arrête, onglet caché par
@@ -188,7 +224,13 @@ export class VfxStage {
     for (const c of [...this.board.children]) if (!keep.has(c)) disposeObject(c);
     for (const ps of this.systems.values()) ps.clear();
     this.renderer?.clear();
-    if (this.canvas) this.canvas.style.display = 'none';
+    if (this.canvas) {
+      this.canvas.style.display = 'none';
+      // Le calque change d'échiquier (useVfx) : les classes et l'opacité posées par le précédent ne le suivent pas
+      // (« o-live-canvas » le cacherait hors mode immersif ; l'opacité vient du moteur de l'accueil, qui la repose)
+      this.canvas.className = 'vfx-canvas';
+      this.canvas.style.opacity = '';
+    }
     this.shrink();
     this.tilt = 0;
     this.zoom = 1;
@@ -207,6 +249,12 @@ export class VfxStage {
     this.raf = 0;
     window.clearTimeout(this.timer);
     this.timer = 0;
+    this.stoppedAt = Date.now();
+  }
+
+  /** Depuis combien de temps (ms) la scène n'anime plus rien ; 0 tant que sa boucle tourne. */
+  get idleMs() {
+    return this.raf || this.timer ? 0 : Date.now() - this.stoppedAt;
   }
 
   /** Centre d'une case dans le repère de l'échiquier. */
@@ -362,6 +410,7 @@ export class VfxStage {
         this.kick(true);
       }, 500);
     } else {
+      this.stoppedAt = Date.now();
       this.renderer?.clear();
       this.tilt = 0;
       this.zoom = 1;
@@ -382,6 +431,52 @@ export class VfxStage {
     if (!this.renderer || !this.size.w) return;
     this.renderer.setSize(1, 1, false);
     this.size = { w: 0, h: 0 };
+  }
+
+  /**
+   * Prépare au repos ce que le premier sort ferait au milieu de son animation : compilation et liaison des programmes
+   * de dessin des effets (en parallèle si le navigateur le permet, KHR_parallel_shader_compile), leur première
+   * utilisation (lecture de leurs variables, bloquante, mais la compilation est alors finie), puis le dessin et l'envoi
+   * des textures au processeur graphique. Une étape par moment calme, jamais pendant un sort ; rien n'est dessiné ni
+   * affiché.
+   * Les objets témoins (effects.ts, warmObjects) restent en vie avec la scène : three.js libère un programme dès que
+   * plus aucun matériau ne s'en sert, et chaque sort recompilait alors les siens (mesuré sur l'accueil : 2 à 6
+   * liaisons de programmes par sort, le fil principal attendant la fin de chacune).
+   */
+  async warm(objects: THREE.Object3D[], textures: (() => THREE.Texture)[] = []) {
+    const r = this.renderer;
+    if (!r || this.disposed) return;
+    // Moment calme, et la scène n'anime rien
+    const quiet = async () => {
+      do await calm();
+      while (!this.disposed && !this.idleMs);
+    };
+    try {
+      if (!this.warmedPrograms && objects.length) {
+        this.warmedPrograms = true;
+        for (const o of objects) {
+          await quiet();
+          if (this.disposed) return;
+          this.witnesses.push(o);
+          await r.compileAsync(o, this.camera, this.scene);
+          if (this.disposed) return;
+          for (const p of r.info.programs ?? []) {
+            p.getUniforms();
+            p.getAttributes();
+          }
+        }
+      }
+      for (const make of textures) {
+        await quiet();
+        if (this.disposed) return;
+        const t = make();
+        if (this.warmedTextures.has(t)) continue;
+        this.warmedTextures.add(t);
+        r.initTexture(t);
+      }
+    } catch {
+      // Contexte perdu ou programme refusé : rien de préparé, le premier sort compilera comme avant
+    }
   }
 
   /** Une image. Renvoie la suite de la boucle. */
@@ -480,6 +575,13 @@ export class VfxStage {
     if (W !== this.size.w || H !== this.size.h) {
       this.renderer!.setSize(W, H, false);
       this.size = { w: W, h: H };
+      // Taille affichée du calque = celle du tampon et de la caméra (innerWidth × innerHeight). board.css le dimensionne
+      // en 100vw × 100vh ; sur téléphone, 100vh est la hauteur barre d'adresse masquée : barre visible, le calque
+      // débordait sous l'écran et les effets étaient étirés et décalés vers le bas. Ailleurs, les deux sont égales.
+      if (this.canvas) {
+        this.canvas.style.width = `${W}px`;
+        this.canvas.style.height = `${H}px`;
+      }
     }
     const cx = left + w / 2;
     const cy = top + h / 2;
@@ -561,6 +663,8 @@ export class VfxStage {
     for (const ps of this.systems.values()) ps.dispose();
     for (const m of this.markers.values()) disposeObject(m.obj);
     this.markers.clear();
+    for (const o of this.witnesses) disposeObject(o);
+    this.witnesses = [];
     this.renderer?.dispose();
     // Libère le contexte WebGL tout de suite (le navigateur en limite le nombre ; sinon il attend le ramasse-miettes)
     try {

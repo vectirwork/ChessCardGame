@@ -181,6 +181,12 @@ export const StageBoard = memo(function StageBoard({ act, catalog, theme, resetS
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vfx]);
 
+  // Textures du skin du lieu (ornement, particules) dessinées et envoyées au premier moment calme : le premier sort ne
+  // les prépare plus au milieu de son animation (les programmes, eux, sont préparés par useVfx)
+  useEffect(() => {
+    if (vfx) void vfx.stage.warm([], vfx.m.warmTextures([skinStyle(act.skin)]));
+  }, [vfx, act.skin]);
+
   // Nouvelle carte : on réveille la boucle pour lancer le sort tout de suite
   useEffect(() => {
     const changed = actRef.current.key !== act.key;

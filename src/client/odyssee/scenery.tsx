@@ -171,23 +171,8 @@ function Stars({ seed, n, maxR = 1.4, twinkle = 0, color = '#fff', yMax = VH, wa
       delay: r() * 6,
     };
   });
-  // Étoiles fixes : un <path> par couple couleur + opacité, chaque étoile un sous-chemin circulaire (deux demi-arcs)
-  // au centre et au rayon arrondis comme l'étaient ceux des <circle>. Un millier de cercles, créés, stylés, mis en
-  // page et peints un par un, deviennent un peu plus de cinq cents chemins. Les étoiles d'un même groupe ne se
-  // chevauchent pas : l'opacité du remplissage vaut celle qu'avait chaque cercle.
-  const groups = new Map<string, string>();
-  for (const s of stars) {
-    if (s.tw) continue;
-    const cx = Number(f1(s.x));
-    const r = Number(s.rad.toFixed(2));
-    const d2 = Number((2 * r).toFixed(2));
-    const key = `${s.c} ${s.o.toFixed(2)}`;
-    groups.set(key, `${groups.get(key) ?? ''}M${Number((cx - r).toFixed(2))} ${f1(s.y)}a${r} ${r} 0 1 0 ${d2} 0a${r} ${r} 0 1 0 ${-d2} 0z`);
-  }
-  const dots = [...groups].map(([key, d]) => {
-    const [fill, o] = key.split(' ');
-    return <path key={key} d={d} fill={fill} fillOpacity={o} />;
-  });
+  const dot = (s: (typeof stars)[number], i: number) => <circle key={i} cx={f1(s.x)} cy={f1(s.y)} r={s.rad.toFixed(2)} fill={s.c} opacity={s.o.toFixed(2)} />;
+  const fixed = stars.filter(s => !s.tw);
   const tw = stars.filter(s => s.tw);
   // Étoiles qui scintillent : de petits points placés comme dans le dessin (même cadrage « slice » que le SVG, voir
   // .o-tw-dots), chacun avec son animation. Deux SVG de toute la fenêtre (et 3,5 fois sa largeur sur un téléphone)
@@ -201,7 +186,7 @@ function Stars({ seed, n, maxR = 1.4, twinkle = 0, color = '#fff', yMax = VH, wa
   );
   return (
     <>
-      <Svg anchor="xMidYMin">{dots}</Svg>
+      <Svg anchor="xMidYMin">{fixed.map(dot)}</Svg>
       {tw.length > 0 && <TwinkleDots>{tw.map(twinkler)}</TwinkleDots>}
     </>
   );
@@ -252,6 +237,9 @@ type Box = readonly [number, number, number, number];
 
 /** Images précalculées, gardées le temps de la visite : au retour sur l'accueil, l'image est posée d'emblée. */
 const BAKED = new Map<string, string>();
+/** Précalculs lancés (en cours ou finis) : un accueil remonté avant la fin du premier attend celui-ci au lieu d'en
+ *  lancer un second (qui laisserait une image en double, jamais libérée). */
+const BAKING = new Map<string, Promise<string | null>>();
 
 /**
  * Dessin flouté (feGaussianBlur) remplacé, au repos, par son image précalculée. Un flou SVG est recalculé à chaque
@@ -263,28 +251,49 @@ const BAKED = new Map<string, string>();
  * téléphone comme à l'ordinateur). `box` couvre tout ce que le flou montre à l'écran (zone du filtre, ou étendue
  * du flou à 3 écarts-types, celle que Chrome lui donne) : le calque n'est pas plus grand qu'avec le filtre.
  * En cas d'échec (navigateur qui refuse le SVG dans un canevas…), le flou d'origine reste.
+ * `hiddenWhen` : requête média sous laquelle la feuille de style masque le dessin (display: none) ; rien n'est
+ * précalculé tant qu'elle s'applique (le flou n'est pas peint, il ne coûte rien), et le précalcul part si elle cesse
+ * de s'appliquer (téléphone tourné).
  */
-function Baked({ name, box, k, children }: { name: string; box: Box; k: number; children: ReactNode }) {
+function Baked({ name, box, k, hiddenWhen, children }: { name: string; box: Box; k: number; hiddenWhen?: string; children: ReactNode }) {
   const ref = useRef<SVGGElement>(null);
   const [src, setSrc] = useState(() => BAKED.get(name) ?? null);
   useEffect(() => {
     const g = ref.current;
     if (src || !g) return;
     let live = true;
+    let idle = 0;
     // Au repos, juste après le chargement : bien avant que le lieu ne soit peint (il l'est dès le début du
     // défilement), et sans prendre la place du premier affichage
     const run = () => {
-      void bake(g, box, k).then(url => {
-        if (!url) return;
-        BAKED.set(name, url);
-        if (live) setSrc(url);
+      let job = BAKING.get(name);
+      if (!job) {
+        job = bake(g, box, k).then(url => {
+          if (url) BAKED.set(name, url);
+          return url;
+        });
+        BAKING.set(name, job);
+      }
+      void job.then(url => {
+        if (url && live) setSrc(url);
       });
     };
     // Safari n'a pas toujours requestIdleCallback
     const ric = typeof window.requestIdleCallback === 'function';
-    const idle = ric ? window.requestIdleCallback(run, { timeout: 1500 }) : window.setTimeout(run, 200);
+    const schedule = () => {
+      idle = ric ? window.requestIdleCallback(run, { timeout: 1500 }) : window.setTimeout(run, 200);
+    };
+    const mq = hiddenWhen ? window.matchMedia(hiddenWhen) : null;
+    const onChange = () => {
+      if (mq?.matches) return;
+      mq?.removeEventListener('change', onChange);
+      schedule();
+    };
+    if (mq?.matches) mq.addEventListener('change', onChange);
+    else schedule();
     return () => {
       live = false;
+      mq?.removeEventListener('change', onChange);
       if (ric) window.cancelIdleCallback(idle);
       else window.clearTimeout(idle);
     };
@@ -661,7 +670,8 @@ export function ScenePics({ part }: { part: 'back' | 'front' }) {
           <path d="M980 40 L940 190 L985 196 L930 360 L1010 210 L962 204 L1012 40 Z" fill="#f7f1ff" />
         </Svg>
         <Svg anchor="xMidYMin" className="o-bolt o-b2">
-          <Baked name="bolt-2" box={[282, 62, 96, 256]} k={1}>
+          {/* Même requête que dans odyssee.css : sur un téléphone en portrait, ce second éclair n'est pas affiché */}
+          <Baked name="bolt-2" box={[282, 62, 96, 256]} k={1} hiddenWhen="(max-width: 819.98px) and (max-aspect-ratio: 1/1)">
             <path d="M330 80 L310 170 L340 172 L300 300 L360 160 L330 158 L352 80 Z" fill="#ffe6a8" filter="url(#bolt-glow)" />
           </Baked>
           <path d="M330 80 L310 170 L340 172 L300 300 L360 160 L330 158 L352 80 Z" fill="#fff8e6" />

@@ -63,6 +63,36 @@ export function renderQuality(dpr = window.devicePixelRatio || 1, modest = modes
   return { ratio: Math.min(dpr, modest ? 1.5 : 2), antialias: true };
 }
 
+/** Dernier défilement (horloge murale : le banc d'essai remplace performance.now). */
+let lastScroll = 0;
+let calmWaiters = 0;
+const onScrollMark = () => {
+  lastScroll = Date.now();
+};
+const SCROLL_EVENTS = ['scroll', 'wheel', 'touchmove'] as const;
+
+/**
+ * Attend un moment calme : fil principal libre (requestIdleCallback, sans délai maximal : sur un fil toujours occupé,
+ * la préparation attend) et aucun défilement depuis 400 ms. Les sorts attendent déjà la fin du défilement pour partir ;
+ * leur préparation aussi, pour ne rien disputer au geste du pouce.
+ */
+function calm(): Promise<void> {
+  if (calmWaiters++ === 0) for (const e of SCROLL_EVENTS) window.addEventListener(e, onScrollMark, { capture: true, passive: true });
+  const w = window as Window & { requestIdleCallback?: (cb: () => void) => number };
+  const idle = (cb: () => void) => (w.requestIdleCallback ? w.requestIdleCallback(cb) : window.setTimeout(cb, 60));
+  return new Promise(resolve => {
+    const check = () => {
+      if (Date.now() - lastScroll < 400) {
+        window.setTimeout(() => idle(check), 200);
+        return;
+      }
+      if (--calmWaiters === 0) for (const e of SCROLL_EVENTS) window.removeEventListener(e, onScrollMark, { capture: true });
+      resolve();
+    };
+    idle(check);
+  });
+}
+
 export const ease = {
   outCubic: (k: number) => 1 - (1 - k) ** 3,
   inCubic: (k: number) => k ** 3,
@@ -105,7 +135,20 @@ export class VfxStage {
   private lastLayout = '';
   private applyTilt = '';
   private pendingIds = new Set<number>();
+  /** Objets témoins de warm() : gardés avec la scène, jamais ajoutés à la scène ni dessinés. */
+  private witnesses: THREE.Object3D[] = [];
+  private warmedPrograms = false;
+  private warmedTextures = new Set<THREE.Texture>();
+  /** Arrêt de la dernière boucle d'images (horloge murale). */
+  private stoppedAt = 0;
   reduced = false;
+  /**
+   * Famille de l'échiquier qui tient la scène quand elle est partagée (useVfx : vrai pour la partie de l'accueil, faux
+   * pour la démonstration), null sinon. Ce qu'un sort a programmé pour plus tard (later) ne vise la scène que si sa
+   * famille la tient encore : avant le partage, chaque famille avait sa scène, et ces restes ne tombaient jamais sur
+   * l'autre.
+   */
+  family: boolean | null = null;
   /**
    * Garde-fous en temps réel des sorts (impact et fin forcés si la boucle d'animation s'arrête, onglet caché par
    * exemple). Le banc d'essai, qui avance la scène image par image, les coupe.
@@ -126,6 +169,9 @@ export class VfxStage {
       this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, alpha: true, antialias: q.antialias, powerPreference: 'default' });
       this.renderer.setClearColor(0x000000, 0);
       this.renderer.setPixelRatio(q.ratio);
+      // Tampon réduit dès la création, comme après chaque sort (shrink) : sinon il garde sa taille par défaut
+      // (300 × 150, anticrénelé) jusqu'au premier sort, que la scène attende ou non. Le calque est caché d'ici là.
+      this.renderer.setSize(1, 1, false);
       this.renderer.outputColorSpace = THREE.SRGBColorSpace;
       document.body.appendChild(this.canvas);
       this.ok = true;
@@ -188,7 +234,13 @@ export class VfxStage {
     for (const c of [...this.board.children]) if (!keep.has(c)) disposeObject(c);
     for (const ps of this.systems.values()) ps.clear();
     this.renderer?.clear();
-    if (this.canvas) this.canvas.style.display = 'none';
+    if (this.canvas) {
+      this.canvas.style.display = 'none';
+      // Le calque change d'échiquier (useVfx) : les classes et l'opacité posées par le précédent ne le suivent pas
+      // (« o-live-canvas » le cacherait hors mode immersif ; l'opacité vient du moteur de l'accueil, qui la repose)
+      this.canvas.className = 'vfx-canvas';
+      this.canvas.style.opacity = '';
+    }
     this.shrink();
     this.tilt = 0;
     this.zoom = 1;
@@ -203,10 +255,35 @@ export class VfxStage {
 
   /** Arrête la boucle d'images et ses minuteries. */
   private halt() {
+    // Daté seulement si une boucle tournait : attach() et detach() passent ici à chaque changement d'échiquier, et une
+    // scène déjà au repos ne doit pas sembler venir de s'arrêter (useVfx attend qu'elle soit au repos pour la passer)
+    if (this.raf || this.timer) this.stoppedAt = Date.now();
     cancelAnimationFrame(this.raf);
     this.raf = 0;
     window.clearTimeout(this.timer);
     this.timer = 0;
+  }
+
+  /** Depuis combien de temps (ms) la scène n'anime plus rien ; 0 tant que sa boucle tourne. */
+  get idleMs() {
+    return this.raf || this.timer ? 0 : Date.now() - this.stoppedAt;
+  }
+
+  /** La scène a animé quelque chose depuis `t` (horloge murale), ou anime encore. */
+  ranSince(t: number) {
+    return !!(this.raf || this.timer) || this.stoppedAt > t;
+  }
+
+  /**
+   * `fn` dans `ms` millisecondes, en temps réel (éclats différés de la Déflagration, second éclair, arrivée d'un
+   * Présage, garde-fou de l'inclinaison), seulement si la famille `family` (celle qui tient la scène maintenant, par
+   * défaut) la tient encore à ce moment-là. Entre échiquiers d'une même famille (un lieu puis le suivant), rien ne
+   * change ; sans partage, la famille ne change jamais.
+   */
+  later(fn: () => void, ms: number, family = this.family) {
+    window.setTimeout(() => {
+      if (family === this.family) fn();
+    }, ms);
   }
 
   /** Centre d'une case dans le repère de l'échiquier. */
@@ -362,6 +439,7 @@ export class VfxStage {
         this.kick(true);
       }, 500);
     } else {
+      this.stoppedAt = Date.now();
       this.renderer?.clear();
       this.tilt = 0;
       this.zoom = 1;
@@ -382,6 +460,56 @@ export class VfxStage {
     if (!this.renderer || !this.size.w) return;
     this.renderer.setSize(1, 1, false);
     this.size = { w: 0, h: 0 };
+  }
+
+  /**
+   * Prépare au repos ce que le premier sort ferait au milieu de son animation : compilation et liaison des programmes
+   * de dessin des effets (en parallèle si le navigateur le permet, KHR_parallel_shader_compile), leur première
+   * utilisation (lecture de leurs variables, bloquante, mais la compilation est alors finie), puis le dessin et l'envoi
+   * des textures au processeur graphique. Une étape par moment calme, jamais pendant un sort ; rien n'est dessiné ni
+   * affiché.
+   * Les objets témoins (effects.ts, warmObjects) restent en vie avec la scène : three.js libère un programme dès que
+   * plus aucun matériau ne s'en sert, et chaque sort recompilait alors les siens (mesuré sur l'accueil : 2 à 6
+   * liaisons de programmes par sort, le fil principal attendant la fin de chacune).
+   */
+  async warm(objects: THREE.Object3D[], textures: (() => THREE.Texture)[] = []) {
+    const r = this.renderer;
+    if (!r || this.disposed) return;
+    // Moment calme, et la scène n'anime rien (pendant un sort, on repasse un peu plus tard au lieu de demander un
+    // moment libre à chaque image)
+    const quiet = async () => {
+      for (;;) {
+        await calm();
+        if (this.disposed || this.idleMs) return;
+        await new Promise(res => window.setTimeout(res, 250));
+      }
+    };
+    try {
+      if (!this.warmedPrograms && objects.length) {
+        this.warmedPrograms = true;
+        for (const o of objects) {
+          await quiet();
+          if (this.disposed) return;
+          this.witnesses.push(o);
+          await r.compileAsync(o, this.camera, this.scene);
+          if (this.disposed) return;
+          for (const p of r.info.programs ?? []) {
+            p.getUniforms();
+            p.getAttributes();
+          }
+        }
+      }
+      for (const make of textures) {
+        await quiet();
+        if (this.disposed) return;
+        const t = make();
+        if (this.warmedTextures.has(t)) continue;
+        this.warmedTextures.add(t);
+        r.initTexture(t);
+      }
+    } catch {
+      // Contexte perdu ou programme refusé : rien de préparé, le premier sort compilera comme avant
+    }
   }
 
   /** Une image. Renvoie la suite de la boucle. */
@@ -518,7 +646,7 @@ export class VfxStage {
         // Un peu plus tard : l'échiquier prend d'abord la teinte du Climat qui arrive (React réécrit alors ses classes,
         // ce qui effacerait l'ambiance posée par la mise en scène)
         const factory = this.arrivalFactory;
-        window.setTimeout(() => {
+        this.later(() => {
           if (!this.ok || this.disposed) return;
           try {
             factory(this, e, skinStyle(e.skin));
@@ -561,6 +689,8 @@ export class VfxStage {
     for (const ps of this.systems.values()) ps.dispose();
     for (const m of this.markers.values()) disposeObject(m.obj);
     this.markers.clear();
+    for (const o of this.witnesses) disposeObject(o);
+    this.witnesses = [];
     this.renderer?.dispose();
     // Libère le contexte WebGL tout de suite (le navigateur en limite le nombre ; sinon il attend le ramasse-miettes)
     try {

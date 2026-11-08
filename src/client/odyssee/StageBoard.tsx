@@ -42,8 +42,10 @@ const idle = () => performance.now() - lastInput > IDLE_MS;
 
 /** Un sort ne part qu'après ce délai sans défilement : pendant le geste, la scène 3D plein écran et les pièces
  *  dressées (un calque composé chacune) se disputeraient chaque image avec le défilement (téléphones). Un coup de la
- *  démonstration l'attend aussi : son rendu et sa glissade ne prennent rien au geste. */
-const SETTLE_MS = 280;
+ *  démonstration l'attend aussi : son rendu et sa glissade ne prennent rien au geste. Avec une souris (défilement doux de
+ *  Lenis, qui prolonge chaque cran d'environ une seconde), pas d'attente : un lecteur qui défile en continu ne
+ *  traverserait plus un chapitre sans voir son sort. */
+const SETTLE_MS = typeof window !== 'undefined' && window.matchMedia?.('(hover: hover) and (pointer: fine)').matches ? 0 : 280;
 let lastScroll = 0;
 const onScrollInput = () => {
   lastScroll = performance.now();

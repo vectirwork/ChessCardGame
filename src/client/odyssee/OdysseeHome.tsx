@@ -115,6 +115,8 @@ function clearSlides(root: HTMLElement, sel: string) {
 }
 
 const loadStageBoard = () => import('./StageBoard');
+/** Gestes qui font défiler la page (préchargement de la scène 3D au premier d'entre eux). */
+const GESTURES = ['touchmove', 'wheel', 'keydown'] as const;
 const StageBoard = lazy(() => loadStageBoard().then(m => ({ default: m.StageBoard })));
 
 type Mode = 'page' | 'entering' | 'game' | 'leaving';
@@ -362,22 +364,21 @@ export default function OdysseeHome() {
       done = true;
       void loadStageBoard().catch(() => undefined);
     };
+    // Un geste du visiteur (doigt, molette, clavier), pas un défilement quelconque : le retour en haut de page fait par
+    // le routeur (App.tsx) en déclenche un sans que personne n'ait rien touché
     const onScroll = () => {
       go();
       if (!vfx) {
         vfx = true;
         void import('../vfx/index').catch(() => undefined);
       }
-      window.removeEventListener('scroll', onScroll, true);
-      window.removeEventListener('wheel', onScroll, true);
+      for (const ev of GESTURES) window.removeEventListener(ev, onScroll, true);
     };
     const t = window.setTimeout(() => (w.requestIdleCallback ? w.requestIdleCallback(go, { timeout: 3000 }) : go()), 2500);
-    window.addEventListener('scroll', onScroll, { passive: true, capture: true });
-    window.addEventListener('wheel', onScroll, { passive: true, capture: true });
+    for (const ev of GESTURES) window.addEventListener(ev, onScroll, { passive: true, capture: true });
     return () => {
       window.clearTimeout(t);
-      window.removeEventListener('scroll', onScroll, true);
-      window.removeEventListener('wheel', onScroll, true);
+      for (const ev of GESTURES) window.removeEventListener(ev, onScroll, true);
     };
   }, []);
 
@@ -454,10 +455,24 @@ export default function OdysseeHome() {
   useEffect(() => {
     if (sheet) applyTint();
   }, [sheet, applyTint]);
+  // Menu ou lien de l'en-tête : la teinte du lieu tout de suite (le menu la montre, même pendant l'inertie de Lenis)
+  useEffect(() => {
+    const header = document.querySelector('.site-header');
+    if (!header) return;
+    header.addEventListener('pointerdown', applyTint, { capture: true, passive: true });
+    header.addEventListener('focusin', applyTint, { capture: true });
+    return () => {
+      header.removeEventListener('pointerdown', applyTint, { capture: true });
+      header.removeEventListener('focusin', applyTint, { capture: true });
+    };
+  }, [applyTint]);
 
   // ------------------------------------------------------------------------------------------
   // Passage en plein écran et retour
 
+  /** Variante du passage en partie (téléphone ou non), reprise au retour. */
+  const slidePhone = useRef<boolean | null>(null);
+  const leaving = useRef(false);
   const play = useCallback(
     (after?: () => void) => {
       const e = engineRef.current;
@@ -501,6 +516,9 @@ export default function OdysseeHome() {
       // Téléphone : la page glisse sans fondu et le décor ne bouge pas (le rideau les couvre ; un fondu ou un zoom de
       // ces grands groupes de calques coûtait plusieurs passages plein écran à chaque image)
       const phone = isMobile(window.innerWidth);
+      // Gardée pour le retour : un écran tourné pendant la partie ne doit pas changer de variante (le décor resterait
+      // agrandi, puis reviendrait d'un coup)
+      slidePhone.current = phone;
       slides(root, [
         ['.o-curtain-veil', [CURTAIN_OUT, 'translateX(0)'], 1.25 * k, 0],
         ['.o-curtain', [CURTAIN_OUT, 'translateX(0)'], 1.3 * k, 0.1 * k],
@@ -529,7 +547,9 @@ export default function OdysseeHome() {
   const leave = useCallback(() => {
     const e = engineRef.current;
     const root = rootRef.current;
-    if (!e || !root || modeRef.current !== 'game') return;
+    // Un second « Retour » pendant les 0,42 s qui précèdent le changement de mode relancerait tous les glissements
+    if (!e || !root || modeRef.current !== 'game' || leaving.current) return;
+    leaving.current = true;
     const k = reduced ? 0.25 : 1;
     gsap.to(root.querySelectorAll('.gs-fan-slot'), { y: 360, opacity: 0, duration: 0.5 * k, ease: 'expo.in', stagger: 0.04 * k });
     gsap.to(root.querySelectorAll('.gs-in, .gs-toast, .gs-opponent'), { opacity: 0, y: 14, duration: 0.35 * k, ease: 'power2.in' });
@@ -542,6 +562,7 @@ export default function OdysseeHome() {
       const toDemo = placeRef.current !== 0;
       const tl = gsap.timeline({
         onComplete: () => {
+          leaving.current = false;
           setMode('page');
           document.documentElement.classList.remove('is-immersive');
           // Page et décor reviennent à leur style propre (le rideau, caché, garde sa position hors de l'écran)
@@ -565,7 +586,7 @@ export default function OdysseeHome() {
         if (out) liveFade.current = fade(live, 1, 0, 600 * k, 100 * k, out, t0);
         else tl.to(live, { opacity: 0, duration: 0.6 * k, ease: 'power2.inOut' }, 0.1 * k);
       }
-      const phone = isMobile(window.innerWidth);
+      const phone = slidePhone.current ?? isMobile(window.innerWidth);
       slides(root, [
         ['.o-curtain', ['translateX(0)', CURTAIN_OUT], 1.2 * k, 0],
         ['.o-curtain-veil', ['translateX(0)', CURTAIN_OUT], 1.25 * k, 0.08 * k],
@@ -731,7 +752,9 @@ export default function OdysseeHome() {
     if (modeRef.current === 'page') wake(false);
   };
   const onAstreDownCapture = (e: RPointerEvent) => {
-    setIntent(true);
+    // Au doigt, poser le doigt sur l'échiquier de démonstration sert souvent à faire défiler : la scène 3D de la partie
+    // n'est préparée qu'au toucher de l'échiquier du héros (le bouton qui couvre la démonstration appelle play())
+    if (e.pointerType === 'mouse' || placeRef.current === 0) setIntent(true);
     const en = engineRef.current;
     if (!en || modeRef.current !== 'page' || placeRef.current !== 0) return;
     // Souris : un clic sur un plateau encore incliné tomberait à côté ; on redresse d'abord
@@ -993,9 +1016,11 @@ export default function OdysseeHome() {
           </div>
           {showHit && (
             <button
-              // Lieux II à VI : tout le plateau de démonstration ouvre la partie (« Touchez l'échiquier pour jouer ») ;
-              // sur l'échiquier du héros, le bouton reste un accès clavier sans surface (les pré-coups s'y jouent)
-              className={`o-astre-hit ${place !== 0 ? 'is-cover' : ''}`}
+              // Lieux II à VI : tout le plateau de démonstration ouvre la partie (« Touchez l'échiquier pour jouer »).
+              // Héros : aussi quand la légende promet de reprendre ou de revoir la partie (partie finie, ou l'Oracle au
+              // trait : il ne joue pas sur la page) ; sinon le bouton reste un accès clavier sans surface (coups et
+              // pré-coups s'y jouent, en direct les coups adverses arrivent sur la page)
+              className={`o-astre-hit ${place !== 0 || !!g.result || (inProgress && !g.myTurn && !g.duel) ? 'is-cover' : ''}`}
               onClick={() => play()}
               onFocus={() => setHover(true)}
               onBlur={() => setHover(false)}

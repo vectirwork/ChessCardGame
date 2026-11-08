@@ -9,12 +9,26 @@
 // ScrollTimeline, jouées par le compositeur avec le défilement lui-même ; le script ne gère plus que les bascules
 // (lieu, chapitre, calques montrés ou cachés, emplacement de l'échiquier).
 import gsap from 'gsap';
-import Lenis from 'lenis';
+import type Lenis from 'lenis';
 import { PLACES } from './data';
 import type { PoseKey } from './data';
 import { gameLayout, isMobile } from './shell/layout';
 
 export { gameLayout, isMobile };
+
+/**
+ * Lenis ne sert qu'à adoucir la molette d'une souris. Sur un écran tactile, il ne ferait rien d'utile et ses écouteurs
+ * touchstart/touchmove non passifs (sur window) feraient attendre le fil principal à chaque début de geste : il n'y est
+ * ni créé ni téléchargé (≈ 19 Ko de moins sur le chemin critique d'un téléphone). Avec un pointeur fin, son module est
+ * demandé dès l'évaluation de ce module, en parallèle du rendu de l'accueil ; le moteur fonctionne sans lui (défilement
+ * natif) le temps qu'il arrive.
+ */
+const lenisModule: Promise<typeof import('lenis') | null> | null =
+  typeof window !== 'undefined' &&
+  !(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false) &&
+  (window.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? true)
+    ? import('lenis').catch(() => null)
+    : null;
 
 export interface Pose {
   x: number;
@@ -203,6 +217,9 @@ export class Engine {
   /** Mode natif : ciels montrés (les autres sont cachés : ni peints ni composés). */
   private skyShown: (boolean | null)[] = [];
   private touchable = true;
+  /** Défilement figé (feuille ouverte, partie) : repris par Lenis s'il arrive après. */
+  private locked = false;
+  private destroyed = false;
   private tick = (time: number) => {
     if (this.lenis) {
       if (this.resync) this.lenis.time = time * 1000;
@@ -230,13 +247,10 @@ export class Engine {
     private hooks: EngineHooks,
   ) {
     this.reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    // Lenis ne sert qu'à adoucir la molette d'une souris. Sur un écran tactile, il ne ferait rien d'utile et ses
-    // écouteurs touchstart/touchmove non passifs (sur window) feraient attendre le fil principal à chaque début de
-    // geste : le défilement est alors entièrement natif.
-    // autoResize: false : Lenis ne relit plus la hauteur de la page à chaque changement de taille du contenu (mise
-    // en page forcée, ≈ 120 ms au chargement) ; measure() la lui donne, au moment où la mise en page est déjà faite
-    const finePointer = window.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? true;
-    if (!this.reduced && finePointer) this.lenis = new Lenis({ lerp: 0.085, wheelMultiplier: 1, smoothWheel: true, autoResize: false });
+    // Lenis (pointeur fin seulement, voir lenisModule) : créé dès que son module est là
+    void lenisModule?.then(m => {
+      if (m && !this.destroyed && !this.reduced) this.attachLenis(m.default);
+    });
     gsap.ticker.lagSmoothing(0);
     window.addEventListener('pointermove', this.onPointer, { passive: true });
     window.addEventListener('resize', this.onResize);
@@ -270,6 +284,21 @@ export class Engine {
     this.wake();
   };
 
+  /** Lenis arrivé (pointeur fin) : il prend la molette, dans l'état de verrouillage où se trouve la page. */
+  private attachLenis(L: typeof Lenis) {
+    // autoResize: false : Lenis ne relit plus la hauteur de la page à chaque changement de taille du contenu (mise
+    // en page forcée, ≈ 120 ms au chargement) ; measure() la lui donne, au moment où la mise en page est déjà faite
+    const lenis = new L({ lerp: 0.085, wheelMultiplier: 1, smoothWheel: true, autoResize: false });
+    this.lenis = lenis;
+    if (this.locked) {
+      // Verrou posé avant son arrivée : il passe de la classe de repli à celle de Lenis (même règle)
+      lenis.stop();
+      document.documentElement.classList.remove('o-locked');
+    }
+    this.resync = true;
+    this.markDirty();
+  }
+
   /** Les nuées du lieu suivant ne passent qu'après le premier affichage (elles ne servent qu'à la descente). */
   private onLoad = () => {
     this.imagesTimer = window.setTimeout(() => {
@@ -299,6 +328,7 @@ export class Engine {
   }
 
   destroy() {
+    this.destroyed = true;
     this.sleep();
     window.removeEventListener('pointermove', this.onPointer);
     window.removeEventListener('resize', this.onResize);
@@ -690,6 +720,7 @@ export class Engine {
   }
 
   lock(on: boolean) {
+    this.locked = on;
     if (this.lenis) {
       if (on) this.lenis.stop();
       else this.lenis.start();

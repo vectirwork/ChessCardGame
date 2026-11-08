@@ -274,3 +274,56 @@ des sorts y est calculée par le processeur, déjà ralenti ×4, et fait à elle
 situation égale (avec ou sans sort à l'écran), chaque image est nettement plus souvent à l'heure qu'en ligne.
 
 Rien n'a encore été vérifié sur le vrai Pixel 7.
+
+## 8 novembre, soir : la version PC
+
+> « C'est pas mal sur téléphone !! Et sur PC ? Je voudrais que tu transposes ce qui est transposable sur la version PC
+> aussi. »
+
+Mesures d'abord (banc ordinateur : 1440 × 900, molette avec Lenis, processeur ×4, sans vraie carte graphique), puis
+audit en lecture seule (trois angles, un sceptique par angle, une synthèse). Ce qui coûtait sur PC :
+- le fond « fixed » de la page (entièrement caché par le ciel de l'accueil) faisait repeindre toute la fenêtre à
+  chaque image de défilement, et chaque fondu de ciel retramait le calque des ciels en plein écran ;
+- des animations en boucle restaient « en cours » sans être visibles : le point « en direct » de la légende cachée de
+  l'échiquier, et le contenu des lieux éteints d'un coup (leur mise en pause n'était jamais calculée). Invisibles,
+  elles ne sont pas confiées à la carte graphique : le fil principal les faisait avancer et refaisait la mise en
+  calques de toute la page à chaque image (téléphone compris) ;
+- l'échelle de l'échiquier, réécrite à chaque image des traversées, restylait tout l'astre (300 à 500 éléments) alors
+  qu'elle ne sert qu'à la pièce qu'on glisse ;
+- l'échiquier jouable était réconcilié à chaque rendu de l'accueil (sa mémoïsation ne servait à rien) ;
+- les liens passant sous une souris immobile pendant une glissade préchargeaient leur page en plein geste ; three.js
+  (≈ 600 Ko) était analysé au premier cran de molette, en pleine glissade.
+
+- [x] Fond fixe retiré sur l'accueil à toutes les tailles ; ciel visible dans son propre calque, ciels recouverts ni
+  peints ni composés. Tramée d'une descente Observatoire → Forêt : 4,8 s → 1,3 s.
+- [x] Lieu éteint : ses animations sont mises en pause pendant une image où son contenu est encore stylé, puis il est
+  masqué ; point « en direct » de la légende cachée en pause. Mise en calques au Bazar pendant une glissade :
+  1 040 → 5 ms.
+- [x] Échelle de l'échiquier écrite seulement là où l'on joue (héros, partie) ; légende cachée immobile ; propriétés
+  de l'échiquier jouable mémoïsées ; halo de survol dans son propre composant.
+- [x] Préchargement des pages au vrai mouvement de la souris (ou à l'appui) ; scène 3D préparée à la première pause du
+  lecteur (sans pause dans les 3 s, chargée comme avant).
+- [x] Fondus des fonds et des anneaux dans leur calque le temps du fondu (sans gain mesurable au banc, gardé : il
+  évite des retramages sur les grands écrans).
+
+Mesure, même parcours à la molette, version en ligne puis cette version (fil principal, sur le passage) :
+
+| | Sortie du héros | Chapitres | Pics → Sablier | Bazar |
+|---|---|---|---|---|
+| Calcul des styles | 1,71 → 1,08 s | 1,69 → 1,18 s | 1,52 → 0,86 s | 0,29 → 0,23 s |
+| Mise en calques | 1,17 → 1,04 s | 1,28 → 1,05 s | 1,27 → 0,59 s | 1,05 → 0,00 s |
+| Script (avec ce qu'il déclenche) | 3,25 → 2,27 s | 2,32 → 2,35 s | 1,54 → 1,30 s | stable |
+| Peinture | 0,59 → 0,55 s | 0,69 → 0,57 s | 0,51 → 0,36 s | — |
+
+Captures figées au même instant, avant / après, ordinateur et téléphone : identiques (au plus quelques pixels
+d'anticrénelage ; seules les cartes tirées au hasard dans la main diffèrent).
+
+Pas transposé : le décor joué par le compositeur (ScrollTimeline) comme sur téléphone. Avec Lenis, le fil principal
+travaille de toute façon à chaque image : le gain serait faible pour un gros chantier. Il prendrait tout son sens sans
+Lenis (défilement natif du navigateur), mais la molette perdrait sa douceur : décision du fondateur.
+
+À proposer (changent l'image de façon imperceptible, déjà faits sur téléphone) : cartes inclinées en 3D seulement au
+survol (≈ 11 calques permanents de moins), grain dans le calque de la vignette (un calque plein écran de moins), rayons
+du Seuil sans fusion « screen ».
+
+Rien n'a été vérifié sur un vrai PC.

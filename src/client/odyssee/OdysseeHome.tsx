@@ -847,15 +847,16 @@ export default function OdysseeHome() {
           <div className="o-astre-float">
             <div className="o-astre-wake">
               <div className="o-astre-board">
+                {/* Une seule instance pour les lieux II à VI, remise à neuf à chaque lieu (resetSignal) pendant que
+                    l'échiquier traverse la nuée. Téléphone : en pause tant qu'il n'est pas posé dans le texte */}
                 {place !== 0 && mode === 'page' && (
                   <Suspense fallback={null}>
                     <StageBoard
-                      key={placeDef.id}
                       act={act}
                       catalog={catalog}
                       theme={stageTheme}
-                      resetSignal={0}
-                      paused={mode !== 'page' || transit}
+                      resetSignal={place}
+                      paused={mode !== 'page' || transit || (mobile && !docked)}
                       tilt={castTilt}
                       still={reduced}
                       playSignal={playSignal}

@@ -4,7 +4,7 @@
 import { Suspense, lazy, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MutableRefObject, PointerEvent as RPointerEvent, ReactNode } from 'react';
 import { createPortal, flushSync } from 'react-dom';
-import { prewarmVfx } from '../vfx/useVfx';
+import { prewarmVfx, releaseVfx } from '../vfx/useVfx';
 import { Link, useNavigate } from 'react-router-dom';
 import gsap from 'gsap';
 import { CARDS, CATALOGS, offeredCatalog } from '../../shared/cards';
@@ -390,7 +390,8 @@ export default function OdysseeHome() {
     // Ordinateur (souris) : la scène 3D attend la première pause du lecteur (400 ms sans molette, défilement ni
     // touche), puis un moment libre ; elle est alors préparée en entier (contexte WebGL, programmes, textures des
     // lieux), hors de toute glissade. Avec Lenis, l'analyse de three.js (≈ 600 Ko) en plein geste figeait le
-    // défilement lui-même. Sans pause dans les 3 s, le module est chargé quand même (comme avant, juste plus tard)
+    // défilement lui-même. Sans pause dans les 3 s, elle est préparée quand même (les programmes se compilent aux
+    // moments calmes qui suivent). Le plus souvent, elle l'est déjà : au repos après le chargement (atRest)
     const fine = (window.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? false) && !reduced;
     const CALM = ['wheel', 'scroll', 'keydown'] as const;
     let lastMove = 0;
@@ -404,10 +405,12 @@ export default function OdysseeHome() {
       calmTimer = 0;
       for (const ev of CALM) window.removeEventListener(ev, onMove, true);
     };
-    const prewarm = (full: boolean) => {
+    let warmed = false;
+    const prewarm = () => {
       stopCalm();
-      if (full) prewarmVfx('odyssee-stage', PLACES.map(p => p.skin));
-      else void import('../vfx/index').catch(() => undefined);
+      if (warmed) return;
+      warmed = true;
+      prewarmVfx('odyssee-stage', PLACES.map(p => p.skin), true);
     };
     const waitCalm = () => {
       const since = performance.now();
@@ -417,10 +420,10 @@ export default function OdysseeHome() {
         const now = performance.now();
         if (now - lastMove >= 400) {
           calmTimer = 0;
-          idleId = w.requestIdleCallback ? w.requestIdleCallback(() => prewarm(true), { timeout: 500 }) : window.setTimeout(() => prewarm(true), 1);
+          idleId = w.requestIdleCallback ? w.requestIdleCallback(prewarm, { timeout: 500 }) : window.setTimeout(prewarm, 1);
           return;
         }
-        if (now - since > 3000) return prewarm(false);
+        if (now - since > 3000) return prewarm();
         calmTimer = window.setTimeout(check, 150);
       };
       calmTimer = window.setTimeout(check, 400);
@@ -436,13 +439,25 @@ export default function OdysseeHome() {
       }
       for (const ev of GESTURES) window.removeEventListener(ev, onScroll, true);
     };
-    const t = window.setTimeout(() => (w.requestIdleCallback ? w.requestIdleCallback(go, { timeout: 3000 }) : go()), 2500);
+    // Repos après le chargement (l'ouverture finie) : code des démonstrations, et à l'ordinateur la scène 3D préparée en
+    // entier, programmes compilés pendant la lecture du premier écran. Sans cela, le premier sort de la Forêt les
+    // compilait d'un coup en pleine descente dans les nuées (une demi-seconde au banc, plus encore sur certains PC)
+    const atRest = () => {
+      go();
+      if (fine && !vfx) {
+        vfx = true;
+        prewarm();
+      }
+    };
+    const t = window.setTimeout(() => (w.requestIdleCallback ? w.requestIdleCallback(atRest, { timeout: 3000 }) : atRest()), 2500);
     for (const ev of GESTURES) window.addEventListener(ev, onScroll, { passive: true, capture: true });
     return () => {
       window.clearTimeout(t);
       stopCalm();
       if (idleId && typeof w.cancelIdleCallback === 'function') w.cancelIdleCallback(idleId);
       else if (idleId) window.clearTimeout(idleId);
+      // Accueil quitté : la scène préparée et jamais prise est libérée comme les autres
+      if (warmed) releaseVfx('odyssee-stage');
       for (const ev of GESTURES) window.removeEventListener(ev, onScroll, true);
     };
   }, []);

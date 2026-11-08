@@ -83,9 +83,14 @@ function give(slot: Slot, h: Holder) {
   h.grant({ stage: slot.stage, m: slot.m });
 }
 
-/** Scène sans échiquier : en sommeil, libérée au bout de POOL_KEEP_MS si personne ne la prend. */
-function park(key: string, slot: Slot) {
+/**
+ * Scène sans échiquier : en sommeil, libérée au bout de POOL_KEEP_MS si personne ne la prend (`keep` : gardée jusqu'à
+ * ce qu'un échiquier la prenne).
+ */
+function park(key: string, slot: Slot, keep = false) {
   window.clearTimeout(slot.timer);
+  slot.timer = 0;
+  if (keep) return;
   slot.timer = window.setTimeout(() => {
     if (slots.get(key) !== slot || slot.holder) return;
     slots.delete(key);
@@ -180,14 +185,12 @@ function claim(key: string, m: VfxModule, h: Holder): VfxStage | null {
  * puis textures des `skins` (identifiants du catalogue). Rien de visible (calque caché, rien de dessiné). Si une scène
  * existe déjà dans le pool, seules les textures sont préparées. Sans échiquier pour la prendre, elle est libérée au
  * bout de POOL_KEEP_MS.
- * Appel prévu (pas encore fait : OdysseeHome relève d'un autre chantier) : à l'accueil, à côté du préchargement de
- * '../vfx/index', avec les skins des lieux : prewarmVfx('odyssee-stage', PLACES.map(p => p.skin)). La démonstration du
- * premier lieu trouve alors une scène prête au lieu de la créer pendant l'arrivée dans la Forêt. Attention au moment :
- * créer le contexte WebGL coûte quelques dizaines de millisecondes au fil principal (pas pendant le geste du pouce), et
- * une scène préparée qu'aucun échiquier ne prend dans les POOL_KEEP_MS est libérée (un lecteur qui reste sur le héros
- * perd la préparation).
+ * Appelée par l'accueil à l'ordinateur (OdysseeHome), au repos après le chargement, avec les skins des lieux et `keep`
+ * (gardée jusqu'à ce qu'un échiquier la prenne : un lecteur qui reste longtemps sur le héros ne perd pas la
+ * préparation). La démonstration du premier lieu trouve alors une scène prête, programmes compilés, au lieu de les
+ * compiler au premier sort, en pleine descente dans les nuées.
  */
-export function prewarmVfx(poolKey: string, skins: string[] = []): void {
+export function prewarmVfx(poolKey: string, skins: string[] = [], keep = false): void {
   void load()
     .then(m => {
       let slot = slots.get(poolKey);
@@ -200,11 +203,20 @@ export function prewarmVfx(poolKey: string, skins: string[] = []): void {
         }
         slot = { stage, m, holder: null, waiting: [], timer: 0, since: 0 };
         slots.set(poolKey, slot);
-        park(poolKey, slot);
-      }
+        park(poolKey, slot, keep);
+      } else if (keep && !slot.holder && !slot.waiting.length) park(poolKey, slot, true);
       if (skins.length) void slot.stage.warm([], m.warmTextures(skins.map(skinStyle)));
     })
     .catch(() => undefined);
+}
+
+/**
+ * La scène préparée et gardée du pool `poolKey` (prewarmVfx avec `keep`) n'est plus attendue (l'accueil est quitté) :
+ * si aucun échiquier ne la tient, elle est libérée au bout de POOL_KEEP_MS, comme toute scène en sommeil.
+ */
+export function releaseVfx(poolKey: string): void {
+  const slot = slots.get(poolKey);
+  if (slot && !slot.holder && !slot.waiting.length && !slot.timer) park(poolKey, slot);
 }
 
 /** Scène d'un échiquier qui partage celle de son pool en la cédant (useSharedVfx). */

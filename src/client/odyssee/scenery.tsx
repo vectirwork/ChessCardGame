@@ -1,5 +1,6 @@
 // Décors de la descente : chaque lieu est une pile de calques (data-d = profondeur de parallaxe).
 // Les reliefs sont générés (graine fixe) pour rester légers : des chemins SVG pleins, sans filtre animé.
+import { memo, useEffect, useRef } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import frostA from './assets/cloud-frost-a.webp';
 import frostB from './assets/cloud-frost-b.webp';
@@ -173,21 +174,62 @@ function Stars({ seed, n, maxR = 1.4, twinkle = 0, color = '#fff', yMax = VH, wa
   const dot = (s: (typeof stars)[number], i: number) => <circle key={i} cx={f1(s.x)} cy={f1(s.y)} r={s.rad.toFixed(2)} fill={s.c} opacity={s.o.toFixed(2)} />;
   const fixed = stars.filter(s => !s.tw);
   const tw = stars.filter(s => s.tw);
+  // Étoiles qui scintillent : de petits points placés comme dans le dessin (même cadrage « slice » que le SVG, voir
+  // .o-tw-dots), chacun avec son animation. Deux SVG de toute la fenêtre (et 3,5 fois sa largeur sur un téléphone)
+  // occupaient chacun des dizaines de mégaoctets de tuiles graphiques pour treize étoiles.
+  const twinkler = (s: (typeof stars)[number], i: number) => (
+    <span
+      key={i}
+      className={i % 2 === 0 ? 'o-tw-a' : 'o-tw-b'}
+      style={{ '--x': f1(s.x - VW / 2), '--y': f1(s.y), '--r': s.rad.toFixed(2), background: withAlpha(s.c, s.o) } as CSSProperties}
+    />
+  );
   return (
     <>
       <Svg anchor="xMidYMin">{fixed.map(dot)}</Svg>
-      {tw.length > 0 && (
-        <>
-          <Svg anchor="xMidYMin" className="o-tw o-tw-a">
-            {tw.filter((_, i) => i % 2 === 0).map(dot)}
-          </Svg>
-          <Svg anchor="xMidYMin" className="o-tw o-tw-b">
-            {tw.filter((_, i) => i % 2 === 1).map(dot)}
-          </Svg>
-        </>
-      )}
+      {tw.length > 0 && <TwinkleDots>{tw.map(twinkler)}</TwinkleDots>}
     </>
   );
+}
+
+/**
+ * Conteneur des étoiles qui scintillent. Sur un écran étroit, le cadrage « slice » coupe la plupart des côtés du
+ * dessin : les points hors du cadre sont retirés (display:none), sans quoi leur animation, invisible, tournerait
+ * encore sur le fil principal (le compositeur refuse une animation sans effet visible).
+ */
+function TwinkleDots({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const box = ref.current;
+    if (!box) return;
+    const fit = () => {
+      const w = box.clientWidth;
+      const h = box.clientHeight;
+      if (!w || !h) return;
+      const u = Math.max(w / VW, h / VH);
+      box.querySelectorAll<HTMLElement>(':scope > span').forEach(dot => {
+        const x = w / 2 + Number(dot.style.getPropertyValue('--x')) * u;
+        dot.style.display = x < -4 || x > w + 4 ? 'none' : '';
+      });
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className="o-tw-dots" aria-hidden="true">
+      {children}
+    </div>
+  );
+}
+
+/** Couleur #rgb ou #rrggbb avec une opacité. */
+function withAlpha(hex: string, a: number) {
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+  const n = parseInt(full, 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a.toFixed(2)})`;
 }
 
 /**
@@ -877,3 +919,20 @@ export function SceneSeuil({ part }: { part: 'back' | 'front' }) {
 }
 
 export const SCENES = [SceneObservatoire, SceneForet, ScenePics, SceneSablier, SceneBazar, SceneSeuil];
+
+/**
+ * Tous les lieux d'un plan (fond ou premier plan). Mémoïsé : l'accueil se re-rend à chaque lieu, chapitre ou
+ * amarrage franchi pendant le défilement, et ces décors (≈ 1 500 éléments, reliefs recalculés) n'en dépendent pas.
+ * React ne réécrit donc jamais leur className : la classe o-paused reste celle posée par le moteur.
+ */
+export const SceneStack = memo(function SceneStack({ part }: { part: 'back' | 'front' }) {
+  return (
+    <>
+      {SCENES.map((Scene, i) => (
+        <div key={i} className={`o-scene o-scene-${i}${i ? ' o-paused' : ''}`} data-scene-layer={i} data-part={part}>
+          <Scene part={part} />
+        </div>
+      ))}
+    </>
+  );
+});

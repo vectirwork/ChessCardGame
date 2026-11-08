@@ -160,6 +160,11 @@ html.ody-home #root {
 .ody .o-scene.o-paused {
   content-visibility: hidden;
 }
+/* Mode natif (téléphone) : lieu mis en page d'avance pendant la traversée d'une nuée, encore caché (ni peint, ni
+   animé) ; il n'aura plus qu'à être peint quand son fondu commence */
+.ody .o-scene.o-paused.o-laid {
+  content-visibility: visible;
+}
 /* En partie, le rideau opaque recouvre tout le décor de la page : rien à composer dessous */
 .ody.is-game .o-world-shift,
 .ody.is-game .o-content {
@@ -172,11 +177,25 @@ html.ody-home #root {
   height: 100%;
 }
 
-.ody .o-svg.o-tw {
-  will-change: opacity;
+/* Étoiles qui scintillent (Stars) : le cadre est celui des dessins (viewBox 1600 × 1000, « xMidYMin slice ») ; une
+   unité du dessin vaut --u pixels, et chaque point est placé au même endroit que l'étoile du SVG. */
+.ody .o-tw-dots {
+  position: absolute;
+  inset: 0;
+  container-type: size;
+  pointer-events: none;
+}
+.ody .o-tw-dots > span {
+  --u: max(100cqw / 1600, 100cqh / 1000);
+  position: absolute;
+  left: calc(50% + var(--x) * var(--u) - var(--r) * var(--u));
+  top: calc(var(--y) * var(--u) - var(--r) * var(--u));
+  width: calc(var(--r) * 2 * var(--u));
+  height: calc(var(--r) * 2 * var(--u));
+  border-radius: 50%;
   animation: o-twinkle-layer 5.2s ease-in-out infinite;
 }
-.ody .o-svg.o-tw-b {
+.ody .o-tw-dots > .o-tw-b {
   animation-delay: -2.6s;
 }
 @keyframes o-twinkle-layer {
@@ -3392,5 +3411,69 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
   }
   .ody .o-sheet-veil {
     background: rgba(2, 3, 10, 0.84);
+  }
+}
+
+/* ------------------------------------------------------------------------------------------ */
+/* Téléphones : mémoire graphique. Sur le Pixel 7 (vidéo du fondateur), les tuiles graphiques de Chrome (≈ 256 Mo au
+   plus) étaient pleines dans la Forêt et aux Pics : des tuiles restaient vides (dalle sombre sous les pièces,
+   rectangles, lieux qui surgissent tard). Mêmes dessins, moins de surface à garder en mémoire. */
+@media (max-width: 819.98px) {
+  /* Calques du décor coupés à la largeur de l'écran : un dessin SVG en « slice » fait 3,5 écrans de large, et sa
+     partie visible chevauchait deux colonnes de tuiles (deux fois la mémoire et la tramée). La parallaxe mobile est
+     verticale : rien ne déborde sur les côtés. En hauteur, les reliefs continuent sous l'écran. */
+  .ody .o-layer {
+    overflow-x: clip;
+  }
+  /* Anneau cyan de l'astrolabe : immobile (deux points sur un cercle, 70 s par tour) ; un calque de moins à garder */
+  .ody .o-o2 {
+    animation: none;
+  }
+  /* Rayons du Seuil : sans fusion « screen » (presque identique sur ce fond noir) ni opacité de groupe, chacune
+     imposait un passage hors écran à chaque image ; l'opacité de groupe est reportée dans le dégradé */
+  .ody .o-beams {
+    opacity: 1;
+  }
+  .ody .o-beam {
+    mix-blend-mode: normal;
+    background: linear-gradient(0deg, rgba(255, 226, 160, 0.077), rgba(255, 226, 160, 0) 80%);
+  }
+  /* Second éclair : hors de l'écran d'un téléphone */
+  .ody .o-bolt.o-b2 {
+    display: none;
+  }
+  /* Grain : dans le calque de la vignette (un calque plein écran de moins) */
+  html.ody-home body::after {
+    display: none;
+  }
+  html.ody-home body::before {
+    background:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.045'/%3E%3C/svg%3E"),
+      radial-gradient(120% 90% at 50% 50%, transparent 55%, rgba(0, 0, 4, 0.55) 100%);
+    background-size: 220px 220px, auto;
+  }
+  /* Fond fixe de la page, entièrement caché par le ciel de l'accueil */
+  html.ody-home body {
+    background-image: none;
+    background-attachment: scroll;
+  }
+  /* Voile sombre derrière le titre d'un lieu : présent d'emblée (il apparaissait en fondu dans un calque temporaire
+     large comme l'écran, retramé ensuite dans le texte, d'où des bandes rectangulaires) */
+  .ody .o-place-head.o-veil::before {
+    opacity: 1;
+    transition: none;
+  }
+  /* Apparitions du texte en 2D : un décalage 3D faisait de chaque bloc encore caché un calque composé */
+  .ody .o-rv {
+    transform: translate(0, 34px);
+  }
+  .ody .o-ln > span {
+    transform: translate(0, 112%);
+  }
+  /* En-tête : sans flou d'arrière-plan (relu et flouté à chaque image au-dessus d'un décor qui bouge) */
+  html.ody-home .site-header.is-scrolled::before {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: rgba(4, 5, 15, 0.94);
   }
 }

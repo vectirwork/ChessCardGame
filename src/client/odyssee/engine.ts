@@ -4,6 +4,10 @@
 // Sobriété (D6) : la boucle d'images ne tourne que pendant un mouvement (défilement, souris, éveil, transition) et
 // s'arrête d'elle-même au repos ; les décors cachés ou sortis de l'écran ont leurs animations CSS en pause
 // (classe `o-paused`), et les nuées ne chargent leur image qu'à l'approche de leur lieu.
+// Téléphone (mode « natif », voir buildNative) : le défilement est natif (le doigt), et un script qui le suit a
+// toujours une image de retard. Décor, ciels et échiquier y sont donc liés au défilement par des animations
+// ScrollTimeline, jouées par le compositeur avec le défilement lui-même ; le script ne gère plus que les bascules
+// (lieu, chapitre, calques montrés ou cachés, emplacement de l'échiquier).
 import gsap from 'gsap';
 import Lenis from 'lenis';
 import { PLACES } from './data';
@@ -60,6 +64,14 @@ export function poseFor(key: PoseKey, vw: number, vh: number): Pose {
   }
 }
 
+/** Chronologie liée au défilement (Chrome 115+, Safari 26+) : absente des types DOM de TypeScript. */
+type ScrollTimelineCtor = new (o: { source: Element; axis: 'block' }) => AnimationTimeline;
+const scrollTimelineCtor = () => (globalThis as { ScrollTimeline?: ScrollTimelineCtor }).ScrollTimeline;
+/** La courbe smooth (3t² − 2t³) est exactement cubic-bezier(1/3, 0, 2/3, 1) : un fondu natif identique au script. */
+const SMOOTH = 'cubic-bezier(0.33333, 0, 0.66667, 1)';
+/** Point d'une animation liée au défilement : position de défilement (px) et valeurs CSS à cette position. */
+type ScrollPoint = { y: number; easing?: string } & Record<string, string | number | undefined>;
+
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const smooth = (t: number) => t * t * (3 - 2 * t);
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -85,10 +97,11 @@ interface Section {
 
 interface SceneRec {
   els: HTMLElement[];
-  /** État appliqué à chaque conteneur : visible et animé (true), masqué et en pause (false), à écrire (null). */
-  live: (boolean | null)[];
+  /** État appliqué à chaque conteneur : 2 peint et animé, 1 mis en page mais ni peint ni animé (mode natif), 0 éteint
+   *  (ni stylé, ni mis en page, ni peint), null à écrire. */
+  live: (0 | 1 | 2 | null)[];
   /** `clip` : calque qui coupe son contenu (overflow: hidden) ; hors de l'écran, ses animations sont en pause. */
-  layers: { el: HTMLElement; d: number; clip: boolean; off: boolean }[];
+  layers: { el: HTMLElement; d: number; clip: boolean; off: boolean; ci: number }[];
   start: number;
   end: number;
   shown: boolean;
@@ -170,6 +183,21 @@ export class Engine {
   /** Nuées autorisées : après le premier affichage (chargement terminé) ou dès que le visiteur défile. */
   private imagesOk = false;
   private imagesTimer = 0;
+  /** Mode natif (téléphone) : animations liées au défilement, voir buildNative. */
+  private native = false;
+  private timeline: AnimationTimeline | null = null;
+  /** Mode natif : animations de chaque lieu, créées quand il est peint (une animation créée sur un élément caché
+   *  n'est pas confiée au compositeur), supprimées quand il s'éteint. */
+  private sceneAnims: (Animation[] | null)[] = [];
+  private skyAnims: (Animation | null)[] = [];
+  private astreAnims: Animation[] = [];
+  /** Poses de l'échiquier relevées pour le mode natif (positions de défilement et valeurs). */
+  private astrePts: { y: number; x: number; ty: number; k: number; o: number; orb: number; front: number }[] = [];
+  /** Hauteur de la grande fenêtre (100lvh, barre d'adresse masquée) : ne bouge pas quand la barre apparaît. */
+  private lvhProbe: HTMLElement | null = null;
+  private docH = 0;
+  /** Mode natif : ciels montrés (les autres sont cachés : ni peints ni composés). */
+  private skyShown: (boolean | null)[] = [];
   private tick = (time: number) => {
     if (this.lenis) {
       if (this.resync) this.lenis.time = time * 1000;
@@ -202,7 +230,7 @@ export class Engine {
     if (!this.reduced) this.lenis = new Lenis({ lerp: 0.085, wheelMultiplier: 1, smoothWheel: true, autoResize: false });
     gsap.ticker.lagSmoothing(0);
     window.addEventListener('pointermove', this.onPointer, { passive: true });
-    window.addEventListener('resize', this.measure);
+    window.addEventListener('resize', this.onResize);
     // Tout ce qui peut faire défiler la page réveille la boucle : la molette (Lenis anime alors le défilement), et le
     // défilement natif (doigt, clavier, barre de défilement, ancre)
     window.addEventListener('scroll', this.onScroll, { passive: true });
@@ -250,12 +278,14 @@ export class Engine {
   destroy() {
     this.sleep();
     window.removeEventListener('pointermove', this.onPointer);
-    window.removeEventListener('resize', this.measure);
+    window.removeEventListener('resize', this.onResize);
     window.removeEventListener('scroll', this.onScroll);
     window.removeEventListener('wheel', this.onScroll);
     window.removeEventListener('load', this.onLoad);
     window.clearTimeout(this.imagesTimer);
     this.ro.disconnect();
+    this.dropNative();
+    this.lvhProbe?.remove();
     this.lenis?.destroy();
     this.els.header?.classList.remove('is-hidden', 'is-scrolled');
   }
@@ -298,13 +328,41 @@ export class Engine {
     return this.poses.get(key) ?? poseFor(key, this.vw, this.vh);
   }
 
+  /** Téléphone : hauteur de la grande fenêtre (100lvh), celle du monde fixe (odyssee.css). */
+  private largeViewportHeight() {
+    if (!this.lvhProbe) {
+      const el = document.createElement('div');
+      el.setAttribute('aria-hidden', 'true');
+      el.style.cssText = 'position:fixed;left:0;top:0;width:0;height:100vh;height:100lvh;visibility:hidden;pointer-events:none';
+      document.body.appendChild(el);
+      this.lvhProbe = el;
+    }
+    return this.lvhProbe.offsetHeight || window.innerHeight;
+  }
+
+  /**
+   * Téléphone : la barre d'adresse qui apparaît ou disparaît au défilement ne change que la hauteur de la fenêtre.
+   * La mise en page n'en dépend pas, ni le monde (100lvh) : rien à remesurer, sinon toutes les poses et tous les
+   * calques sauteraient de la hauteur de la barre, en plein geste. Seule une autre largeur, ou un échiquier de partie
+   * d'une autre taille, relance la mesure.
+   */
+  private onResize = () => {
+    const vw = document.documentElement.clientWidth || window.innerWidth;
+    if (this.native && vw === this.vw && gameLayout(vw, window.innerHeight).G === this.G && this.largeViewportHeight() === this.vh) {
+      this.markDirty();
+      return;
+    }
+    this.measure();
+  };
+
   measure = () => {
     // Largeur de la page, pas de la fenêtre : si la page était dézoomée (téléphone), innerWidth serait gonflé
     this.vw = document.documentElement.clientWidth || window.innerWidth;
-    this.vh = window.innerHeight;
+    // Téléphone : la grande fenêtre, stable quand la barre d'adresse va et vient (voir onResize)
+    this.vh = isMobile(this.vw) ? this.largeViewportHeight() : window.innerHeight;
     const { vw, vh } = this;
     const y = window.scrollY;
-    this.G = gameLayout(vw, vh).G;
+    this.G = gameLayout(vw, window.innerHeight).G;
     const els = Array.from(this.root.querySelectorAll<HTMLElement>('[data-pose]'));
     this.sections = els.map(el => {
       const r = el.getBoundingClientRect();
@@ -357,10 +415,14 @@ export class Engine {
         els: containers,
         // Remesure : l'état déjà appliqué est oublié, la prochaine image le réécrit
         live: containers.map(() => null),
-        layers: containers.flatMap(c =>
-          Array.from(c.querySelectorAll<HTMLElement>(':scope > .o-layer')).map(el => {
+        layers: containers.flatMap((c, ci) =>
+          Array.from(c.querySelectorAll<HTMLElement>(':scope > .o-layer'))
+            // Calque non affiché (second banc de nuées sur mobile) : rien à animer ni à écrire
+            .filter(el => getComputedStyle(el).display !== 'none')
+            .map(el => {
             el.classList.remove('o-paused');
-            return { el, d: Number(el.dataset.d), clip: getComputedStyle(el).overflow !== 'visible', off: false };
+            // Calque qui coupe son contenu en hauteur (neige, pluie…) : hors de l'écran, ses animations sont en pause
+            return { el, d: Number(el.dataset.d), clip: getComputedStyle(el).overflowY !== 'visible', off: false, ci };
           }),
         ),
         start: own.length ? Math.min(...own.map(s => s.start)) : 0,
@@ -393,11 +455,186 @@ export class Engine {
       })
       .filter(s => s.h > 0);
     this.lenis?.resize();
+    this.docH = document.documentElement.scrollHeight;
     this.astre.style.width = `${this.G}px`;
     this.astre.style.height = `${this.G}px`;
     this.applied = { o: -1, co: -1, orb: -1, front: -1, tilt: -99, cap: -1, k: -1 };
+    if (this.flow) this.flowTop = this.flowOrigin();
+    this.buildNative();
     this.markDirty();
   };
+
+  /** Haut du parent de positionnement de l'échiquier, dans le document (échiquier placé dans le document). */
+  private flowOrigin() {
+    const parent = this.astre.offsetParent as HTMLElement | null;
+    return parent && parent !== document.body ? parent.getBoundingClientRect().top + window.scrollY : 0;
+  }
+
+  // ------------------------------------------------------------------------------------------------------------
+  // Mode natif (téléphone)
+
+  /** Arrête toutes les animations liées au défilement (le script reprend la main). */
+  private dropNative() {
+    for (const list of this.sceneAnims) list?.forEach(a => a.cancel());
+    this.sceneAnims = [];
+    for (const a of this.skyAnims) a?.cancel();
+    this.skyAnims = [];
+    this.dropAstreNative();
+    this.native = false;
+    for (const el of this.skies) el.style.visibility = '';
+    this.skyShown = [];
+  }
+
+  /** Ciel montré (mode natif) : son fondu est une animation, créée quand il apparaît. */
+  private showSky(i: number, on: boolean) {
+    if (this.skyShown[i] === on) return;
+    this.skyShown[i] = on;
+    this.skies[i].style.visibility = on ? '' : 'hidden';
+    this.skyAnims[i]?.cancel();
+    this.skyAnims[i] = null;
+    const sc = this.scenes[i];
+    if (on && i > 0 && sc) {
+      const a = Math.max(0, sc.start - this.vh * 0.6);
+      this.skyAnims[i] = this.scrollAnim(this.skies[i], a, sc.start, [{ y: a, opacity: 0, easing: SMOOTH }, { y: sc.start, opacity: 1 }]);
+    }
+  }
+
+  /** Animations d'un conteneur de lieu (mode natif) : ses calques en parallaxe et, pour un fond, son fondu. */
+  private attachScene(i: number, ci: number) {
+    const sc = this.scenes[i];
+    const key = i * 2 + ci;
+    if (!sc || this.sceneAnims[key]) return;
+    const { vh } = this;
+    const list: Animation[] = [];
+    const add = (a: Animation | null) => a && list.push(a);
+    // Au-delà de cette fenêtre, le lieu est éteint (frame) : ses valeurs n'importent plus
+    const a = Math.max(0, sc.start - vh * 2);
+    const b = sc.end + vh * 2;
+    const ys = [a, sc.start, sc.end, b].filter((v, k, arr) => v >= a && v <= b && arr.indexOf(v) === k).sort((m, n) => m - n);
+    for (const l of sc.layers) {
+      if (l.ci !== ci) continue;
+      add(this.scrollAnim(l.el, a, b, ys.map(y => ({ y, transform: `translate3d(0px, ${this.travel(y, sc.start, sc.end, l.d).toFixed(2)}px, 0px)` }))));
+    }
+    // Fondu des fonds : entrée sur un demi-écran (0,6 à 0,1 écran avant le lieu), sortie après lui
+    const inA = sc.start - vh * 0.6;
+    const inB = sc.start - vh * 0.1;
+    const outA = sc.end + vh * 0.2;
+    const outB = sc.end + vh * 0.7;
+    const fade: ScrollPoint[] =
+      sc.start === 0
+        ? [{ y: 0, opacity: 1 }, { y: outA, opacity: 1, easing: SMOOTH }, { y: outB, opacity: 0 }, { y: b, opacity: 0 }]
+        : [{ y: a, opacity: 0 }, { y: inA, opacity: 0, easing: SMOOTH }, { y: inB, opacity: 1 }, { y: outA, opacity: 1, easing: SMOOTH }, { y: outB, opacity: 0 }, { y: b, opacity: 0 }];
+    const el = sc.els[ci];
+    if (el?.dataset.part === 'back') add(this.scrollAnim(el, sc.start === 0 ? 0 : a, b, fade));
+    this.sceneAnims[key] = list;
+  }
+
+  private detachScene(i: number, ci: number) {
+    const key = i * 2 + ci;
+    this.sceneAnims[key]?.forEach(a => a.cancel());
+    this.sceneAnims[key] = null;
+  }
+
+  private dropAstreNative() {
+    for (const a of this.astreAnims) a.cancel();
+    this.astreAnims = [];
+  }
+
+  /** Animation liée au défilement, de `a` à `b` (positions de défilement en px), par points successifs. */
+  private scrollAnim(el: Element, a: number, b: number, pts: ScrollPoint[]): Animation | null {
+    if (!this.timeline || !pts.length) return null;
+    const span = Math.max(1, b - a);
+    let last = 0;
+    const kf = pts.map(({ y, ...rest }, i) => {
+      // Premier point à 0, dernier à 1, jamais en arrière : sinon le navigateur inventerait les extrémités
+      let offset = i === 0 ? 0 : i === pts.length - 1 ? 1 : Math.min(1, Math.max(0, (y - a) / span));
+      if (offset < last) offset = last;
+      last = offset;
+      const k: Keyframe = { offset };
+      for (const [key, v] of Object.entries(rest)) if (v !== undefined) k[key] = v;
+      return k;
+    });
+    if (kf.length === 1) kf.push({ ...kf[0], offset: 1 });
+    const opts = { timeline: this.timeline, fill: 'both', rangeStart: `${Math.round(a)}px`, rangeEnd: `${Math.round(Math.max(a + 1, b))}px` };
+    return el.animate(kf, opts as KeyframeAnimationOptions);
+  }
+
+  /**
+   * Téléphone : décor (calques en parallaxe, fondus des lieux), ciels et échiquier liés au défilement sur le
+   * compositeur. Les valeurs sont celles du script (travel, fondus, poses), relevées aux mêmes positions : le rendu
+   * est le même, sans retard sur le doigt ni travail du fil principal à chaque image. Reconstruit à chaque mesure.
+   */
+  private buildNative() {
+    this.dropNative();
+    const Ctor = scrollTimelineCtor();
+    if (!Ctor || this.reduced || !isMobile(this.vw) || !this.sections.length) return;
+    this.native = true;
+    this.timeline = new Ctor({ source: document.documentElement, axis: 'block' });
+    // Lieux et ciels : leurs animations sont créées au moment où ils sont peints (frame, showSky)
+    if (this.flow) this.buildAstreNative();
+  }
+
+  /**
+   * Échiquier en mode natif : placé dans le document (position absolue), il défile avec le texte ; sa taille et son
+   * opacité (et celles des anneaux, du calque 3D) suivent le défilement par une animation. Les poses sont relevées
+   * tous les 12 px sur toute la page, puis réduites aux points où la courbe change d'allure.
+   */
+  private buildAstreNative() {
+    this.dropAstreNative();
+    if (!this.native || !this.timeline) return;
+    const { G } = this;
+    const maxY = Math.max(1, this.docH - window.innerHeight);
+    const STEP = 12;
+    const raw: typeof this.astrePts = [];
+    for (let y = 0; ; y += STEP) {
+      const yy = Math.min(y, maxY);
+      const { p } = this.poseAt(yy);
+      raw.push({ y: yy, x: p.x - G / 2, ty: p.y + yy - this.flowTop - G / 2, k: p.s / G, o: p.o, orb: p.orb, front: p.front });
+      if (yy >= maxY) break;
+    }
+    // Réduction : on garde un point quand l'interpolation linéaire depuis le dernier point gardé s'écarte de plus
+    // d'un tiers de pixel (ou de 0,004 en opacité) d'un point intermédiaire. Échiquier invisible : rien à garder.
+    const tol = { x: 0.35, ty: 0.35, k: 0.0008, o: 0.004, orb: 0.004, front: 0.004 } as const;
+    const keys = Object.keys(tol) as (keyof typeof tol)[];
+    const kept = [raw[0]];
+    let a = 0;
+    for (let b = 2; b < raw.length; b++) {
+      const A = raw[a];
+      const B = raw[b];
+      let ok = true;
+      for (let i = a + 1; i < b && ok; i++) {
+        const P = raw[i];
+        const t = (P.y - A.y) / Math.max(1e-6, B.y - A.y);
+        const hidden = P.o < 0.002 && A.o < 0.002 && B.o < 0.002;
+        for (const key of keys) {
+          if (hidden && key !== 'o') continue;
+          if (Math.abs(A[key] + (B[key] - A[key]) * t - P[key]) > tol[key]) {
+            ok = false;
+            break;
+          }
+        }
+      }
+      if (!ok) {
+        a = b - 1;
+        kept.push(raw[a]);
+      }
+    }
+    if (kept[kept.length - 1] !== raw[raw.length - 1]) kept.push(raw[raw.length - 1]);
+    this.astrePts = kept;
+    const end = kept[kept.length - 1].y;
+    const add = (el: Element | null, pts: ScrollPoint[]) => {
+      if (!el) return;
+      const anim = this.scrollAnim(el, 0, end, pts);
+      if (anim) this.astreAnims.push(anim);
+    };
+    add(
+      this.astre,
+      kept.map(r => ({ y: r.y, transform: `translate3d(${r.x.toFixed(2)}px, ${r.ty.toFixed(2)}px, 0px) scale(${r.k.toFixed(4)})`, opacity: Number(r.o.toFixed(4)) })),
+    );
+    add(this.els.orbits, kept.map(r => ({ y: r.y, opacity: Number(r.orb.toFixed(4)) })));
+    add(this.els.front, kept.map(r => ({ y: r.y, opacity: Number(r.front.toFixed(4)) })));
+    // Le calque 3D des sorts (souvent en display:none, que le compositeur refuserait) : écrit par frame, voir là
+  }
 
   scrollTo(target: string | number, done?: () => void) {
     const el = typeof target === 'string' ? this.root.querySelector<HTMLElement>(target) : null;
@@ -470,9 +707,20 @@ export class Engine {
   }
 
   scrollPose(y: number): Pose {
+    const { p, dock } = this.poseAt(y);
+    if (dock !== null && dock > 0.5 !== this.docked) {
+      this.docked = dock > 0.5;
+      this.astre.classList.toggle('is-docked', this.docked);
+      this.hooks.onDock(this.docked);
+    }
+    return p;
+  }
+
+  /** Pose de l'échiquier à ce défilement, sans effet de bord ; `dock` : poids de l'emplacement (mobile), ou null. */
+  private poseAt(y: number): { p: Pose; dock: number | null } {
     const { vw, vh } = this;
     const secs = this.sections;
-    if (!secs.length) return poseFor('hero', vw, vh);
+    if (!secs.length) return { p: poseFor('hero', vw, vh), dock: null };
     let p: Pose | null = null;
     // Mobile : le premier écran est plus haut que la fenêtre ; l'échiquier défile avec son texte au lieu de rester
     // posé dessus, puis traverse la nuée depuis l'endroit où on l'a laissé
@@ -516,6 +764,7 @@ export class Engine {
       const u = smooth(clamp01((y - last.end) / (vh * 0.6)));
       p = { ...base, y: lerp(base.y, vh * 0.56, u) - (y - last.end) * (this.reduced ? 1 : 0.14), s: base.s * (1 - 0.88 * u), o: base.o * (1 - u), front: base.front * (1 - u), orb: base.orb * (1 - u) };
     }
+    let dock: number | null = null;
     if (isMobile(vw) && this.slots.length) {
       const hero = secs[0];
       // Entre deux emplacements, l'échiquier s'efface en un tiers d'écran au lieu de flotter à demi transparent
@@ -524,15 +773,11 @@ export class Engine {
       if (y > hero.end + vh * 0.05) {
         const d = this.dock(y, p);
         p = d.p;
-        if ((d.w > 0.5) !== this.docked) {
-          this.docked = d.w > 0.5;
-          this.astre.classList.toggle('is-docked', this.docked);
-          this.hooks.onDock(this.docked);
-        }
+        dock = d.w;
       }
     }
     if (this.reduced) p.tilt = 0;
-    return p;
+    return { p, dock };
   }
 
   /** Pose de la page à ce défilement, éveil de l'échiquier compris. */
@@ -586,25 +831,52 @@ export class Engine {
     const my = this.reduced || mobile ? 0 : m.y;
 
     // Calques des lieux (en partie, le décor est caché sous le rideau : rien à recalculer)
+    const native = this.native;
     for (const sc of this.scenes) {
       if (this.gameMix >= 1) break;
       if (!sc.loaded && this.imagesOk && y > sc.start - vh * PRELOAD_SCREENS && y < sc.end + vh * PRELOAD_SCREENS) this.loadImages(sc);
-      const visible = y > sc.start - vh * 1.6 && y < sc.end + vh * 1.6;
+      // Mode natif : le lieu est monté (peint, tramé) dès 1,7 écran avant lui, encore transparent, pendant la
+      // traversée de la nuée ; il reste monté jusqu'à 2 écrans (pas de bascule à chaque pixel au retour)
+      const margin = native ? (sc.shown ? 2 : 1.7) : 1.6;
+      const visible = y > sc.start - vh * margin && y < sc.end + vh * margin;
       if (visible !== sc.shown) sc.shown = visible;
-      // Mobile : le premier écran est plus haut que la fenêtre ; le lieu suivant n'arrive qu'une fois le texte lu
-      const fadeIn = mobile ? smooth(clamp01((y - (sc.start - vh * 0.6)) / (vh * 0.5))) : smooth(clamp01((y - (sc.start - vh * 1.05)) / (vh * 0.75)));
-      const fadeOut = 1 - smooth(clamp01((y - (sc.end + vh * 0.2)) / (vh * 0.5)));
-      const op = sc.start === 0 ? fadeOut : fadeIn * fadeOut;
+      let op = 1;
+      if (!native) {
+        // Mobile : le premier écran est plus haut que la fenêtre ; le lieu suivant n'arrive qu'une fois le texte lu
+        const fadeIn = mobile ? smooth(clamp01((y - (sc.start - vh * 0.6)) / (vh * 0.5))) : smooth(clamp01((y - (sc.start - vh * 1.05)) / (vh * 0.75)));
+        const fadeOut = 1 - smooth(clamp01((y - (sc.end + vh * 0.2)) / (vh * 0.5)));
+        op = sc.start === 0 ? fadeOut : fadeIn * fadeOut;
+      }
       for (let i = 0; i < sc.els.length; i++) {
         const el = sc.els[i];
         const back = el.dataset.part === 'back';
-        if (visible && back) el.style.opacity = op.toFixed(3);
+        if (!native && visible && back) el.style.opacity = op.toFixed(3);
         // Un décor transparent ou lointain n'est pas peint, et ses animations sont en pause : elles ne coûtent rien
-        const live = visible && (!back || op >= 0.004);
-        if (live !== sc.live[i]) {
-          sc.live[i] = live;
-          el.style.visibility = live ? 'visible' : 'hidden';
-          el.classList.toggle('o-paused', !live);
+        let state: 0 | 1 | 2 = visible && (native || !back || op >= 0.004) ? 2 : 0;
+        if (native && back && visible) {
+          // Mode natif, fonds : mis en page pendant la traversée de la nuée (le plus lourd du réveil, sans mémoire
+          // graphique), peints juste avant leur fondu d'entrée (0,6 écran avant le lieu), éteints dès leur fondu de
+          // sortie fini. Au plus deux lieux peints, et seulement le temps du fondu enchaîné.
+          const was = sc.live[i] === 2;
+          const from = sc.start === 0 ? -Infinity : sc.start - vh * (was ? 0.8 : 0.75);
+          const to = sc.end + vh * (was ? 0.75 : 0.7);
+          state = y > from && y < to ? 2 : 1;
+        }
+        if (state !== sc.live[i]) {
+          sc.live[i] = state;
+          el.style.visibility = state === 2 ? 'visible' : 'hidden';
+          el.classList.toggle('o-paused', state !== 2);
+          el.classList.toggle('o-laid', state === 1);
+        }
+      }
+      if (native) {
+        // Après les changements de visibilité ci-dessus : les animations sont créées sur un conteneur visible
+        const si = this.scenes.indexOf(sc);
+        for (let ci = 0; ci < sc.els.length; ci++) {
+          const painted = sc.live[ci] === 2;
+          const has = !!this.sceneAnims[si * 2 + ci];
+          if (painted && !has) this.attachScene(si, ci);
+          else if (!painted && has) this.detachScene(si, ci);
         }
       }
       if (!visible) continue;
@@ -612,7 +884,7 @@ export class Engine {
         const ty = this.travel(y, sc.start, sc.end, l.d);
         const k = Math.min(l.d, 1.2);
         const dy = ty - my * k * 10;
-        l.el.style.transform = `translate3d(${(-mx * k * 18).toFixed(2)}px, ${dy.toFixed(2)}px, 0)`;
+        if (!native) l.el.style.transform = `translate3d(${(-mx * k * 18).toFixed(2)}px, ${dy.toFixed(2)}px, 0)`;
         // Calque qui coupe son contenu, entièrement hors de l'écran : neige, pluie, sable, lanternes en pause
         const off = l.clip && Math.abs(dy) > vh + 24;
         if (off !== l.off) {
@@ -622,63 +894,90 @@ export class Engine {
       }
     }
 
-    // Ciel : fondu enchaîné d'une teinte à l'autre
-    for (let i = 1; i < this.skies.length; i++) {
+    // Ciel : fondu enchaîné d'une teinte à l'autre. Mode natif : les fondus sont des animations ; le script ne
+    // montre que les ciels utiles (celui qui apparaît et celui qu'il recouvre), les autres ne sont ni peints ni composés
+    let covered = false;
+    for (let i = this.skies.length - 1; i >= 1; i--) {
       const sc = this.scenes[i];
       if (!sc) continue;
       const k = mobile ? smooth(clamp01((y - (sc.start - vh * 0.6)) / (vh * 0.6))) : smooth(clamp01((y - (sc.start - vh * 1.0)) / (vh * 0.9)));
-      this.skies[i].style.opacity = k.toFixed(3);
+      if (!native) this.skies[i].style.opacity = k.toFixed(3);
+      else this.showSky(i, k > 0 && !covered);
+      if (k >= 1) covered = true;
     }
+    if (native) this.showSky(0, !covered);
 
     // Échiquier
     const pose = this.pagePose(y);
     let p = pose;
     if (this.gameMix > 0) {
-      const g = gameLayout(this.vw, this.vh);
+      const g = gameLayout(this.vw, window.innerHeight);
       const from = this.gameFrom ?? pose;
       p = lerpPose(from, { x: g.x, y: g.y, s: g.G, orb: 1, front: 0, o: 1, tilt: 0, cap: 0 }, this.gameMix);
     }
     const k = p.s / this.G;
     // Téléphone, premier écran : l'échiquier (et sa légende) défilent avec la page, placés dans le document, au lieu
     // d'être replacés par le script à chaque image : le défilement natif va plus vite que le script, l'échiquier
-    // sautait (vidéo du fondateur, Pixel 7). Dans ce lieu, sa position dans le document ne change pas.
-    const flow = mobile && this.gameMix === 0 && this.sections.length > 0 && y <= this.sections[0].end;
+    // sautait (vidéo du fondateur, Pixel 7). Dans ce lieu, sa position dans le document ne change pas. Mode natif :
+    // sur toute la page (hors partie), ses poses étant jouées par une animation liée au défilement.
+    const hero = this.sections[0];
+    const flow = mobile && this.gameMix === 0 && !!hero && (native || y <= hero.end);
     if (flow !== this.flow) {
       this.flow = flow;
       this.astre.style.position = flow ? 'absolute' : '';
       if (this.els.caption) this.els.caption.style.position = flow ? 'absolute' : '';
-      const parent = flow ? (this.astre.offsetParent as HTMLElement | null) : null;
-      this.flowTop = parent && parent !== document.body ? parent.getBoundingClientRect().top + window.scrollY : 0;
+      this.flowTop = flow ? this.flowOrigin() : 0;
+      if (flow && native) this.buildAstreNative();
+      else this.dropAstreNative();
+      // Le script reprend (ou rend) la main : tout est réécrit à la prochaine image
+      this.applied = { o: -1, co: -1, orb: -1, front: -1, tilt: -99, cap: -1, k: -1 };
     }
     const docY = this.flow ? y - this.flowTop : 0;
-    this.astre.style.transform = `translate3d(${(p.x - this.G / 2).toFixed(2)}px, ${(p.y + docY - this.G / 2).toFixed(2)}px, 0) scale(${k.toFixed(4)})`;
+    const anim = this.flow && this.astreAnims.length > 0;
+    const inHero = !!hero && y <= hero.end + vh * 0.36;
+    if (!anim) this.astre.style.transform = `translate3d(${(p.x - this.G / 2).toFixed(2)}px, ${(p.y + docY - this.G / 2).toFixed(2)}px, 0) scale(${k.toFixed(4)})`;
     const a = this.applied;
     const kr = Math.round(k * 1000) / 1000;
-    if (kr !== a.k) {
-      // Échelle de l'échiquier : la pièce glissée la compense pour rester sous le doigt
+    // Échelle de l'échiquier : la pièce glissée la compense pour rester sous le doigt. Mode natif : seule la partie
+    // du héros se joue sur la page, à taille fixe ; ailleurs, rien à écrire (le style de tout l'astre serait recalculé)
+    if (kr !== a.k && (!anim || y <= (hero?.end ?? 0))) {
       a.k = kr;
       this.astre.style.setProperty('--k', String(kr));
       this.astre.style.setProperty('--inv-k', String(Math.round((1 / Math.max(0.05, kr)) * 1000) / 1000));
     }
-    const o = Math.round(p.o * 1000) / 1000;
-    const co = Math.round(o * Math.max(0, 1 - this.gameMix * 5) * 1000) / 1000;
-    if (o !== a.o || co !== a.co) {
-      a.o = o;
-      a.co = co;
-      this.astre.style.opacity = String(o);
-      if (this.canvas) this.canvas.style.opacity = String(co);
+    if (anim) {
+      // Calque 3D des sorts : visible seulement pendant un sort, échiquier posé ; son opacité suit celle de l'échiquier
+      const co = Math.round(p.o * 100) / 100;
+      if (co !== a.co && this.canvas) {
+        a.co = co;
+        this.canvas.style.opacity = String(co);
+      }
+    } else {
+      const o = Math.round(p.o * 1000) / 1000;
+      const co = Math.round(o * Math.max(0, 1 - this.gameMix * 5) * 1000) / 1000;
+      if (o !== a.o || co !== a.co) {
+        a.o = o;
+        a.co = co;
+        this.astre.style.opacity = String(o);
+        if (this.canvas) this.canvas.style.opacity = String(co);
+      }
+      const orb = Math.round(p.orb * 1000) / 1000;
+      if (orb !== a.orb && this.els.orbits) {
+        a.orb = orb;
+        this.els.orbits.style.opacity = String(orb);
+      }
+      const front = Math.round(p.front * 1000) / 1000;
+      if (front !== a.front && this.els.front) {
+        a.front = front;
+        this.els.front.style.opacity = String(front);
+      }
     }
-    const orb = Math.round(p.orb * 1000) / 1000;
-    if (orb !== a.orb && this.els.orbits) {
-      a.orb = orb;
-      this.els.orbits.style.opacity = String(orb);
-    }
-    const front = Math.round(p.front * 1000) / 1000;
-    if (front !== a.front && this.els.front) {
-      a.front = front;
-      this.els.front.style.opacity = String(front);
-    }
-    const tilt = Math.round(((p.tilt * 180) / Math.PI) * 10) / 10;
+    // Inclinaison. Mode natif : elle ne change jamais quand l'échiquier est visible (tout l'astre serait restylé à
+    // chaque image) : celle du héros jusqu'à la fin de son fondu, puis celle des emplacements, posée échiquier caché
+    let tiltRad: number | null = p.tilt;
+    if (anim && inHero) tiltRad = this.pose('hero').tilt * (1 - smooth(this.awake));
+    else if (anim && p.o > 0.03) tiltRad = null;
+    const tilt = tiltRad === null ? a.tilt : Math.round(((tiltRad * 180) / Math.PI) * 10) / 10;
     if (tilt !== a.tilt) {
       a.tilt = tilt;
       this.astre.style.setProperty('--base-tilt', `${tilt}deg`);
@@ -687,7 +986,8 @@ export class Engine {
       const show = this.gameMix === 0 && p.s > 200 && p.o > 0.9 && (p.cap > 0.5 || this.hover) ? 1 : 0;
       // Mobile : la perspective agrandit le bas du cadre ; la légende garde un peu d'air dessous
       const below = mobile ? p.s * 0.5 * Math.cos(p.tilt) + 36 : p.s * 0.5 + 34;
-      this.els.caption.style.transform = `translate3d(${p.x.toFixed(1)}px, ${(p.y + below + docY).toFixed(1)}px, 0) translateX(-50%)`;
+      // Légende cachée : elle ne bouge pas (rien à écrire)
+      if (show || a.cap !== 0 || !anim) this.els.caption.style.transform = `translate3d(${p.x.toFixed(1)}px, ${(p.y + below + docY).toFixed(1)}px, 0) translateX(-50%)`;
       if (show !== a.cap) {
         a.cap = show;
         this.els.caption.style.opacity = String(show);

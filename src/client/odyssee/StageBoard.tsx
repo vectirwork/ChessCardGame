@@ -5,7 +5,7 @@
 // Sobriété (D6) : la scène 3D est partagée d'un lieu à l'autre (un seul contexte WebGL, gardé par useVfx) ; la
 // démonstration se met en pause quand l'onglet est caché, pendant les traversées, et quand le visiteur ne fait plus
 // rien depuis IDLE_MS (elle reprend au premier geste).
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Board } from '../components/Board';
 import type { BoardHandle } from '../components/Board';
 import { CARDS, cardsOf, isCardId } from '../../shared/cards';
@@ -36,6 +36,14 @@ const onInput = () => {
   lastInput = performance.now();
 };
 const idle = () => performance.now() - lastInput > IDLE_MS;
+
+/** Un sort ne part qu'après ce délai sans défilement : pendant le geste, la scène 3D plein écran et les pièces
+ *  dressées (un calque composé chacune) se disputeraient chaque image avec le défilement (téléphones). */
+const SETTLE_MS = 280;
+let lastScroll = 0;
+const onScrollInput = () => {
+  lastScroll = performance.now();
+};
 
 let demoCatalog: Exclude<Catalog, 'aucune'> = 'climats';
 
@@ -122,7 +130,8 @@ interface Props {
   onCanvas?: (canvas: HTMLCanvasElement | null) => void;
 }
 
-export function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, still, playSignal, onCast, onCanvas }: Props) {
+/** Mémoïsé : l'accueil se re-rend à chaque seuil du défilement (chapitre, amarrage), sans rien changer ici. */
+export const StageBoard = memo(function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, still, playSignal, onCast, onCanvas }: Props) {
   demoCatalog = catalog;
   const ref = useRef<BoardHandle>(null);
   const [wrap, setWrap] = useState<HTMLDivElement | null>(null);
@@ -150,8 +159,10 @@ export function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, sti
     lastInput = performance.now();
     const evs = ['pointermove', 'pointerdown', 'wheel', 'scroll', 'keydown', 'touchstart'] as const;
     for (const e of evs) window.addEventListener(e, onInput, { passive: true });
+    window.addEventListener('scroll', onScrollInput, { passive: true });
     return () => {
       for (const e of evs) window.removeEventListener(e, onInput);
+      window.removeEventListener('scroll', onScrollInput);
     };
   }, []);
 
@@ -265,9 +276,12 @@ export function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, sti
       setState(n);
       vfx.stage.syncMarkers(n.effects, n.pos);
     };
-    const cast = async (): Promise<boolean> => {
+    /** Lance un sort ; null : remis à plus tard (défilement repris, lieu ou chapitre changé pendant l'attente). */
+    const cast = async (): Promise<boolean | null> => {
       const a = actRef.current;
       if (!a.cards.length) return false;
+      while (!dead && performance.now() - lastScroll < SETTLE_MS) await sleep(120);
+      if (dead || pausedRef.current || actRef.current.key !== a.key) return null;
       for (let tries = 0; tries < a.cards.length + 1; tries++) {
         let s = sRef.current;
         const card = a.cards[cardIdx++ % a.cards.length];
@@ -340,9 +354,16 @@ export function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, sti
           await sleep(450);
         }
         if (a.cards.length && !sRef.current.cardPlayed && (fresher || sinceCast >= a.every)) {
+          const prevKey = lastKey;
           lastKey = a.key;
           if (fresher) cardIdx = 0;
-          if (await cast()) {
+          const done = await cast();
+          if (done === null) {
+            // Remis à plus tard : le sort du chapitre reste dû
+            lastKey = prevKey;
+            continue;
+          }
+          if (done) {
             sinceCast = 0;
             await wait(1300);
             continue;
@@ -371,13 +392,14 @@ export function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, sti
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vfx, still]);
 
-  const lastMove = (() => {
+  // Même objet tant que le journal ne change pas : le Board (mémoïsé) ne se re-rend pas pour rien
+  const lastMove = useMemo(() => {
     for (let i = state.log.length - 1; i >= 0; i--) {
       const e = state.log[i];
       if (e.k === 'move' && !e.undone) return { from: e.from, to: e.to };
     }
     return null;
-  })();
+  }, [state.log]);
 
   return (
     <Board
@@ -392,4 +414,4 @@ export function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, sti
       coords={false}
     />
   );
-}
+});

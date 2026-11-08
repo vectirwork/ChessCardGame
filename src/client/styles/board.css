@@ -38,6 +38,11 @@
     0 30px 70px -20px rgba(0, 0, 0, 0.85),
     0 0 0 1px rgba(255, 255, 255, 0.06),
     inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+/* Cadre repoussé sous les cases seulement en 3D (pendant un sort) : au repos, un translateZ, même de 2 px, en faisait
+   un calque GPU à part, sous celui des cases ; quand la mémoire graphique manquait (téléphones), seul le cadre
+   restait dessiné : la « dalle sombre » des vidéos du fondateur */
+.board-wrap.is-tilting .board::before {
   transform: translateZ(-2px);
 }
 .squares {

@@ -22,7 +22,7 @@ import {
 } from './data';
 import { Engine, isMobile } from './engine';
 import { Chapter, EQ, EqRing, Kicker, Lines, Mark, OrbitRings, Sheet, Slot } from './parts';
-import { SCENES } from './scenery';
+import { SceneStack } from './scenery';
 import { GameShell, PowersPanel, PremoveNote, cardName, castMessage, castThisTurn, handNotes } from './shell';
 import type { ShellAction } from './shell';
 import type { Act } from './StageBoard';
@@ -34,6 +34,34 @@ import type { LiveGame } from './useLiveGame';
 import './odyssee.css';
 
 // Démonstrations des lieux II à V : hors du premier écran, chargées à part (préchargées au repos, voir plus bas)
+/** Courbe expo.inOut de gsap, échantillonnée pour une animation du compositeur (linear() : Chrome 113+, Safari 17.2+). */
+const EXPO_IN_OUT = (() => {
+  const f = (t: number) => (t === 0 || t === 1 ? t : t < 0.5 ? Math.pow(2, 20 * t - 10) / 2 : (2 - Math.pow(2, -20 * t + 10)) / 2);
+  const pts = Array.from({ length: 33 }, (_, i) => `${f(i / 32).toFixed(4)} ${((i / 32) * 100).toFixed(2)}%`);
+  return typeof CSS !== 'undefined' && CSS.supports?.('animation-timing-function', 'linear(0, 1)') ? `linear(${pts.join(', ')})` : 'cubic-bezier(0.87, 0, 0.13, 1)';
+})();
+/** Rideau hors de l'écran : sa lisière dorée (150 px à sa gauche) comprise, sinon elle reste en bordure d'écran. */
+const CURTAIN_OUT = 'translateX(calc(101% + 160px))';
+/** Glissement : sélecteur, deux états (transform seule ou images clés), durée et délai en secondes. */
+type Slide = [string, [string, string] | [Keyframe, Keyframe], number, number];
+const SLIDE_ANIMS = new WeakMap<Element, Animation>();
+/** Joue les glissements du passage en partie (ou du retour) ; chacun remplace le précédent sur le même élément. */
+function slides(root: HTMLElement, list: Slide[]) {
+  for (const [sel, [a, b], dur, delay] of list) {
+    const frames: Keyframe[] = typeof a === 'string' ? [{ transform: a }, { transform: b as string }] : [a, b as Keyframe];
+    root.querySelectorAll(sel).forEach(el => {
+      SLIDE_ANIMS.get(el)?.cancel();
+      SLIDE_ANIMS.set(el, el.animate(frames, { duration: dur * 1000, delay: delay * 1000, easing: EXPO_IN_OUT, fill: 'both' }));
+    });
+  }
+}
+function clearSlides(root: HTMLElement, sel: string) {
+  root.querySelectorAll(sel).forEach(el => {
+    SLIDE_ANIMS.get(el)?.cancel();
+    SLIDE_ANIMS.delete(el);
+  });
+}
+
 const loadStageBoard = () => import('./StageBoard');
 const StageBoard = lazy(() => loadStageBoard().then(m => ({ default: m.StageBoard })));
 
@@ -332,9 +360,31 @@ export default function OdysseeHome() {
   }, [sheet, mode]);
 
   const placeDef = PLACES[place];
+  // Teinte du lieu (rideau, arène, feuilles, menus) : une propriété héritée posée sur <html>, donc un recalcul de style
+  // de tout le document. Pendant le défilement rien ne l'affiche : elle est écrite au repos (0,4 s sans défilement),
+  // et tout de suite à l'ouverture de la partie (play) ou d'une feuille.
+  const tintRef = useRef(placeDef.tint);
+  tintRef.current = placeDef.tint;
+  const applyTint = useCallback(() => {
+    const html = document.documentElement;
+    if (html.style.getPropertyValue('--tint') !== tintRef.current) html.style.setProperty('--tint', tintRef.current);
+  }, []);
   useEffect(() => {
-    document.documentElement.style.setProperty('--tint', placeDef.tint);
-  }, [placeDef]);
+    let timer = 0;
+    const arm = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(applyTint, 400);
+    };
+    arm();
+    window.addEventListener('scroll', arm, { passive: true });
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('scroll', arm);
+    };
+  }, [placeDef, applyTint]);
+  useEffect(() => {
+    if (sheet) applyTint();
+  }, [sheet, applyTint]);
 
   // ------------------------------------------------------------------------------------------
   // Passage en plein écran et retour
@@ -352,6 +402,7 @@ export default function OdysseeHome() {
       e.setAwake(false);
       e.lock(true);
       setMode('entering');
+      applyTint();
       document.documentElement.classList.add('is-immersive');
       const k = reduced ? 0.25 : 1;
       const live = liveRef.current;
@@ -364,13 +415,19 @@ export default function OdysseeHome() {
         },
       });
       tl.to(e, { gameMix: 1, duration: 1.45 * k, ease: 'expo.inOut', onUpdate: () => e.markDirty() }, 0);
-      tl.fromTo(root.querySelector('.o-curtain-veil'), { xPercent: 101 }, { xPercent: 0, duration: 1.25 * k, ease: 'expo.inOut' }, 0);
-      tl.fromTo(root.querySelector('.o-curtain'), { xPercent: 101 }, { xPercent: 0, duration: 1.3 * k, ease: 'expo.inOut' }, 0.1 * k);
-      tl.to(root.querySelector('.o-content'), { xPercent: -18, opacity: 0, duration: 1.2 * k, ease: 'expo.inOut' }, 0);
-      tl.to(root.querySelectorAll('.o-world-shift'), { xPercent: -10, scale: 1.2, opacity: 0.85, duration: 1.45 * k, ease: 'expo.inOut' }, 0);
+      // Rideau, voile, page et décor : animations du compositeur (fluides même pendant le montage de la partie).
+      // Téléphone : la page glisse sans fondu et le décor ne bouge pas (le rideau les couvre ; un fondu ou un zoom de
+      // ces grands groupes de calques coûtait plusieurs passages plein écran à chaque image)
+      const phone = isMobile(window.innerWidth);
+      slides(root, [
+        ['.o-curtain-veil', [CURTAIN_OUT, 'translateX(0)'], 1.25 * k, 0],
+        ['.o-curtain', [CURTAIN_OUT, 'translateX(0)'], 1.3 * k, 0.1 * k],
+        ['.o-content', phone ? ['none', 'translateX(-18%)'] : [{ transform: 'none', opacity: 1 }, { transform: 'translateX(-18%)', opacity: 0 }], 1.2 * k, 0],
+        ...(phone ? [] : ([['.o-world-shift', [{ transform: 'none', opacity: 1 }, { transform: 'translateX(-10%) scale(1.2)', opacity: 0.85 }], 1.45 * k, 0]] as Slide[])),
+      ]);
       if (fromDemo && live) tl.fromTo(live, { opacity: 0 }, { opacity: 1, duration: 0.7 * k, ease: 'power2.out' }, 0.15 * k);
     },
-    [reduced],
+    [reduced, applyTint],
   );
 
   const leave = useCallback(() => {
@@ -389,7 +446,8 @@ export default function OdysseeHome() {
         onComplete: () => {
           setMode('page');
           document.documentElement.classList.remove('is-immersive');
-          gsap.set(root.querySelectorAll('.o-content, .o-world-shift'), { clearProps: 'transform,opacity' });
+          // Page et décor reviennent à leur style propre (le rideau, caché, garde sa position hors de l'écran)
+          clearSlides(root, '.o-content, .o-world-shift');
           if (live) gsap.set(live, { clearProps: 'opacity' });
           // Partie terminée : l'échiquier de l'accueil se réinitialise, prêt pour le prochain premier coup
           if (gRef.current.result) gRef.current.newGame();
@@ -397,10 +455,13 @@ export default function OdysseeHome() {
       });
       tl.to(e, { gameMix: 0, duration: 1.3 * k, ease: 'expo.inOut', onUpdate: () => e.markDirty() }, 0);
       if (toDemo && live) tl.to(live, { opacity: 0, duration: 0.6 * k, ease: 'power2.inOut' }, 0.1 * k);
-      tl.to(root.querySelector('.o-curtain'), { xPercent: 101, duration: 1.2 * k, ease: 'expo.inOut' }, 0);
-      tl.to(root.querySelector('.o-curtain-veil'), { xPercent: 101, duration: 1.25 * k, ease: 'expo.inOut' }, 0.08 * k);
-      tl.to(root.querySelector('.o-content'), { xPercent: 0, opacity: 1, duration: 1.3 * k, ease: 'expo.inOut' }, 0.05 * k);
-      tl.to(root.querySelectorAll('.o-world-shift'), { xPercent: 0, scale: 1, opacity: 1, duration: 1.3 * k, ease: 'expo.inOut' }, 0);
+      const phone = isMobile(window.innerWidth);
+      slides(root, [
+        ['.o-curtain', ['translateX(0)', CURTAIN_OUT], 1.2 * k, 0],
+        ['.o-curtain-veil', ['translateX(0)', CURTAIN_OUT], 1.25 * k, 0.08 * k],
+        ['.o-content', phone ? ['translateX(-18%)', 'none'] : [{ transform: 'translateX(-18%)', opacity: 0 }, { transform: 'none', opacity: 1 }], 1.3 * k, 0.05 * k],
+        ...(phone ? [] : ([['.o-world-shift', [{ transform: 'translateX(-10%) scale(1.2)', opacity: 0.85 }, { transform: 'none', opacity: 1 }], 1.3 * k, 0]] as Slide[])),
+      ]);
     });
   }, [reduced]);
 
@@ -745,11 +806,7 @@ export default function OdysseeHome() {
       <div className="o-world-shift">
         <div className="o-world" aria-hidden="true">
           {/* Lieux suivants : pas rendus au premier affichage (o-paused) ; le moteur les montre à l'approche */}
-          {SCENES.map((Scene, i) => (
-            <div key={i} className={`o-scene o-scene-${i}${i ? ' o-paused' : ''}`} data-scene-layer={i} data-part="back">
-              <Scene part="back" />
-            </div>
-          ))}
+          <SceneStack part="back" />
         </div>
       </div>
 
@@ -836,11 +893,7 @@ export default function OdysseeHome() {
 
       <div className="o-world-shift o-front-shift">
         <div className="o-world o-front" aria-hidden="true">
-          {SCENES.map((Scene, i) => (
-            <div key={i} className={`o-scene o-scene-${i}${i ? ' o-paused' : ''}`} data-scene-layer={i} data-part="front">
-              <Scene part="front" />
-            </div>
-          ))}
+          <SceneStack part="front" />
         </div>
       </div>
 

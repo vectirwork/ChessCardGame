@@ -1,5 +1,5 @@
 // Petites pièces de l'Odyssée : marque, titres révélés ligne à ligne, astrolabe, chapitres, feuilles.
-import { useEffect, useId, useRef } from 'react';
+import { memo, useEffect, useId, useRef } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { CARDS, RARITY_LABEL } from '../../shared/cards';
 import type { CardId } from '../../shared/cards';
@@ -56,7 +56,7 @@ export function Slot({ label = "Touchez l'échiquier pour jouer" }: { label?: st
   );
 }
 
-export function Chapter({ id, active }: { id: CardId; active: boolean }) {
+export const Chapter = memo(function Chapter({ id, active }: { id: CardId; active: boolean }) {
   const c = CARDS[id];
   return (
     <article className={`o-chapter ${active ? 'on' : ''}`} data-chapter={id} style={{ '--h': c.hue } as CSSProperties}>
@@ -79,11 +79,11 @@ export function Chapter({ id, active }: { id: CardId; active: boolean }) {
       <Slot label={`${c.name} · touchez pour jouer`} />
     </article>
   );
-}
+});
 
 /** Anneaux méridiens de l'astrolabe, derrière l'échiquier. Les anneaux qui tournent sont des conteneurs HTML : un
  *  <svg> qui tourne lui-même serait remis en page et repeint à chaque image du fil principal. */
-export function OrbitRings() {
+export const OrbitRings = memo(function OrbitRings() {
   return (
     <div className="o-orbits" aria-hidden="true">
       <div className="o-orbit o-o1">
@@ -125,13 +125,13 @@ export function OrbitRings() {
       </svg>
     </div>
   );
-}
+});
 
 /**
  * Anneau équatorial de l'astrolabe : un cercle gradué vu de biais (écrasé en ellipse) qui tourne sur lui-même.
  * La moitié arrière passe derrière l'échiquier, la moitié avant devant (deux calques).
  */
-export function EqRing({ part, w, r, rot, dur, reverse, hue }: { part: 'back' | 'front'; w: number; r: number; rot: number; dur: number; reverse?: boolean; hue: 'gold' | 'cyan' }) {
+export const EqRing = memo(function EqRing({ part, w, r, rot, dur, reverse, hue }: { part: 'back' | 'front'; w: number; r: number; rot: number; dur: number; reverse?: boolean; hue: 'gold' | 'cyan' }) {
   const stroke = hue === 'gold' ? 'rgba(243,201,105,.85)' : 'rgba(150,236,255,.6)';
   const ring = (
     <div className="o-eq-squash" style={{ transform: `scaleY(${r})` }}>
@@ -156,7 +156,7 @@ export function EqRing({ part, w, r, rot, dur, reverse, hue }: { part: 'back' | 
       {part === 'front' ? <div className="o-eq-clip">{ring}</div> : ring}
     </div>
   );
-}
+});
 
 export const EQ = [
   { w: 142, r: 0.27, rot: -1, dur: 90, hue: 'gold' as const },

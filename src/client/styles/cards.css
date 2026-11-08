@@ -23,6 +23,13 @@
   flex: none;
   isolation: isolate;
 }
+/* Écran tactile : la carte ne s'incline pas au survol (SpellCard) ; sans transformation 3D permanente, elle n'est plus
+   un calque composé à elle seule (onze sur l'accueil d'un téléphone) */
+@media (hover: none) {
+  .spell-card {
+    transform: none;
+  }
+}
 .spell-card.r-legendaire {
   background: linear-gradient(160deg, #fff1c4, #f3c969 25%, #8a5a1c 55%, #ffd98a 80%, #fff);
   box-shadow: 0 18px 44px -14px rgba(243, 190, 90, 0.75), 0 2px 8px rgba(0, 0, 0, 0.5);

@@ -1,6 +1,6 @@
 // Décors de la descente : chaque lieu est une pile de calques (data-d = profondeur de parallaxe).
 // Les reliefs sont générés (graine fixe) pour rester légers : des chemins SVG pleins, sans filtre animé.
-import { memo, useEffect, useRef } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import frostA from './assets/cloud-frost-a.webp';
 import frostB from './assets/cloud-frost-b.webp';
@@ -232,6 +232,127 @@ function withAlpha(hex: string, a: number) {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a.toFixed(2)})`;
 }
 
+/** Zone d'un dessin, en unités du SVG : x, y, largeur, hauteur. */
+type Box = readonly [number, number, number, number];
+
+/** Images précalculées, gardées le temps de la visite : au retour sur l'accueil, l'image est posée d'emblée. */
+const BAKED = new Map<string, string>();
+/** Précalculs lancés (en cours ou finis) : un accueil remonté avant la fin du premier attend celui-ci au lieu d'en
+ *  lancer un second (qui laisserait une image en double, jamais libérée). */
+const BAKING = new Map<string, Promise<string | null>>();
+
+/**
+ * Dessin flouté (feGaussianBlur) remplacé, au repos, par son image précalculée. Un flou SVG est recalculé à chaque
+ * tramage du calque (à chaque réveil du lieu, sur toute sa largeur) ; une image ne coûte qu'un tracé. L'image est
+ * faite par le navigateur lui-même à partir du même SVG (le contenu de ce groupe et les définitions qu'il cite), sur
+ * la zone `box`, à `k` pixels par unité du dessin, puis posée à la même place dans le même <svg> : même cadrage, et
+ * l'élément animé ne change pas (son animation continue). Un flou aussi large n'a pas de détail fin : une image à
+ * moins d'un pixel par unité, agrandie, donne le même dessin (écart mesuré de 3 niveaux sur 255 au plus, au
+ * téléphone comme à l'ordinateur). `box` couvre tout ce que le flou montre à l'écran (zone du filtre, ou étendue
+ * du flou à 3 écarts-types, celle que Chrome lui donne) : le calque n'est pas plus grand qu'avec le filtre.
+ * En cas d'échec (navigateur qui refuse le SVG dans un canevas…), le flou d'origine reste.
+ * `hiddenWhen` : requête média sous laquelle la feuille de style masque le dessin (display: none) ; rien n'est
+ * précalculé tant qu'elle s'applique (le flou n'est pas peint, il ne coûte rien), et le précalcul part si elle cesse
+ * de s'appliquer (téléphone tourné).
+ */
+function Baked({ name, box, k, hiddenWhen, children }: { name: string; box: Box; k: number; hiddenWhen?: string; children: ReactNode }) {
+  const ref = useRef<SVGGElement>(null);
+  const [src, setSrc] = useState(() => BAKED.get(name) ?? null);
+  useEffect(() => {
+    const g = ref.current;
+    if (src || !g) return;
+    let live = true;
+    let idle = 0;
+    // Au repos, juste après le chargement : bien avant que le lieu ne soit peint (il l'est dès le début du
+    // défilement), et sans prendre la place du premier affichage
+    const run = () => {
+      let job = BAKING.get(name);
+      if (!job) {
+        job = bake(g, box, k).then(url => {
+          if (url) BAKED.set(name, url);
+          return url;
+        });
+        BAKING.set(name, job);
+      }
+      void job.then(url => {
+        if (url && live) setSrc(url);
+      });
+    };
+    // Safari n'a pas toujours requestIdleCallback
+    const ric = typeof window.requestIdleCallback === 'function';
+    const schedule = () => {
+      idle = ric ? window.requestIdleCallback(run, { timeout: 1500 }) : window.setTimeout(run, 200);
+    };
+    const mq = hiddenWhen ? window.matchMedia(hiddenWhen) : null;
+    const onChange = () => {
+      if (mq?.matches) return;
+      mq?.removeEventListener('change', onChange);
+      schedule();
+    };
+    if (mq?.matches) mq.addEventListener('change', onChange);
+    else schedule();
+    return () => {
+      live = false;
+      mq?.removeEventListener('change', onChange);
+      if (ric) window.cancelIdleCallback(idle);
+      else window.clearTimeout(idle);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const [x, y, w, h] = box;
+  return src ? <image href={src} x={x} y={y} width={w} height={h} preserveAspectRatio="none" /> : <g ref={ref}>{children}</g>;
+}
+
+/** Image (adresse blob:) du groupe `g` sur la zone `box`, ou null. */
+async function bake(g: SVGGElement, [x, y, w, h]: Box, k: number): Promise<string | null> {
+  let svgUrl = '';
+  try {
+    const ser = new XMLSerializer();
+    const body = ser.serializeToString(g);
+    // Définitions citées (filtres, dégradés), où qu'elles soient dans la page, et celles qu'elles citent
+    const defs: string[] = [];
+    const seen = new Set<string>();
+    const scan = (s: string) => {
+      for (const m of s.matchAll(/url\(#([^)]+)\)|href="#([^"]+)"/g)) {
+        const id = m[1] ?? m[2];
+        if (seen.has(id)) continue;
+        seen.add(id);
+        const el = document.getElementById(id);
+        if (!el) continue;
+        const str = ser.serializeToString(el);
+        defs.push(str);
+        scan(str);
+      }
+    };
+    scan(body);
+    const pw = Math.round(w * k);
+    const ph = Math.round(h * k);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${pw}" height="${ph}" viewBox="${x} ${y} ${w} ${h}" preserveAspectRatio="none"><defs>${defs.join('')}</defs>${body}</svg>`;
+    svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+    const img = new Image();
+    img.src = svgUrl;
+    await img.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = pw;
+    canvas.height = ph;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, pw, ph);
+    const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, 'image/png'));
+    if (!blob) return null;
+    const url = URL.createObjectURL(blob);
+    // Décodée d'avance : le premier tramage du lieu n'attend pas l'image
+    const out = new Image();
+    out.src = url;
+    await out.decode().catch(() => undefined);
+    return url;
+  } catch {
+    return null;
+  } finally {
+    if (svgUrl) URL.revokeObjectURL(svgUrl);
+  }
+}
+
 /**
  * Bancs de nuées traversés pendant la chute, entre deux lieux (invisibles au repos, au-dessus de l'écran).
  * Chaque banc a sa vitesse : il croise le centre de l'écran quand il reste `f` écran à parcourir avant le lieu.
@@ -434,10 +555,16 @@ export function SceneForet({ part }: { part: 'back' | 'front' }) {
               <stop offset="1" stopColor="#a77bff" stopOpacity="0" />
             </linearGradient>
           </defs>
-          <g filter="url(#au-blur)">
-            <path d="M-100 260 C 200 120, 420 330, 760 210 S 1300 110, 1700 230" stroke="url(#au-1)" strokeWidth="70" fill="none" />
-            <path d="M-100 330 C 260 230, 520 380, 880 290 S 1380 220, 1700 300" stroke="url(#au-1)" strokeWidth="38" fill="none" opacity="0.6" />
-          </g>
+          {/* Zone du filtre : la boîte des deux voiles (x −100 à 1700, y 129,4 à 330) élargie de 10 % et 60 % de chaque
+              côté (x −280 à 1880, y 9 à 450,4), coupée à droite à x = 1640 : au-delà de 1600, le dessin n'est jamais
+              à l'écran (cadrage « slice », et l'animation ne le pousse que vers la droite), le calque est plus petit.
+              Un demi-pixel par unité suffit à un flou de 22 unités */}
+          <Baked name="aurora" box={[-280, 9, 1920, 442]} k={0.5}>
+            <g filter="url(#au-blur)">
+              <path d="M-100 260 C 200 120, 420 330, 760 210 S 1300 110, 1700 230" stroke="url(#au-1)" strokeWidth="70" fill="none" />
+              <path d="M-100 330 C 260 230, 520 380, 880 290 S 1380 220, 1700 300" stroke="url(#au-1)" strokeWidth="38" fill="none" opacity="0.6" />
+            </g>
+          </Baked>
         </Svg>
       </Layer>
       <Layer d={0.13}>
@@ -535,11 +662,18 @@ export function ScenePics({ part }: { part: 'back' | 'front' }) {
               <feGaussianBlur stdDeviation="6" />
             </filter>
           </defs>
-          <path d="M980 40 L940 190 L985 196 L930 360 L1010 210 L962 204 L1012 40 Z" fill="#cdb8ff" filter="url(#bolt-glow)" />
+          {/* Lueur : image précalculée sur la boîte de l'éclair élargie de 3 écarts-types (18 unités), l'étendue que
+              Chrome donne lui-même au flou (le calque de l'éclair garde sa taille ; au-delà, moins d'un niveau sur 255) */}
+          <Baked name="bolt-1" box={[912, 22, 118, 356]} k={1}>
+            <path d="M980 40 L940 190 L985 196 L930 360 L1010 210 L962 204 L1012 40 Z" fill="#cdb8ff" filter="url(#bolt-glow)" />
+          </Baked>
           <path d="M980 40 L940 190 L985 196 L930 360 L1010 210 L962 204 L1012 40 Z" fill="#f7f1ff" />
         </Svg>
         <Svg anchor="xMidYMin" className="o-bolt o-b2">
-          <path d="M330 80 L310 170 L340 172 L300 300 L360 160 L330 158 L352 80 Z" fill="#ffe6a8" filter="url(#bolt-glow)" />
+          {/* Même requête que dans odyssee.css : sur un téléphone en portrait, ce second éclair n'est pas affiché */}
+          <Baked name="bolt-2" box={[282, 62, 96, 256]} k={1} hiddenWhen="(max-width: 819.98px) and (max-aspect-ratio: 1/1)">
+            <path d="M330 80 L310 170 L340 172 L300 300 L360 160 L330 158 L352 80 Z" fill="#ffe6a8" filter="url(#bolt-glow)" />
+          </Baked>
           <path d="M330 80 L310 170 L340 172 L300 300 L360 160 L330 158 L352 80 Z" fill="#fff8e6" />
         </Svg>
         <div className="o-cloud-ceiling" />
@@ -634,27 +768,22 @@ function Hourglass() {
  *  en page et repeindre à chaque image du fil principal (mesuré : 60 mises en page/s pendant le défilement). */
 function ClockRing({ size, ticks, className, style }: { size: number; ticks: number; className: string; style?: CSSProperties }) {
   const c = size / 2;
+  // Graduations : un chemin par épaisseur (longues, courtes), un segment par graduation aux mêmes extrémités que les
+  // <line> d'avant ; elles ne se touchent pas, l'ordre de peinture entre elles ne change rien
+  const marks = ['', ''];
+  for (let i = 0; i < ticks; i++) {
+    const a = (i / ticks) * Math.PI * 2;
+    const long = i % 5 === 0;
+    const r1 = c - 4, r2 = c - (long ? 14 : 9);
+    marks[long ? 0 : 1] += `M${f1(c + Math.cos(a) * r1)} ${f1(c + Math.sin(a) * r1)}L${f1(c + Math.cos(a) * r2)} ${f1(c + Math.sin(a) * r2)}`;
+  }
   return (
     <div className={`o-clock-ring ${className}`} style={{ width: size, height: size, ...style }} aria-hidden="true">
       <svg className="o-spin-svg" viewBox={`0 0 ${size} ${size}`}>
         <circle cx={c} cy={c} r={c - 2} fill="none" stroke="rgba(243,201,105,.45)" strokeWidth="1" />
         <circle cx={c} cy={c} r={c - 16} fill="none" stroke="rgba(243,201,105,.2)" strokeWidth="1" strokeDasharray="2 6" />
-        {Array.from({ length: ticks }, (_, i) => {
-          const a = (i / ticks) * Math.PI * 2;
-          const long = i % 5 === 0;
-          const r1 = c - 4, r2 = c - (long ? 14 : 9);
-          return (
-            <line
-              key={i}
-              x1={f1(c + Math.cos(a) * r1)}
-              y1={f1(c + Math.sin(a) * r1)}
-              x2={f1(c + Math.cos(a) * r2)}
-              y2={f1(c + Math.sin(a) * r2)}
-              stroke="rgba(255,220,150,.7)"
-              strokeWidth={long ? 1.6 : 0.8}
-            />
-          );
-        })}
+        <path d={marks[0]} fill="none" stroke="rgba(255,220,150,.7)" strokeWidth="1.6" />
+        <path d={marks[1]} fill="none" stroke="rgba(255,220,150,.7)" strokeWidth="0.8" />
       </svg>
     </div>
   );
@@ -878,20 +1007,16 @@ export function SceneSeuil({ part }: { part: 'back' | 'front' }) {
           <path d="M120 1000 L120 420 A280 280 0 0 1 680 420 L680 1000" fill="none" stroke="#f3c969" strokeWidth="2.2" />
           <path d="M40 1000 L40 410 A360 360 0 0 1 760 410 L760 1000" fill="none" stroke="rgba(243,201,105,.55)" strokeWidth="1.2" />
           <path d="M80 1000 L80 415 A320 320 0 0 1 720 415 L720 1000" fill="none" stroke="rgba(243,201,105,.25)" strokeWidth="1" strokeDasharray="3 7" />
-          {Array.from({ length: 13 }, (_, i) => {
-            const a = Math.PI + (i / 12) * Math.PI;
-            return (
-              <line
-                key={i}
-                x1={f1(400 + Math.cos(a) * 282)}
-                y1={f1(420 + Math.sin(a) * 282)}
-                x2={f1(400 + Math.cos(a) * 358)}
-                y2={f1(420 + Math.sin(a) * 358)}
-                stroke="rgba(243,201,105,.35)"
-                strokeWidth="1"
-              />
-            );
-          })}
+          {/* Rayons de l'arche : un seul chemin, un segment par rayon (mêmes extrémités, ils ne se touchent pas) */}
+          <path
+            d={Array.from({ length: 13 }, (_, i) => {
+              const a = Math.PI + (i / 12) * Math.PI;
+              return `M${f1(400 + Math.cos(a) * 282)} ${f1(420 + Math.sin(a) * 282)}L${f1(400 + Math.cos(a) * 358)} ${f1(420 + Math.sin(a) * 358)}`;
+            }).join('')}
+            fill="none"
+            stroke="rgba(243,201,105,.35)"
+            strokeWidth="1"
+          />
           <path d="M392 60 l8 -26 l8 26 l26 8 l-26 8 l-8 26 l-8 -26 l-26 -8 z" fill="#f3c969" />
         </svg>
       </Layer>

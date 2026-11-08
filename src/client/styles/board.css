@@ -403,6 +403,11 @@
 .piece.vanish {
   z-index: 0;
 }
+/* Pièce qui glisse (Board, le temps de sa transition) : au-dessus des autres, rien n'est peint après elle, et le
+   plateau n'est pas redécoupé en calques à chaque coup */
+.piece.is-moving {
+  z-index: 2;
+}
 .pi {
   width: 100%;
   height: 100%;

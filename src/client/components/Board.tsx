@@ -100,6 +100,12 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
   const prevIds = useRef<Set<number>>(new Set(pos.board.filter(Boolean).map(p => p!.id)));
   const shownRef = useRef(shown);
   shownRef.current = shown;
+  /** Pièces qui glissent vers leur nouvelle case (le temps de leur transition) : peintes au-dessus des autres. Une
+   *  pièce en transition devient un calque ; si d'autres pièces étaient peintes après elle et la chevauchaient, elles
+   *  deviendraient des calques à leur tour et le plateau serait redécoupé (puis retramé) à chaque coup. */
+  const [moving, setMoving] = useState<Set<number>>(() => new Set());
+  const movingTimer = useRef(0);
+  useEffect(() => () => window.clearTimeout(movingTimer.current), []);
   const lastKeyRef = useRef(moveKey(lastMove));
   useEffect(() => {
     const now: Shown[] = [];
@@ -111,6 +117,14 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
     });
     let gone: Shown[] = shownRef.current.filter(s => !ids.has(s.p.id) && s.state !== 'vanish').map(s => ({ ...s, state: 'vanish' as const }));
     prevIds.current = ids;
+    const before = new Map(shownRef.current.map(s => [s.p.id, s.sq]));
+    const moved = new Set(now.filter(s => before.has(s.p.id) && before.get(s.p.id) !== s.sq).map(s => s.p.id));
+    if (moved.size) {
+      setMoving(moved);
+      window.clearTimeout(movingTimer.current);
+      // Transition de .piece : 0,18 s (board.css)
+      movingTimer.current = window.setTimeout(() => setMoving(new Set()), 240);
+    }
     // Déflagration : la pièce qui vient de jouer a disparu, elle a donc pris et explosé avec sa victime. Elle glisse
     // jusqu'à la case de la prise, puis les deux pièces éclatent ensemble.
     const key = moveKey(lastMove);
@@ -462,6 +476,7 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
             if (fx.phase.has(p.id)) cls.push('phasing');
             if (fx.weighted.has(p.c) && isSlider(p.t)) cls.push('weighted');
             if (dragging) cls.push('dragging');
+            if (moving.has(p.id)) cls.push('is-moving');
             // Pièce qui sera prise si l'on lâche ici
             if (drag?.moved && hover === sq && !dragging && state === 'idle' && dests.get(sq)) cls.push('is-prey');
             // Roi maté : l'image passe dans un élément intérieur, qui tombe dans le plan de .pi. Ainsi la chute se

@@ -3498,6 +3498,18 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
   .ody .o-ln > span {
     transform: translate(0, 112%);
   }
+  /* Plaque de secours sous l'échiquier de l'accueil : une couleur unie, avec la même projection que le plateau,
+     cachée sous le cadre et les cases. Un calque d'une seule couleur ne coûte aucune tuile : il est dessiné même
+     mémoire graphique pleine. Si une tuile des cases manque un instant, on voit la couleur du plateau, pas un trou. */
+  .ody .o-astre .board-wrap::before {
+    content: '';
+    position: absolute;
+    inset: 2px;
+    background: color-mix(in srgb, var(--light) 45%, var(--dark));
+    transform: rotateX(var(--tilt)) scale(var(--zoom, 1));
+    will-change: transform;
+    pointer-events: none;
+  }
   /* Cartes de la page : le halo garde son état de repos (celui qu'il retrouve après ses trois pulsations) et le reflet
      invisible (opacité nulle) n'est pas dessiné ; animés, ils faisaient de chaque carte une pile de calques composés
      (halo, puis emblème et pastilles par-dessus, par chevauchement) */

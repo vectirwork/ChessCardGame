@@ -133,6 +133,23 @@ export class VfxStage {
   /** Calque placé dans le document (anchor) : état appliqué, et décalage écrit. */
   private anchored: boolean | null = null;
   private anchoredAt = '';
+  /**
+   * Boîte de l'échiquier relevée juste après l'image précédente (mise en page à jour, lecture gratuite), pour l'image
+   * suivante. Lue en début d'image, au milieu des écritures du moteur de l'accueil (calques, échiquier), elle forçait
+   * le navigateur à refaire tout de suite style et mise en page (mesuré à l'ordinateur pendant la descente : 0,7 s
+   * sur une glissade). Échiquier fixe seulement : placé dans le document (téléphone), il suit le défilement.
+   */
+  private rect: DOMRect | null = null;
+  private rectAt = 0;
+  /** Dernière image qui a lu la boîte (relevée ou mise en cache). */
+  private usedAt = 0;
+  private rectTimer = 0;
+  private readRect = () => {
+    this.rectTimer = 0;
+    if (this.disposed) return;
+    this.rect = this.wrap.getBoundingClientRect();
+    this.rectAt = performance.now();
+  };
   private perspective = 1400;
   private lastMarkerRender = 0;
   private lastLayout = '';
@@ -212,6 +229,7 @@ export class VfxStage {
   attach(wrap: HTMLElement, orientation: Color) {
     this.detach();
     this.wrap = wrap;
+    this.rect = null;
     this.orientation = orientation;
     const p = parseFloat(getComputedStyle(wrap).perspective);
     this.perspective = p > 0 ? p : 1400;
@@ -555,7 +573,11 @@ export class VfxStage {
     }
 
     // Position du plateau (hors secousse) puis application de la nouvelle secousse
-    const r = this.wrap.getBoundingClientRect();
+    // Boîte relevée après l'image précédente (si la lecture a eu lieu depuis), sinon lue maintenant
+    const fresh = this.anchored === false && this.rect && this.rectAt > this.usedAt;
+    const r = fresh ? this.rect! : this.wrap.getBoundingClientRect();
+    this.usedAt = performance.now();
+    if (this.anchored === false && !this.rectTimer) this.rectTimer = window.setTimeout(this.readRect, 0);
     this.anchor();
     const baseX = r.left - this.applied.x;
     const baseY = r.top - this.applied.y;
@@ -623,7 +645,9 @@ export class VfxStage {
     const c = this.canvas;
     if (!c) return;
     const host = this.wrap.closest<HTMLElement>('.o-astre');
-    const on = !!host && getComputedStyle(host).position === 'absolute';
+    // Le moteur de l'accueil place l'échiquier dans le document par son style en ligne (setFlow) : lu sans calculer
+    // de style (getComputedStyle, à chaque image, refaisait le style de la page au milieu des écritures du moteur)
+    const on = !!host && host.style.position === 'absolute';
     if (on !== this.anchored) {
       this.anchored = on;
       c.style.position = on ? 'absolute' : '';
@@ -732,6 +756,7 @@ export class VfxStage {
   dispose() {
     this.halt();
     this.disposed = true;
+    window.clearTimeout(this.rectTimer);
     window.removeEventListener('scroll', this.onMove, { capture: true });
     window.removeEventListener('resize', this.onMove);
     for (const f of this.fx) f.dispose?.();

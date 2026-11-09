@@ -15,12 +15,15 @@ import { botPool } from './bot-pool';
 import { config } from './config';
 import { connectDb, db, migrate } from './db';
 import { attachSockets, flushRooms, gamesRouter, restoreRooms } from './games';
-import { shopRouter, stripeWebhook } from './shop';
+import { honorPackPromises, shopRouter, stripeWebhook } from './shop';
 import { serveBuiltSite } from './site';
 
 async function main() {
   const dbLabel = await connectDb();
   await migrate();
+  // Promesses des packs (« et les prochains offerts ») : livre aux acheteurs les objets ajoutés depuis leur achat.
+  // Idempotent ; un échec est signalé sans empêcher le démarrage (rien n'est perdu : on réessaie au suivant).
+  await honorPackPromises().catch(e => console.error('Promesses des packs :', e));
   if (process.argv.includes('--migrate-only')) {
     await db.end();
     return;

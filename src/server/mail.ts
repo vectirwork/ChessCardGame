@@ -58,12 +58,41 @@ export function sendPasswordReset(to: string, username: string, token: string) {
   );
 }
 
-export function sendPurchaseConfirmation(to: string, productName: string, amount: string) {
+export interface PurchaseMail {
+  /** Nom du produit, ou « Votre sélection (n skins) » pour un panier. */
+  label: string;
+  /** Montant facturé, déjà formaté (« 3,00 € »). */
+  amount: string;
+  /** Libellés des objets livrés (« Roi de braise », « Échiquier Obsidienne & Or », « Sorts Inferno »). */
+  items: readonly string[];
+  /** Ce qui a été livré a aussi été équipé (achat avec « Les équiper dès la livraison »). */
+  equipped: boolean;
+}
+
+/** Qui voit quoi : le roi et les sorts se voient en partie ; l'échiquier, chacun garde le sien. */
+const WHO_SEES = 'Votre roi et vos sorts : vos adversaires les voient. Votre échiquier : il vous suit dans toutes vos parties.';
+
+/** E-mail de confirmation d'achat (objet, HTML, texte), sans l'envoyer. Exportée pour les tests et les aperçus. */
+export function purchaseConfirmationMail(m: PurchaseMail): { subject: string; html: string; text: string } {
   const url = `${config.publicUrl}/boutique`;
-  return send(
-    to,
-    `Merci pour votre achat – ${config.appName}`,
-    layout('Achat confirmé ✨', `Votre achat <b>${escape(productName)}</b> (${escape(amount)}) est disponible dès maintenant dans votre collection. Équipez-le depuis la boutique pour que vos adversaires le voient en partie.`, { label: 'Équiper mes nouveautés', url }),
-    `Achat confirmé : ${productName} (${amount}). ${url}`,
-  );
+  const list = m.items.length
+    ? `<ul style="margin:10px 0 16px;padding-left:20px;color:#ffffff">${m.items.map(i => `<li style="padding:2px 0">${escape(i)}</li>`).join('')}</ul>`
+    : '';
+  const next = m.equipped
+    ? 'C’est déjà équipé : tout est prêt pour votre prochaine partie.'
+    : 'Équipez vos nouveautés depuis la boutique ou votre compte.';
+  return {
+    subject: `Merci pour votre achat – ${config.appName}`,
+    html: layout(
+      'Achat confirmé ✨',
+      `<b style="color:#ffffff">${escape(m.label)}</b> · ${escape(m.amount)}<br>Disponible dès maintenant dans votre collection :${list}${escape(next)}<br><br><span style="color:#8a87a8">${escape(WHO_SEES)}</span>`,
+      { label: m.equipped ? 'Voir ma panoplie' : 'Équiper mes nouveautés', url },
+    ),
+    text: `Achat confirmé : ${m.label} · ${m.amount}\nDisponible dès maintenant dans votre collection :\n${m.items.map(i => `- ${i}`).join('\n')}\n${next}\n${WHO_SEES}\n${url}`,
+  };
+}
+
+export function sendPurchaseConfirmation(to: string, m: PurchaseMail) {
+  const { subject, html, text } = purchaseConfirmationMail(m);
+  return send(to, subject, html, text);
 }

@@ -4,7 +4,8 @@
 // (catalogue Pouvoirs, identifiant 'climats', par défaut), choix du catalogue (Sans cartes ; Duel ramené aux Pouvoirs ;
 // file amicale), abandon pendant le choix (annulation), revanche, IA, boutique (mode démo ; collection complétée au
 // prix de productPrice), rois (roi de l'IA ; en mode démo : achat, équipement, roi pris à l'assise et vu de tous,
-// revanche).
+// revanche), essai équipé en une requête, panier payé en une fois et équipé à la livraison, sceau, profil public et
+// classement.
 // Durée : au moins 47 s (l'échéance du choix est attendue en parallèle des autres étapes).
 import { io } from 'socket.io-client';
 import assert from 'node:assert/strict';
@@ -430,6 +431,68 @@ if (demoShop) {
   assert.equal(jrk.view.seats.w.king, 'king:arcane');
   assert.ok((await alice.emit('game:abort', { id: rk.to })).ok);
   step('rois : roi vu par les deux joueurs et un spectateur, figé pendant la partie, relu à la revanche');
+
+  // 7 ter. Équiper un essai entier (EquipRequest { itemIds }) : une requête, un objet par emplacement, tout ou rien
+  r = await alice.api('/account/equip', { itemIds: ['king:braise', 'board:wood', 'skin:inferno'] });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  const look = u => [u.equippedKing, u.equippedBoard, u.equippedSkin];
+  assert.deepEqual(look(r.data.user), ['king:braise', 'board:wood', 'skin:inferno'], 'roi, échiquier et sorts équipés d’un coup');
+  r = await alice.api('/account/equip', { itemIds: ['king:braise', 'king:arcane'] });
+  assert.equal(r.status, 400, 'deux rois : refusé');
+  assert.equal(r.data.error, 'Un seul objet par emplacement.');
+  r = await alice.api('/account/equip', { itemIds: ['king:arcane', 'board:ruby'] });
+  assert.equal(r.status, 403, 'échiquier non possédé : refusé');
+  r = await alice.api('/account/equip', { itemIds: ['king:arcane', 'board:inconnu'] });
+  assert.equal(r.status, 404, 'objet inconnu : refusé');
+  for (const itemIds of [[], ['king:arcane', 'board:arcane', 'skin:arcane', 'skin:inferno']]) {
+    r = await alice.api('/account/equip', { itemIds });
+    assert.equal(r.status, 400, `sélection invalide : ${itemIds.length} objets`);
+  }
+  r = await alice.api('/me');
+  assert.deepEqual(look(r.data.user), ['king:braise', 'board:wood', 'skin:inferno'], 'refus : rien n’est équipé, pas même le roi offert');
+  step('équiper un essai entier : une requête ; deux objets d’un emplacement (400), non possédé (403), inconnu (404) : rien ne change');
+
+  // 7 quater. Panier d'essai (CheckoutRequest { itemIds, equip }) : prix de quoteCart, objets à payer seulement,
+  // équipés à la livraison ; collection complétée avec equip : les trois emplacements équipés
+  r = await alice.api('/shop/checkout', { productId: 'skin:neon', waiver: true });
+  r = await alice.api(`/shop/demo/${r.data.url.split('/').pop()}/complete`, {});
+  assert.ok(r.data.user.items.includes('skin:neon'));
+  assert.equal(r.data.user.equippedSkin, 'skin:inferno', 'sans equip : l’équipement ne change pas');
+  r = await alice.api('/shop/checkout', { itemIds: ['king:synthe', 'board:grille', 'skin:neon'], waiver: true, equip: true });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  const cartId = r.data.url.split('/').pop();
+  r = await alice.api(`/shop/demo/${cartId}`);
+  // Alice a les sorts Néon : le panier complète la collection Néon 2084 pour 5,99 € − 2,99 € = 3,00 € (au lieu de 4,98 €)
+  assert.deepEqual(r.data, { id: cartId, productId: 'panier', items: ['king:synthe', 'board:grille'], amountCents: 300, status: 'pending' });
+  r = await alice.api(`/shop/demo/${cartId}/complete`, {});
+  assert.equal(r.data.productId, 'panier');
+  assert.deepEqual(r.data.items, ['king:synthe', 'board:grille']);
+  assert.deepEqual(look(r.data.user), ['king:synthe', 'board:grille', 'skin:inferno'], 'equip : roi et échiquier livrés et équipés, sorts inchangés');
+  r = await alice.api('/shop/checkout', { itemIds: ['king:synthe', 'skin:arcane'], waiver: true });
+  assert.equal(r.status, 409, 'panier sans rien à payer');
+  r = await alice.api('/shop/checkout', { itemIds: ['king:rubis', 'king:astral'], waiver: true });
+  assert.equal(r.status, 400, 'panier : deux rois refusés');
+  r = await alice.api('/shop/checkout', { productId: 'skin:void', itemIds: ['skin:void'], waiver: true });
+  assert.equal(r.status, 400, 'un produit ou un panier, pas les deux');
+  r = await alice.api('/shop/checkout', { productId: 'col:inferno', waiver: true, equip: true });
+  const forgeId = r.data.url.split('/').pop();
+  assert.equal((await alice.api(`/shop/demo/${forgeId}`)).data.amountCents, 199, 'Forge complétée : il ne manque que l’échiquier');
+  r = await alice.api(`/shop/demo/${forgeId}/complete`, {});
+  assert.deepEqual(look(r.data.user), ['king:braise', 'board:obsidian', 'skin:inferno'], 'collection avec equip : les trois emplacements');
+  r = await alice.api('/account/purchases');
+  const cartRow = r.data.purchases.find(p => p.id === cartId);
+  assert.deepEqual([cartRow.product_id, cartRow.items, cartRow.amount_cents, cartRow.status], ['panier', ['king:synthe', 'board:grille'], 300, 'paid'], 'historique : le panier');
+  step('panier d’essai payé en une fois (Néon complétée à 3,00 €), équipé à la livraison ; collection avec equip ; refus 409 et 400');
+
+  // Le sceau et le roi pris à l'assise : Néon 2084 et Forge d'Inferno complètes, rareté égale → la première du catalogue
+  r = await alice.api('/games', { mode: 'bot', tc: 'none', color: 'w', level: 1, catalog: 'aucune' });
+  const sealGame = r.data.id;
+  const js2 = await alice.emit('game:join', { id: sealGame });
+  assert.equal(js2.view.seats.w.king, 'king:braise');
+  assert.equal(js2.view.seats.w.seal, 'col:neon', 'sceau de collection à l’assise');
+  assert.equal(js2.view.seats.b.seal, null, 'l’IA n’a pas de sceau');
+  assert.ok((await alice.emit('game:resign', { id: sealGame })).ok);
+  step('sceau de collection et roi équipé pris à l’assise');
 }
 
 // 8. Sécurité : émote piégée ignorée, droits d'administrateur réservés aux e-mails vérifiés
@@ -548,9 +611,21 @@ step('accueil : deux visiteurs prêts appariés (pays d’après le fuseau, part
 }
 step('accueil : recherche d’un vrai joueur ; un joueur qui ne joue pas est relayé par l’IA (10 s), puis reprend la main');
 
-// 9. Compte : profil public, export, suppression
-r = await alice.api(`/users/alice_${stamp}`);
+// 9. Compte : profil public (roi, échiquier, sorts, sceau), classement, export, suppression
+r = await alice.api(`/users/ALICE_${stamp}`);
 assert.equal(r.status, 200);
+assert.equal(r.data.profile.username, `alice_${stamp}`);
+assert.ok(!('id' in r.data.profile), 'le profil public ne montre pas l’identifiant');
+assert.deepEqual(
+  [r.data.profile.king, r.data.profile.board, r.data.profile.skin, r.data.profile.seal],
+  demoShop ? ['king:braise', 'board:obsidian', 'skin:inferno', 'col:neon'] : ['king:arcane', 'board:arcane', 'skin:arcane', null],
+  'profil public : roi, échiquier, sorts et sceau',
+);
+r = await alice.api('/users/personne_ici');
+assert.equal(r.status, 404);
+r = await alice.api('/leaderboard');
+assert.ok(r.data.players.every(p => p.seal === null || /^col:/.test(p.seal)), 'classement : un sceau (ou null) par joueur');
+assert.ok(r.data.players.every(p => !('items' in p)), 'classement : la collection n’est pas exposée');
 r = await alice.api('/account/export');
 assert.ok(r.data.profile && !('password_hash' in r.data.profile));
 r = await alice.api('/account', { password: 'mauvais' }, 'DELETE');
@@ -559,7 +634,7 @@ r = await alice.api('/account', { password: 'motdepasse123' }, 'DELETE');
 assert.equal(r.status, 200);
 r = await alice.api('/me');
 assert.equal(r.data.user, null);
-step('profil public, export RGPD sans mot de passe, suppression du compte');
+step('profil public (roi, échiquier, sorts, sceau), classement avec sceaux, export RGPD sans mot de passe, suppression du compte');
 
 alice.socket.close();
 bob.socket.close();

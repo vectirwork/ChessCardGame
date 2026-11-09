@@ -1,14 +1,21 @@
 // Boutique : paiement par Stripe Checkout (page de paiement hébergée par Stripe), webhook et mode démo.
+// On paie un produit (objet, collection « à compléter », pack) ou un panier d'essai (au plus un objet par
+// emplacement). Le montant est toujours calculé ici (productPrice, quoteCart), jamais reçu du navigateur.
 import express, { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import Stripe from 'stripe';
 import { z } from 'zod';
-import { DEFAULT_ITEM, FREE_ITEMS, ITEMS, PRODUCTS, formatPrice, productById, productPrice } from '../shared/catalog';
-import type { ItemKind } from '../shared/catalog';
+import {
+  ALL_PRODUCTS, DEFAULT_ITEM, FREE_ITEMS, ITEMS, PRODUCTS, SLOTS, formatPrice, itemById, itemLabel, productById,
+  productPrice, quoteCart,
+} from '../shared/catalog';
+import type { Item, ItemKind } from '../shared/catalog';
+import { CART_PRODUCT_ID } from '../shared/protocol';
 import type { ConfirmResponse, DemoCompleteResponse, DemoPurchase, PurchaseStatus } from '../shared/protocol';
 import { SLOT_COLUMN, requireUser, toMe, userById } from './auth';
 import { config } from './config';
 import { one, q, tx } from './db';
+import type { DbClient } from './db';
 import { sendPurchaseConfirmation } from './mail';
 
 const stripe = config.payments === 'stripe' ? new Stripe(config.stripe.secretKey) : null;
@@ -21,11 +28,174 @@ interface PurchaseRow {
   amount_cents: number;
   status: PurchaseStatus;
   email: string | null;
+  /** Équiper à la livraison ce qui est livré (un objet par emplacement). */
+  equip: boolean;
 }
 
-/** Livre les objets d'un achat payé. Idempotent : un second appel ne fait rien. */
+// ---------------------------------------------------------------------------------------------
+// Sélections et équipement
+
+/**
+ * Objets d'une sélection (équipement ou panier) : tous connus (sinon 404), au plus un par emplacement (sinon 400).
+ * Exportée pour /account/equip et les tests.
+ */
+export function slotSelection(ids: readonly string[]): { items: Item[] } | { status: 400 | 404; error: string } {
+  const items = ids.map(itemById);
+  if (items.some(i => !i)) return { status: 404, error: 'Objet inconnu.' };
+  const kinds = new Set(items.map(i => i!.kind));
+  if (kinds.size !== items.length) return { status: 400, error: 'Un seul objet par emplacement.' };
+  return { items: items as Item[] };
+}
+
+/**
+ * Équipe des objets (au plus un par emplacement, déjà vérifiés) en une seule requête. Les noms de colonnes ne viennent
+ * que de SLOT_COLUMN. `c` : connexion d'une transaction, sinon la base.
+ */
+export async function equipItems(userId: string, items: readonly Item[], c?: DbClient): Promise<void> {
+  if (!items.length) return;
+  const sets = items.map((it, i) => `${SLOT_COLUMN[it.kind]} = $${i + 2}`).join(', ');
+  const params = [userId, ...items.map(it => it.id)];
+  const text = `UPDATE users SET ${sets} WHERE id = $1`;
+  if (c) await c.query(text, params);
+  else await q(text, params);
+}
+
+/** Objets à équiper à la livraison : pour chaque emplacement, l'objet livré s'il est seul de son emplacement. */
+export function equipAtDelivery(items: readonly string[]): Item[] {
+  const known = items.map(itemById).filter((i): i is Item => !!i);
+  return SLOTS.flatMap(kind => {
+    const of = known.filter(i => i.kind === kind);
+    return of.length === 1 ? of : [];
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Promesses des packs (« et les prochains offerts »)
+
+/**
+ * Objets promis par un produit : tous les objets payants des emplacements de `future`, y compris ceux ajoutés au
+ * catalogue après l'achat. Le Grimoire des sorts promet les sorts, le Grimoire complet (retiré) les sorts et les
+ * échiquiers, jamais les rois.
+ */
+export function promisedItems(productId: string): string[] {
+  const future: readonly ItemKind[] = productById(productId)?.future ?? [];
+  if (!future.length) return [];
+  return ITEMS.filter(i => !i.free && future.includes(i.kind)).map(i => i.id);
+}
+
+/**
+ * Tient les promesses des packs pour les achats déjà payés : livre à chaque acheteur les objets promis qu'il n'a pas,
+ * avec la source de l'achat (un remboursement du pack les retire aussi). Idempotente ; appelée au démarrage, juste
+ * après les migrations. Un achat remboursé, en attente ou échoué ne reçoit rien. Renvoie le nombre d'objets livrés.
+ */
+export async function honorPackPromises(): Promise<number> {
+  let delivered = 0;
+  for (const p of ALL_PRODUCTS.filter(x => x.future?.length).map(x => x.id)) {
+    const rows = await q<{ user_id: string }>(
+      `INSERT INTO user_items (user_id, item_id, source)
+       SELECT pu.user_id, it, 'purchase:' || pu.id
+       FROM purchases pu CROSS JOIN unnest($2::text[]) AS it
+       WHERE pu.product_id = $1 AND pu.status = 'paid' AND pu.user_id IS NOT NULL
+       ON CONFLICT (user_id, item_id) DO NOTHING
+       RETURNING user_id`,
+      [p, promisedItems(p)],
+    );
+    delivered += rows.length;
+  }
+  if (delivered) console.log(`Promesses des packs : ${delivered} objet(s) livré(s) aux acheteurs.`);
+  return delivered;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Commande : ce que l'on facture
+
+/** Une ligne facturée (une ligne Stripe). */
+export interface OrderLine {
+  name: string;
+  description?: string;
+  cents: number;
+}
+
+/** Commande calculée au serveur : produit (ou CART_PRODUCT_ID), objets livrés, montant et lignes. */
+export interface Order {
+  productId: string;
+  items: string[];
+  amountCents: number;
+  lines: OrderLine[];
+}
+
+export type OrderRequest = { productId: string } | { itemIds: readonly string[] };
+
+/**
+ * Commande d'un produit ou d'un panier pour qui possède `owned` (objets de user_items). Exportée pour les tests.
+ * - Produit : prix de productPrice (collection au prix « compléter »), objets du produit. Inconnu ou retiré : 404.
+ * - Panier : lignes de quoteCart (une collection complétée par le panier au prix « compléter »), objets à payer
+ *   seulement (ni offerts ni possédés). Objet inconnu : 404 ; deux objets du même emplacement : 400.
+ * Rien à payer : 409.
+ */
+export function orderFor(req: OrderRequest, owned: readonly string[]): Order | { status: number; error: string } {
+  if ('productId' in req) {
+    const product = productById(req.productId);
+    if (!product) return { status: 404, error: 'Produit inconnu.' };
+    if (product.retired) return { status: 404, error: 'Ce produit n’est plus en vente.' };
+    const amount = productPrice(product, owned);
+    if (amount === null) return { status: 409, error: 'Vous possédez déjà tout le contenu de ce produit.' };
+    // Une collection dont on possède des pièces se paie moins cher : la ligne le dit (reçu Stripe, facture).
+    const partial = product.kind === 'collection' && amount < product.priceCents;
+    return {
+      productId: product.id,
+      items: [...product.items],
+      amountCents: amount,
+      lines: [{ name: partial ? `${product.name} (pièces manquantes)` : product.name, description: product.description, cents: amount }],
+    };
+  }
+  const sel = slotSelection(req.itemIds);
+  if ('error' in sel) return sel;
+  const quote = quoteCart(req.itemIds, owned);
+  if (!quote) return { status: 409, error: 'Vous possédez déjà tout le contenu de cette sélection.' };
+  return {
+    productId: CART_PRODUCT_ID,
+    items: quote.lines.flatMap(l => l.items),
+    amountCents: quote.totalCents,
+    lines: quote.lines.map(l => {
+      const product = productById(l.productId);
+      const partial = product?.kind === 'collection' && l.cents < product.priceCents;
+      return { name: partial ? `${l.label} (pièces manquantes)` : l.label, description: product?.description, cents: l.cents };
+    }),
+  };
+}
+
+/** Lignes Stripe d'une commande : une par produit ou par ligne du panier, prix TTC (`tax_behavior: 'inclusive'`). */
+export function stripeLineItems(order: Order): Stripe.Checkout.SessionCreateParams.LineItem[] {
+  return order.lines.map(l => ({
+    quantity: 1,
+    price_data: {
+      currency: 'eur',
+      unit_amount: l.cents,
+      tax_behavior: 'inclusive',
+      product_data: { name: l.name, ...(l.description ? { description: l.description } : {}) },
+    },
+  }));
+}
+
+/** Libellé d'un achat (e-mail) : le nom du produit, ou « Votre sélection (n skins) » pour un panier. */
+export function purchaseLabel(productId: string, items: readonly string[]): string {
+  const product = productId === CART_PRODUCT_ID ? undefined : productById(productId);
+  if (product) return product.name;
+  return `Votre sélection (${items.length} skin${items.length > 1 ? 's' : ''})`;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Livraison et remboursement
+
+/**
+ * Livre les objets d'un achat payé et, si l'achat le demande (`equip`), équipe dans la même transaction l'objet livré
+ * de chaque emplacement (s'il est seul de son emplacement) : l'équipement ne dépend pas du retour du navigateur.
+ * Idempotent : un second appel ne fait rien. Les objets promis par un pack et ajoutés au catalogue après la création
+ * de l'achat sont livrés par honorPackPromises, au démarrage.
+ */
 export async function fulfillPurchase(purchaseId: string, paymentRef: string | null): Promise<boolean> {
-  const p = await tx(async c => {
+  const done = await tx(async c => {
     const r = await c.query<PurchaseRow>(
       `UPDATE purchases SET status = 'paid', paid_at = now(), payment_ref = coalesce($2, payment_ref)
        WHERE id = $1 AND status = 'pending' RETURNING *`,
@@ -33,28 +203,36 @@ export async function fulfillPurchase(purchaseId: string, paymentRef: string | n
     );
     const row = r.rows[0];
     if (!row || !row.user_id) return null;
-    for (const item of row.items) {
-      await c.query(
-        `INSERT INTO user_items (user_id, item_id, source) VALUES ($1, $2, $3) ON CONFLICT (user_id, item_id) DO NOTHING`,
-        [row.user_id, item, `purchase:${row.id}`],
-      );
-    }
-    return row;
+    await c.query(
+      `INSERT INTO user_items (user_id, item_id, source) SELECT $1::uuid, it, $3::text FROM unnest($2::text[]) AS it
+       ON CONFLICT (user_id, item_id) DO NOTHING`,
+      [row.user_id, row.items, `purchase:${row.id}`],
+    );
+    const equipped = row.equip ? equipAtDelivery(row.items) : [];
+    await equipItems(row.user_id, equipped, c);
+    return { row, equipped };
   });
-  if (!p) return false;
-  const product = productById(p.product_id);
-  if (p.email && product) void sendPurchaseConfirmation(p.email, product.name, formatPrice(p.amount_cents));
-  console.log(`Achat ${p.id} livré (${p.product_id}, ${formatPrice(p.amount_cents)}).`);
+  if (!done) return false;
+  const { row: p, equipped } = done;
+  if (p.email) {
+    void sendPurchaseConfirmation(p.email, {
+      label: purchaseLabel(p.product_id, p.items),
+      amount: formatPrice(p.amount_cents),
+      items: p.items.map(id => itemById(id)).filter((i): i is Item => !!i).map(itemLabel),
+      equipped: equipped.length > 0,
+    });
+  }
+  console.log(`Achat ${p.id} livré (${p.product_id}, ${formatPrice(p.amount_cents)}${equipped.length ? ', équipé' : ''}).`);
   return true;
 }
 
-const SLOTS = Object.entries(SLOT_COLUMN) as [ItemKind, (typeof SLOT_COLUMN)[ItemKind]][];
+const SLOT_ENTRIES = Object.entries(SLOT_COLUMN) as [ItemKind, (typeof SLOT_COLUMN)[ItemKind]][];
 /**
  * Après un retrait d'objets : chaque emplacement équipé d'un objet ni offert ni encore possédé revient à son défaut.
  * Une seule requête, construite depuis SLOT_COLUMN ($1 : utilisateur, $2 : objets offerts, puis un défaut par
- * emplacement, dans l'ordre de SLOTS). Couvre aussi les objets livrés par la promesse d'un pack.
+ * emplacement, dans l'ordre de SLOT_ENTRIES). Couvre aussi les objets livrés par la promesse d'un pack.
  */
-export const UNEQUIP_LOST_SQL = `UPDATE users SET ${SLOTS.map(
+export const UNEQUIP_LOST_SQL = `UPDATE users SET ${SLOT_ENTRIES.map(
   ([, col], i) =>
     `${col} = CASE WHEN ${col} = ANY($2::text[]) OR ${col} IN (SELECT item_id FROM user_items WHERE user_id = $1) THEN ${col} ELSE $${i + 3} END`,
 ).join(', ')} WHERE id = $1`;
@@ -70,11 +248,28 @@ export async function refundPurchase(paymentRef: string) {
   );
   if (!p?.user_id) return;
   await q(`DELETE FROM user_items WHERE user_id = $1 AND source = $2`, [p.user_id, `purchase:${p.id}`]);
-  await q(UNEQUIP_LOST_SQL, [p.user_id, FREE_ITEMS, ...SLOTS.map(([kind]) => DEFAULT_ITEM[kind])]);
+  await q(UNEQUIP_LOST_SQL, [p.user_id, FREE_ITEMS, ...SLOT_ENTRIES.map(([kind]) => DEFAULT_ITEM[kind])]);
   console.log(`Achat ${p.id} remboursé : objets retirés.`);
 }
 
+// ---------------------------------------------------------------------------------------------
+// Routes
+
 const checkoutLimiter = rateLimit({ windowMs: 60_000, limit: 15, standardHeaders: 'draft-7', legacyHeaders: false });
+
+/** Corps de POST /api/shop/checkout (CheckoutRequest) : un produit ou un panier, jamais les deux. */
+const checkoutSchema = z
+  .object({
+    productId: z.string().max(60).optional(),
+    itemIds: z
+      .array(z.string().max(60))
+      .min(1, { error: 'Sélection vide.' })
+      .max(SLOTS.length, { error: 'Un seul objet par emplacement.' })
+      .optional(),
+    waiver: z.literal(true, { error: 'Vous devez accepter la livraison immédiate du contenu numérique.' }),
+    equip: z.boolean().optional(),
+  })
+  .refine(b => (b.productId === undefined) !== (b.itemIds === undefined), { error: 'Indiquez un produit ou une sélection.' });
 
 export const shopRouter = Router();
 
@@ -83,26 +278,17 @@ shopRouter.get('/catalog', (_req, res) => {
 });
 
 shopRouter.post('/checkout', checkoutLimiter, requireUser, async (req, res) => {
-  const parsed = z
-    .object({
-      productId: z.string().max(60),
-      waiver: z.literal(true, { error: 'Vous devez accepter la livraison immédiate du contenu numérique.' }),
-    })
-    .safeParse(req.body);
+  const parsed = checkoutSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Requête invalide.' });
   if (config.payments === 'off') return res.status(503).json({ error: 'Les paiements ne sont pas encore ouverts.' });
-  const product = productById(parsed.data.productId);
-  if (!product) return res.status(404).json({ error: 'Produit inconnu.' });
-  if (product.retired) return res.status(404).json({ error: 'Ce produit n’est plus en vente.' });
   const u = req.identity.user!;
-  // Montant facturé : productPrice, le prix que la boutique affiche. Une collection dont on possède déjà des pièces se
-  // paie au prix « compléter » ; objets et packs gardent leur prix fixe. null : tout est déjà possédé.
-  const amount = productPrice(product, u.items);
-  if (amount === null) return res.status(409).json({ error: 'Vous possédez déjà tout le contenu de ce produit.' });
+  const { productId, itemIds, equip = false } = parsed.data;
+  const order = orderFor(itemIds ? { itemIds } : { productId: productId! }, u.items);
+  if ('error' in order) return res.status(order.status).json({ error: order.error });
   const purchase = await one<{ id: string }>(
-    `INSERT INTO purchases (user_id, product_id, items, provider, amount_cents, currency, status, email)
-     VALUES ($1, $2, $3, $4, $5, 'eur', 'pending', $6) RETURNING id`,
-    [u.id, product.id, product.items, config.payments, amount, u.email],
+    `INSERT INTO purchases (user_id, product_id, items, provider, amount_cents, currency, status, email, equip)
+     VALUES ($1, $2, $3, $4, $5, 'eur', 'pending', $6, $7) RETURNING id`,
+    [u.id, order.productId, order.items, config.payments, order.amountCents, u.email, equip],
   );
   if (config.payments === 'demo') {
     return res.json({ url: `/boutique/demo/${purchase!.id}` });
@@ -113,18 +299,10 @@ shopRouter.post('/checkout', checkoutLimiter, requireUser, async (req, res) => {
       locale: 'fr',
       customer_email: u.email,
       client_reference_id: u.id,
-      line_items: [{
-        quantity: 1,
-        price_data: {
-          currency: 'eur',
-          unit_amount: amount,
-          tax_behavior: 'inclusive',
-          product_data: { name: product.name, description: product.description },
-        },
-      }],
+      line_items: stripeLineItems(order),
       automatic_tax: { enabled: config.stripe.automaticTax },
       invoice_creation: { enabled: config.stripe.invoices },
-      metadata: { purchaseId: purchase!.id, userId: u.id, productId: product.id },
+      metadata: { purchaseId: purchase!.id, userId: u.id, productId: order.productId },
       payment_intent_data: { metadata: { purchaseId: purchase!.id } },
       custom_text: {
         submit: {

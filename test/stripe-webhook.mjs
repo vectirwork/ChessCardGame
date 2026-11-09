@@ -1,5 +1,8 @@
-// Test du webhook Stripe (signature, livraison idempotente, remboursement) contre un serveur en mode Stripe.
+// Test du webhook Stripe (signature, livraison idempotente, équipement à la livraison, paiement expiré, remboursement)
+// contre un serveur en mode Stripe, avec accès direct à sa base PostgreSQL.
 // node test/stripe-webhook.mjs http://localhost:3100 whsec_test
+// (serveur lancé avec PAYMENTS_MODE=stripe, STRIPE_SECRET_KEY=sk_test_…, STRIPE_WEBHOOK_SECRET=whsec_test et la même
+// DATABASE_URL que ce script)
 import assert from 'node:assert/strict';
 import pg from 'pg';
 import Stripe from 'stripe';
@@ -10,41 +13,84 @@ const db = new pg.Client({ connectionString: process.env.DATABASE_URL ?? 'postgr
 await db.connect();
 
 const stamp = Date.now().toString(36);
+const email = `buyer-${stamp}@test.fr`;
 const reg = await fetch(BASE + '/api/auth/register', {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ email: `buyer-${stamp}@test.fr`, username: `buyer_${stamp}`, password: 'motdepasse123', acceptTerms: true }),
+  body: JSON.stringify({ email, username: `buyer_${stamp}`, password: 'motdepasse123', acceptTerms: true }),
 });
 const { user } = await reg.json();
-const { rows: [p] } = await db.query(
-  `INSERT INTO purchases (user_id, product_id, items, provider, amount_cents, currency, status, email, provider_ref)
-   VALUES ($1, 'pack:skins', $2, 'stripe', 999, 'eur', 'pending', $3, $4) RETURNING id`,
-  [user.id, ['skin:inferno', 'skin:neon'], `buyer-${stamp}@test.fr`, `cs_test_${stamp}`],
-);
 
-const send = async (event, secret = SECRET) => {
-  const payload = JSON.stringify(event);
+/** Achat en attente, comme le crée /api/shop/checkout avant la redirection vers Stripe. */
+async function pending(productId, items, cents, ref, equip = false) {
+  const { rows: [p] } = await db.query(
+    `INSERT INTO purchases (user_id, product_id, items, provider, amount_cents, currency, status, email, provider_ref, equip)
+     VALUES ($1, $2, $3, 'stripe', $4, 'eur', 'pending', $5, $6, $7) RETURNING id`,
+    [user.id, productId, items, cents, email, ref, equip],
+  );
+  return p.id;
+}
+let n = 0;
+const send = async (type, object, secret = SECRET) => {
+  const payload = JSON.stringify({ id: `evt_${stamp}_${++n}`, object: 'event', type, data: { object } });
   const header = stripe.webhooks.generateTestHeaderString({ payload, secret });
   const res = await fetch(BASE + '/api/stripe/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json', 'stripe-signature': header }, body: payload });
   return res.status;
 };
-const completed = {
-  id: 'evt_1', object: 'event', type: 'checkout.session.completed',
-  data: { object: { id: `cs_test_${stamp}`, object: 'checkout.session', payment_status: 'paid', payment_intent: `pi_${stamp}`, metadata: { purchaseId: p.id } } },
-};
-assert.equal(await send(completed, 'whsec_faux'), 400, 'signature falsifiée refusée');
-assert.equal(await send(completed), 200);
-assert.equal(await send(completed), 200, 'rejeu accepté sans double livraison');
-let items = (await db.query('SELECT item_id FROM user_items WHERE user_id = $1 ORDER BY item_id', [user.id])).rows.map(r => r.item_id);
-assert.deepEqual(items, ['skin:inferno', 'skin:neon']);
-const st = (await db.query('SELECT status, payment_ref FROM purchases WHERE id = $1', [p.id])).rows[0];
-assert.deepEqual(st, { status: 'paid', payment_ref: `pi_${stamp}` });
+const session = (purchaseId, ref, pi, paid = true) => ({
+  id: ref, object: 'checkout.session', payment_status: paid ? 'paid' : 'unpaid', payment_intent: pi, metadata: { purchaseId },
+});
+const refund = pi => send('charge.refunded', { id: `ch_${pi}`, object: 'charge', refunded: true, payment_intent: pi });
+const owned = async () => (await db.query('SELECT item_id FROM user_items WHERE user_id = $1 ORDER BY item_id', [user.id])).rows.map(r => r.item_id);
+const equipped = async () =>
+  (await db.query('SELECT equipped_king, equipped_board, equipped_skin FROM users WHERE id = $1', [user.id])).rows[0];
+const purchase = async id => (await db.query('SELECT status, payment_ref FROM purchases WHERE id = $1', [id])).rows[0];
+
+// 1. Livraison signée et idempotente (ancien Grimoire des sorts : 2 sorts dans cet achat)
+const pack = await pending('pack:skins', ['skin:inferno', 'skin:neon'], 999, `cs_test_${stamp}`);
+const completed = session(pack, `cs_test_${stamp}`, `pi_${stamp}`);
+assert.equal(await send('checkout.session.completed', completed, 'whsec_faux'), 400, 'signature falsifiée refusée');
+assert.equal(await send('checkout.session.completed', completed), 200);
+assert.equal(await send('checkout.session.completed', completed), 200, 'rejeu accepté sans double livraison');
+assert.deepEqual(await owned(), ['skin:inferno', 'skin:neon']);
+assert.deepEqual(await purchase(pack), { status: 'paid', payment_ref: `pi_${stamp}` });
+assert.equal((await equipped()).equipped_skin, 'skin:arcane', 'sans « équiper à la livraison » : rien n’est équipé');
 console.log('✓ webhook signé : livraison, signature falsifiée refusée, idempotence');
 
-await db.query(`UPDATE users SET equipped_skin = 'skin:neon' WHERE id = $1`, [user.id]);
-assert.equal(await send({ id: 'evt_2', object: 'event', type: 'charge.refunded', data: { object: { id: 'ch_1', object: 'charge', refunded: true, payment_intent: `pi_${stamp}` } } }), 200);
-items = (await db.query('SELECT item_id FROM user_items WHERE user_id = $1', [user.id])).rows;
-assert.equal(items.length, 0, 'objets retirés après remboursement');
-const u = (await db.query('SELECT equipped_skin FROM users WHERE id = $1', [user.id])).rows[0];
-assert.equal(u.equipped_skin, 'skin:arcane', 'skin remboursé déséquipé');
-console.log('✓ remboursement : objets retirés et skin déséquipé');
+// 2. « Équiper à la livraison » (purchases.equip) : le webhook livre et équipe, sans retour du navigateur
+const king = await pending('king:braise', ['king:braise'], 299, `cs_test_k_${stamp}`, true);
+assert.equal(await send('checkout.session.completed', session(king, `cs_test_k_${stamp}`, `pi_k_${stamp}`)), 200);
+assert.deepEqual(await equipped(), { equipped_king: 'king:braise', equipped_board: 'board:arcane', equipped_skin: 'skin:arcane' });
+assert.deepEqual(await owned(), ['king:braise', 'skin:inferno', 'skin:neon']);
+const cart = await pending('panier', ['king:astral', 'board:ciel'], 798, `cs_test_c_${stamp}`, true);
+assert.equal(await send('checkout.session.completed', session(cart, `cs_test_c_${stamp}`, `pi_c_${stamp}`)), 200);
+assert.deepEqual(await equipped(), { equipped_king: 'king:astral', equipped_board: 'board:ciel', equipped_skin: 'skin:arcane' });
+console.log('✓ équiper à la livraison : roi seul, puis panier (roi et échiquier), équipés par le webhook');
+
+// 3. Paiement expiré : l'achat échoue ; un « completed » tardif ne livre rien
+const late = await pending('skin:void', ['skin:void'], 399, `cs_test_x_${stamp}`, true);
+assert.equal(await send('checkout.session.expired', session(late, `cs_test_x_${stamp}`, null, false)), 200);
+assert.equal((await purchase(late)).status, 'failed');
+assert.equal(await send('checkout.session.completed', session(late, `cs_test_x_${stamp}`, `pi_x_${stamp}`)), 200);
+assert.ok(!(await owned()).includes('skin:void'), 'achat échoué : rien livré');
+assert.equal((await equipped()).equipped_skin, 'skin:arcane');
+console.log('✓ paiement expiré : achat échoué, livraison tardive refusée');
+
+// 4. Remboursement d'un roi équipé : le roi Arcane revient ; le reste ne bouge pas
+await db.query(`UPDATE users SET equipped_king = 'king:braise' WHERE id = $1`, [user.id]);
+assert.equal(await refund(`pi_k_${stamp}`), 200);
+assert.deepEqual(await equipped(), { equipped_king: 'king:arcane', equipped_board: 'board:ciel', equipped_skin: 'skin:arcane' });
+assert.deepEqual(await owned(), ['board:ciel', 'king:astral', 'skin:inferno', 'skin:neon']);
+assert.equal((await purchase(king)).status, 'refunded');
+console.log('✓ remboursement d’un roi équipé : roi Arcane rendu, échiquier possédé par ailleurs gardé');
+
+// 5. Remboursement d'un pack dont un objet a été livré par sa promesse (même source, honorPackPromises) : retiré,
+// déséquipé
+await db.query(`INSERT INTO user_items (user_id, item_id, source) VALUES ($1, 'skin:laurier', $2)`, [user.id, `purchase:${pack}`]);
+await db.query(`UPDATE users SET equipped_skin = 'skin:laurier' WHERE id = $1`, [user.id]);
+assert.equal(await refund(`pi_${stamp}`), 200);
+assert.deepEqual(await owned(), ['board:ciel', 'king:astral'], 'objets du pack et de sa promesse retirés');
+assert.deepEqual(await equipped(), { equipped_king: 'king:arcane', equipped_board: 'board:ciel', equipped_skin: 'skin:arcane' }, 'sorts promis déséquipés');
+assert.equal(await refund(`pi_${stamp}`), 200, 'second remboursement sans effet');
+assert.deepEqual(await owned(), ['board:ciel', 'king:astral']);
+console.log('✓ remboursement d’un pack : objets de l’achat et de sa promesse retirés, sorts déséquipés');
 await db.end();

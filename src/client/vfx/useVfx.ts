@@ -59,6 +59,12 @@ interface Slot {
   since: number;
 }
 const slots = new Map<string, Slot>();
+/**
+ * Pools dont la scène est gardée (prewarmVfx avec `keep`, jusqu'à releaseVfx) : en sommeil, elle n'est pas libérée au
+ * bout de POOL_KEEP_MS, qu'elle n'ait encore servi à personne ou qu'un échiquier vienne de la rendre (la deuxième
+ * descente de l'accueil la retrouve prête, programmes compilés).
+ */
+const kept = new Set<string>();
 
 const load = () => import('./index');
 
@@ -84,13 +90,13 @@ function give(slot: Slot, h: Holder) {
 }
 
 /**
- * Scène sans échiquier : en sommeil, libérée au bout de POOL_KEEP_MS si personne ne la prend (`keep` : gardée jusqu'à
- * ce qu'un échiquier la prenne).
+ * Scène sans échiquier : en sommeil, libérée au bout de POOL_KEEP_MS si personne ne la prend (sauf pool gardé, voir
+ * kept).
  */
-function park(key: string, slot: Slot, keep = false) {
+function park(key: string, slot: Slot) {
   window.clearTimeout(slot.timer);
   slot.timer = 0;
-  if (keep) return;
+  if (kept.has(key)) return;
   slot.timer = window.setTimeout(() => {
     if (slots.get(key) !== slot || slot.holder) return;
     slots.delete(key);
@@ -191,8 +197,11 @@ function claim(key: string, m: VfxModule, h: Holder): VfxStage | null {
  * compiler au premier sort, en pleine descente dans les nuées.
  */
 export function prewarmVfx(poolKey: string, skins: string[] = [], keep = false): void {
+  if (keep) kept.add(poolKey);
   void load()
     .then(m => {
+      // Page quittée pendant le chargement de three.js : plus rien à préparer
+      if (keep && !kept.has(poolKey)) return;
       let slot = slots.get(poolKey);
       if (!slot) {
         // Échiquier provisoire, hors du document : attach() le remplacera
@@ -203,8 +212,8 @@ export function prewarmVfx(poolKey: string, skins: string[] = [], keep = false):
         }
         slot = { stage, m, holder: null, waiting: [], timer: 0, since: 0 };
         slots.set(poolKey, slot);
-        park(poolKey, slot, keep);
-      } else if (keep && !slot.holder && !slot.waiting.length) park(poolKey, slot, true);
+        park(poolKey, slot);
+      } else if (keep && !slot.holder && !slot.waiting.length) park(poolKey, slot);
       if (skins.length) void slot.stage.warm([], m.warmTextures(skins.map(skinStyle)));
     })
     .catch(() => undefined);
@@ -212,9 +221,11 @@ export function prewarmVfx(poolKey: string, skins: string[] = [], keep = false):
 
 /**
  * La scène préparée et gardée du pool `poolKey` (prewarmVfx avec `keep`) n'est plus attendue (l'accueil est quitté) :
- * si aucun échiquier ne la tient, elle est libérée au bout de POOL_KEEP_MS, comme toute scène en sommeil.
+ * le pool n'est plus gardé ; si aucun échiquier ne la tient, elle est libérée au bout de POOL_KEEP_MS, comme toute
+ * scène en sommeil (sinon, à son tour, quand il la rend). Une préparation encore en cours n'aboutit pas.
  */
 export function releaseVfx(poolKey: string): void {
+  kept.delete(poolKey);
   const slot = slots.get(poolKey);
   if (slot && !slot.holder && !slot.waiting.length && !slot.timer) park(poolKey, slot);
 }

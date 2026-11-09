@@ -406,9 +406,12 @@ export default function OdysseeHome() {
       for (const ev of CALM) window.removeEventListener(ev, onMove, true);
     };
     let warmed = false;
+    // Accueil démonté : plus rien à préparer (un rappel encore en attente ne doit pas garder une scène pour rien)
+    let dead = false;
+    let restId = 0;
     const prewarm = () => {
       stopCalm();
-      if (warmed) return;
+      if (warmed || dead) return;
       warmed = true;
       prewarmVfx('odyssee-stage', PLACES.map(p => p.skin), true);
     };
@@ -443,16 +446,22 @@ export default function OdysseeHome() {
     // entier, programmes compilés pendant la lecture du premier écran. Sans cela, le premier sort de la Forêt les
     // compilait d'un coup en pleine descente dans les nuées (une demi-seconde au banc, plus encore sur certains PC)
     const atRest = () => {
+      if (dead) return;
       go();
       if (fine && !vfx) {
         vfx = true;
         prewarm();
       }
     };
-    const t = window.setTimeout(() => (w.requestIdleCallback ? w.requestIdleCallback(atRest, { timeout: 3000 }) : atRest()), 2500);
+    const t = window.setTimeout(() => {
+      if (w.requestIdleCallback) restId = w.requestIdleCallback(atRest, { timeout: 3000 });
+      else atRest();
+    }, 2500);
     for (const ev of GESTURES) window.addEventListener(ev, onScroll, { passive: true, capture: true });
     return () => {
+      dead = true;
       window.clearTimeout(t);
+      if (restId && typeof w.cancelIdleCallback === 'function') w.cancelIdleCallback(restId);
       stopCalm();
       if (idleId && typeof w.cancelIdleCallback === 'function') w.cancelIdleCallback(idleId);
       else if (idleId) window.clearTimeout(idleId);

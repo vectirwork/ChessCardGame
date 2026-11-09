@@ -582,11 +582,12 @@ export class Engine {
     for (const a of this.skyAnims) a?.cancel();
     this.skyAnims = [];
     this.dropAstreNative();
+    const wasNative = this.native;
     this.native = false;
-    for (const el of this.skies) {
-      el.style.visibility = '';
-      el.classList.remove('o-sky-live');
-    }
+    // Ciels : rendus au script, qui les réécrit à l'image suivante. À l'ordinateur, rien n'est remis à zéro dans la
+    // page (sinon chaque mesure, à l'ouverture ou au redimensionnement, peignait une image avec les six ciels, puis
+    // retramait le calque) : liveSky réécrit les mêmes valeurs, sans effet
+    if (wasNative) for (const el of this.skies) el.style.visibility = '';
     this.skyShown = [];
   }
 
@@ -600,6 +601,23 @@ export class Engine {
     this.skyShown[i] = on;
     this.skies[i].style.visibility = on ? '' : 'hidden';
     this.skies[i].classList.toggle('o-sky-live', on);
+  }
+
+  /**
+   * Porteurs des propriétés de l'échiquier, au plus près de leurs lecteurs : posée sur l'astre, chaque valeur restylait
+   * tout son contenu (deux échiquiers, anneaux, ombres : 230 à 360 éléments) à chaque image d'une traversée.
+   * --base-tilt : sur .o-astre-wake, parent des deux plateaux et du calque du halo (ses seuls lecteurs) ; --k et
+   * --inv-k : sur .o-astre-game, seul lecteur (la pièce glissée de la partie jouable).
+   */
+  private tiltEl: HTMLElement | null = null;
+  private scaleEl: HTMLElement | null = null;
+  private get tiltHost() {
+    if (!this.tiltEl?.isConnected) this.tiltEl = this.astre.querySelector<HTMLElement>('.o-astre-wake') ?? this.astre;
+    return this.tiltEl;
+  }
+  private get scaleHost() {
+    if (!this.scaleEl?.isConnected) this.scaleEl = this.astre.querySelector<HTMLElement>('.o-astre-game') ?? this.astre;
+    return this.scaleEl;
   }
 
   /**
@@ -709,6 +727,11 @@ export class Engine {
     const Ctor = scrollTimelineCtor();
     if (!Ctor || this.reduced || !isMobile(this.vw) || !this.sections.length) return;
     this.native = true;
+    // Passage en mode natif (fenêtre rétrécie) : les ciels ne sont plus dans leur calque du script (liveSky)
+    for (const el of this.skies) {
+      el.style.visibility = '';
+      el.classList.remove('o-sky-live');
+    }
     this.timeline = new Ctor({ source: document.documentElement, axis: 'block' });
     // Lieux et ciels : leurs animations sont créées au moment où ils sont peints (frame, showSky)
     if (this.flow) this.buildAstreNative();
@@ -891,7 +914,7 @@ export class Engine {
     } else this.astre.style.opacity = String(r3(a.o));
     const anims = [this.astre.animate([from, end], { ...opts, id: 'vol astre' })];
     // Inclinaison de départ, comme à la première image du vol (sans rotation à jouer, c'est celle de tout le vol)
-    this.astre.style.setProperty('--base-tilt', `${deg(a.tilt)}deg`);
+    this.tiltHost.style.setProperty('--base-tilt', `${deg(a.tilt)}deg`);
     if (deg(a.tilt) !== deg(b.tilt)) {
       if (board) anims.push(board.animate([{ transform: `rotateX(${deg(a.tilt)}deg) scale(1)` }, { transform: `rotateX(${deg(b.tilt)}deg) scale(1)` }], { ...opts, id: 'vol inclinaison' }));
       if (plane && plane.childElementCount > 0) {
@@ -1162,10 +1185,14 @@ export class Engine {
             // bascule directe, le style du contenu n'est plus recalculé : les animations restent « en cours », et
             // Blink les fait avancer sur le fil principal à chaque image (invisibles, donc non composées), ce qui
             // refaisait la mise en calques de toute la page à chaque image de défilement (mesuré à l'ordinateur)
+            // Deux images : frame() peut tourner hors d'une image (mesure au redimensionnement), avant tout calcul de
+            // style ; la fiche du lieu peut aussi avoir été refaite entre-temps (mesure)
             el.classList.add('o-laid');
-            requestAnimationFrame(() => {
-              if (sc.live[i] === 0) el.classList.remove('o-laid');
-            });
+            requestAnimationFrame(() =>
+              requestAnimationFrame(() => {
+                if (this.scenes.includes(sc) && sc.live[i] === 0) el.classList.remove('o-laid');
+              }),
+            );
           } else el.classList.toggle('o-laid', state === 1);
         }
       }
@@ -1247,11 +1274,12 @@ export class Engine {
     // sur la page (et la partie elle-même) : ailleurs, rien à écrire, le style de tout l'astre (300 à 500 éléments)
     // serait recalculé à chaque image d'une traversée, où l'échiquier change de taille. Mode natif : la partie du héros
     // est à taille fixe. En vol, aucune pièce n'est glissée (échiquier verrouillé) : elle est écrite à l'arrivée
-    const playable = this.gameMix > 0 || (anim ? y <= (hero?.end ?? 0) : inHero);
+    // Hors partie : héros, échiquier encore opaque (le transit, où il se verrouille, commence sous 0,75)
+    const playable = this.gameMix > 0 || (anim ? y <= (hero?.end ?? 0) : inHero && p.o >= 0.75);
     if (kr !== a.k && !between && playable) {
       a.k = kr;
-      this.astre.style.setProperty('--k', String(kr));
-      this.astre.style.setProperty('--inv-k', String(Math.round((1 / Math.max(0.05, kr)) * 1000) / 1000));
+      this.scaleHost.style.setProperty('--k', String(kr));
+      this.scaleHost.style.setProperty('--inv-k', String(Math.round((1 / Math.max(0.05, kr)) * 1000) / 1000));
     }
     if (anim) {
       // Calque 3D des sorts : visible seulement pendant un sort, échiquier posé ; son opacité suit celle de l'échiquier
@@ -1298,7 +1326,7 @@ export class Engine {
     const tilt = Math.round(((tiltRad * 180) / Math.PI) * 10) / 10;
     if (tilt !== a.tilt && !flying) {
       a.tilt = tilt;
-      this.astre.style.setProperty('--base-tilt', `${tilt}deg`);
+      this.tiltHost.style.setProperty('--base-tilt', `${tilt}deg`);
     }
     if (this.els.caption) {
       const show = this.gameMix === 0 && !flying && p.s > 200 && p.o > 0.9 && (p.cap > 0.5 || this.hover) ? 1 : 0;

@@ -33,7 +33,16 @@ export interface SeatView {
   name: string;
   username: string | null;
   rating: number | null;
+  /** Sorts du joueur (objet skin), pris à l'assise. */
   skin: string;
+  /**
+   * Roi du joueur (objet king), pris à l'assise et vu de tous : adversaire et spectateurs voient le même roi. Toujours
+   * rempli (le serveur normalise : un siège enregistré avant les rois, ou un identifiant inconnu, donne le roi Arcane).
+   * En ligne, l'image d'un roi vient uniquement d'ici, jamais de me.equippedKing.
+   */
+  king: string;
+  /** Sceau de collection du joueur (id col:*), pris à l'assise, ou null. */
+  seal?: string | null;
   online: boolean;
   level?: number;
 }
@@ -225,10 +234,23 @@ export interface MeUser {
   draws: number;
   equippedSkin: string;
   equippedBoard: string;
+  equippedKing: string;
   items: string[];
   isAdmin: boolean;
   createdAt: string;
 }
+
+/**
+ * Équiper (POST /api/account/equip) : un objet, ou un essai entier (au plus un objet par emplacement). Les anciens
+ * clients envoient `{ itemId }`.
+ */
+export type EquipRequest = { itemId: string } | { itemIds: string[] };
+
+/**
+ * Payer (POST /api/shop/checkout) : un produit (objet, collection « à compléter », pack) ou un panier d'essai
+ * (`itemIds`, au plus un objet par emplacement). `equip` : équiper ce qui est livré, dès la livraison.
+ */
+export type CheckoutRequest = ({ productId: string } | { itemIds: string[] }) & { waiver: true; equip?: boolean };
 
 export interface MeResponse {
   user: MeUser | null;

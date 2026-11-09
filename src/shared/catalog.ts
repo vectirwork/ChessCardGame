@@ -1,211 +1,251 @@
-// Catalogue de la boutique : skins d'animation des cartes et thèmes de plateau.
-// Les prix sont en centimes d'euro, TTC. Modifier ce fichier suffit pour changer l'offre.
+// Catalogue de la boutique : rois, échiquiers et sorts (skins), collections, produits et prix.
+// Modifier src/shared/skins/ suffit pour changer l'offre ; les prix sont dans la grille PRICE ci-dessous (centimes
+// d'euro, TTC). Règle (testée) : un identifiant d'objet ou de produit déjà vendu ne disparaît ni ne change de sens
+// (user_items, equipped_*, purchases.product_id le référencent), et son prix ne monte jamais. Les noms, si.
+import { BOARD_ITEMS } from './skins/boards';
+import { COLLECTIONS } from './skins/collections';
+import { KING_ITEMS } from './skins/kings';
+import { SPELL_ITEMS } from './skins/spells';
+import type { BoardStyle, Collection, Item, ItemKind, KingStyle, Product, SkinRarity, SkinStyle } from './skins/types';
 
-export type ItemKind = 'skin' | 'board';
+export * from './skins/types';
+export { COLLECTIONS } from './skins/collections';
+export { KING_ART, KING_BASE } from './skins/kings';
 
-export type ParticleShape = 'glow' | 'ember' | 'pixel' | 'star' | 'petal' | 'void';
-export type Flourish = 'runes' | 'flames' | 'grid' | 'constellation' | 'vortex' | 'petals';
+export const ITEMS: Item[] = [...KING_ITEMS, ...BOARD_ITEMS, ...SPELL_ITEMS];
 
-export interface SkinStyle {
-  /** Couleur principale des effets. */
-  primary: string;
-  secondary: string;
-  /** Couleur des éclats et des contours. */
-  accent: string;
-  particle: ParticleShape;
-  flourish: Flourish;
-  /** Les particules montent (flammes) ou tombent (pétales) ; 0 = flottent. */
-  drift: number;
-  /** Intensité du flash d'activation (0 à 1). */
-  flash: number;
-  /** Secousse de l'échiquier à l'impact (0 à 1). */
-  shake: number;
-}
+/** Emplacements, dans l'ordre d'affichage. */
+export const SLOTS = ['king', 'board', 'skin'] as const satisfies readonly ItemKind[];
+export const SLOT_LABEL: Record<ItemKind, string> = { king: 'Roi', board: 'Échiquier', skin: 'Sorts' };
 
-export interface BoardStyle {
-  light: string;
-  dark: string;
-  /** Cadre autour de l'échiquier. */
-  frame: string;
-  /** Texture superposée aux cases. */
-  texture: 'none' | 'wood' | 'marble' | 'stone' | 'grain';
-  coords: string;
-}
+/** Libellé et couleur de chaque rareté (le violet de l'épique et l'or du légendaire sont ceux des cartes de pouvoir). */
+export const RARITY: Record<SkinRarity, { label: string; color: string }> = {
+  offert: { label: 'Offert', color: '#c9c6dc' },
+  rare: { label: 'Rare', color: '#5ee7ff' },
+  epique: { label: 'Épique', color: '#c79bff' },
+  legendaire: { label: 'Légendaire', color: '#f3c969' },
+};
+/** Rang de rareté (offert 0 … légendaire 3). */
+const RANK: Record<SkinRarity, number> = { offert: 0, rare: 1, epique: 2, legendaire: 3 };
 
-export interface Item {
-  id: string;
-  kind: ItemKind;
-  name: string;
-  description: string;
-  free: boolean;
-  skin?: SkinStyle;
-  board?: BoardStyle;
-}
-
-export interface Product {
-  id: string;
-  name: string;
-  description: string;
-  priceCents: number;
-  items: string[];
-  /** Prix barré affiché pour les packs. */
-  compareAtCents?: number;
-  badge?: string;
-}
-
-export const ITEMS: Item[] = [
-  {
-    id: 'skin:arcane',
-    kind: 'skin',
-    name: 'Arcane',
-    description: 'Runes cyan et violettes, la magie d’origine. Offert à tous.',
-    free: true,
-    skin: { primary: '#5ee7ff', secondary: '#a77bff', accent: '#e9fbff', particle: 'glow', flourish: 'runes', drift: 0.2, flash: 0.55, shake: 0.25 },
-  },
-  {
-    id: 'skin:inferno',
-    kind: 'skin',
-    name: 'Inferno',
-    description: 'Chaque carte s’embrase : braises, cercle de flammes et onde de chaleur.',
-    free: false,
-    skin: { primary: '#ff7a1a', secondary: '#ff2d55', accent: '#ffe08a', particle: 'ember', flourish: 'flames', drift: 1, flash: 0.8, shake: 0.6 },
-  },
-  {
-    id: 'skin:neon',
-    kind: 'skin',
-    name: 'Néon 2084',
-    description: 'Grille synthwave, pixels lumineux et glitch rétro-futuriste.',
-    free: false,
-    skin: { primary: '#ff3ec8', secondary: '#38f2ff', accent: '#fff36b', particle: 'pixel', flourish: 'grid', drift: 0, flash: 0.7, shake: 0.35 },
-  },
-  {
-    id: 'skin:celestial',
-    kind: 'skin',
-    name: 'Céleste',
-    description: 'Poussière d’étoiles dorée et constellations qui dessinent vos coups.',
-    free: false,
-    skin: { primary: '#ffd36b', secondary: '#fff7e0', accent: '#ffffff', particle: 'star', flourish: 'constellation', drift: -0.2, flash: 0.9, shake: 0.2 },
-  },
-  {
-    id: 'skin:void',
-    kind: 'skin',
-    name: 'Néant',
-    description: 'Un trou noir s’ouvre sous l’échiquier. Particules d’ombre et lueurs pourpres.',
-    free: false,
-    skin: { primary: '#8b3dff', secondary: '#1a0033', accent: '#d9b8ff', particle: 'void', flourish: 'vortex', drift: -0.6, flash: 0.45, shake: 0.7 },
-  },
-  {
-    id: 'skin:sakura',
-    kind: 'skin',
-    name: 'Sakura',
-    description: 'Une pluie de pétales roses et un souffle de printemps à chaque sort.',
-    free: false,
-    skin: { primary: '#ff8fc7', secondary: '#ffd1e8', accent: '#ffffff', particle: 'petal', flourish: 'petals', drift: -0.8, flash: 0.5, shake: 0.15 },
-  },
-
-  {
-    id: 'board:arcane',
-    kind: 'board',
-    name: 'Nuit arcane',
-    description: 'Le plateau d’origine, violet profond.',
-    free: true,
-    board: { light: '#d8d3ee', dark: '#6f62ad', frame: '#1c1838', texture: 'grain', coords: '#3b3270' },
-  },
-  {
-    id: 'board:wood',
-    kind: 'board',
-    name: 'Bois de chêne',
-    description: 'L’élégance d’un échiquier de club.',
-    free: true,
-    board: { light: '#ecd5ae', dark: '#a9784f', frame: '#4a2f1d', texture: 'wood', coords: '#6b4428' },
-  },
-  {
-    id: 'board:slate',
-    kind: 'board',
-    name: 'Ardoise',
-    description: 'Bleu-gris sobre, reposant pour les longues parties.',
-    free: true,
-    board: { light: '#dfe6ee', dark: '#7b8fa6', frame: '#1f2833', texture: 'none', coords: '#465568' },
-  },
-  {
-    id: 'board:marble',
-    kind: 'board',
-    name: 'Marbre de Carrare',
-    description: 'Marbre blanc veiné et marbre gris anthracite.',
-    free: false,
-    board: { light: '#f2f0ec', dark: '#8c8c94', frame: '#2b2b30', texture: 'marble', coords: '#55555c' },
-  },
-  {
-    id: 'board:obsidian',
-    kind: 'board',
-    name: 'Obsidienne & Or',
-    description: 'Pierre volcanique noire sertie d’or.',
-    free: false,
-    board: { light: '#c9b27a', dark: '#26232b', frame: '#0d0c10', texture: 'stone', coords: '#a68b4c' },
-  },
-  {
-    id: 'board:jade',
-    kind: 'board',
-    name: 'Palais de jade',
-    description: 'Jade impérial et ivoire, pour des parties sereines.',
-    free: false,
-    board: { light: '#e9f1e3', dark: '#3f8a6b', frame: '#123326', texture: 'marble', coords: '#2c6650' },
-  },
-  {
-    id: 'board:ruby',
-    kind: 'board',
-    name: 'Rubis',
-    description: 'Rouge profond et crème, taillé pour l’attaque.',
-    free: false,
-    board: { light: '#f3e1d6', dark: '#9e2f45', frame: '#2e0b14', texture: 'stone', coords: '#7a2234' },
-  },
-];
-
-const premiumSkins = ITEMS.filter(i => i.kind === 'skin' && !i.free).map(i => i.id);
-const premiumBoards = ITEMS.filter(i => i.kind === 'board' && !i.free).map(i => i.id);
-
-export const PRODUCTS: Product[] = [
-  { id: 'skin:inferno', name: 'Skin Inferno', description: 'Skin d’animation Inferno', priceCents: 299, items: ['skin:inferno'], badge: 'Populaire' },
-  { id: 'skin:neon', name: 'Skin Néon 2084', description: 'Skin d’animation Néon 2084', priceCents: 299, items: ['skin:neon'] },
-  { id: 'skin:sakura', name: 'Skin Sakura', description: 'Skin d’animation Sakura', priceCents: 299, items: ['skin:sakura'] },
-  { id: 'skin:celestial', name: 'Skin Céleste', description: 'Skin d’animation Céleste', priceCents: 399, items: ['skin:celestial'] },
-  { id: 'skin:void', name: 'Skin Néant', description: 'Skin d’animation Néant', priceCents: 399, items: ['skin:void'], badge: 'Nouveau' },
-  { id: 'board:marble', name: 'Plateau Marbre de Carrare', description: 'Thème de plateau', priceCents: 199, items: ['board:marble'] },
-  { id: 'board:obsidian', name: 'Plateau Obsidienne & Or', description: 'Thème de plateau', priceCents: 199, items: ['board:obsidian'] },
-  { id: 'board:jade', name: 'Plateau Palais de jade', description: 'Thème de plateau', priceCents: 199, items: ['board:jade'] },
-  { id: 'board:ruby', name: 'Plateau Rubis', description: 'Thème de plateau', priceCents: 199, items: ['board:ruby'] },
-  {
-    id: 'pack:skins',
-    name: 'Collection légendaire',
-    description: 'Les 5 skins d’animation premium, et les prochains offerts.',
-    priceCents: 999,
-    compareAtCents: 1695,
-    items: premiumSkins,
-    badge: '-41 %',
-  },
-  {
-    id: 'pack:all',
-    name: 'Grimoire complet',
-    description: 'Tous les skins et tous les plateaux premium.',
-    priceCents: 1299,
-    compareAtCents: 2491,
-    items: [...premiumSkins, ...premiumBoards],
-    badge: 'Meilleure offre',
-  },
-];
+/**
+ * Grille des prix (centimes TTC) par rareté et par emplacement. Un objet peut la contredire par `priceCents` : deux
+ * exceptions, pour qu'aucun prix déjà pratiqué ne monte (échiquier Rubis 1,99 €, sorts Céleste 3,99 €).
+ */
+export const PRICE: Record<Exclude<SkinRarity, 'offert'>, Record<ItemKind | 'collection', number>> = {
+  rare: { king: 299, board: 199, skin: 299, collection: 599 },
+  epique: { king: 399, board: 249, skin: 399, collection: 799 },
+  legendaire: { king: 499, board: 299, skin: 499, collection: 999 },
+};
 
 export const DEFAULT_SKIN = 'skin:arcane';
 export const DEFAULT_BOARD = 'board:arcane';
+export const DEFAULT_KING = 'king:arcane';
+export const DEFAULT_ITEM: Record<ItemKind, string> = { king: DEFAULT_KING, board: DEFAULT_BOARD, skin: DEFAULT_SKIN };
 
-export const itemById = (id: string) => ITEMS.find(i => i.id === id);
-export const productById = (id: string) => PRODUCTS.find(p => p.id === id);
+/**
+ * Apparence des IA du serveur (par niveau) et de l'Oracle de l'accueil. Vitrine : elles peuvent porter du payant.
+ * Avant les rois, l'IA avait les sorts Arcane, Inferno et Néant, et l'Oracle Néant : gardés.
+ */
+export const BOT_LOOK: Record<1 | 2 | 3, { skin: string; king: string }> = {
+  1: { skin: 'skin:arcane', king: 'king:arcane' },
+  2: { skin: 'skin:inferno', king: 'king:braise' },
+  3: { skin: 'skin:void', king: 'king:eclipse' },
+};
+export const ORACLE_LOOK: { skin: string; king: string } = { skin: 'skin:void', king: 'king:eclipse' };
+
+export const itemById = (id: string): Item | undefined => ITEMS.find(i => i.id === id);
 export const FREE_ITEMS = ITEMS.filter(i => i.free).map(i => i.id);
+
+/** Prix à l'unité d'un objet (centimes TTC) ; 0 s'il est offert ou inconnu. */
+export function unitPrice(itemId: string): number {
+  const it = itemById(itemId);
+  if (!it || it.free || it.rarity === 'offert') return 0;
+  return it.priceCents ?? PRICE[it.rarity][it.kind];
+}
+
+const sum = (ids: readonly string[]) => ids.reduce((s, id) => s + unitPrice(id), 0);
+
+const COLLECTION_OF = new Map<string, Collection>();
+for (const c of COLLECTIONS) for (const id of [c.king, c.board, c.skin]) COLLECTION_OF.set(id, c);
+/** Collection d'un objet (Bois de chêne et Ardoise n'en ont pas). */
+export const collectionOf = (itemId: string): Collection | undefined => COLLECTION_OF.get(itemId);
+export const collectionById = (id: string): Collection | undefined => COLLECTIONS.find(c => c.id === id);
+/** Les trois objets d'une collection, dans l'ordre des emplacements. */
+export const collectionItems = (c: Collection): string[] => [c.king, c.board, c.skin];
+
+/** Libellé d'un objet vendu à l'unité : « Roi de braise », « Échiquier Obsidienne & Or », « Sorts Inferno ». */
+export function itemLabel(it: Item): string {
+  if (it.kind === 'board') return `Échiquier ${it.name}`;
+  if (it.kind === 'skin') return `Sorts ${it.name}`;
+  return it.name;
+}
+
+const PREMIUM = ITEMS.filter(i => !i.free);
+const premiumOf = (kind: ItemKind) => PREMIUM.filter(i => i.kind === kind).map(i => i.id);
+const pct = (price: number, compare: number) => `-${Math.round((1 - price / compare) * 100)} %`;
+
+const unitProducts: Product[] = PREMIUM.map(it => ({
+  id: it.id,
+  kind: 'item',
+  name: itemLabel(it),
+  description: it.description,
+  priceCents: unitPrice(it.id),
+  items: [it.id],
+  badge: it.id === 'skin:inferno' ? 'Populaire' : it.isNew ? 'Nouveau' : undefined,
+}));
+
+const collectionProducts: Product[] = COLLECTIONS.filter(c => c.rarity !== 'offert').map(c => {
+  const items = collectionItems(c);
+  return {
+    id: c.id,
+    kind: 'collection',
+    name: `Collection ${c.name}`,
+    description: c.tagline,
+    priceCents: PRICE[c.rarity as Exclude<SkinRarity, 'offert'>].collection,
+    items,
+    compareAtCents: sum(items),
+    collection: c.id,
+  };
+});
+
+const skinsPack = premiumOf('skin');
+const tresor = PREMIUM.map(i => i.id);
+/** Contenu du Grimoire complet le jour de son retrait (5 sorts et 4 échiquiers) : il ne change plus. */
+const ALL_PACK = ['skin:inferno', 'skin:neon', 'skin:celestial', 'skin:void', 'skin:sakura', 'board:marble', 'board:obsidian', 'board:jade', 'board:ruby'];
+
+const packProducts: Product[] = [
+  {
+    id: 'pack:skins',
+    kind: 'pack',
+    name: 'Grimoire des sorts',
+    description: `Les ${skinsPack.length} sorts premium, et les prochains offerts.`,
+    priceCents: 1299,
+    items: skinsPack,
+    compareAtCents: sum(skinsPack),
+    badge: pct(1299, sum(skinsPack)),
+    future: ['skin'],
+  },
+  {
+    id: 'pack:tresor',
+    kind: 'pack',
+    name: 'Trésor du Bazar',
+    description: `Les ${tresor.length} objets des ${COLLECTIONS.length - 1} collections premium : rois, échiquiers et sorts.`,
+    priceCents: 2499,
+    items: tresor,
+    compareAtCents: sum(tresor),
+    badge: 'Meilleure offre',
+  },
+  {
+    id: 'pack:all',
+    kind: 'pack',
+    name: 'Grimoire complet',
+    description: 'Tous les skins et tous les plateaux premium.',
+    priceCents: 1299,
+    items: ALL_PACK,
+    compareAtCents: sum(ALL_PACK),
+    future: ['skin', 'board'],
+    retired: true,
+  },
+];
+
+/** Tous les produits, retirés compris (historique des achats, remboursements, promesses des packs). */
+export const ALL_PRODUCTS: Product[] = [...unitProducts, ...collectionProducts, ...packProducts];
+/** Produits en vente : un par objet payant, un par collection premium, les packs (sans les produits retirés). */
+export const PRODUCTS: Product[] = ALL_PRODUCTS.filter(p => !p.retired);
+
+const PRODUCT_BY_ID = new Map(ALL_PRODUCTS.map(p => [p.id, p]));
+/** Produit par identifiant, retiré compris (le paiement refuse `retired`). */
+export const productById = (id: string): Product | undefined => PRODUCT_BY_ID.get(id);
 
 export function skinStyle(id: string | undefined): SkinStyle {
   return (itemById(id ?? '')?.skin ?? itemById(DEFAULT_SKIN)!.skin)!;
 }
 export function boardStyle(id: string | undefined): BoardStyle {
   return (itemById(id ?? '')?.board ?? itemById(DEFAULT_BOARD)!.board)!;
+}
+export function kingStyle(id: string | undefined): KingStyle {
+  return (itemById(id ?? '')?.king ?? itemById(DEFAULT_KING)!.king)!;
+}
+/** Identifiant de roi connu, sinon le roi Arcane (parties enregistrées avant les rois, identifiant inconnu). */
+export function normKing(id: string | undefined | null): string {
+  return id && itemById(id)?.kind === 'king' ? id : DEFAULT_KING;
+}
+
+/**
+ * Prix d'un produit (centimes TTC) pour qui possède `owned`. Fait foi au serveur (montant Stripe) ; le client affiche
+ * le même nombre.
+ * - Objet et pack : prix fixe.
+ * - Collection (« compléter la collection ») : prix de la collection moins la valeur à l'unité des pièces possédées,
+ *   jamais sous le prix à l'unité de la pièce manquante la moins chère.
+ * null : il possède déjà tout.
+ */
+export function productPrice(p: Product, owned: readonly string[]): number | null {
+  const have = new Set(owned);
+  const missing = p.items.filter(i => !have.has(i));
+  if (!missing.length) return null;
+  if (p.kind !== 'collection') return p.priceCents;
+  const ownedValue = sum(p.items.filter(i => have.has(i)));
+  return Math.max(p.priceCents - ownedValue, Math.min(...missing.map(unitPrice)));
+}
+
+export interface CartLine {
+  label: string;
+  items: string[];
+  cents: number;
+  /** Produit facturé : l'objet à l'unité, ou la collection complétée. */
+  productId: string;
+}
+
+/**
+ * Panier d'essai (au plus un objet par emplacement) : prix total et lignes. Une collection que le panier complète
+ * (ses pièces manquantes sont toutes dans le panier) est comptée au prix « compléter » s'il est plus bas que la somme
+ * des pièces à l'unité. Les collections sont disjointes : ce calcul glouton est optimal.
+ * null : panier invalide (objet inconnu, deux objets du même emplacement) ou rien à payer.
+ */
+export function quoteCart(itemIds: readonly string[], owned: readonly string[]): { totalCents: number; lines: CartLine[] } | null {
+  const items = itemIds.map(itemById);
+  if (items.some(i => !i)) return null;
+  const kinds = items.map(i => i!.kind);
+  if (new Set(kinds).size !== kinds.length) return null;
+  const have = new Set(owned);
+  const buy = items.filter(i => !i!.free && !have.has(i!.id)).map(i => i!.id);
+  if (!buy.length) return null;
+  const lines: CartLine[] = [];
+  const done = new Set<string>();
+  for (const id of buy) {
+    if (done.has(id)) continue;
+    const c = collectionOf(id);
+    const product = c && productById(c.id);
+    if (c && product) {
+      const missing = collectionItems(c).filter(i => !have.has(i));
+      const complete = missing.every(i => buy.includes(i));
+      const price = complete ? productPrice(product, owned) : null;
+      if (price !== null && price < sum(missing)) {
+        lines.push({ label: product.name, items: missing, cents: price, productId: product.id });
+        missing.forEach(i => done.add(i));
+        continue;
+      }
+    }
+    lines.push({ label: itemLabel(itemById(id)!), items: [id], cents: unitPrice(id), productId: id });
+    done.add(id);
+  }
+  return { totalCents: lines.reduce((s, l) => s + l.cents, 0), lines };
+}
+
+/**
+ * Sceau de collection : la collection premium complète la plus rare (à rareté égale, l'ordre du catalogue) ; null
+ * sinon. Arcane ne compte jamais.
+ */
+export function sealOf(items: readonly string[]): string | null {
+  const have = new Set(items);
+  let best: Collection | null = null;
+  for (const c of COLLECTIONS) {
+    if (c.rarity === 'offert') continue;
+    if (!collectionItems(c).every(i => have.has(i))) continue;
+    if (!best || RANK[c.rarity] > RANK[best.rarity]) best = c;
+  }
+  return best?.id ?? null;
 }
 
 export function formatPrice(cents: number): string {

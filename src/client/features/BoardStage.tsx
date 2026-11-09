@@ -36,6 +36,9 @@ interface Props {
   /** Contenu à gauche de l'échiquier (barre d'évaluation). */
   aside?: ReactNode;
   label?: string;
+  /** Rois des deux camps (objets king:*), passés tels quels à Board. Absent : le roi Arcane. */
+  kingW?: string;
+  kingB?: string;
 }
 
 const TONE: Record<ArrowTone, string> = {
@@ -104,6 +107,8 @@ export const BoardStage = forwardRef<BoardHandle, Props>(function BoardStage(pro
           chosen={props.chosen}
           onTarget={props.onTarget}
           locked={props.locked}
+          kingW={props.kingW}
+          kingB={props.kingB}
         />
         {(arrows.length > 0 || stars.length > 0 || marks.length > 0 || glow !== null) && (
           <svg className="ft-overlay" viewBox="0 0 800 800" aria-hidden="true">

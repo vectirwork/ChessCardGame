@@ -98,6 +98,7 @@ const PARTICLE_FR: Record<ParticleShape, string> = {
   star: 'poussière d’étoiles',
   petal: 'pétales',
   void: 'ombres',
+  shard: 'éclats de rubis',
 };
 const FLOURISH_FR: Record<Flourish, string> = {
   runes: 'cercle de runes',
@@ -106,6 +107,8 @@ const FLOURISH_FR: Record<Flourish, string> = {
   constellation: 'constellations',
   vortex: 'vortex',
   petals: 'souffle de printemps',
+  laurel: 'couronne de laurier',
+  filigree: 'filigrane d’or',
 };
 
 export function priceOf(id: string): string {

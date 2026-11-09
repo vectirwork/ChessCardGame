@@ -13,6 +13,7 @@ if (!ITEMS.some(i => i.id === HOUSE_SKIN)) {
     name: 'Encre & vermillon',
     description: 'Le skin de la maison : éclats vermillon, poussière d’encre.',
     free: true,
+    rarity: 'offert',
     skin: { primary: '#d8391f', secondary: '#16130f', accent: '#ff7a52', particle: 'void', flourish: 'runes', drift: -0.35, flash: 0.3, shake: 0.3 },
   });
 }
@@ -23,6 +24,7 @@ if (!ITEMS.some(i => i.id === HOUSE_BOARD)) {
     name: 'Ivoire & taupe',
     description: 'Le plateau de la maison.',
     free: true,
+    rarity: 'offert',
     board: { light: '#efe8dc', dark: '#cdbfaa', frame: '#16130f', texture: 'none', coords: '#8a8276' },
   });
 }

@@ -2,7 +2,8 @@
 // Parcourt : inscription, invitation sans compte, choix des cartes (décision D5 : réserve, secret jusqu'à la
 // révélation, refus, idempotence, échéance de 45 s et complément au hasard), coups, mains visibles, carte jouée
 // (catalogue Pouvoirs, identifiant 'climats', par défaut), choix du catalogue (Sans cartes ; Duel ramené aux Pouvoirs ;
-// file amicale), abandon pendant le choix (annulation), revanche, IA, boutique (mode démo).
+// file amicale), abandon pendant le choix (annulation), revanche, IA, boutique (mode démo), rois (roi de l'IA ; en
+// mode démo : achat, équipement, roi pris à l'assise et vu de tous, revanche).
 // Durée : au moins 47 s (l'échéance du choix est attendue en parallèle des autres étapes).
 import { io } from 'socket.io-client';
 import assert from 'node:assert/strict';
@@ -318,7 +319,8 @@ step(`contre l'IA : pas de Sablier fou, mains de l'IA valides (${botHands.size} 
 r = await alice.api('/shop/checkout', { productId: 'skin:inferno', waiver: false });
 assert.equal(r.status, 400, 'renonciation obligatoire');
 r = await alice.api('/shop/checkout', { productId: 'skin:inferno', waiver: true });
-if (r.status === 200 && r.data.url.startsWith('/boutique/demo/')) {
+const demoShop = r.status === 200 && r.data.url.startsWith('/boutique/demo/');
+if (demoShop) {
   const pid = r.data.url.split('/').pop();
   r = await alice.api(`/shop/demo/${pid}/complete`, {});
   assert.ok(r.data.user.items.includes('skin:inferno'));
@@ -332,6 +334,86 @@ if (r.status === 200 && r.data.url.startsWith('/boutique/demo/')) {
   step('achat démo, livraison idempotente, équipement');
 } else {
   step(`boutique : mode ${r.data?.url ?? r.status} (test démo ignoré)`);
+}
+
+// 7 bis. Rois : le roi de l'IA (BOT_LOOK) ; en mode démo, achat et équipement d'un roi (sa colonne seulement), roi
+// non possédé refusé, produit retiré refusé, roi pris à l'assise et vu de tous (Alice, Bob, un spectateur), changement
+// de roi sans effet sur la partie en cours, revanche avec le roi relu en base.
+r = await alice.api('/games', { mode: 'bot', tc: 'none', color: 'w', level: 3, catalog: 'aucune' });
+assert.equal(r.status, 200, JSON.stringify(r.data));
+const botKingGame = r.data.id;
+const jk = await alice.emit('game:join', { id: botKingGame });
+assert.equal(jk.view.seats.b.king, 'king:eclipse', "roi de l'IA de niveau 3 (BOT_LOOK)");
+assert.equal(jk.view.seats.b.skin, 'skin:void', "sorts de l'IA de niveau 3 inchangés");
+assert.equal(jk.view.seats.w.king, 'king:arcane', 'roi Arcane par défaut');
+assert.ok((await alice.emit('game:resign', { id: botKingGame })).ok);
+step("rois : l'IA porte le roi de BOT_LOOK, le joueur le roi Arcane par défaut");
+if (demoShop) {
+  r = await alice.api('/me');
+  const before = r.data.user;
+  assert.equal(before.equippedKing, 'king:arcane', 'roi Arcane équipé par défaut');
+  r = await alice.api('/account/equip', { itemId: 'king:braise' });
+  assert.equal(r.status, 403, 'impossible d’équiper un roi non acheté');
+  r = await alice.api('/shop/checkout', { productId: 'pack:all', waiver: true });
+  assert.equal(r.status, 404, 'produit retiré de la vente');
+  r = await alice.api('/shop/checkout', { productId: 'king:braise', waiver: true });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  const kpid = r.data.url.split('/').pop();
+  r = await alice.api(`/shop/demo/${kpid}`);
+  assert.equal(r.data.amountCents, 299, 'Roi de braise à 2,99 €');
+  r = await alice.api(`/shop/demo/${kpid}/complete`, {});
+  assert.ok(r.data.user.items.includes('king:braise'));
+  r = await alice.api('/account/equip', { itemId: 'king:braise' });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(r.data.user.equippedKing, 'king:braise');
+  assert.equal(r.data.user.equippedBoard, before.equippedBoard, 'équiper un roi ne touche pas l’échiquier');
+  assert.equal(r.data.user.equippedSkin, before.equippedSkin, 'équiper un roi ne touche pas les sorts');
+  r = await alice.api('/account/equip', { itemId: 'skin:arcane' });
+  assert.equal(r.data.user.equippedSkin, 'skin:arcane');
+  assert.equal(r.data.user.equippedKing, 'king:braise', 'équiper des sorts ne touche pas le roi');
+  assert.equal(r.data.user.equippedBoard, before.equippedBoard, 'équiper des sorts ne touche pas l’échiquier');
+  r = await alice.api('/me');
+  assert.equal(r.data.user.equippedKing, 'king:braise', '/me renvoie le roi équipé');
+  step('rois : achat démo, équipement dans la seule colonne du roi, roi non possédé et produit retiré refusés');
+
+  r = await alice.api('/games', { mode: 'invite', tc: '5+0', color: 'w', catalog: 'aucune' });
+  const kingGame = r.data.id;
+  await alice.emit('game:join', { id: kingGame });
+  let jbk = await bob.emit('game:join', { id: kingGame });
+  if (jbk.needName) jbk = await bob.emit('game:join', { id: kingGame, name: 'Bob le Fou' });
+  const watcher = new Client();
+  await watcher.api('/me');
+  await watcher.connect();
+  const jwk = await watcher.emit('game:join', { id: kingGame, sit: false });
+  const jak = await alice.emit('game:join', { id: kingGame });
+  for (const [who, v] of [['Alice', jak.view], ['Bob', jbk.view], ['le spectateur', jwk.view]]) {
+    assert.equal(v.status, 'active');
+    assert.equal(v.seats.w.king, 'king:braise', `le roi d’Alice vu par ${who}`);
+    assert.equal(v.seats.b.king, 'king:arcane', `le roi de Bob vu par ${who}`);
+    assert.equal(v.seats.w.seal, null, 'pas de sceau sans collection complète');
+  }
+  watcher.socket.close();
+  r = await alice.api('/account/equip', { itemId: 'king:arcane' });
+  assert.equal(r.data.user.equippedKing, 'king:arcane');
+  assert.equal((await bob.emit('game:join', { id: kingGame })).view.seats.w.king, 'king:braise', 'roi pris à l’assise : la partie en cours ne change pas');
+  const kingRedirect = new Promise(res => {
+    const h = p => {
+      if (p.from !== kingGame) return;
+      alice.socket.off('game:redirect', h);
+      res(p);
+    };
+    alice.socket.on('game:redirect', h);
+  });
+  assert.ok((await bob.emit('game:resign', { id: kingGame })).ok);
+  await alice.emit('game:rematch', { id: kingGame });
+  await bob.emit('game:rematch', { id: kingGame });
+  const rk = await kingRedirect;
+  const jrk = await alice.emit('game:join', { id: rk.to });
+  assert.equal(jrk.view.you, 'b', 'couleurs inversées');
+  assert.equal(jrk.view.seats.b.king, 'king:arcane', 'revanche : le roi est relu en base');
+  assert.equal(jrk.view.seats.w.king, 'king:arcane');
+  assert.ok((await alice.emit('game:abort', { id: rk.to })).ok);
+  step('rois : roi vu par les deux joueurs et un spectateur, figé pendant la partie, relu à la revanche');
 }
 
 // 8. Sécurité : émote piégée ignorée, droits d'administrateur réservés aux e-mails vérifiés

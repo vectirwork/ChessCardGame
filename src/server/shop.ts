@@ -3,8 +3,9 @@ import express, { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import Stripe from 'stripe';
 import { z } from 'zod';
-import { DEFAULT_BOARD, DEFAULT_SKIN, ITEMS, PRODUCTS, formatPrice, productById } from '../shared/catalog';
-import { requireUser, toMe, userById } from './auth';
+import { DEFAULT_ITEM, FREE_ITEMS, ITEMS, PRODUCTS, formatPrice, productById } from '../shared/catalog';
+import type { ItemKind } from '../shared/catalog';
+import { SLOT_COLUMN, requireUser, toMe, userById } from './auth';
 import { config } from './config';
 import { one, q, tx } from './db';
 import { sendPurchaseConfirmation } from './mail';
@@ -46,7 +47,18 @@ export async function fulfillPurchase(purchaseId: string, paymentRef: string | n
   return true;
 }
 
-/** Remboursement : retire les objets livrés par cet achat. */
+const SLOTS = Object.entries(SLOT_COLUMN) as [ItemKind, (typeof SLOT_COLUMN)[ItemKind]][];
+/**
+ * Après un retrait d'objets : chaque emplacement équipé d'un objet ni offert ni encore possédé revient à son défaut.
+ * Une seule requête, construite depuis SLOT_COLUMN ($1 : utilisateur, $2 : objets offerts, puis un défaut par
+ * emplacement, dans l'ordre de SLOTS). Couvre aussi les objets livrés par la promesse d'un pack.
+ */
+export const UNEQUIP_LOST_SQL = `UPDATE users SET ${SLOTS.map(
+  ([, col], i) =>
+    `${col} = CASE WHEN ${col} = ANY($2::text[]) OR ${col} IN (SELECT item_id FROM user_items WHERE user_id = $1) THEN ${col} ELSE $${i + 3} END`,
+).join(', ')} WHERE id = $1`;
+
+/** Remboursement : retire les objets livrés par cet achat et déséquipe ce qui n'est plus possédé. */
 async function refundPurchase(paymentRef: string) {
   const p = await one<PurchaseRow>(
     `UPDATE purchases SET status = 'refunded' WHERE payment_ref = $1 AND status = 'paid' RETURNING *`,
@@ -54,13 +66,7 @@ async function refundPurchase(paymentRef: string) {
   );
   if (!p?.user_id) return;
   await q(`DELETE FROM user_items WHERE user_id = $1 AND source = $2`, [p.user_id, `purchase:${p.id}`]);
-  await q(
-    `UPDATE users SET
-       equipped_skin = CASE WHEN equipped_skin IN (SELECT unnest($2::text[])) AND equipped_skin NOT IN (SELECT item_id FROM user_items WHERE user_id = $1) THEN $3 ELSE equipped_skin END,
-       equipped_board = CASE WHEN equipped_board IN (SELECT unnest($2::text[])) AND equipped_board NOT IN (SELECT item_id FROM user_items WHERE user_id = $1) THEN $4 ELSE equipped_board END
-     WHERE id = $1`,
-    [p.user_id, p.items, DEFAULT_SKIN, DEFAULT_BOARD],
-  );
+  await q(UNEQUIP_LOST_SQL, [p.user_id, FREE_ITEMS, ...SLOTS.map(([kind]) => DEFAULT_ITEM[kind])]);
   console.log(`Achat ${p.id} remboursé : objets retirés.`);
 }
 
@@ -83,6 +89,7 @@ shopRouter.post('/checkout', checkoutLimiter, requireUser, async (req, res) => {
   if (config.payments === 'off') return res.status(503).json({ error: 'Les paiements ne sont pas encore ouverts.' });
   const product = productById(parsed.data.productId);
   if (!product) return res.status(404).json({ error: 'Produit inconnu.' });
+  if (product.retired) return res.status(404).json({ error: 'Ce produit n’est plus en vente.' });
   const u = req.identity.user!;
   if (product.items.every(i => u.items.includes(i))) {
     return res.status(409).json({ error: 'Vous possédez déjà tout le contenu de ce produit.' });

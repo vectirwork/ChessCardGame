@@ -54,7 +54,9 @@ export function particleTexture(shape: ParticleShape): THREE.Texture {
       g.fillRect(m - 12, m - 12, 24, 24);
       break;
     }
-    case 'star': {
+    // Provisoire : l'éclat de gemme (`shard`) prend l'étoile, en attendant sa texture.
+    case 'star':
+    case 'shard': {
       const gr = g.createRadialGradient(m, m, 0, m, m, m * 0.6);
       gr.addColorStop(0, 'rgba(255,255,255,1)');
       gr.addColorStop(1, 'rgba(255,255,255,0)');
@@ -126,7 +128,9 @@ export function flourishTexture(kind: Flourish): THREE.Texture {
   };
   const rand = mulberry(kind.length * 97);
   switch (kind) {
-    case 'runes': {
+    // Provisoire : le filigrane (`filigree`) prend les runes, en attendant son motif.
+    case 'runes':
+    case 'filigree': {
       ring(240, 5);
       ring(222, 2);
       ring(160, 3);
@@ -245,7 +249,9 @@ export function flourishTexture(kind: Flourish): THREE.Texture {
       ring(244, 3);
       break;
     }
-    case 'petals': {
+    // Provisoire : la couronne de laurier (`laurel`) prend les pétales, en attendant son motif.
+    case 'petals':
+    case 'laurel': {
       for (let ringIdx = 0; ringIdx < 2; ringIdx++) {
         const n = ringIdx ? 12 : 8;
         const r = ringIdx ? 170 : 95;

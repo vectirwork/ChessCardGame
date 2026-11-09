@@ -9,6 +9,7 @@ import type { Effect } from '../../shared/game';
 import { CARDS } from '../../shared/cards';
 import type { CardId } from '../../shared/cards';
 import { boardStyle } from '../../shared/catalog';
+import { boardTheme } from './boardTheme';
 import { fallSide } from './mate';
 import { pieceUrl } from './pieces';
 import { fullmoveOf, premoveDests, virtualBoard } from './premoves';
@@ -54,6 +55,12 @@ interface Props {
   premove?: Color | null;
   /** Nombre de pré-coups en attente, à chaque changement. */
   onPremoves?: (n: number) => void;
+  /**
+   * Rois des deux camps (objets king:*). Deux chaînes et non un objet : Board est mémoïsé. Absent, Arcane ou inconnu :
+   * le roi Arcane. Le roi maté tombe avec la même image.
+   */
+  kingW?: string;
+  kingB?: string;
 }
 
 interface Shown {
@@ -66,8 +73,6 @@ interface Shown {
 
 const moveKey = (m: { from: number; to: number } | null | undefined) => (m ? `${m.from}-${m.to}` : '');
 
-const textureClass = (theme: string | undefined) => `tex-${boardStyle(theme).texture}`;
-
 function xy(sq: number, o: Color) {
   const f = sq & 7, r = sq >> 3;
   return o === 'w' ? { x: f, y: 7 - r } : { x: 7 - f, y: r };
@@ -76,8 +81,10 @@ function xy(sq: number, o: Color) {
 export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, ref) {
   const {
     pos, orientation, theme, legal = [], onMove, lastMove, check, mated = null, effects = [], targets, targetHue = 200,
-    chosen = [], onTarget, hidden, locked, coords = true, premove, onPremoves,
+    chosen = [], onTarget, hidden, locked, coords = true, premove, onPremoves, kingW, kingB,
   } = props;
+  /** Image d'une pièce : le roi de chaque camp peut porter un skin. */
+  const art = (p: Piece) => pieceUrl(p.c, p.t, p.t === 'k' ? (p.c === 'w' ? kingW : kingB) : undefined);
   const boardRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [queue, setQueue] = useState<Premove[]>([]);
@@ -394,12 +401,14 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
   const preTo = new Set(queue.map(m => m.to));
 
   const bs = boardStyle(theme);
+  const bt = boardTheme(theme);
   const style = {
     '--light': bs.light,
     '--dark': bs.dark,
     '--frame': bs.frame,
     '--coords': bs.coords,
     '--th': targetHue,
+    ...bt.vars,
   } as CSSProperties;
 
   const squares = [];
@@ -448,7 +457,7 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
   })();
 
   return (
-    <div ref={wrapRef} className={`board-wrap ${textureClass(theme)}${fx.climate ? ` clim clim-${fx.climate}` : ''}`} style={style}>
+    <div ref={wrapRef} className={`board-wrap ${bt.className}${fx.climate ? ` clim clim-${fx.climate}` : ''}`} style={style}>
       <div
         ref={boardRef}
         className={`board ${interactive ? 'interactive' : ''} ${targeting ? 'targeting' : ''} ${premoving ? 'is-premove' : ''}`}
@@ -487,7 +496,7 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
             const transform = dragging && dragOffset
               ? `translate(${dragOffset.x}px, ${dragOffset.y}px)`
               : `translate(${x * 100}%, ${y * 100}%)`;
-            const image = { backgroundImage: pieceUrl(p.c, p.t) };
+            const image = { backgroundImage: art(p) };
             return (
               <div key={p.id} className={cls.join(' ')} style={{ transform }} data-piece={p.id} data-at={sq}>
                 {/* Poussière de la chute : hors de .pi, sinon le drop-shadow de .pi lui ferait une ombre sale (et le
@@ -505,7 +514,7 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
             const transform = dragging && dragOffset ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : `translate(${x * 100}%, ${y * 100}%)`;
             return (
               <div key={`pm-${i}-${p.id}`} className={`piece ghost ${live ? 'is-live' : ''} ${dragging ? 'dragging' : ''}`} style={{ transform }} aria-hidden="true">
-                <div className="pi" style={{ backgroundImage: pieceUrl(p.c, p.t) }} />
+                <div className="pi" style={{ backgroundImage: art(p) }} />
                 <span className="pm-n">{i + 1}</span>
               </div>
             );

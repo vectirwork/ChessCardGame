@@ -210,6 +210,12 @@ const MIGRATIONS: string[] = [
   ALTER TABLE games ADD COLUMN ratings_applied boolean NOT NULL DEFAULT false;
   UPDATE games SET ratings_applied = true WHERE status = 'ended';
   `,
+  // Skins : le roi équipé (une colonne par emplacement, voir SLOT_COLUMN dans auth.ts) et « équiper à la livraison ».
+  // Défauts constants : la table n'est pas réécrite. L'ancien code ignore ces colonnes (retour arrière possible).
+  `
+  ALTER TABLE users ADD COLUMN equipped_king text NOT NULL DEFAULT 'king:arcane';
+  ALTER TABLE purchases ADD COLUMN equip boolean NOT NULL DEFAULT false;
+  `,
 ];
 
 export async function migrate(): Promise<void> {

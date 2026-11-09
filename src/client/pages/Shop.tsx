@@ -8,13 +8,15 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { CARDS, CARD_IDS, inCatalog } from '../../shared/cards';
 import type { CardId } from '../../shared/cards';
 import { fromFen } from '../../shared/chess';
-import { ITEMS, Item, PRODUCTS, Product, boardStyle, formatPrice, itemById } from '../../shared/catalog';
+import { ITEMS, Item, PRODUCTS, Product, boardStyle, formatPrice, itemById, kingStyle } from '../../shared/catalog';
 import type { MeUser } from '../../shared/protocol';
 import { api, errMsg } from '../api';
 import { Board } from '../components/Board';
+import { kingUrl } from '../components/pieces';
 import { Modal, Spinner } from '../components/Layout';
 import { liveCatalog } from '../odyssee/data';
 import { StageBoard } from '../odyssee/StageBoard';
+import { isEquipped } from '../skins';
 import { useApp } from '../store';
 import { PageHead, PlacePage, StarMark, useTitle } from './PageScene';
 
@@ -25,7 +27,7 @@ const PACKS = PRODUCTS.filter(p => p.id.startsWith('pack:'));
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 /** Sorts montrés par l'aperçu, dans cet ordre, parmi les cartes du catalogue en jeu (les 8 pouvoirs ; Duel seulement si le moteur n'a pas encore les Pouvoirs). */
 const PREVIEW_ORDER = ['ice_wall', 'rift', 'tide', 'blast', 'ice_age', 'blood_moon', 'truce', 'hourglass'];
-const KIND_LABEL: Record<Item['kind'], string> = { skin: 'Skin d’animation', board: 'Plateau' };
+const KIND_LABEL: Record<Item['kind'], string> = { skin: 'Skin d’animation', board: 'Plateau', king: 'Roi' };
 
 const productOf = (itemId: string) => PRODUCTS.find(p => p.id === itemId) ?? PRODUCTS.find(p => p.items.length === 1 && p.items[0] === itemId);
 const packsWith = (itemId: string) => PACKS.filter(p => p.items.includes(itemId));
@@ -119,7 +121,7 @@ export default function Shop() {
   }, []);
 
   const owned = (id: string) => !!itemById(id)?.free || !!me?.items.includes(id);
-  const equipped = (id: string) => (me ? me.equippedSkin === id || me.equippedBoard === id : id === 'skin:arcane' || id === 'board:arcane');
+  const equipped = (id: string) => isEquipped(me, id);
 
   const equip = async (id: string) => {
     setEquipping(id);
@@ -507,6 +509,16 @@ function Seal() {
 
 /** Pastille d'un objet (aussi utilisée par la collection du compte). */
 export function Swatch({ item, small }: { item: Item; small?: boolean }) {
+  if (item.kind === 'king') {
+    const size = small ? 24 : 96;
+    return (
+      <span className={`swatch-skin swatch-king ${small ? 'small' : ''}`} style={{ '--p': kingStyle(item.id).gem } as CSSProperties}>
+        <span
+          style={{ width: size, height: size, backgroundImage: kingUrl('w', item.id), backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center' }}
+        />
+      </span>
+    );
+  }
   if (item.kind === 'board') {
     const b = boardStyle(item.id);
     return (

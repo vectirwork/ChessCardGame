@@ -2,10 +2,11 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
-import { ITEMS, formatPrice, productById } from '../../shared/catalog';
+import { ITEMS, formatPrice, kingStyle, productById } from '../../shared/catalog';
 import type { CSSProperties } from 'react';
 import type { MeUser } from '../../shared/protocol';
 import { api, errMsg } from '../api';
+import { isEquipped } from '../skins';
 import { PageLoader, Spinner } from '../components/Layout';
 import { useApp } from '../store';
 import { PageHead, PlacePage, StarMark, useTitle } from './PageScene';
@@ -286,8 +287,8 @@ function CollectionTab({ me }: { me: MeUser }) {
             <div className="collection">
               {list.map(i => {
                 const owned = me.items.includes(i.id);
-                const on = me.equippedSkin === i.id || me.equippedBoard === i.id;
-                const col = i.skin ? { '--p': i.skin.primary } : { '--p': i.board!.dark };
+                const on = isEquipped(me, i.id);
+                const col = { '--p': i.skin ? i.skin.primary : i.board ? i.board.dark : kingStyle(i.id).gem };
                 return (
                   <button
                     key={i.id}

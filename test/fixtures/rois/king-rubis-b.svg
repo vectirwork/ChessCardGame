@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+<defs>
+<linearGradient id="gbkrubis" x1="0" y1="0" x2="0.35" y2="1"><stop offset="0" stop-color="#5c2833"/><stop offset="1" stop-color="#130409"/></linearGradient>
+<linearGradient id="sbkrubis" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0.32"/><stop offset="0.45" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.18"/></linearGradient><linearGradient id="o0bkrubis" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff7a92"/><stop offset="1" stop-color="#c4163a"/></linearGradient><linearGradient id="o1bkrubis" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffeaa6"/><stop offset="1" stop-color="#d29a34"/></linearGradient>
+</defs>
+<g stroke-linejoin="round" stroke-linecap="round">
+<path d="M22 90 Q22 82 30 81 L70 81 Q78 82 78 90 Z M31 81 C34 69 37.5 58 36.5 46 L63.5 46 C62.5 58 66 69 69 81 Z M32.5 46.5 L67.5 46.5 L67.5 39 L32.5 39 Z M33.5 39 C31 30.5 35 23.5 42.5 23 C46 22.8 48.5 24.5 50 26.5 C51.5 24.5 54 22.8 57.5 23 C65 23.5 69 30.5 66.5 39 Z M47.4 15.2 L47.4 11.8 L43.2 11.8 L43.2 7.4 L47.4 7.4 L47.4 3.5 L52.6 3.5 L52.6 7.4 L56.8 7.4 L56.8 11.8 L52.6 11.8 L52.6 15.2 Z" fill="url(#gbkrubis)" stroke="#050102" stroke-width="3.2"/>
+<path d="M22 90 Q22 82 30 81 L70 81 Q78 82 78 90 Z M31 81 C34 69 37.5 58 36.5 46 L63.5 46 C62.5 58 66 69 69 81 Z M32.5 46.5 L67.5 46.5 L67.5 39 L32.5 39 Z M33.5 39 C31 30.5 35 23.5 42.5 23 C46 22.8 48.5 24.5 50 26.5 C51.5 24.5 54 22.8 57.5 23 C65 23.5 69 30.5 66.5 39 Z M47.4 15.2 L47.4 11.8 L43.2 11.8 L43.2 7.4 L47.4 7.4 L47.4 3.5 L52.6 3.5 L52.6 7.4 L56.8 7.4 L56.8 11.8 L52.6 11.8 L52.6 15.2 Z" fill="url(#sbkrubis)"/>
+<path d="M37.5 51.5 L62.5 51.5 M34 74 Q50 70.5 66 74 M50 57.5 L53.6 62.6 L50 67.7 L46.4 62.6 Z" fill="none" stroke="#e0b25e" stroke-width="2.2" opacity="0.9"/>
+<path d="M37.6 37 C36.2 31.2 38.6 27.2 43 26.8 C45.4 26.6 46.9 27.7 47.8 29 L47.8 37 Z M62.4 37 C63.8 31.2 61.4 27.2 57 26.8 C54.6 26.6 53.1 27.7 52.2 29 L52.2 37 Z M50 40.05 A2.7 2.7 0 1 1 49.99 40.05 Z" fill="url(#o0bkrubis)" stroke="#050102" stroke-width="1.5"/>
+<path d="M50 14.6 A5 5 0 1 1 49.99 14.6 Z" fill="url(#o1bkrubis)" stroke="#050102" stroke-width="1.6"/>
+<path d="M35.3 30.15 A1.35 1.35 0 1 1 35.29 30.15 Z M39.2 24.55 A1.35 1.35 0 1 1 39.19 24.55 Z M64.7 30.15 A1.35 1.35 0 1 1 64.69 30.15 Z M60.8 24.55 A1.35 1.35 0 1 1 60.79 24.55 Z M40.6 41.25 A1.5 1.5 0 1 1 40.59 41.25 Z M59.4 41.25 A1.5 1.5 0 1 1 59.39 41.25 Z" fill="#f6ead6" stroke="#050102" stroke-width="1"/>
+</g>
+</svg>

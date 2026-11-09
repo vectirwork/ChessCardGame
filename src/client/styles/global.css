@@ -916,6 +916,20 @@ kbd {
   height: 72px;
   font-size: 28px;
 }
+/* Sceau de collection (CollectionSeal) : le cimier du roi de la collection (--crest) dans un médaillon cerclé d'or, sur
+   un fond à la teinte de la collection (--gem). Statique : ni animation ni transition. */
+.collection-seal {
+  display: inline-block;
+  flex: none;
+  width: var(--size, 20px);
+  height: var(--size, 20px);
+  border-radius: 50%;
+  vertical-align: middle;
+  background:
+    var(--crest) center 40% / 86% no-repeat,
+    radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--gem) 62%, #1a1430), color-mix(in srgb, var(--gem) 24%, #0b0916) 75%);
+  box-shadow: inset 0 0 0 1.5px #f3c969, 0 0 0 1px rgb(0 0 0 / 0.35);
+}
 .menu {
   position: absolute;
   right: 0;

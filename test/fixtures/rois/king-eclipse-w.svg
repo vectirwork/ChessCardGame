@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+<defs>
+<linearGradient id="geclipsew" x1="0" y1="0" x2="0.35" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e0dbe7"/></linearGradient>
+<linearGradient id="seclipsew" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0.32"/><stop offset="0.45" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.18"/></linearGradient>
+<linearGradient id="oeclipsew0" gradientUnits="userSpaceOnUse" x1="29" y1="0" x2="71" y2="0"><stop offset="0" stop-color="#b98bff"/><stop offset="1" stop-color="#6a1fe0"/></linearGradient>
+<linearGradient id="oeclipsew1" gradientUnits="userSpaceOnUse" x1="29" y1="0" x2="71" y2="0"><stop offset="0" stop-color="#b98bff"/><stop offset="1" stop-color="#6a1fe0"/></linearGradient>
+</defs>
+<g stroke-linejoin="round" stroke-linecap="round" fill-rule="nonzero">
+<path d="M70.45 26.36 A21.5 7 -18 1 1 29.55 39.64 A21.5 7 -18 1 1 70.45 26.36 Z M65.69 27.9 A16.5 3.8 -18 1 1 34.31 38.1 A16.5 3.8 -18 1 1 65.69 27.9 Z" fill="url(#oeclipsew0)" fill-rule="evenodd"/>
+<path d="M22 90 Q22 82 30 81 L70 81 Q78 82 78 90 Z M31 81 C34 69 37.5 58 36.5 46 L63.5 46 C62.5 58 66 69 69 81 Z M33 46 L67 46 L67 40 L33 40 Z M36 40 C36 30.5 42.3 24.5 50 24.5 C57.7 24.5 64 30.5 64 40 Z M46.5 25 L46.5 15 L41 15 L41 9 L46.5 9 L46.5 3.5 L53.5 3.5 L53.5 9 L59 9 L59 15 L53.5 15 L53.5 25 Z" fill="url(#geclipsew)" stroke="#1d1530" stroke-width="3.2"/>
+<path d="M22 90 Q22 82 30 81 L70 81 Q78 82 78 90 Z M31 81 C34 69 37.5 58 36.5 46 L63.5 46 C62.5 58 66 69 69 81 Z M33 46 L67 46 L67 40 L33 40 Z M36 40 C36 30.5 42.3 24.5 50 24.5 C57.7 24.5 64 30.5 64 40 Z M46.5 25 L46.5 15 L41 15 L41 9 L46.5 9 L46.5 3.5 L53.5 3.5 L53.5 9 L59 9 L59 15 L53.5 15 L53.5 25 Z" fill="url(#seclipsew)"/>
+<path d="M37.5 51 L62.5 51 M34 74 Q50 70.5 66 74 M40.5 33.5 C42 29.8 45 27.6 49 27.2" fill="none" stroke="#8b6fc2" stroke-width="2.2" opacity="0.9"/>
+<path d="M29.55 39.64 A21.5 7 -18 0 0 70.45 26.36 L65.69 27.9 A16.5 3.8 -18 0 1 34.31 38.1 Z" fill="url(#oeclipsew1)"/>
+<path d="M50 40.6 A2.4 2.4 0 1 1 49.99 40.6 Z" fill="#12001f" stroke="#8b3dff" stroke-width="1.5"/>
+</g>
+</svg>

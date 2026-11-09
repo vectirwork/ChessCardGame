@@ -4,6 +4,7 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { FREE_ITEMS } from '../shared/catalog';
+import type { ItemKind } from '../shared/catalog';
 import type { MeUser } from '../shared/protocol';
 import { config } from './config';
 import { one, q } from './db';
@@ -23,10 +24,21 @@ export interface UserRow {
   draws: number;
   equipped_skin: string;
   equipped_board: string;
+  equipped_king: string;
   is_admin: boolean;
   created_at: Date;
   items: string[];
 }
+
+/**
+ * Colonne d'équipement de chaque emplacement (exhaustive : le compilateur signale l'emplacement oublié). Les noms de
+ * colonnes ne viennent que d'ici, jamais de la requête.
+ */
+export const SLOT_COLUMN = {
+  king: 'equipped_king',
+  board: 'equipped_board',
+  skin: 'equipped_skin',
+} as const satisfies Record<ItemKind, string>;
 
 export interface Identity {
   user: UserRow | null;
@@ -145,6 +157,7 @@ export function toMe(u: UserRow): MeUser {
     draws: u.draws,
     equippedSkin: u.equipped_skin,
     equippedBoard: u.equipped_board,
+    equippedKing: u.equipped_king,
     items: [...new Set([...FREE_ITEMS, ...u.items])],
     isAdmin: isAdmin(u),
     createdAt: u.created_at.toISOString(),

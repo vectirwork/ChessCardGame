@@ -3,7 +3,7 @@ import { Router } from 'express';
 import type { Server, Socket } from 'socket.io';
 import { z } from 'zod';
 import { Color, PieceType, opposite } from '../shared/chess';
-import { DEFAULT_SKIN } from '../shared/catalog';
+import { BOT_LOOK, DEFAULT_KING, DEFAULT_SKIN, normKing, sealOf } from '../shared/catalog';
 import {
   CARDS_PER_PLAYER, CardInfo, DRAFT_MS, GameState, MoveInfo, Result, canStillMate, cardPool, catalogOf, clockRate,
   completeDraft, createGame, dealHands, draftRefusal, incrementSuspended, playCard, playMove, viewState, withHands,
@@ -35,6 +35,10 @@ interface Seat {
   rating: number | null;
   gamesPlayed: number;
   skin: string;
+  /** Roi (objet king), pris à l'assise. Absent des parties enregistrées avant les rois : seatView donne Arcane. */
+  king?: string;
+  /** Sceau de collection (id col:*), pris à l'assise. */
+  seal?: string | null;
   level?: BotLevel;
 }
 
@@ -234,14 +238,19 @@ export async function restoreRooms() {
 // ---------------------------------------------------------------------------------------------
 // Vues
 
-function seatView(room: Room, c: Color): SeatView | null {
+/** Vue publique d'un siège : le roi est normalisé (siège ancien ou identifiant inconnu : Arcane). Exportée pour les tests. */
+export function seatView(room: Room, c: Color): SeatView | null {
   const s = room.d.seats[c];
   if (!s) return null;
   const online = s.kind === 'bot' || [...room.sockets].some(k => keyOf(k.data.identity) === s.key);
-  return { kind: s.kind, name: s.name, username: s.username, rating: s.rating, skin: s.skin, online, level: s.level };
+  return {
+    kind: s.kind, name: s.name, username: s.username, rating: s.rating, skin: s.skin, king: normKing(s.king), seal: s.seal ?? null,
+    online, level: s.level,
+  };
 }
 
-function viewFor(room: Room, you: Color | null): GameView {
+/** Vue d'une partie pour un joueur (`you`) ou un spectateur (null). Exportée pour les tests. */
+export function viewFor(room: Room, you: Color | null): GameView {
   const d = room.d;
   // Tout est public : les mains des deux camps, cartes jouées ou non, et les Présages annoncés.
   const state: GameState = viewState(d.state);
@@ -563,27 +572,30 @@ function updateFirstMoveDeadline(room: Room) {
 // ---------------------------------------------------------------------------------------------
 // Création et fin de partie
 
-async function seatFor(identity: Identity, guestName?: string): Promise<Seat> {
-  // L'identité du socket date de sa connexion : on relit le classement à jour
+/** Siège d'un compte ou d'un invité. Le roi et le sceau sont pris ici, à l'assise. Exportée pour les tests. */
+export async function seatFor(identity: Identity, guestName?: string): Promise<Seat> {
+  // L'identité du socket date de sa connexion : on relit le classement (et l'équipement) à jour
   const u = identity.user ? (await userById(identity.user.id)) ?? identity.user : null;
   if (u) {
     return {
       kind: 'user', key: keyOf(identity), userId: u.id, name: u.username, username: u.username, rating: u.rating,
-      gamesPlayed: u.games_played, skin: u.equipped_skin || DEFAULT_SKIN,
+      gamesPlayed: u.games_played, skin: u.equipped_skin || DEFAULT_SKIN, king: u.equipped_king || DEFAULT_KING,
+      seal: sealOf(u.items ?? []),
     };
   }
   return {
     kind: 'guest', key: keyOf(identity), userId: null, name: guestName || 'Invité', username: null, rating: null,
-    gamesPlayed: 0, skin: DEFAULT_SKIN,
+    gamesPlayed: 0, skin: DEFAULT_SKIN, king: DEFAULT_KING, seal: null,
   };
 }
 
-function botSeat(level: BotLevel): Seat {
+/** Siège de l'IA : son apparence (sorts et roi) vient de BOT_LOOK. Exportée pour les tests. */
+export function botSeat(level: BotLevel): Seat {
   const p = BOT_PROFILES[level];
-  const skins = ['skin:arcane', 'skin:inferno', 'skin:void'];
+  const look = BOT_LOOK[level];
   return {
     kind: 'bot', key: `bot:${level}`, userId: null, name: `IA ${p.name}`, username: null, rating: p.rating, gamesPlayed: 0,
-    skin: skins[level - 1], level,
+    skin: look.skin, king: look.king, seal: null, level,
   };
 }
 
@@ -884,18 +896,29 @@ export function abortRoom(room: Room): Ack {
   return { ok: true };
 }
 
-async function createRematch(room: Room): Promise<void> {
+/**
+ * Revanche : sièges copiés, couleurs inversées, classement et équipement (sorts, roi, sceau) relus en base. Renvoie la
+ * nouvelle salle (null si la revanche existe déjà). Exportée pour les tests.
+ */
+export async function createRematch(room: Room): Promise<Room | null> {
   const d = room.d;
-  if (room.rematchPending || d.rematch.next) return;
+  if (room.rematchPending || d.rematch.next) return null;
   room.rematchPending = true;
   // Copies des sièges (la partie terminée garde ses classements d'origine), relues en base
   const fresh = async (s: Seat | null): Promise<Seat | null> => {
     if (!s) return null;
     const copy = { ...s };
     if (s.userId) {
-      const u = await one<{ rating: number; games_played: number; equipped_skin: string }>(
-        'SELECT rating, games_played, equipped_skin FROM users WHERE id = $1', [s.userId]);
-      if (u) Object.assign(copy, { rating: u.rating, gamesPlayed: u.games_played, skin: u.equipped_skin });
+      const u = await one<{ rating: number; games_played: number; equipped_skin: string; equipped_king: string; items: string[] }>(
+        `SELECT rating, games_played, equipped_skin, equipped_king,
+           coalesce(array(SELECT item_id FROM user_items WHERE user_id = u.id), '{}') AS items
+         FROM users u WHERE id = $1`, [s.userId]);
+      if (u) {
+        Object.assign(copy, {
+          rating: u.rating, gamesPlayed: u.games_played, skin: u.equipped_skin, king: u.equipped_king || DEFAULT_KING,
+          seal: sealOf(u.items ?? []),
+        });
+      }
     }
     return copy;
   };
@@ -912,6 +935,7 @@ async function createRematch(room: Room): Promise<void> {
   d.rematch.next = next.d.id;
   for (const s of room.sockets) s.emit('game:redirect', { from: d.id, to: next.d.id });
   broadcast(room, { type: 'sync' });
+  return next;
 }
 
 // ---------------------------------------------------------------------------------------------

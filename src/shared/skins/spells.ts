@@ -1,0 +1,82 @@
+// Sorts (emplacement `skin`) : l'habillage des effets des cartes. Identifiants `skin:*` historiques, jamais renommés.
+// Ordre : celui de la boutique d'origine, les nouveautés à la suite.
+import type { Item } from './types';
+
+export const SPELL_ITEMS: Item[] = [
+  {
+    id: 'skin:arcane',
+    kind: 'skin',
+    name: 'Arcane',
+    description: 'Runes cyan et violettes, la magie d’origine. Offert à tous.',
+    free: true,
+    rarity: 'offert',
+    skin: { primary: '#5ee7ff', secondary: '#a77bff', accent: '#e9fbff', particle: 'glow', flourish: 'runes', drift: 0.2, flash: 0.55, shake: 0.25 },
+  },
+  {
+    id: 'skin:inferno',
+    kind: 'skin',
+    name: 'Inferno',
+    description: 'Chaque carte s’embrase : braises, cercle de flammes et onde de chaleur.',
+    free: false,
+    rarity: 'rare',
+    skin: { primary: '#ff7a1a', secondary: '#ff2d55', accent: '#ffe08a', particle: 'ember', flourish: 'flames', drift: 1, flash: 0.8, shake: 0.6 },
+  },
+  {
+    id: 'skin:neon',
+    kind: 'skin',
+    name: 'Néon 2084',
+    description: 'Grille synthwave, pixels lumineux et glitch rétro-futuriste.',
+    free: false,
+    rarity: 'rare',
+    skin: { primary: '#ff3ec8', secondary: '#38f2ff', accent: '#fff36b', particle: 'pixel', flourish: 'grid', drift: 0, flash: 0.7, shake: 0.35 },
+  },
+  {
+    id: 'skin:celestial',
+    kind: 'skin',
+    name: 'Céleste',
+    description: 'Poussière d’étoiles dorée et constellations qui dessinent vos coups.',
+    free: false,
+    rarity: 'legendaire',
+    // Prix gardé : 3,99 € (la grille légendaire est à 4,99 €), un prix déjà pratiqué ne monte jamais.
+    priceCents: 399,
+    skin: { primary: '#ffd36b', secondary: '#fff7e0', accent: '#ffffff', particle: 'star', flourish: 'constellation', drift: -0.2, flash: 0.9, shake: 0.2 },
+  },
+  {
+    id: 'skin:void',
+    kind: 'skin',
+    name: 'Néant',
+    description: 'Un trou noir s’ouvre sous l’échiquier. Particules d’ombre et lueurs pourpres.',
+    free: false,
+    rarity: 'epique',
+    skin: { primary: '#8b3dff', secondary: '#1a0033', accent: '#d9b8ff', particle: 'void', flourish: 'vortex', drift: -0.6, flash: 0.45, shake: 0.7 },
+  },
+  {
+    id: 'skin:sakura',
+    kind: 'skin',
+    name: 'Sakura',
+    description: 'Une pluie de pétales roses et un souffle de printemps à chaque sort.',
+    free: false,
+    rarity: 'rare',
+    skin: { primary: '#ff8fc7', secondary: '#ffd1e8', accent: '#ffffff', particle: 'petal', flourish: 'petals', drift: -0.8, flash: 0.5, shake: 0.15 },
+  },
+  {
+    id: 'skin:laurier',
+    kind: 'skin',
+    name: 'Laurier',
+    description: 'Une pluie de feuilles d’or et de laurier, et une couronne de vainqueur qui se referme à chaque sort.',
+    free: false,
+    rarity: 'rare',
+    isNew: true,
+    skin: { primary: '#f3d27a', secondary: '#8fc27a', accent: '#fffbe8', particle: 'petal', flourish: 'laurel', drift: -0.5, flash: 0.75, shake: 0.2 },
+  },
+  {
+    id: 'skin:ecarlate',
+    kind: 'skin',
+    name: 'Écarlate',
+    description: 'Des éclats de rubis jaillissent et retombent en pluie sous un anneau de filigrane d’or.',
+    free: false,
+    rarity: 'epique',
+    isNew: true,
+    skin: { primary: '#ff3d5e', secondary: '#ffc861', accent: '#fff0f3', particle: 'shard', flourish: 'filigree', drift: -0.2, flash: 0.85, shake: 0.45 },
+  },
+];

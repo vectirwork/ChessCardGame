@@ -3,8 +3,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { itemById } from '../shared/catalog';
 import {
-  clearSessionCookie, createEmailToken, createSession, emailSchema, passwordSchema, requireUser, toMe, userById,
-  usernameSchema, zodError,
+  SLOT_COLUMN, clearSessionCookie, createEmailToken, createSession, emailSchema, passwordSchema, requireUser, toMe,
+  userById, usernameSchema, zodError,
 } from './auth';
 import { one, q } from './db';
 import { detachUser } from './games';
@@ -61,7 +61,7 @@ accountRouter.post('/equip', async (req, res) => {
   const u = req.identity.user!;
   if (!item) return res.status(404).json({ error: 'Objet inconnu.' });
   if (!item.free && !u.items.includes(item.id)) return res.status(403).json({ error: 'Cet objet ne fait pas partie de votre collection.' });
-  const column = item.kind === 'skin' ? 'equipped_skin' : 'equipped_board';
+  const column = SLOT_COLUMN[item.kind];
   await q(`UPDATE users SET ${column} = $1 WHERE id = $2`, [item.id, u.id]);
   res.json({ user: toMe((await userById(u.id))!) });
 });

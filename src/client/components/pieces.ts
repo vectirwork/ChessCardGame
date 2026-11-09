@@ -1,6 +1,10 @@
-// Jeu de pièces « Arcane », dessiné pour Spellmate (aucune licence tierce).
+// Jeu de pièces « Arcane », dessiné pour Spellmate (aucune licence tierce), et rois des skins (KING_ART).
 // Chaque pièce est un SVG 100 × 100 converti en data URI, mis en cache.
+// Le roi Arcane et tout identifiant de roi inconnu donnent exactement la data URI d'origine (même clé de cache) :
+// aucune repeinte, aucun changement pour les pièces Arcane. Un roi skinné a sa propre clé, `${c}k|${id}`.
 import type { Color, PieceType } from '../../shared/chess';
+import { KING_ART } from '../../shared/catalog';
+import type { KingArt, KingPaint } from '../../shared/catalog';
 
 const BASE = 'M22 90 Q22 82 30 81 L70 81 Q78 82 78 90 Z';
 
@@ -77,7 +81,67 @@ const PALETTE: Record<Color, { top: string; bottom: string; stroke: string; deta
 
 const cache = new Map<string, string>();
 
-export function pieceSvg(c: Color, t: PieceType): string {
+/** Dessin d'un roi skinné, ou undefined (roi Arcane, identifiant inconnu, autre pièce). */
+function kingArt(t: PieceType, king: string | undefined): KingArt | undefined {
+  return t === 'k' && king && Object.hasOwn(KING_ART, king) ? KING_ART[king] : undefined;
+}
+
+function paintGradient(id: string, paint: Exclude<KingPaint, string>): string {
+  const v = paint.vector;
+  const geo = v ? `gradientUnits="userSpaceOnUse" x1="${v[0]}" y1="${v[1]}" x2="${v[2]}" y2="${v[3]}"` : 'x1="0" y1="0" x2="0" y2="1"';
+  return `<linearGradient id="${id}" ${geo}>${paint.stops.map(([o, col]) => `<stop offset="${o}" stop-color="${col}"/>`).join('')}</linearGradient>`;
+}
+
+/**
+ * SVG d'un roi skinné : même grammaire que les pièces Arcane (corps en dégradé du camp, contour de 3,2, reflet,
+ * gravures), plus les ornements (aplat ou dégradé, contour du corps par défaut), peints sous le corps (`under`) ou
+ * par-dessus les gravures.
+ */
+function kingSvg(c: Color, art: KingArt, slug: string): string {
+  const p = art.pal[c];
+  const id = `${c}k${slug}`;
+  const defs: string[] = [];
+  const under: string[] = [];
+  const over: string[] = [];
+  art.ornaments.forEach((o, i) => {
+    let fill = 'none';
+    if (o.fill !== 'none') {
+      const paint = o.fill[c];
+      if (typeof paint === 'string') fill = paint;
+      else {
+        defs.push(paintGradient(`o${i}${id}`, paint));
+        fill = `url(#o${i}${id})`;
+      }
+    }
+    let attrs = `d="${o.d}" fill="${fill}"`;
+    if (o.rule) attrs += ` fill-rule="${o.rule}"`;
+    if (o.stroke !== 'none') {
+      attrs += ` stroke="${o.stroke ? o.stroke[c] : p.stroke}" stroke-width="${o.sw ?? 1.6}"`;
+      if (o.strokeOpacity !== undefined) attrs += ` stroke-opacity="${o.strokeOpacity}"`;
+    }
+    if (o.opacity !== undefined) attrs += ` opacity="${o.opacity}"`;
+    (o.under ? under : over).push(`<path ${attrs}/>`);
+  });
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+<defs>
+<linearGradient id="g${id}" x1="0" y1="0" x2="0.35" y2="1"><stop offset="0" stop-color="${p.top}"/><stop offset="1" stop-color="${p.bottom}"/></linearGradient>
+<linearGradient id="s${id}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0.32"/><stop offset="0.45" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.18"/></linearGradient>
+${defs.join('\n')}
+</defs>
+<g stroke-linejoin="round" stroke-linecap="round" fill-rule="nonzero">
+${under.join('\n')}
+<path d="${art.body}" fill="url(#g${id})" stroke="${p.stroke}" stroke-width="3.2"/>
+<path d="${art.body}" fill="url(#s${id})"/>
+<path d="${art.details}" fill="none" stroke="${p.detail}" stroke-width="${art.detailWidth ?? 2.2}" opacity="0.9"/>
+${over.join('\n')}
+</g>
+</svg>`;
+}
+
+/** SVG d'une pièce. `king` : objet roi (king:*) pour le roi ; absent, Arcane ou inconnu : le roi Arcane. */
+export function pieceSvg(c: Color, t: PieceType, king?: string): string {
+  const art = kingArt(t, king);
+  if (art) return kingSvg(c, art, king!.slice(king!.indexOf(':') + 1));
   const { body, details } = SHAPES[t];
   const p = PALETTE[c];
   const id = `${c}${t}`;
@@ -95,11 +159,36 @@ ${t === 'n' ? `<circle cx="33" cy="36" r="2.8" fill="${p.stroke}"/>` : ''}
 </svg>`;
 }
 
-export function pieceUrl(c: Color, t: PieceType): string {
-  const k = c + t;
+const toUrl = (svg: string) => `url("data:image/svg+xml;utf8,${encodeURIComponent(svg.replace(/\s+/g, ' '))}")`;
+
+/**
+ * Image CSS (background-image) d'une pièce. `king` ne compte que pour le roi : le roi Arcane, un identifiant inconnu
+ * ou absent donnent la data URI d'origine, avec la clé de cache d'origine.
+ */
+export function pieceUrl(c: Color, t: PieceType, king?: string): string {
+  const skinned = !!kingArt(t, king);
+  const k = skinned ? `${c}k|${king}` : c + t;
   let u = cache.get(k);
   if (!u) {
-    u = `url("data:image/svg+xml;utf8,${encodeURIComponent(pieceSvg(c, t).replace(/\s+/g, ' '))}")`;
+    u = toUrl(pieceSvg(c, t, skinned ? king : undefined));
+    cache.set(k, u);
+  }
+  return u;
+}
+
+/** Roi d'un skin, pour les vignettes et les portraits (background-image, aucun nœud SVG). */
+export const kingUrl = (c: Color, king?: string): string => pieceUrl(c, 'k', king);
+
+/**
+ * Cimier d'un roi : le même dessin recadré sur sa coiffe (viewBox 30 0 40 40), pour le sceau de collection et
+ * l'avatar. Roi Arcane ou inconnu : le cimier Arcane.
+ */
+export function crestUrl(king?: string, c: Color = 'w'): string {
+  const skinned = !!kingArt('k', king);
+  const k = `crest|${c}|${skinned ? king : ''}`;
+  let u = cache.get(k);
+  if (!u) {
+    u = toUrl(pieceSvg(c, 'k', skinned ? king : undefined).replace('viewBox="0 0 100 100"', 'viewBox="30 0 40 40"'));
     cache.set(k, u);
   }
   return u;

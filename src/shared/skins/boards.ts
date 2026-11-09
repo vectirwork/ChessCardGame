@@ -1,0 +1,103 @@
+// Échiquiers (emplacement `board`). Identifiants `board:*` historiques, jamais renommés.
+// Ordre : celui de la boutique d'origine, les nouveautés à la suite. Les décors (liseré, incrustation, cadre, halo)
+// s'ajoutent dans `board` sans toucher aux identifiants ni aux noms.
+import type { Item } from './types';
+
+export const BOARD_ITEMS: Item[] = [
+  {
+    id: 'board:arcane',
+    kind: 'board',
+    name: 'Nuit arcane',
+    description: 'Le plateau d’origine, violet profond.',
+    free: true,
+    rarity: 'offert',
+    board: { light: '#d8d3ee', dark: '#6f62ad', frame: '#1c1838', texture: 'grain', coords: '#3b3270' },
+  },
+  {
+    id: 'board:wood',
+    kind: 'board',
+    name: 'Bois de chêne',
+    description: 'L’élégance d’un échiquier de club.',
+    free: true,
+    rarity: 'offert',
+    board: { light: '#ecd5ae', dark: '#a9784f', frame: '#4a2f1d', texture: 'wood', coords: '#6b4428' },
+  },
+  {
+    id: 'board:slate',
+    kind: 'board',
+    name: 'Ardoise',
+    description: 'Bleu-gris sobre, reposant pour les longues parties.',
+    free: true,
+    rarity: 'offert',
+    board: { light: '#dfe6ee', dark: '#7b8fa6', frame: '#1f2833', texture: 'none', coords: '#465568' },
+  },
+  {
+    id: 'board:marble',
+    kind: 'board',
+    name: 'Marbre de Carrare',
+    description: 'Marbre blanc veiné, marbre gris et frise grecque d’or : l’échiquier des vainqueurs.',
+    free: false,
+    rarity: 'rare',
+    board: { light: '#f2f0ec', dark: '#8c8c94', frame: '#2b2b30', texture: 'marble', coords: '#55555c' },
+  },
+  {
+    id: 'board:obsidian',
+    kind: 'board',
+    name: 'Obsidienne & Or',
+    description: 'Pierre volcanique sertie d’or, rivets forgés et veines de lave figées dans la roche.',
+    free: false,
+    rarity: 'rare',
+    // Cases sombres éclaircies (#26232b → #322d38) : les pièces noires y deviennent lisibles.
+    board: { light: '#c9b27a', dark: '#322d38', frame: '#0d0c10', texture: 'stone', coords: '#a68b4c' },
+  },
+  {
+    id: 'board:jade',
+    kind: 'board',
+    name: 'Palais de jade',
+    description: 'Jade impérial et ivoire, liseré d’or ; des pétales de cerisier tombent sur l’échiquier.',
+    free: false,
+    rarity: 'rare',
+    board: { light: '#e9f1e3', dark: '#3f8a6b', frame: '#123326', texture: 'marble', coords: '#2c6650' },
+  },
+  {
+    id: 'board:ruby',
+    kind: 'board',
+    name: 'Rubis',
+    description: 'Rubis taillé et crème, serti d’un filigrane d’or : taillé pour l’attaque.',
+    free: false,
+    rarity: 'epique',
+    // Prix gardé : 1,99 € (la grille épique est à 2,49 €), un prix déjà pratiqué ne monte jamais.
+    priceCents: 199,
+    board: { light: '#f3e1d6', dark: '#9e2f45', frame: '#2e0b14', texture: 'stone', coords: '#7a2234' },
+  },
+  {
+    id: 'board:grille',
+    kind: 'board',
+    name: 'Grille 2084',
+    description: 'Cases indigo et lavande sous une grille cyan qui ne s’éteint jamais, cadre néon magenta.',
+    free: false,
+    rarity: 'rare',
+    isNew: true,
+    board: { light: '#cbbcf2', dark: '#46317e', frame: '#0b0614', texture: 'none', coords: '#46317e' },
+  },
+  {
+    id: 'board:horizon',
+    kind: 'board',
+    name: 'Horizon des événements',
+    description: 'Un ciel éteint : un disque d’accrétion violet tourne autour d’une singularité, au cœur de l’échiquier.',
+    free: false,
+    rarity: 'epique',
+    isNew: true,
+    board: { light: '#dcd8e4', dark: '#504372', frame: '#07050c', texture: 'grain', coords: '#504372' },
+  },
+  {
+    id: 'board:ciel',
+    kind: 'board',
+    name: 'Carte du ciel',
+    description: 'Parchemin et bleu nuit, piqué d’étoiles d’or comme une carte des astronomes.',
+    free: false,
+    rarity: 'legendaire',
+    isNew: true,
+    board: { light: '#ede3c8', dark: '#2c3672', frame: '#0e1230', texture: 'grain', coords: '#2c3672' },
+  },
+];

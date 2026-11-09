@@ -213,10 +213,13 @@ interface Props {
   playSignal: number;
   onCast?: (card: CardId, skin: string) => void;
   onCanvas?: (canvas: HTMLCanvasElement | null) => void;
+  /** Rois des deux camps (objets king:*), passés tels quels à Board. Absent : le roi Arcane. */
+  kingW?: string;
+  kingB?: string;
 }
 
 /** Mémoïsé : l'accueil se re-rend à chaque seuil du défilement (chapitre, amarrage), sans rien changer ici. */
-export const StageBoard = memo(function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, still, playSignal, onCast, onCanvas }: Props) {
+export const StageBoard = memo(function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, still, playSignal, onCast, onCanvas, kingW, kingB }: Props) {
   demoCatalog = catalog;
   const ref = useRef<BoardHandle>(null);
   const [wrap, setWrap] = useState<HTMLDivElement | null>(null);
@@ -539,6 +542,8 @@ export const StageBoard = memo(function StageBoard({ act, catalog, theme, resetS
       hidden={hidden}
       locked
       coords={false}
+      kingW={kingW}
+      kingB={kingB}
     />
   );
 });

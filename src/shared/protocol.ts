@@ -274,3 +274,109 @@ export interface GameSummary {
   createdAt: string;
   plies: number;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Réponses lues par la boutique, le compte, le profil et le classement. Contrat entre le serveur (lot A des skins :
+// account.ts, shop.ts) et les pages (lot E : Shop, DemoCheckout, Account, Profile, Leaderboard) : les mêmes noms de
+// champs des deux côtés. Les champs notés « lot A » ne sont pas encore renvoyés par le serveur du lot 0.
+
+/** Statut d'un achat (`purchases.status`). */
+export type PurchaseStatus = 'pending' | 'paid' | 'refunded' | 'failed';
+
+/**
+ * `productId` (`purchases.product_id`) d'un panier d'essai payé en une fois (lot A) : il ne correspond à aucun produit
+ * du catalogue (`productById` renvoie undefined), les objets achetés sont dans `items`.
+ */
+export const CART_PRODUCT_ID = 'panier';
+
+/** Profil public d'un joueur (GET /api/users/:username). */
+export interface PublicProfile {
+  username: string;
+  rating: number;
+  gamesPlayed: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  /** Sorts équipés (objet skin). */
+  skin: string;
+  /** Échiquier équipé (objet board). Lot A. */
+  board: string;
+  /** Roi équipé (objet king), normalisé comme en partie : identifiant inconnu → roi Arcane. Lot A. */
+  king: string;
+  /** Sceau de collection (`sealOf` des objets possédés, id col:*), ou null. Lot A. */
+  seal: string | null;
+  /** Date d'inscription (ISO 8601). */
+  memberSince: string;
+  /** Rang au classement ; null sans partie classée. */
+  rank: number | null;
+}
+
+export interface ProfileResponse {
+  profile: PublicProfile;
+  games: GameSummary[];
+}
+
+/** Ligne du classement (GET /api/leaderboard). Noms des colonnes SQL, gardés tels quels. */
+export interface LeaderboardRow {
+  username: string;
+  rating: number;
+  games_played: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  /** Sceau de collection du joueur (`sealOf`, id col:*), ou null. Lot A. */
+  seal: string | null;
+}
+
+export interface LeaderboardResponse {
+  players: LeaderboardRow[];
+}
+
+/** Ligne de l'historique des achats (GET /api/account/purchases ; sans les achats en attente). Noms des colonnes SQL. */
+export interface PurchaseRecord {
+  id: string;
+  /** Produit acheté (retiré compris : `productById` le résout), ou CART_PRODUCT_ID : le libellé se déduit d'`items`. */
+  product_id: string;
+  /** Objets livrés par cet achat : ceux du produit, de la collection complétée ou du panier. */
+  items: string[];
+  provider: 'stripe' | 'demo';
+  /** Montant facturé (centimes TTC) : prix « compléter » d'une collection, total d'un panier. */
+  amount_cents: number;
+  currency: string;
+  status: Exclude<PurchaseStatus, 'pending'>;
+  /** ISO 8601. */
+  created_at: string;
+  paid_at: string | null;
+}
+
+export interface PurchasesResponse {
+  purchases: PurchaseRecord[];
+}
+
+/** Achat simulé (mode démo, GET /api/shop/demo/:id), lu par la page de paiement simulé. */
+export interface DemoPurchase {
+  id: string;
+  /** Produit, ou CART_PRODUCT_ID pour un panier. */
+  productId: string;
+  /** Objets de l'achat : la page les montre d'ici, sans passer par le produit (un panier n'en a pas). */
+  items: string[];
+  /** Montant facturé (centimes TTC), celui que la page affiche. */
+  amountCents: number;
+  status: PurchaseStatus;
+}
+
+/** Retour de Stripe (GET /api/shop/confirm/:sessionId) : de quoi afficher le déballage. */
+export interface ConfirmResponse {
+  status: PurchaseStatus;
+  productId: string;
+  items: string[];
+  user: MeUser;
+}
+
+/** Paiement simulé réussi (mode démo, POST /api/shop/demo/:id/complete). */
+export interface DemoCompleteResponse {
+  ok: true;
+  productId: string;
+  items: string[];
+  user: MeUser;
+}

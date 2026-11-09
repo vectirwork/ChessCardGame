@@ -18,7 +18,7 @@ import type { Color } from '../src/shared/chess';
 import type { Identity, UserRow } from '../src/server/auth';
 import { SLOT_COLUMN, toMe } from '../src/server/auth';
 import { one } from '../src/server/db';
-import { Room, botSeat, createRematch, newRoom, seatFor, seatView, viewFor } from '../src/server/games';
+import { Room, botSeat, createRematch, detachUser, newRoom, seatFor, seatView, viewFor } from '../src/server/games';
 import { UNEQUIP_LOST_SQL } from '../src/server/shop';
 
 beforeEach(() => {
@@ -125,6 +125,22 @@ describe('le roi pris à l’assise', () => {
     // La partie terminée garde le roi d'origine
     expect(viewFor(room, null).seats.w?.king).toBe('king:braise');
     expect(await createRematch(room)).toBeNull();
+  });
+});
+
+describe('compte supprimé', () => {
+  it('le siège anonymisé perd le roi, le sceau et les sorts du compte ; l’autre siège ne change pas', async () => {
+    const room = invite(
+      seat(1, { kind: 'user', key: 'u:gone', userId: 'gone', username: 'gone', name: 'gone', skin: 'skin:inferno', king: 'king:braise', seal: 'col:inferno' }),
+      seat(2, { king: 'king:astral', seal: 'col:celeste' }),
+    );
+    await detachUser('gone');
+    for (const you of ['w', 'b', null] as (Color | null)[]) {
+      const v = viewFor(room, you);
+      expect(v.seats.w).toMatchObject({ kind: 'guest', name: 'Compte supprimé', username: null, skin: 'skin:arcane', king: 'king:arcane', seal: null });
+      expect(v.seats.b).toMatchObject({ name: 'Joueur 2', king: 'king:astral', seal: 'col:celeste' });
+    }
+    expect(room.d.status).toBe('ended');
   });
 });
 

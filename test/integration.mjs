@@ -2,8 +2,9 @@
 // Parcourt : inscription, invitation sans compte, choix des cartes (décision D5 : réserve, secret jusqu'à la
 // révélation, refus, idempotence, échéance de 45 s et complément au hasard), coups, mains visibles, carte jouée
 // (catalogue Pouvoirs, identifiant 'climats', par défaut), choix du catalogue (Sans cartes ; Duel ramené aux Pouvoirs ;
-// file amicale), abandon pendant le choix (annulation), revanche, IA, boutique (mode démo), rois (roi de l'IA ; en
-// mode démo : achat, équipement, roi pris à l'assise et vu de tous, revanche).
+// file amicale), abandon pendant le choix (annulation), revanche, IA, boutique (mode démo ; collection complétée au
+// prix de productPrice), rois (roi de l'IA ; en mode démo : achat, équipement, roi pris à l'assise et vu de tous,
+// revanche).
 // Durée : au moins 47 s (l'échéance du choix est attendue en parallèle des autres étapes).
 import { io } from 'socket.io-client';
 import assert from 'node:assert/strict';
@@ -356,13 +357,28 @@ if (demoShop) {
   assert.equal(r.status, 403, 'impossible d’équiper un roi non acheté');
   r = await alice.api('/shop/checkout', { productId: 'pack:all', waiver: true });
   assert.equal(r.status, 404, 'produit retiré de la vente');
+  // Compléter la collection : Alice a les sorts Inferno, la Forge lui coûte 5,99 € − 2,99 € = 3,00 € (productPrice)
+  const forge = ['king:braise', 'board:obsidian', 'skin:inferno'];
+  r = await alice.api('/shop/checkout', { productId: 'col:inferno', waiver: true });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  r = await alice.api(`/shop/demo/${r.data.url.split('/').pop()}`);
+  assert.equal(r.data.amountCents, 300, 'Forge d’Inferno complétée à 3,00 €');
+  assert.deepEqual(r.data.items, forge, 'la page de démo reçoit les objets de l’achat');
+  assert.equal(r.data.status, 'pending');
   r = await alice.api('/shop/checkout', { productId: 'king:braise', waiver: true });
   assert.equal(r.status, 200, JSON.stringify(r.data));
   const kpid = r.data.url.split('/').pop();
   r = await alice.api(`/shop/demo/${kpid}`);
   assert.equal(r.data.amountCents, 299, 'Roi de braise à 2,99 €');
+  assert.deepEqual(r.data.items, ['king:braise']);
   r = await alice.api(`/shop/demo/${kpid}/complete`, {});
   assert.ok(r.data.user.items.includes('king:braise'));
+  assert.deepEqual(r.data.items, ['king:braise'], 'paiement simulé : objets livrés');
+  // Avec le roi et les sorts, il ne manque que l'échiquier : jamais sous son prix à l'unité (1,99 €)
+  r = await alice.api('/shop/checkout', { productId: 'col:inferno', waiver: true });
+  r = await alice.api(`/shop/demo/${r.data.url.split('/').pop()}`);
+  assert.equal(r.data.amountCents, 199, 'Forge d’Inferno : plancher au prix de la pièce manquante');
+  step('boutique : collection complétée au prix de productPrice (3,00 €, puis 1,99 €), objets de l’achat dans la page de démo');
   r = await alice.api('/account/equip', { itemId: 'king:braise' });
   assert.equal(r.status, 200, JSON.stringify(r.data));
   assert.equal(r.data.user.equippedKing, 'king:braise');

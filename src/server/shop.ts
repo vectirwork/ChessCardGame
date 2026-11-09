@@ -3,8 +3,9 @@ import express, { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import Stripe from 'stripe';
 import { z } from 'zod';
-import { DEFAULT_ITEM, FREE_ITEMS, ITEMS, PRODUCTS, formatPrice, productById } from '../shared/catalog';
+import { DEFAULT_ITEM, FREE_ITEMS, ITEMS, PRODUCTS, formatPrice, productById, productPrice } from '../shared/catalog';
 import type { ItemKind } from '../shared/catalog';
+import type { ConfirmResponse, DemoCompleteResponse, DemoPurchase, PurchaseStatus } from '../shared/protocol';
 import { SLOT_COLUMN, requireUser, toMe, userById } from './auth';
 import { config } from './config';
 import { one, q, tx } from './db';
@@ -18,7 +19,7 @@ interface PurchaseRow {
   product_id: string;
   items: string[];
   amount_cents: number;
-  status: string;
+  status: PurchaseStatus;
   email: string | null;
 }
 
@@ -58,8 +59,11 @@ export const UNEQUIP_LOST_SQL = `UPDATE users SET ${SLOTS.map(
     `${col} = CASE WHEN ${col} = ANY($2::text[]) OR ${col} IN (SELECT item_id FROM user_items WHERE user_id = $1) THEN ${col} ELSE $${i + 3} END`,
 ).join(', ')} WHERE id = $1`;
 
-/** Remboursement : retire les objets livrés par cet achat et déséquipe ce qui n'est plus possédé. */
-async function refundPurchase(paymentRef: string) {
+/**
+ * Remboursement : retire les objets livrés par cet achat (promesses d'un pack comprises : même source) et déséquipe ce
+ * qui n'est plus possédé. Exportée pour les tests.
+ */
+export async function refundPurchase(paymentRef: string) {
   const p = await one<PurchaseRow>(
     `UPDATE purchases SET status = 'refunded' WHERE payment_ref = $1 AND status = 'paid' RETURNING *`,
     [paymentRef],
@@ -91,13 +95,14 @@ shopRouter.post('/checkout', checkoutLimiter, requireUser, async (req, res) => {
   if (!product) return res.status(404).json({ error: 'Produit inconnu.' });
   if (product.retired) return res.status(404).json({ error: 'Ce produit n’est plus en vente.' });
   const u = req.identity.user!;
-  if (product.items.every(i => u.items.includes(i))) {
-    return res.status(409).json({ error: 'Vous possédez déjà tout le contenu de ce produit.' });
-  }
+  // Montant facturé : productPrice, le prix que la boutique affiche. Une collection dont on possède déjà des pièces se
+  // paie au prix « compléter » ; objets et packs gardent leur prix fixe. null : tout est déjà possédé.
+  const amount = productPrice(product, u.items);
+  if (amount === null) return res.status(409).json({ error: 'Vous possédez déjà tout le contenu de ce produit.' });
   const purchase = await one<{ id: string }>(
     `INSERT INTO purchases (user_id, product_id, items, provider, amount_cents, currency, status, email)
      VALUES ($1, $2, $3, $4, $5, 'eur', 'pending', $6) RETURNING id`,
-    [u.id, product.id, product.items, config.payments, product.priceCents, u.email],
+    [u.id, product.id, product.items, config.payments, amount, u.email],
   );
   if (config.payments === 'demo') {
     return res.json({ url: `/boutique/demo/${purchase!.id}` });
@@ -112,7 +117,7 @@ shopRouter.post('/checkout', checkoutLimiter, requireUser, async (req, res) => {
         quantity: 1,
         price_data: {
           currency: 'eur',
-          unit_amount: product.priceCents,
+          unit_amount: amount,
           tax_behavior: 'inclusive',
           product_data: { name: product.name, description: product.description },
         },
@@ -154,7 +159,12 @@ shopRouter.get('/confirm/:sessionId', requireUser, async (req, res) => {
     }
   }
   const fresh = await one<PurchaseRow>('SELECT * FROM purchases WHERE id = $1', [p.id]);
-  res.json({ status: fresh!.status, productId: p.product_id, user: toMe((await userById(req.identity.user!.id))!) });
+  res.json({
+    status: fresh!.status,
+    productId: p.product_id,
+    items: p.items,
+    user: toMe((await userById(req.identity.user!.id))!),
+  } satisfies ConfirmResponse);
 });
 
 /** Mode démo uniquement : simule un paiement réussi. */
@@ -163,14 +173,19 @@ shopRouter.post('/demo/:purchaseId/complete', requireUser, async (req, res) => {
   const p = await one<PurchaseRow>(`SELECT * FROM purchases WHERE id = $1 AND user_id = $2`, [req.params.purchaseId, req.identity.user!.id]);
   if (!p) return res.status(404).json({ error: 'Achat introuvable.' });
   await fulfillPurchase(p.id, `demo_${p.id}`);
-  res.json({ ok: true, productId: p.product_id, user: toMe((await userById(req.identity.user!.id))!) });
+  res.json({
+    ok: true,
+    productId: p.product_id,
+    items: p.items,
+    user: toMe((await userById(req.identity.user!.id))!),
+  } satisfies DemoCompleteResponse);
 });
 
 shopRouter.get('/demo/:purchaseId', requireUser, async (req, res) => {
   if (config.payments !== 'demo') return res.status(404).json({ error: 'Indisponible.' });
   const p = await one<PurchaseRow>(`SELECT * FROM purchases WHERE id = $1 AND user_id = $2`, [req.params.purchaseId, req.identity.user!.id]);
   if (!p) return res.status(404).json({ error: 'Achat introuvable.' });
-  res.json({ id: p.id, productId: p.product_id, amountCents: p.amount_cents, status: p.status });
+  res.json({ id: p.id, productId: p.product_id, items: p.items, amountCents: p.amount_cents, status: p.status } satisfies DemoPurchase);
 });
 
 /** Webhook Stripe : à déclarer dans le tableau de bord Stripe (voir README). Corps brut obligatoire. */

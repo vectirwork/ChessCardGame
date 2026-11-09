@@ -1370,7 +1370,10 @@ export async function detachUser(userId: string) {
       // Pendant le choix des cartes, la partie est annulée (sans effet sur le classement).
       if (room.d.status === 'active' && !room.d.draft) endGame(room, { winner: opposite(c), reason: 'abandon' });
       else if (room.d.status !== 'ended') endGame(room, { winner: null, reason: 'aborted' });
-      room.d.seats[c] = { ...seat, kind: 'guest', userId: null, username: null, name: 'Compte supprimé' };
+      // Siège anonymisé comme celui d'un invité : sans le roi, le sceau ni les sorts du compte supprimé.
+      room.d.seats[c] = {
+        ...seat, kind: 'guest', userId: null, username: null, name: 'Compte supprimé', skin: DEFAULT_SKIN, king: DEFAULT_KING, seal: null,
+      };
       scheduleSave(room);
     }
   }

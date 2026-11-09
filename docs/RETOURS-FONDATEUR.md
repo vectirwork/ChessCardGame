@@ -327,3 +327,25 @@ survol (≈ 11 calques permanents de moins), grain dans le calque de la vignette
 du Seuil sans fusion « screen ».
 
 Rien n'a été vérifié sur un vrai PC.
+
+## 9 novembre, nuit : à-coups au premier passage dans les nuages (PC)
+
+> « Encore des problèmes de lag sur PC, surtout au premier défilement dans les nuages. »
+
+Mesure d'une visite neuve à l'ordinateur (premier geste puis descente continue jusqu'à la Forêt, processeur ×4) :
+- **le premier sort de la Forêt compilait tous les programmes 3D d'un coup**, en pleine descente : une tâche de
+  500 ms au banc (dont 295 ms pour le premier rendu). La préparation « au calme » ne venait jamais pour qui descend
+  sans s'arrêter, et une scène préparée était jetée au bout de 20 s. La compilation est réputée lente sur certains
+  PC (Windows) : c'est l'à-coup du premier passage ;
+- à chaque image d'un sort, la scène 3D relisait la position de l'échiquier et un style calculé au milieu des
+  écritures du moteur : style et mise en page refaits sur-le-champ (0,7 s sur une glissade au banc).
+
+- [x] À l'ordinateur, la scène 3D est préparée en entier (contexte, programmes, textures des lieux) au repos après le
+  chargement, pendant la lecture du premier écran, et gardée jusqu'à ce que la démonstration la prenne (libérée si
+  l'accueil est quitté avant). Pire image du premier passage : 517 → 267 ms au banc ; plus aucune tâche de
+  compilation pendant la descente, même pour qui défile dès 1,5 s après l'arrivée.
+- [x] Position de l'échiquier relevée juste après chaque image (gratuite), pour l'image suivante ; placement lu dans
+  le style en ligne. Lectures forcées : 683 → 50 ms sur une glissade ; script du fil principal −23 à −37 %.
+
+Ce qu'il reste de régulier : Lenis fait travailler le fil principal à chaque image (décor écrit par le script,
+animations en boucle réévaluées). Le supprimer rendrait la molette moins douce : décision du fondateur.

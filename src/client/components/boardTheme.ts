@@ -12,7 +12,7 @@
 // - fa-corners, --fa-size, --fa-at : une même image aux quatre coins du cadre ; avec fa-mid, --fa-mid et --fa-mid-at,
 //   aussi au milieu de chaque côté ;
 // - has-glow, --frame-bg, --frame-shadow : dégradé du cadre (devant var(--frame)) et ombres en tête de liste ;
-// - bt-<thème> : porte les images (url) du thème, dans une feuille de style ajoutée une fois par thème (themeCss).
+// - bt-<thème> : porte les images (url) du thème, dans une feuille de style écrite une fois par thème (themeRules).
 //
 // Pourquoi les images ne passent pas par des variables : Chromium recrée une image url() à chaque recalcul de style
 // quand elle vient d'une var(), ou d'une déclaration qui contient une var(), ou d'une liste de fonds qui mêle une url()
@@ -63,10 +63,10 @@ const themeId = (theme: string | undefined) => (itemById(theme ?? '')?.board ? t
 const imageClass = (id: string) => `bt-${id.replace(/^board:/, '').replace(/[^a-z0-9-]/gi, '-')}`;
 
 /**
- * Règles CSS des images d'un thème (url() en toutes lettres, sans var()), ou chaîne vide s'il n'en a pas. Sélecteurs
- * en .board-wrap.bt-<id> : plus précis que board.css, quel que soit l'ordre des feuilles.
+ * Règles CSS des images d'un thème (url() en toutes lettres, sans var()), aucune s'il n'en a pas. Sélecteurs en
+ * .board-wrap.bt-<id> : plus précis que board.css, quel que soit l'ordre des feuilles.
  */
-export function themeCss(theme: string | undefined): string {
+export function themeRules(theme: string | undefined): string[] {
   const id = themeId(theme);
   const bs: BoardStyle = boardStyle(id);
   const w = `.board-wrap.${imageClass(id)}`;
@@ -79,23 +79,31 @@ export function themeCss(theme: string | undefined): string {
     const layers = Array.from({ length: fa.mid ? 8 : 4 }, () => art);
     rules.push(`${w} .board::before{background-image:${[...layers, svgUrl(SHEEN_SVG)].join(',')}}`);
   }
-  return rules.join('\n');
+  return rules;
 }
 
-/** Feuille des images des thèmes, créée au premier thème décoré ; chaque thème n'y est écrit qu'une fois. */
+/** Les mêmes règles en une feuille de style (chaîne vide pour un thème sans image). */
+export const themeCss = (theme: string | undefined) => themeRules(theme).join('\n');
+
+/**
+ * Feuille des images des thèmes, créée au premier thème décoré ; chaque thème n'y est écrit qu'une fois, par
+ * insertRule (la feuille n'est pas relue en entier à chaque thème, comme elle le serait en ajoutant du texte). Appelé
+ * pendant le rendu de Board : un effet idempotent, au plus une fois par thème.
+ */
 let sheet: HTMLStyleElement | null = null;
 const written = new Set<string>();
 function writeThemeCss(id: string) {
   if (written.has(id) || typeof document === 'undefined') return;
   written.add(id);
-  const css = themeCss(id);
-  if (!css) return;
+  const rules = themeRules(id);
+  if (!rules.length) return;
   if (!sheet) {
     sheet = document.createElement('style');
     sheet.setAttribute('data-board-themes', '');
     document.head.appendChild(sheet);
   }
-  sheet.appendChild(document.createTextNode(css + '\n'));
+  const css = sheet.sheet!;
+  for (const rule of rules) css.insertRule(rule, css.cssRules.length);
 }
 
 const cache = new Map<string, { theme: BoardTheme; id: string }>();

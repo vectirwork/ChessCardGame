@@ -7,7 +7,7 @@
 // - grands.png : les 10 échiquiers à 64 px par case (ordinateur), au départ et en milieu de partie ;
 // - retournes.png : les échiquiers décorés vus des Noirs (les motifs restent sur les cases sombres) ;
 // - etats.png : dernier coup, sélection et indices, échec, Mur de glace, Faille, puis cibles d'une carte, au-dessus
-//   de l'incrustation ;
+//   de l'incrustation, y compris sur une case qui est aussi celle du dernier coup (cible en f6, case choisie en g8) ;
 // - faille-obsidienne.png : la Faille à côté des craquelures d'Obsidienne, à 64 px ;
 // - coins.png : les coins des cadres (frises en border-image, images d'angle, lueurs) en densité 3, dans l'arrondi
 //   de 14 px ;
@@ -62,7 +62,8 @@ import type { Effect } from '../src/shared/game';
 
 interface Cell {
   theme: string; fen: string; size: number; o?: 'w' | 'b'; label?: string;
-  last?: [string, string]; check?: string; iced?: string[]; rift?: string[]; targets?: string[]; legal?: boolean;
+  last?: [string, string]; check?: string; iced?: string[]; rift?: string[]; targets?: string[]; chosen?: string[];
+  legal?: boolean;
 }
 const P = (window as any).__PLANCHE as { cols: number; gap?: number; cells: Cell[] };
 const sq = (n: string) => sqIndex(n);
@@ -90,6 +91,7 @@ function CellView({ c }: { c: Cell }) {
           check={c.check ? sq(c.check) : null}
           effects={effects}
           targets={c.targets ? c.targets.map(sq) : null}
+          chosen={c.chosen?.map(sq)}
           legal={c.legal ? legalMoves(pos) : []}
           onMove={c.legal ? () => {} : undefined}
         />
@@ -123,7 +125,7 @@ const JS = bundle.outputFiles[0].text;
 const CSS = readFileSync(path.join(ROOT, 'src/client/styles/board.css'), 'utf8');
 // Banc : retire les décors (liseré, incrustation, frise, images d'angle, lueurs) pour la mesure « sans décor ».
 const NU = `.board-wrap .squares{box-shadow:none!important}.board-wrap .squares::before{content:none!important}
-.board-wrap .board::before{border:0!important;border-image:none!important;
+.board-wrap .board::before{border:0!important;border-image:none!important;outline:0!important;
 background:linear-gradient(145deg,rgba(255,255,255,.14),transparent 40%),var(--frame)!important;
 box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 1px rgba(255,255,255,.06),inset 0 0 0 1px rgba(255,255,255,.08)!important}`;
 const html = (planche, nu = false) => `<!doctype html><html lang="fr"><meta charset="utf-8">
@@ -179,10 +181,14 @@ if (!BANC) {
     ]),
   });
   // États de jeu : dernier coup g8-f6, sélection du cavalier f3 (indices, prise en e5), échec en h1, Mur de glace en
-  // h3, Faille en a4 et b4 ; puis cibles d'une carte.
+  // h3, Faille en a4 et b4 ; puis cibles d'une carte avec le même dernier coup : f6 est à la fois dernier coup et
+  // cible (la cible et la teinte du cavalier restent au-dessus), g8 dernier coup et case choisie.
   const etats = THEMES.filter(t => t !== 'board:wood' && t !== 'board:slate').flatMap(t => [
     { theme: t, fen: MID, size: 48, last: ['g8', 'f6'], check: 'h1', iced: ['h3'], rift: ['a4', 'b4'], legal: true, label: `${t.slice(6)} : états` },
-    { theme: t, fen: MID, size: 48, targets: ['c6', 'd5', 'e5', 'f6', 'd4', 'g5'], label: `${t.slice(6)} : cibles` },
+    {
+      theme: t, fen: MID, size: 48, last: ['g8', 'f6'], targets: ['c6', 'd5', 'e5', 'f6', 'd4', 'g5'], chosen: ['g8'],
+      label: `${t.slice(6)} : cibles`,
+    },
   ]);
   await shoot('etats.png', { cols: 4, cells: etats }, {
     dpr: 2,

@@ -7,7 +7,10 @@
 //   ne ressemblent jamais à la Faille, étoiles du ciel sur les cases sombres et hors des coordonnées, puits du Néant sur
 //   les seules cases claires ;
 // - boardTheme : classes et variables attendues, une seule construction par thème, images jamais passées par une
-//   variable CSS (Chromium repeindrait l'échiquier à chaque recalcul de style).
+//   variable CSS (Chromium repeindrait l'échiquier à chaque recalcul de style) ;
+// - ordre des calques (petite cascade sur board.css) : avec incrustation, tous les états de jeu passent au-dessus
+//   d'elle et gardent entre eux, et avec les pièces, l'ordre des échiquiers sans incrustation (dernier coup + cible,
+//   coordonnées sous les pièces, pièce prise, climat, glisser…).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ITEMS, boardStyle, collectionOf } from '../src/shared/catalog';
@@ -346,14 +349,128 @@ describe('board.css : section « Habillage des échiquiers »', () => {
     }
   });
 
-  it('les états de jeu passent au-dessus de l’incrustation', () => {
-    expect(rules).toMatch(/\.has-inlay \.squares::before \{[^}]*z-index: 1;/);
-    for (const s of ['.sq.last::after', '.sq.sel::after', '.sq.pm-from::after', '.sq.pm-to::after']) {
-      expect(rules, s).toContain(`.has-inlay ${s}`);
+  // Ordre de peinture dans .board (contexte d'empilement de l'échiquier) : z-index (auto compte pour 0), puis ordre de
+  // l'arbre. Une petite cascade suffit : les règles de board.css qui posent un z-index n'emploient que des classes, des
+  // balises, le descendant et ::before / ::after (les autres sélecteurs, :hover ou :nth-child, n'en posent pas).
+  interface ZRule {
+    parts: { tag?: string; classes: string[] }[];
+    pseudo: string | null;
+    spec: number;
+    order: number;
+    z: number;
+  }
+  const zRules = (sheet: string): ZRule[] => {
+    const out: ZRule[] = [];
+    let order = 0;
+    for (const m of sheet.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      order++;
+      const z = m[2].match(/(?:^|[;\s])z-index\s*:\s*(-?\d+|auto)\s*(?:;|$)/)?.[1];
+      if (z === undefined) continue;
+      for (const raw of m[1].split(',')) {
+        const sel = raw.trim().match(/^((?:[a-z]+|[a-z]*(?:\.[\w-]+)+)(?:\s+(?:[a-z]+|[a-z]*(?:\.[\w-]+)+))*)(?:::(before|after))?$/);
+        if (!sel) continue;
+        const parts = sel[1].split(/\s+/).map(p => ({
+          tag: p.match(/^[a-z]+/)?.[0],
+          classes: [...p.matchAll(/\.([\w-]+)/g)].map(c => c[1]),
+        }));
+        const classes = parts.reduce((n, p) => n + p.classes.length, 0);
+        const types = parts.filter(p => p.tag).length + (sel[2] ? 1 : 0);
+        out.push({ parts, pseudo: sel[2] ?? null, spec: classes * 100 + types, order, z: z === 'auto' ? 0 : Number(z) });
+      }
     }
-    // Échec, Mur de glace, Faille : z-index 1 dans le reste de board.css, après l'incrustation dans l'arbre
-    for (const s of ['.sq.check::before', '.sq.iced::before', '.sq.rift::before']) {
-      expect(css.slice(0, at), s).toMatch(new RegExp(`${s.replace(/\./g, '\\.')} \\{[^}]*z-index: 1;`));
+    return out;
+  };
+  type Part = ZRule['parts'][number];
+  const fits = (p: Part, n: Part) => (!p.tag || p.tag === n.tag) && p.classes.every(c => n.classes.includes(c));
+  /** z-index calculé d'un élément décrit par son chemin depuis .board-wrap (« div.sq.d.last »), 0 pour auto. */
+  const zOf = (rules: ZRule[], path: string[], pseudo: string | null) => {
+    const nodes = path.map(s => ({ tag: s.split('.')[0], classes: s.split('.').slice(1) }));
+    let best: ZRule | undefined;
+    for (const r of rules) {
+      if (r.pseudo !== pseudo) continue;
+      let i = nodes.length - 1;
+      if (!fits(r.parts[r.parts.length - 1], nodes[i])) continue;
+      let ok = true;
+      for (let k = r.parts.length - 2; k >= 0 && ok; k--) {
+        do i--;
+        while (i >= 0 && !fits(r.parts[k], nodes[i]));
+        ok = i >= 0;
+      }
+      if (ok && (!best || r.spec > best.spec || (r.spec === best.spec && r.order >= best.order))) best = r;
     }
+    return best?.z ?? 0;
+  };
+
+  // Les calques d'une case et des pièces, dans l'ordre de l'arbre de Board : ::before de la case, indice,
+  // coordonnées, ::after de la case (voiles, cibles), climat (::after de .squares), pièces, fantômes, éclat. Calques
+  // d'un même emplacement (« slot ») : des variantes d'un même élément, jamais comparées entre elles.
+  const BOARD = 'div.board.interactive.targeting';
+  const SQ = [BOARD, 'div.squares', 'div.sq.d'];
+  const VOILES = [
+    'last', 'sel', 'pm-from', 'pm-to', 'hover', 'hover.hover-cap', 'target', 'chosen', 'last.target', 'last.chosen',
+    'sel.target', 'pm-from.target', 'pm-to.target', 'pm-to.chosen', 'last.hover', 'last.hover.hover-cap', 'sel.hover',
+  ];
+  const PIECES = ['', '.vanish', '.is-moving', '.vanish.is-blast', '.dragging', '.is-moving.dragging'];
+  const LAYERS: { name: string; path: string[]; pseudo: string | null; tree: number; slot: string }[] = [
+    ...['check', 'iced', 'rift'].map(c => ({
+      name: c, path: [BOARD, 'div.squares', `div.sq.d.${c}`], pseudo: 'before', tree: 1, slot: 'sq::before',
+    })),
+    { name: 'indice', path: [...SQ, 'span.hint'], pseudo: null, tree: 2, slot: 'hint' },
+    { name: 'indice de prise', path: [...SQ, 'span.hint.cap'], pseudo: null, tree: 2, slot: 'hint' },
+    { name: 'coordonnées', path: [...SQ, 'span.co.co-f'], pseudo: null, tree: 3, slot: 'co' },
+    ...VOILES.map(v => ({
+      name: v, path: [BOARD, 'div.squares', `div.sq.d.${v}`], pseudo: 'after', tree: 4, slot: 'sq::after',
+    })),
+    { name: 'climat', path: [BOARD, 'div.squares'], pseudo: 'after', tree: 5, slot: 'climat' },
+    ...PIECES.map(p => ({
+      name: `pièce${p}`, path: [BOARD, 'div.pieces', `div.piece${p}`], pseudo: null, tree: 6, slot: 'pièce',
+    })),
+    { name: 'fantôme', path: [BOARD, 'div.pieces', 'div.piece.ghost'], pseudo: null, tree: 7, slot: 'pièce' },
+    {
+      name: 'fantôme glissé', path: [BOARD, 'div.pieces', 'div.piece.ghost.dragging'], pseudo: null, tree: 7, slot: 'pièce',
+    },
+    { name: 'éclat', path: [BOARD, 'div.pieces', 'span.board-burst'], pseudo: null, tree: 8, slot: 'éclat' },
+  ];
+  const WRAP = 'div.board-wrap.clim.clim-ice_age.tex-grain.has-fillet';
+  const keys = (sheet: string, inlay: boolean) => {
+    const rules = zRules(sheet);
+    const wrap = inlay ? `${WRAP}.has-inlay` : WRAP;
+    return LAYERS.map(l => zOf(rules, [wrap, ...l.path], l.pseudo) * 100 + l.tree);
+  };
+
+  it('la cascade du test lit board.css : z-index d’origine', () => {
+    const base = keys(css, false).map(k => Math.floor(k / 100));
+    const z = Object.fromEntries(LAYERS.map((l, i) => [l.name, base[i]]));
+    expect(z).toMatchObject({
+      check: 1, iced: 1, rift: 1, indice: 2, coordonnées: 1, last: 0, 'last.target': 2, 'pm-to.chosen': 2, climat: 3,
+      pièce: 1, 'pièce.vanish': 0, 'pièce.is-moving': 2, 'pièce.vanish.is-blast': 2, 'pièce.dragging': 10,
+      fantôme: 2, 'fantôme glissé': 10, éclat: 3,
+    });
+  });
+
+  it('la section ne change rien aux échiquiers sans incrustation', () => {
+    expect(keys(css, false)).toEqual(keys(css.slice(0, at), false));
+  });
+
+  it('avec incrustation : tous les états de jeu au-dessus d’elle, dans le même ordre que sans incrustation', () => {
+    const rules = zRules(css);
+    const inlay = zOf(rules, [`${WRAP}.has-inlay`, BOARD, 'div.squares'], 'before') * 100;
+    expect(inlay).toBe(100);
+    const sans = keys(css, false);
+    const avec = keys(css, true);
+    const ecarts: string[] = [];
+    LAYERS.forEach((a, i) => {
+      if (avec[i] <= inlay) ecarts.push(`${a.name} sous l'incrustation`);
+      LAYERS.forEach((b, j) => {
+        if (j <= i || a.slot === b.slot && a.slot !== 'pièce') return;
+        if (Math.sign(sans[i] - sans[j]) !== Math.sign(avec[i] - avec[j])) ecarts.push(`${a.name} / ${b.name}`);
+      });
+    });
+    expect(ecarts).toEqual([]);
+  });
+
+  it('survol du glisser : dessiné une seule fois avec incrustation (sur ::after, plus sur la case)', () => {
+    expect(rules).toMatch(/\.has-inlay \.sq\.hover,\s*\.has-inlay \.sq\.hover-cap \{\s*box-shadow: none;/);
+    expect(rules).toMatch(/\.has-inlay \.sq\.hover::after \{[^}]*content: '';/);
   });
 });

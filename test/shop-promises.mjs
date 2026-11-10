@@ -5,7 +5,8 @@
 //   DATABASE_URL=postgres://… node test/shop-promises.mjs              # PostgreSQL (données de test laissées en base)
 // Vérifie : un Grimoire des sorts payé reçoit Laurier et Écarlate ; le Grimoire complet reçoit aussi les trois nouveaux
 // échiquiers, jamais de roi ; un achat en attente, échoué ou remboursé ne reçoit rien ; un objet déjà possédé garde sa
-// source ; un second démarrage ne fait rien.
+// source ; les objets promis sont notés dans l'achat ; un second démarrage ne fait rien ; un objet retiré par
+// l'administrateur ne revient pas au démarrage suivant.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -107,6 +108,10 @@ try {
   assert.equal(fred.find(r => r.item_id === 'skin:laurier').source, `purchase:${laurier}`, 'un objet déjà possédé garde sa source');
   console.log('✓ démarrage : Grimoire des sorts → Laurier et Écarlate ; Grimoire complet → aussi Grille, Horizon et Carte du ciel, sans roi');
   console.log('✓ achats en attente, échoués et remboursés : rien ; objet déjà possédé : source gardée');
+  const itemsOf = async id => (await db.query('SELECT items FROM purchases WHERE id = $1', [id]))[0].items.slice().sort();
+  assert.deepEqual(await itemsOf(ana), [...OLD_SKINS, ...NEW_SKINS].sort(), 'objets promis notés dans l’achat');
+  assert.deepEqual(await itemsOf(ben), [...OLD_ALL, ...NEW_SKINS, ...NEW_BOARDS].sort());
+  console.log('✓ objets promis notés dans l’achat (purchases.items)');
   const before = (await db.query('SELECT count(*)::int AS n FROM user_items'))[0].n;
   await db.close();
 
@@ -116,6 +121,18 @@ try {
   assert.equal((await db.query('SELECT count(*)::int AS n FROM user_items'))[0].n, before, 'second démarrage : rien de plus');
   await db.close();
   console.log('✓ second démarrage : rien de plus (idempotent)');
+
+  // Retrait par l'administrateur (comme /api/admin/grant avec revoke) d'un sort promis et d'un sort d'origine
+  db = await open();
+  await db.query(`DELETE FROM user_items WHERE user_id = $1 AND item_id = ANY($2::text[])`, [users.ana, ['skin:laurier', 'skin:inferno']]);
+  await db.close();
+  const third = boot();
+  assert.doesNotMatch(third, /Promesses des packs/, 'troisième démarrage : aucune livraison');
+  db = await open();
+  const ana2 = (await db.query('SELECT item_id FROM user_items WHERE user_id = $1', [users.ana])).map(r => r.item_id);
+  assert.ok(!ana2.includes('skin:laurier') && !ana2.includes('skin:inferno'), 'retraits de l’administrateur respectés');
+  await db.close();
+  console.log('✓ objets retirés par l’administrateur : pas rendus au démarrage suivant');
   console.log('\nPromesses des packs : tous les tests sont passés.');
 } finally {
   if (dir) rmSync(dir, { recursive: true, force: true });

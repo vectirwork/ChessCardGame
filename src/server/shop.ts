@@ -6,17 +6,17 @@ import rateLimit from 'express-rate-limit';
 import Stripe from 'stripe';
 import { z } from 'zod';
 import {
-  ALL_PRODUCTS, DEFAULT_ITEM, FREE_ITEMS, ITEMS, PRODUCTS, SLOTS, formatPrice, itemById, itemLabel, productById,
+  ALL_PRODUCTS, DEFAULT_ITEM, FREE_ITEMS, ITEMS, PRODUCTS, SLOTS, formatPrice, itemById, productById,
   productPrice, quoteCart,
 } from '../shared/catalog';
-import type { Item, ItemKind } from '../shared/catalog';
+import type { Item, ItemKind, Product } from '../shared/catalog';
 import { CART_PRODUCT_ID } from '../shared/protocol';
 import type { ConfirmResponse, DemoCompleteResponse, DemoPurchase, PurchaseStatus } from '../shared/protocol';
 import { SLOT_COLUMN, requireUser, toMe, userById } from './auth';
 import { config } from './config';
 import { one, q, tx } from './db';
 import type { DbClient } from './db';
-import { sendPurchaseConfirmation } from './mail';
+import { purchaseItemLines, sendPurchaseConfirmation } from './mail';
 
 const stripe = config.payments === 'stripe' ? new Stripe(config.stripe.secretKey) : null;
 
@@ -84,23 +84,35 @@ export function promisedItems(productId: string): string[] {
 }
 
 /**
- * Tient les promesses des packs pour les achats déjà payés : livre à chaque acheteur les objets promis qu'il n'a pas,
- * avec la source de l'achat (un remboursement du pack les retire aussi). Idempotente ; appelée au démarrage, juste
- * après les migrations. Un achat remboursé, en attente ou échoué ne reçoit rien. Renvoie le nombre d'objets livrés.
+ * Tient les promesses des packs pour les achats déjà payés : livre à chaque acheteur les objets promis que son achat ne
+ * contient pas encore, avec la source de l'achat (un remboursement du pack les retire aussi), puis les ajoute à
+ * `purchases.items`. Chaque objet promis n'est ainsi livré qu'une fois par achat : un objet retiré ensuite par
+ * l'administrateur ne revient pas au démarrage suivant. Un objet déjà possédé par ailleurs garde sa source.
+ * Idempotente ; appelée au démarrage, juste après les migrations. Un achat remboursé, en attente ou échoué ne reçoit
+ * rien. Renvoie le nombre d'objets livrés.
  */
 export async function honorPackPromises(): Promise<number> {
   let delivered = 0;
   for (const p of ALL_PRODUCTS.filter(x => x.future?.length).map(x => x.id)) {
-    const rows = await q<{ user_id: string }>(
-      `INSERT INTO user_items (user_id, item_id, source)
-       SELECT pu.user_id, it, 'purchase:' || pu.id
-       FROM purchases pu CROSS JOIN unnest($2::text[]) AS it
-       WHERE pu.product_id = $1 AND pu.status = 'paid' AND pu.user_id IS NOT NULL
-       ON CONFLICT (user_id, item_id) DO NOTHING
-       RETURNING user_id`,
-      [p, promisedItems(p)],
-    );
-    delivered += rows.length;
+    delivered += await tx(async c => {
+      const where = `pu.product_id = $1 AND pu.status = 'paid' AND pu.user_id IS NOT NULL`;
+      const promised = promisedItems(p);
+      const added = await c.query(
+        `INSERT INTO user_items (user_id, item_id, source)
+         SELECT pu.user_id, it, 'purchase:' || pu.id
+         FROM purchases pu CROSS JOIN unnest($2::text[]) AS it
+         WHERE ${where} AND NOT (it = ANY(pu.items))
+         ON CONFLICT (user_id, item_id) DO NOTHING
+         RETURNING user_id`,
+        [p, promised],
+      );
+      await c.query(
+        `UPDATE purchases pu SET items = pu.items || array(SELECT it FROM unnest($2::text[]) AS it WHERE NOT (it = ANY(pu.items)))
+         WHERE ${where} AND NOT (pu.items @> $2::text[])`,
+        [p, promised],
+      );
+      return added.rows.length;
+    });
   }
   if (delivered) console.log(`Promesses des packs : ${delivered} objet(s) livré(s) aux acheteurs.`);
   return delivered;
@@ -127,6 +139,14 @@ export interface Order {
 export type OrderRequest = { productId: string } | { itemIds: readonly string[] };
 
 /**
+ * Nom facturé : une collection dont on possédait déjà des pièces (payée moins que son prix) se lit « (pièces
+ * manquantes) », sur la ligne Stripe (reçu, facture) comme dans l'e-mail d'achat.
+ */
+function billedName(name: string, product: Product | undefined, cents: number): string {
+  return product?.kind === 'collection' && cents < product.priceCents ? `${name} (pièces manquantes)` : name;
+}
+
+/**
  * Commande d'un produit ou d'un panier pour qui possède `owned` (objets de user_items). Exportée pour les tests.
  * - Produit : prix de productPrice (collection au prix « compléter »), objets du produit. Inconnu ou retiré : 404.
  * - Panier : lignes de quoteCart (une collection complétée par le panier au prix « compléter »), objets à payer
@@ -140,13 +160,11 @@ export function orderFor(req: OrderRequest, owned: readonly string[]): Order | {
     if (product.retired) return { status: 404, error: 'Ce produit n’est plus en vente.' };
     const amount = productPrice(product, owned);
     if (amount === null) return { status: 409, error: 'Vous possédez déjà tout le contenu de ce produit.' };
-    // Une collection dont on possède des pièces se paie moins cher : la ligne le dit (reçu Stripe, facture).
-    const partial = product.kind === 'collection' && amount < product.priceCents;
     return {
       productId: product.id,
       items: [...product.items],
       amountCents: amount,
-      lines: [{ name: partial ? `${product.name} (pièces manquantes)` : product.name, description: product.description, cents: amount }],
+      lines: [{ name: billedName(product.name, product, amount), description: product.description, cents: amount }],
     };
   }
   const sel = slotSelection(req.itemIds);
@@ -159,8 +177,7 @@ export function orderFor(req: OrderRequest, owned: readonly string[]): Order | {
     amountCents: quote.totalCents,
     lines: quote.lines.map(l => {
       const product = productById(l.productId);
-      const partial = product?.kind === 'collection' && l.cents < product.priceCents;
-      return { name: partial ? `${l.label} (pièces manquantes)` : l.label, description: product?.description, cents: l.cents };
+      return { name: billedName(l.label, product, l.cents), description: product?.description, cents: l.cents };
     }),
   };
 }
@@ -178,10 +195,13 @@ export function stripeLineItems(order: Order): Stripe.Checkout.SessionCreatePara
   }));
 }
 
-/** Libellé d'un achat (e-mail) : le nom du produit, ou « Votre sélection (n skins) » pour un panier. */
-export function purchaseLabel(productId: string, items: readonly string[]): string {
+/**
+ * Libellé d'un achat (e-mail) : le nom facturé du produit (« (pièces manquantes) » pour une collection complétée, comme
+ * la ligne Stripe), ou « Votre sélection (n skins) » pour un panier.
+ */
+export function purchaseLabel(productId: string, items: readonly string[], amountCents?: number): string {
   const product = productId === CART_PRODUCT_ID ? undefined : productById(productId);
-  if (product) return product.name;
+  if (product) return amountCents === undefined ? product.name : billedName(product.name, product, amountCents);
   return `Votre sélection (${items.length} skin${items.length > 1 ? 's' : ''})`;
 }
 
@@ -191,8 +211,9 @@ export function purchaseLabel(productId: string, items: readonly string[]): stri
 /**
  * Livre les objets d'un achat payé et, si l'achat le demande (`equip`), équipe dans la même transaction l'objet livré
  * de chaque emplacement (s'il est seul de son emplacement) : l'équipement ne dépend pas du retour du navigateur.
- * Idempotent : un second appel ne fait rien. Les objets promis par un pack et ajoutés au catalogue après la création
- * de l'achat sont livrés par honorPackPromises, au démarrage.
+ * Un pack livre aussi ses objets promis ajoutés au catalogue depuis la création de l'achat (session Stripe ouverte,
+ * paiement différé), notés dans `purchases.items` comme le fait honorPackPromises.
+ * Idempotent : un second appel ne fait rien. L'e-mail ne présente comme nouveaux que les objets réellement ajoutés.
  */
 export async function fulfillPurchase(purchaseId: string, paymentRef: string | null): Promise<boolean> {
   const done = await tx(async c => {
@@ -203,22 +224,25 @@ export async function fulfillPurchase(purchaseId: string, paymentRef: string | n
     );
     const row = r.rows[0];
     if (!row || !row.user_id) return null;
-    await c.query(
+    const items = [...new Set([...row.items, ...promisedItems(row.product_id)])];
+    if (items.length > row.items.length) await c.query(`UPDATE purchases SET items = $2 WHERE id = $1`, [row.id, items]);
+    const added = await c.query<{ item_id: string }>(
       `INSERT INTO user_items (user_id, item_id, source) SELECT $1::uuid, it, $3::text FROM unnest($2::text[]) AS it
-       ON CONFLICT (user_id, item_id) DO NOTHING`,
-      [row.user_id, row.items, `purchase:${row.id}`],
+       ON CONFLICT (user_id, item_id) DO NOTHING RETURNING item_id`,
+      [row.user_id, items, `purchase:${row.id}`],
     );
-    const equipped = row.equip ? equipAtDelivery(row.items) : [];
+    const equipped = row.equip ? equipAtDelivery(items) : [];
     await equipItems(row.user_id, equipped, c);
-    return { row, equipped };
+    return { row: { ...row, items }, added: new Set(added.rows.map(a => a.item_id)), equipped };
   });
   if (!done) return false;
-  const { row: p, equipped } = done;
+  const { row: p, added, equipped } = done;
   if (p.email) {
     void sendPurchaseConfirmation(p.email, {
-      label: purchaseLabel(p.product_id, p.items),
+      label: purchaseLabel(p.product_id, p.items, p.amount_cents),
       amount: formatPrice(p.amount_cents),
-      items: p.items.map(id => itemById(id)).filter((i): i is Item => !!i).map(itemLabel),
+      items: purchaseItemLines(p.items.filter(id => added.has(id))),
+      alreadyOwned: purchaseItemLines(p.items.filter(id => !added.has(id))),
       equipped: equipped.length > 0,
     });
   }
@@ -257,18 +281,24 @@ export async function refundPurchase(paymentRef: string) {
 
 const checkoutLimiter = rateLimit({ windowMs: 60_000, limit: 15, standardHeaders: 'draft-7', legacyHeaders: false });
 
-/** Corps de POST /api/shop/checkout (CheckoutRequest) : un produit ou un panier, jamais les deux. */
-const checkoutSchema = z
-  .object({
-    productId: z.string().max(60).optional(),
-    itemIds: z
-      .array(z.string().max(60))
-      .min(1, { error: 'Sélection vide.' })
-      .max(SLOTS.length, { error: 'Un seul objet par emplacement.' })
-      .optional(),
-    waiver: z.literal(true, { error: 'Vous devez accepter la livraison immédiate du contenu numérique.' }),
-    equip: z.boolean().optional(),
-  })
+/**
+ * Corps de POST /api/shop/checkout (CheckoutRequest) : un produit ou un panier, jamais les deux. Tous les messages sont
+ * en français (la route renvoie le premier tel quel). Exporté pour les tests.
+ */
+export const checkoutSchema = z
+  .object(
+    {
+      productId: z.string({ error: 'Produit inconnu.' }).max(60, { error: 'Produit inconnu.' }).optional(),
+      itemIds: z
+        .array(z.string({ error: 'Objet inconnu.' }).max(60, { error: 'Objet inconnu.' }), { error: 'Sélection invalide.' })
+        .min(1, { error: 'Sélection vide.' })
+        .max(SLOTS.length, { error: 'Un seul objet par emplacement.' })
+        .optional(),
+      waiver: z.literal(true, { error: 'Vous devez accepter la livraison immédiate du contenu numérique.' }),
+      equip: z.boolean({ error: 'Requête invalide.' }).optional(),
+    },
+    { error: 'Requête invalide.' },
+  )
   .refine(b => (b.productId === undefined) !== (b.itemIds === undefined), { error: 'Indiquez un produit ou une sélection.' });
 
 export const shopRouter = Router();
@@ -336,11 +366,12 @@ shopRouter.get('/confirm/:sessionId', requireUser, async (req, res) => {
       console.error('Stripe :', e);
     }
   }
+  // Relu après la livraison : `items` comprend les objets promis d'un pack livrés avec lui
   const fresh = await one<PurchaseRow>('SELECT * FROM purchases WHERE id = $1', [p.id]);
   res.json({
     status: fresh!.status,
     productId: p.product_id,
-    items: p.items,
+    items: fresh!.items,
     user: toMe((await userById(req.identity.user!.id))!),
   } satisfies ConfirmResponse);
 });
@@ -351,10 +382,11 @@ shopRouter.post('/demo/:purchaseId/complete', requireUser, async (req, res) => {
   const p = await one<PurchaseRow>(`SELECT * FROM purchases WHERE id = $1 AND user_id = $2`, [req.params.purchaseId, req.identity.user!.id]);
   if (!p) return res.status(404).json({ error: 'Achat introuvable.' });
   await fulfillPurchase(p.id, `demo_${p.id}`);
+  const fresh = await one<PurchaseRow>('SELECT * FROM purchases WHERE id = $1', [p.id]);
   res.json({
     ok: true,
     productId: p.product_id,
-    items: p.items,
+    items: fresh!.items,
     user: toMe((await userById(req.identity.user!.id))!),
   } satisfies DemoCompleteResponse);
 });
@@ -399,6 +431,14 @@ export const stripeWebhook = [
           const ch = event.data.object as Stripe.Charge;
           const pi = typeof ch.payment_intent === 'string' ? ch.payment_intent : ch.payment_intent?.id;
           if (pi && ch.refunded) await refundPurchase(pi);
+          else if (pi && ch.amount_refunded > 0) {
+            // Remboursement partiel (une ligne d'un panier, par exemple) : rien n'est retiré automatiquement.
+            const p = await one<{ id: string }>(`SELECT id FROM purchases WHERE payment_ref = $1`, [pi]);
+            console.warn(
+              `Remboursement partiel (${formatPrice(ch.amount_refunded)}) de l’achat ${p?.id ?? `inconnu, paiement ${pi}`} : ` +
+                'aucun objet retiré. Retirez l’objet remboursé dans l’administration, ou remboursez l’achat en entier.',
+            );
+          }
           break;
         }
       }

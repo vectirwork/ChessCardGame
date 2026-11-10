@@ -1,10 +1,12 @@
 // Boutique côté serveur (src/server/shop.ts, src/server/account.ts), sur une vraie base (PGlite jetable, migrations du
 // serveur) : commande calculée au serveur (produit, collection « à compléter », panier d'essai), lignes Stripe,
-// livraison avec équipement dans la même transaction, promesses des packs, profil public et classement.
+// livraison avec équipement dans la même transaction (et objets promis d'un pack créé avant leur ajout), e-mail d'achat
+// (objets nouveaux seuls, regroupés au-delà de 4), promesses des packs (une fois par achat), messages de refus en
+// français, profil public et classement.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 // account.ts importe games.ts (salles, minuteries) pour la suppression du compte : inutile ici.
 vi.mock('../src/server/games', () => ({ detachUser: vi.fn(async () => undefined) }));
@@ -14,10 +16,10 @@ import { CART_PRODUCT_ID } from '../src/shared/protocol';
 import { leaderboard, publicProfile } from '../src/server/account';
 import { config } from '../src/server/config';
 import { connectDb, db, migrate, one, q } from '../src/server/db';
-import { purchaseConfirmationMail } from '../src/server/mail';
+import { purchaseConfirmationMail, purchaseItemLines } from '../src/server/mail';
 import {
-  equipAtDelivery, fulfillPurchase, honorPackPromises, orderFor, promisedItems, purchaseLabel, refundPurchase,
-  slotSelection, stripeLineItems,
+  checkoutSchema, equipAtDelivery, fulfillPurchase, honorPackPromises, orderFor, promisedItems, purchaseLabel,
+  refundPurchase, slotSelection, stripeLineItems,
 } from '../src/server/shop';
 import type { Order } from '../src/server/shop';
 
@@ -62,6 +64,18 @@ const equipped = (userId: string) =>
 const owned = async (userId: string) =>
   (await q<{ item_id: string }>(`SELECT item_id FROM user_items WHERE user_id = $1`, [userId])).map(r => r.item_id).sort();
 const isOrder = (o: ReturnType<typeof orderFor>): o is Order => !('error' in o);
+const purchaseItems = async (id: string) => (await one<{ items: string[] }>(`SELECT items FROM purchases WHERE id = $1`, [id]))!.items;
+/** Texte de l'e-mail d'achat affiché dans la console (pas de SMTP en test) pendant `fn`. */
+async function mailOf(fn: () => Promise<unknown>): Promise<string> {
+  const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+  try {
+    await fn();
+    return log.mock.calls.map(c => String(c[0])).find(t => t.includes('Achat confirmé')) ?? '';
+  } finally {
+    log.mockRestore();
+  }
+}
+afterEach(() => vi.restoreAllMocks());
 
 describe('commande calculée au serveur (orderFor)', () => {
   it('produit : prix fixe ; collection : prix « compléter » ; inconnu ou retiré : 404 ; tout possédé : 409', () => {
@@ -113,8 +127,14 @@ describe('commande calculée au serveur (orderFor)', () => {
     }
   });
 
-  it('libellés : nom du produit, « Votre sélection (n skins) » pour un panier', () => {
+  it('libellés : nom facturé du produit (comme la ligne Stripe), « Votre sélection (n skins) » pour un panier', () => {
     expect(purchaseLabel('col:jade', ['king:printemps', 'board:jade', 'skin:sakura'])).toBe('Collection Jardin de jade');
+    const jade = productById('col:jade')!.priceCents;
+    expect(purchaseLabel('col:jade', ['king:printemps', 'board:jade', 'skin:sakura'], jade)).toBe('Collection Jardin de jade');
+    expect(purchaseLabel('col:inferno', ['king:braise', 'board:obsidian', 'skin:inferno'], 300)).toBe(
+      (orderFor({ productId: 'col:inferno' }, ['skin:inferno']) as Order).lines[0].name,
+    );
+    expect(purchaseLabel('pack:skins', [], 1299)).toBe('Grimoire des sorts');
     expect(purchaseLabel(CART_PRODUCT_ID, ['king:braise', 'skin:void'])).toBe('Votre sélection (2 skins)');
     expect(purchaseLabel(CART_PRODUCT_ID, ['king:braise'])).toBe('Votre sélection (1 skin)');
   });
@@ -129,6 +149,60 @@ describe('commande calculée au serveur (orderFor)', () => {
     const solo = purchaseConfirmationMail({ label: 'Roi de braise', amount: '2,99 €', items: ['Roi de braise'], equipped: false });
     expect(solo.html).toContain('Équiper mes nouveautés');
     expect(solo.html).not.toContain('<script');
+    expect(solo.html).not.toContain('Déjà dans votre collection');
+    // Collection complétée : la pièce déjà possédée est présentée à part, pas comme une nouveauté
+    const forge = purchaseConfirmationMail({
+      label: 'Collection Forge d’Inferno (pièces manquantes)', amount: '3,00 €', items: ['Roi de braise', 'Échiquier Obsidienne & Or'],
+      alreadyOwned: ['Sorts Inferno'], equipped: false,
+    });
+    expect(forge.html).not.toContain('<li style="padding:2px 0">Sorts Inferno</li>');
+    expect(forge.html).toContain('Déjà dans votre collection : Sorts Inferno.');
+    expect(forge.text).toContain('- Échiquier Obsidienne & Or\nDéjà dans votre collection : Sorts Inferno.');
+    // Rien de nouveau (tout acquis entre la commande et le paiement) : pas de liste vide
+    const none = purchaseConfirmationMail({ label: 'Grimoire des sorts', amount: '12,99 €', items: [], alreadyOwned: ['7 sorts : …'], equipped: false });
+    expect(none.html).not.toContain('<ul');
+    expect(none.text).toContain('Tout ce contenu était déjà dans votre collection.');
+  });
+
+  it('e-mail d’achat : jusqu’à 4 objets un par ligne ; au-delà, regroupés par collection puis par emplacement', () => {
+    expect(purchaseItemLines(['king:braise', 'board:obsidian', 'skin:inferno'])).toEqual(['Roi de braise', 'Échiquier Obsidienne & Or', 'Sorts Inferno']);
+    expect(purchaseItemLines(['king:inconnu', 'skin:void'])).toEqual(['Sorts Néant']);
+    const tresor = productById('pack:tresor')!.items;
+    const lines = purchaseItemLines(tresor);
+    expect(lines).toHaveLength(7);
+    expect(lines).toContain('Jardin de jade : roi, échiquier et sorts');
+    expect(lines).toContain('Forge d’Inferno : roi, échiquier et sorts');
+    // Trésor d'un acheteur qui avait déjà les sorts Inferno et le roi Synthé
+    const partial = purchaseItemLines(tresor.filter(i => i !== 'skin:inferno' && i !== 'king:synthe'));
+    expect(partial).toContain('Forge d’Inferno : roi et échiquier');
+    expect(partial).toContain('Néon 2084 : échiquier et sorts');
+    expect(partial).toHaveLength(7);
+    // Grimoire des sorts : une ligne
+    const skins = purchaseItemLines(productById('pack:skins')!.items);
+    expect(skins).toHaveLength(1);
+    expect(skins[0]).toMatch(/^7 sorts : .+, .+ et .+$/);
+    expect(skins[0]).toContain('Inferno');
+    // Rois et échiquiers sans collection commune : par emplacement
+    expect(purchaseItemLines(['king:braise', 'king:synthe', 'board:jade', 'board:ruby', 'skin:void'])).toEqual([
+      '2 rois : Roi de braise et Roi Synthé', '2 échiquiers : Palais de jade et Rubis', 'Sorts Néant',
+    ]);
+  });
+
+  it('refus du paiement : messages en français, y compris pour une requête forgée', () => {
+    const msg = (body: unknown) => {
+      const r = checkoutSchema.safeParse(body);
+      return r.success ? null : r.error.issues[0]?.message;
+    };
+    expect(msg({ productId: 'king:braise', waiver: true, equip: 'oui' })).toBe('Requête invalide.');
+    expect(msg({ itemIds: ['x'.repeat(61)], waiver: true })).toBe('Objet inconnu.');
+    expect(msg({ itemIds: [3], waiver: true })).toBe('Objet inconnu.');
+    expect(msg({ itemIds: 'king:braise', waiver: true })).toBe('Sélection invalide.');
+    expect(msg({ productId: 'x'.repeat(61), waiver: true })).toBe('Produit inconnu.');
+    expect(msg({ productId: 5, waiver: true })).toBe('Produit inconnu.');
+    expect(msg(null)).toBe('Requête invalide.');
+    expect(msg({ productId: 'king:braise' })).toBe('Vous devez accepter la livraison immédiate du contenu numérique.');
+    expect(msg({ waiver: true })).toBe('Indiquez un produit ou une sélection.');
+    expect(msg({ productId: 'king:braise', waiver: true, equip: true })).toBeNull();
   });
 
   it('sélection : un objet par emplacement ; équipement à la livraison : l’objet seul de son emplacement', () => {
@@ -154,11 +228,30 @@ describe('livraison (fulfillPurchase) : équiper dans la même transaction', () 
     const u = await newUser();
     await own(u, ['skin:inferno']);
     const forge = orderFor({ productId: 'col:inferno' }, ['skin:inferno']) as Order;
-    await fulfillPurchase(await pending(u, forge, true), 'ref-c');
+    const forgeId = await pending(u, forge, true);
+    await q(`UPDATE purchases SET email = 'forge@test.fr' WHERE id = $1`, [forgeId]);
+    const mail = await mailOf(() => fulfillPurchase(forgeId, 'ref-c'));
     expect(await equipped(u)).toEqual({ equipped_king: 'king:braise', equipped_board: 'board:obsidian', equipped_skin: 'skin:inferno' });
+    // E-mail : libellé de la ligne Stripe ; seules les pièces nouvelles sont annoncées, la pièce possédée à part
+    expect(mail).toContain('Achat confirmé : Collection Forge d’Inferno (pièces manquantes) · 3,00');
+    expect(mail).toContain('- Roi de braise\n- Échiquier Obsidienne & Or\nDéjà dans votre collection : Sorts Inferno.');
+    expect(mail).not.toContain('- Sorts Inferno');
     await fulfillPurchase(await pending(u, { productId: 'pack:skins', items: productById('pack:skins')!.items }, true), 'ref-d');
     expect((await equipped(u))!.equipped_skin).toBe('skin:inferno');
     expect(await owned(u)).toContain('skin:laurier');
+  });
+
+  it('pack créé avant l’ajout d’objets promis, payé après : livré avec les objets promis, notés dans l’achat', async () => {
+    const u = await newUser();
+    const id = await pending(u, { productId: 'pack:skins', items: ['skin:inferno', 'skin:neon'] });
+    expect(await fulfillPurchase(id, 'ref-promesse')).toBe(true);
+    const skins = ITEMS.filter(i => !i.free && i.kind === 'skin').map(i => i.id).sort();
+    expect(await owned(u)).toEqual(skins);
+    expect([...(await purchaseItems(id))].sort()).toEqual(skins);
+    expect((await one(`SELECT count(*)::int AS n FROM user_items WHERE user_id = $1 AND source = $2`, [u, `purchase:${id}`]))!.n).toBe(7);
+    // Le remboursement retire tout ce que l'achat a livré
+    await refundPurchase('ref-promesse');
+    expect(await owned(u)).toEqual([]);
   });
 
   it('panier avec equip : roi et échiquier livrés et équipés, sorts inchangés ; un second appel ne fait rien', async () => {
@@ -215,6 +308,15 @@ describe('promesses des packs (honorPackPromises)', () => {
     expect(await owned(refunded)).toEqual([]);
 
     expect(await honorPackPromises()).toBe(0);
+    // Les objets promis sont notés dans l'achat, y compris Laurier, déjà possédé (sa source ne change pas)
+    expect([...(await purchaseItems(skinsBuy))].sort()).toEqual([...OLD_SKINS, 'skin:laurier', 'skin:ecarlate'].sort());
+    expect(await purchaseItems(allBuy)).toHaveLength(OLD_ALL.length + 5);
+
+    // Un retrait par l'administrateur (objet promis ou d'origine) n'est pas annulé au démarrage suivant
+    await q(`DELETE FROM user_items WHERE user_id = $1 AND item_id = ANY($2::text[])`, [skins, ['skin:ecarlate', 'skin:inferno']]);
+    expect(await honorPackPromises()).toBe(0);
+    expect(await owned(skins)).not.toContain('skin:ecarlate');
+    expect(await owned(skins)).not.toContain('skin:inferno');
 
     // Le remboursement du pack retire aussi ce que la promesse a livré, et le déséquipe
     await q(`UPDATE purchases SET payment_ref = 'ref-all' WHERE id = $1`, [allBuy]);
@@ -227,7 +329,7 @@ describe('promesses des packs (honorPackPromises)', () => {
 });
 
 describe('profil public et classement', () => {
-  it('profil : roi normalisé, échiquier, sorts, sceau de la collection complète la plus rare ; inconnu : null', async () => {
+  it('profil : roi, échiquier et sorts normalisés, sceau de la collection complète la plus rare ; inconnu : null', async () => {
     const u = await newUser();
     await own(u, ['king:braise', 'board:obsidian', 'skin:inferno', 'king:eclipse', 'board:horizon', 'skin:void']);
     await q(`UPDATE users SET equipped_king = 'king:eclipse', equipped_board = 'board:horizon', equipped_skin = 'skin:inferno' WHERE id = $1`, [u]);
@@ -236,6 +338,9 @@ describe('profil public et classement', () => {
     expect(p).toMatchObject({ king: 'king:eclipse', board: 'board:horizon', skin: 'skin:inferno', seal: 'col:neant', rank: null });
     await q(`UPDATE users SET equipped_king = 'king:inconnu' WHERE id = $1`, [u]);
     expect((await publicProfile(name))!.king).toBe('king:arcane');
+    // Sorts et échiquier normalisés de même : inconnu ou d'un autre emplacement → Arcane
+    await q(`UPDATE users SET equipped_board = 'board:retire', equipped_skin = 'king:braise' WHERE id = $1`, [u]);
+    expect(await publicProfile(name)).toMatchObject({ king: 'king:arcane', board: 'board:arcane', skin: 'skin:arcane', seal: 'col:neant' });
     expect(await publicProfile('personne-ici')).toBeNull();
   });
 

@@ -1,7 +1,8 @@
 // Gestion du compte (profil, sécurité, collection, RGPD) et pages publiques (profils, classement).
 import { Router } from 'express';
 import { z } from 'zod';
-import { COLLECTIONS, SLOTS, collectionItems, normKing, sealOf } from '../shared/catalog';
+import { COLLECTIONS, DEFAULT_ITEM, SLOTS, collectionItems, itemById, sealOf } from '../shared/catalog';
+import type { ItemKind } from '../shared/catalog';
 import type { LeaderboardResponse, LeaderboardRow, ProfileResponse, PublicProfile } from '../shared/protocol';
 import {
   clearSessionCookie, createEmailToken, createSession, emailSchema, passwordSchema, requireUser, toMe, userById,
@@ -133,9 +134,14 @@ export const communityRouter = Router();
 /** Objets qui comptent pour le sceau : ceux des collections premium (Arcane ne compte jamais). */
 const SEAL_ITEMS = COLLECTIONS.filter(c => c.rarity !== 'offert').flatMap(collectionItems);
 
+/** Objet équipé tel qu'on le montre : connu et du bon emplacement, sinon le défaut de l'emplacement (Arcane). */
+const shownItem = (kind: ItemKind, id: string | null | undefined): string =>
+  id && itemById(id)?.kind === kind ? id : DEFAULT_ITEM[kind];
+
 /**
- * Profil public d'un joueur (pseudo sans casse), avec son roi (normalisé comme en partie), ses sorts, son échiquier et
- * son sceau ; null s'il n'existe pas. Exportée pour les tests.
+ * Profil public d'un joueur (pseudo sans casse), avec son roi, ses sorts et son échiquier (normalisés comme en partie :
+ * un identifiant inconnu ou retiré devient l'objet Arcane de l'emplacement) et son sceau ; null s'il n'existe pas.
+ * Exportée pour les tests.
  */
 export async function publicProfile(username: string): Promise<(PublicProfile & { id: string }) | null> {
   const u = await one(
@@ -157,9 +163,9 @@ export async function publicProfile(username: string): Promise<(PublicProfile & 
     wins: u.wins,
     losses: u.losses,
     draws: u.draws,
-    skin: u.equipped_skin,
-    board: u.equipped_board,
-    king: normKing(u.equipped_king),
+    skin: shownItem('skin', u.equipped_skin),
+    board: shownItem('board', u.equipped_board),
+    king: shownItem('king', u.equipped_king),
     seal: sealOf(u.items),
     memberSince: u.created_at.toISOString(),
     rank: u.games_played > 0 ? Number(rank?.rank ?? 0) : null,

@@ -65,9 +65,12 @@ describe('remboursement sur une vraie base', () => {
 
   it('un objet livré par la promesse d’un pack (même source que l’achat) part avec le remboursement du pack', async () => {
     const u = await newUser();
+    // Pack ancien (2 objets dans l'achat) : fulfillPurchase livre aussi ses objets promis (Grille comprise), avec la
+    // source 'purchase:<id du pack>', comme honorPackPromises
     const pack = await buy(u, 'pack:all', ['skin:void', 'board:ruby']);
-    // Livraison d'une promesse (honorPackPromises, lot A) : source 'purchase:<id du pack>'
-    await q(`INSERT INTO user_items (user_id, item_id, source) VALUES ($1, 'board:grille', $2)`, [u, `purchase:${pack.id}`]);
+    expect((await one<{ source: string }>(`SELECT source FROM user_items WHERE user_id = $1 AND item_id = 'board:grille'`, [u]))!.source).toBe(
+      `purchase:${pack.id}`,
+    );
     await buy(u, 'king:astral', ['king:astral']);
     await equip(u, 'king:astral', 'board:grille', 'skin:void');
     await refundPurchase(pack.ref);

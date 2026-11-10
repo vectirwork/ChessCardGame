@@ -96,6 +96,40 @@ const shard: Painter = (g, S) => {
   facet(mid, right, bottom, 0.4);
 };
 
+/**
+ * Feuille de laurier, proposée pour Laurier à la place du pétale (plan, « plus tard », n° 5). La couleur d'une particule
+ * multiplie sa texture (particles.ts) : le bas rose du pétale de Sakura rend l'or de Laurier orangé, sa crème rose et
+ * son vert kaki. Ici, une amande blanche sans dégradé coloré : une moitié plus sombre que l'autre (la feuille pliée sur
+ * sa nervure), nervure et pétiole gris. Hors de PARTICLE_PAINTERS tant que ParticleShape n'a pas la valeur 'leaf'
+ * (types.ts, figé : lot F, après accord du fondateur) ; test/sorts.mjs la montre déjà sur la planche.
+ */
+export const leafPainter: Painter = (g, S) => {
+  const m = S / 2;
+  const tip = -m * 0.88, base = m * 0.66, W = m * 0.68, cy = (tip + base) / 2;
+  g.translate(m, m);
+  g.fillStyle = 'rgb(255,255,255)';
+  g.beginPath();
+  g.moveTo(0, tip);
+  g.quadraticCurveTo(-W, cy, 0, base);
+  g.quadraticCurveTo(W, cy, 0, tip);
+  g.fill();
+  // Moitié à l'ombre
+  g.fillStyle = 'rgb(200,200,200)';
+  g.beginPath();
+  g.moveTo(0, tip);
+  g.quadraticCurveTo(W, cy, 0, base);
+  g.closePath();
+  g.fill();
+  // Nervure et pétiole
+  g.strokeStyle = 'rgb(150,150,150)';
+  g.lineWidth = S / 40;
+  g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(0, tip + m * 0.12);
+  g.lineTo(0, m * 0.86);
+  g.stroke();
+};
+
 export const PARTICLE_PAINTERS: Record<ParticleShape, Painter> = {
   glow: (g, S) => {
     const m = S / 2;

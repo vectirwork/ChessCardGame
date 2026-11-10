@@ -1,22 +1,28 @@
-// Sorts des skins : planche, vrais sorts au banc des effets, coup de grâce, banc de performance.
+// Sorts des skins : planche, vrais sorts au banc des effets, coup de grâce, vitrine, banc de performance.
 //   node test/sorts.mjs [--out=test-results/sorts] [--port=3541] [--only=planche,sorts,finale,banc]
+//                       [--site=http://localhost:3643]
 //
-// Lance son propre serveur Vite (racine du dépôt, cache hors de node_modules, sans rechargement à chaud), puis
-// Chromium (Playwright, SwiftShader). Rien à construire avant. Produit dans le dossier de sortie :
+// Lance son propre serveur Vite (racine du dépôt, cache propre à cette copie du dépôt, hors de node_modules, sans
+// rechargement à chaud), puis Chromium (Playwright, SwiftShader). Rien à construire avant. Produit dans le dossier de
+// sortie :
 // - planche.png : les 8 skins de sorts, chacun avec son motif et ses particules, teints et mêlés comme dans la scène
-//   (motif additif, particules additives ou normales selon leur forme), sur fond de nuit ; Laurier et Écarlate
-//   doivent se distinguer d'un coup d'œil de Sakura, d'Inferno et d'Arcane. Contrôle : chaque texture dessine
-//   quelque chose et ne touche pas le bord de son carré (rien de coupé).
+//   (motif additif teint à plat ; particules additives ou normales selon leur forme, leur couleur multipliant la
+//   texture comme le fait le programme des particules), sur fond de nuit ; Laurier et Écarlate doivent se distinguer
+//   d'un coup d'œil de Sakura, d'Inferno et d'Arcane. Une neuvième case montre Laurier avec la feuille proposée.
+//   Contrôle : chaque texture dessine quelque chose et ne touche pas le bord de son carré (rien de coupé).
 // - sorts.png (et sorts/*.png) : les vrais sorts au banc (test/vfx.html), image par image : l'arrivée du Sablier fou
 //   (la grande mise en scène, motif au centre) pour chacun des 8 skins ; pour Laurier et Écarlate, le Mur de glace
 //   (la couronne de laurier qui se referme), la Faille, la Grande Marée, l'annonce et l'arrivée de la Déflagration.
 // - finale.png (et finale/*.png) : le coup de grâce (playFinale) pendant la chute du roi maté, en Laurier, Écarlate
-//   et Inferno ; contrôle : plus aucune image demandée par la scène après la fin.
+//   et Inferno, et en Écarlate vu des noirs ; contrôle : plus aucune image demandée par la scène après la fin.
+// - vitrine/*.png, avec --site (adresse d'un site construit et lancé) : les vrais sorts Laurier et Écarlate dans la
+//   vitrine de la boutique (/boutique?objet=…), bureau 1440 × 900 et téléphone 412 × 915.
 // - banc.json : coût du dessin de chaque texture (processeur ralenti 4 fois), et premier sort Écarlate comparé au
 //   premier sort Inferno sur un téléphone simulé (412 × 915, densité 2, processeur ralenti 4 fois).
 // Les mesures du banc sont faites en rendu logiciel (SwiftShader) : seules les comparaisons ont un sens, et pas pendant
 // que d'autres processus lourds tournent.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
@@ -41,7 +47,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const arg = name => process.argv.find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 const OUT = path.resolve(arg('out') ?? path.join(ROOT, 'test-results/sorts'));
 const PORT = Number(arg('port') ?? 3541);
-const ONLY = (arg('only') ?? 'planche,sorts,finale,banc').split(',');
+const SITE = arg('site')?.replace(/\/$/, '');
+const ONLY = (arg('only') ?? `planche,sorts,finale,banc${SITE ? ',vitrine' : ''}`).split(',');
 mkdirSync(OUT, { recursive: true });
 
 // ---------------------------------------------------------------------------------------------
@@ -66,14 +73,17 @@ const STEPPED = `<script>
 
 const PAGES = {
   // Planche des 8 skins : les textures de la scène (particleTexture, flourishTexture : mêmes canevas), teintes comme
-  // dans la scène (flourishColor pour le motif, couleurs du skin pour les particules)
+  // dans la scène : le motif (MeshBasicMaterial) prend flourishColor ; la particule (particles.ts) multiplie sa texture
+  // par sa couleur, en valeurs linéaires écrites telles quelles (le programme ne réencode pas en sRGB). Une neuvième
+  // case montre Laurier avec la feuille proposée (leafPainter, pas encore branchée : lot F).
   planche: {
     head: '',
     code: `
-import { flourishTexture, particleTexture, FLOURISH_SIZE, PARTICLE_SIZE, PARTICLE_PAINTERS, FLOURISH_PAINTERS } from '/src/client/vfx/textures.ts';
+import { flourishTexture, particleTexture, leafPainter, FLOURISH_SIZE, PARTICLE_SIZE, PARTICLE_PAINTERS, FLOURISH_PAINTERS } from '/src/client/vfx/textures.ts';
 import { flourishColor } from '/src/client/vfx/effects.ts';
 import { SPELL_ITEMS } from '/src/shared/skins/spells.ts';
 
+/** Motif : teinte à plat (texture blanche, couleur du matériau). */
 const tint = (src, color) => {
   const c = document.createElement('canvas');
   c.width = src.width; c.height = src.height;
@@ -84,15 +94,37 @@ const tint = (src, color) => {
   g.fillRect(0, 0, c.width, c.height);
   return c;
 };
-const normal = shape => shape === 'void' || shape === 'petal';
+/** Particule : comme le programme de particles.ts, vColor * t.rgb en linéaire (texture sRGB décodée), alpha de la texture. */
+const lin = v => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+const shade = (src, hex) => {
+  const c = document.createElement('canvas');
+  c.width = src.width; c.height = src.height;
+  const g = c.getContext('2d');
+  g.drawImage(src, 0, 0);
+  const img = g.getImageData(0, 0, c.width, c.height);
+  const d = img.data;
+  const col = [1, 3, 5].map(i => lin(parseInt(hex.slice(i, i + 2), 16) / 255));
+  for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) d[i + k] = Math.round(255 * col[k] * lin(d[i + k] / 255));
+  g.putImageData(img, 0, 0);
+  return c;
+};
+const leaf = document.createElement('canvas');
+leaf.width = leaf.height = PARTICLE_SIZE;
+leafPainter(leaf.getContext('2d'), PARTICLE_SIZE);
+const normal = shape => shape === 'void' || shape === 'petal' || shape === 'leaf';
 let seed = 7;
 const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 const root = document.getElementById('root');
 root.style.cssText = 'display:grid;grid-template-columns:repeat(4,330px);gap:18px;padding:22px;font:13px Inter,system-ui,sans-serif;color:#e9e4ff';
-for (const item of SPELL_ITEMS) {
+const laurier = SPELL_ITEMS.find(i => i.id === 'skin:laurier');
+const entries = [
+  ...SPELL_ITEMS.map(item => ({ item, shape: item.skin.particle, tex: particleTexture(item.skin.particle).image })),
+  { item: laurier, shape: 'leaf', tex: leaf, note: 'proposition : feuille (lot F)' },
+];
+for (const { item, shape, tex, note } of entries) {
   const s = item.skin;
   const fig = document.createElement('figure');
-  fig.style.cssText = 'margin:0;background:#120f24;border-radius:14px;padding:10px;' + (['skin:laurier', 'skin:ecarlate'].includes(item.id) ? 'outline:2px solid #f3c969' : '');
+  fig.style.cssText = 'margin:0;background:#120f24;border-radius:14px;padding:10px;' + (note ? 'outline:2px dashed #8fc27a' : ['skin:laurier', 'skin:ecarlate'].includes(item.id) ? 'outline:2px solid #f3c969' : '');
   const cv = document.createElement('canvas');
   cv.width = cv.height = 620;
   cv.style.cssText = 'width:310px;height:310px;border-radius:10px;display:block';
@@ -105,9 +137,8 @@ for (const item of SPELL_ITEMS) {
   g.globalAlpha = 0.95;
   g.drawImage(tint(flourishTexture(s.flourish).image, '#' + flourishColor(s).getHexString()), 50, 50, 520, 520);
   // Particules : couleurs tirées comme pick() (½ principale, ³⁄₁₀ secondaire, ⅕ éclat)
-  const tex = particleTexture(s.particle).image;
-  const cols = [s.primary, s.secondary, s.accent].map(c => tint(tex, c));
-  g.globalCompositeOperation = normal(s.particle) ? 'source-over' : 'lighter';
+  const cols = [s.primary, s.secondary, s.accent].map(c => shade(tex, c));
+  g.globalCompositeOperation = normal(shape) ? 'source-over' : 'lighter';
   seed = 7;
   for (let k = 0; k < 34; k++) {
     const u = r();
@@ -129,13 +160,13 @@ for (const item of SPELL_ITEMS) {
     c.width = c.height = 128;
     c.style.cssText = 'width:64px;height:64px;background:#07060f;border-radius:8px';
     const cg = c.getContext('2d');
-    cg.globalCompositeOperation = normal(s.particle) ? 'source-over' : 'lighter';
+    cg.globalCompositeOperation = normal(shape) ? 'source-over' : 'lighter';
     cg.drawImage(col, 0, 0, 128, 128);
     row.appendChild(c);
   }
   const drift = s.drift > 0.1 ? 'montent' : s.drift < -0.1 ? 'retombent' : 'flottent';
   const cap = document.createElement('figcaption');
-  cap.innerHTML = '<b style="font-size:16px">' + item.name + '</b><br>' + s.particle + ' · ' + s.flourish + '<br>particules : ' + drift;
+  cap.innerHTML = '<b style="font-size:16px">' + item.name + '</b><br>' + shape + ' · ' + s.flourish + '<br>' + (note ?? 'particules : ' + drift);
   cap.style.cssText = 'line-height:1.35';
   row.appendChild(cap);
   fig.appendChild(row);
@@ -156,6 +187,7 @@ const measure = (canvas) => {
 };
 for (const p of Object.keys(PARTICLE_PAINTERS)) report['particule ' + p] = measure(particleTexture(p).image);
 for (const f of Object.keys(FLOURISH_PAINTERS)) report['motif ' + f] = measure(flourishTexture(f).image);
+report['particule leaf (proposée)'] = measure(leaf);
 window.__report = report;
 window.ready = true;
 `,
@@ -258,7 +290,9 @@ function pagesPlugin() {
 
 const server = await createServer({
   root: ROOT,
-  cacheDir: path.join(os.tmpdir(), 'spellmate-sorts-vite'),
+  // Un cache par copie du dépôt : deux copies qui lancent le banc en même temps ne se marchent pas dessus (node_modules
+  // peut être un lien partagé entre copies : le cache n'y va pas)
+  cacheDir: path.join(os.tmpdir(), 'spellmate-sorts-vite-' + createHash('sha1').update(ROOT).digest('hex').slice(0, 10)),
   logLevel: 'warn',
   // node_modules peut être un lien (copie de travail) : son vrai dossier doit être servi aussi (polices)
   server: { port: PORT, strictPort: false, hmr: false, fs: { allow: [ROOT, realpathSync(path.join(ROOT, 'node_modules'))] } },
@@ -390,14 +424,17 @@ try {
     watch(page, 'finale');
     const step = ms => page.evaluate(ms => window.__step(ms), ms);
     const cells = [];
+    // [skin du vainqueur, roi blanc, roi noir, orientation]
     const RUNS = [
-      ['skin:laurier', 'king:laure', 'king:braise'],
-      ['skin:ecarlate', 'king:rubis', 'king:eclipse'],
-      ['skin:inferno', 'king:braise', 'king:laure'],
+      ['skin:laurier', 'king:laure', 'king:braise', 'w'],
+      ['skin:ecarlate', 'king:rubis', 'king:eclipse', 'w'],
+      ['skin:inferno', 'king:braise', 'king:laure', 'w'],
+      ['skin:ecarlate', 'king:rubis', 'king:eclipse', 'b'],
     ];
     results.finale = {};
-    for (const [skin, kw, kb] of RUNS) {
-      await page.goto(`${BASE}/__sorts/finale?skin=${skin}&kw=${kw}&kb=${kb}`);
+    for (const [skin, kw, kb, o] of RUNS) {
+      const label = `${skin.slice(5)}${o === 'b' ? '-noirs' : ''}`;
+      await page.goto(`${BASE}/__sorts/finale?skin=${skin}&kw=${kw}&kb=${kb}&o=${o}`);
       await ready(page);
       await sleep(200);
       for (let i = 0; i < 3; i++) await step(16);
@@ -416,8 +453,8 @@ try {
           t += 0.016;
         }
         await page.evaluate(ms => window.seek(ms), t * 1000);
-        const png = await page.screenshot({ path: path.join(OUT, 'finale', `${skin.slice(5)}-${Math.round(at * 100)}.png`), clip });
-        cells.push({ png, caption: `${NAME[skin]} · ${at.toFixed(2)} s` });
+        const png = await page.screenshot({ path: path.join(OUT, 'finale', `${label}-${Math.round(at * 100)}.png`), clip });
+        cells.push({ png, caption: `${NAME[skin]}${o === 'b' ? ' (vu des noirs)' : ''} · ${at.toFixed(2)} s` });
       }
       // Fin du coup de grâce (1,25 s) : quelques images de plus, puis plus rien
       while (t < 1.25 + 0.1) {
@@ -428,10 +465,10 @@ try {
       await step(16);
       await step(500);
       const later = await page.evaluate(() => window.__frames);
-      results.finale[skin] = { images: after.frames - framesBefore, imagesApres: later - after.frames, demandees: after.pending, calqueVisible: after.shown };
-      assert.equal(after.pending, 0, `${skin} : la scène demande encore des images après le coup de grâce`);
-      assert.equal(later, after.frames, `${skin} : des images après le coup de grâce`);
-      assert.equal(after.shown, false, `${skin} : calque WebGL encore affiché après le coup de grâce`);
+      results.finale[label] = { images: after.frames - framesBefore, imagesApres: later - after.frames, demandees: after.pending, calqueVisible: after.shown };
+      assert.equal(after.pending, 0, `${label} : la scène demande encore des images après le coup de grâce`);
+      assert.equal(later, after.frames, `${label} : des images après le coup de grâce`);
+      assert.equal(after.shown, false, `${label} : calque WebGL encore affiché après le coup de grâce`);
     }
     // Mouvement réduit : rien n'est joué
     const reduced = await browser.newPage({ viewport: { width: 700, height: 700 }, reducedMotion: 'reduce' });
@@ -440,9 +477,51 @@ try {
     await ready(reduced);
     assert.equal(await reduced.evaluate(() => window.go()), false, 'mouvement réduit : playFinale ne doit rien jouer');
     await reduced.close();
-    await montage('finale.png', 'Coup de grâce (playFinale) pendant la chute du roi maté (mat du berger, roi noir en e8)', cells, 6, 230);
+    await montage('finale.png', 'Coup de grâce (playFinale) pendant la chute du roi maté (mat du berger, roi noir en e8), sans rien sur sa case', cells, 6, 230);
     console.log('finale :', JSON.stringify(results.finale));
     await page.close();
+  }
+
+  // -------------------------------------------------------------------------------------------
+  if (ONLY.includes('vitrine')) {
+    assert.ok(SITE, 'vitrine : --site=<adresse du site construit> manquant');
+    mkdirSync(path.join(OUT, 'vitrine'), { recursive: true });
+    const cells = [];
+    for (const [label, opts] of [
+      ['bureau', { viewport: { width: 1440, height: 900 } }],
+      ['telephone', { viewport: { width: 412, height: 915 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }],
+    ]) {
+      for (const skin of ['skin:laurier', 'skin:ecarlate']) {
+        const ctx = await browser.newContext(opts);
+        const page = await ctx.newPage();
+        watch(page, `vitrine ${label} ${skin}`);
+        await page.goto(`${SITE}/boutique?objet=${skin}`, { waitUntil: 'networkidle' });
+        const stage = page.locator('.bz-stage').first();
+        await stage.scrollIntoViewIfNeeded();
+        // Attend un sort en cours (le bouton de lecture relance la démonstration si elle est en pause)
+        const t0 = Date.now();
+        let caption = '';
+        while (Date.now() - t0 < 20000) {
+          caption = ((await page.locator('.bz-caption').first().textContent().catch(() => '')) ?? '').replace(/\s+/g, ' ').trim();
+          if (/Sort en cours/.test(caption) && caption.includes(NAME[skin])) break;
+          const play = page.locator('.bz-cap-play');
+          if (await play.count()) await play.first().click().catch(() => {});
+          await sleep(100);
+        }
+        assert.match(caption, /Sort en cours/, `vitrine ${label} ${skin} : aucun sort joué (${caption})`);
+        let last = 0;
+        for (const at of [400, 1000]) {
+          await sleep(at - last);
+          last = at;
+          const file = path.join(OUT, 'vitrine', `${label}-${skin.slice(5)}-${at}.png`);
+          const png = label === 'bureau' ? await stage.screenshot({ path: file }) : await page.screenshot({ path: file });
+          cells.push({ png, caption: `${NAME[skin]} · ${label} · ${at} ms` });
+        }
+        await ctx.close();
+      }
+    }
+    await montage('vitrine.png', 'Les vrais sorts dans la vitrine de la boutique', cells, 4, 330);
+    console.log(`vitrine : ${cells.length} captures`);
   }
 
   // -------------------------------------------------------------------------------------------

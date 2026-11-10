@@ -10,9 +10,10 @@
 // Rois d'une partie (skins) : chaque camp porte son roi, pris à l'assise (view.seats[c].king) et vu de tous. La
 // préférence locale « Rois adverses classiques » (CLASSIC_KINGS_PREF, réglée dans le compte) remplace à l'affichage
 // les rois des autres par le roi Arcane : shownKings, lu par la partie, l'accueil et l'analyse.
+// Ce module ne charge pas le catalogue (« Mes parties » s'en passe) : le serveur normalise déjà les rois des sièges
+// (seatView), et un identifiant inconnu est dessiné en roi Arcane par pieceUrl.
 import type { Color } from '../../shared/chess';
 import type { CardId, Catalog } from '../../shared/cards';
-import { DEFAULT_KING, normKing } from '../../shared/catalog';
 import type { GameState, LogEntry, ResultReason } from '../../shared/game';
 import type { GameView, SeatView } from '../../shared/protocol';
 import { readJson, writeJson } from './storage';
@@ -20,12 +21,15 @@ import { readJson, writeJson } from './storage';
 /** Préférence locale (usePref) : les rois des adversaires s'affichent en roi Arcane. Défaut : false. */
 export const CLASSIC_KINGS_PREF = 'rois-classiques';
 
+/** Roi Arcane (DEFAULT_KING du catalogue, vérifié par test/kings.test.ts). */
+const ARCANE_KING = 'king:arcane';
+
 /** Roi de chaque camp (objets king:*). */
 export type Kings = Record<Color, string>;
 
-/** Rois d'une vue de partie : ceux des sièges, normalisés (siège vide, partie d'avant les rois, inconnu : Arcane). */
+/** Rois d'une vue de partie : ceux des sièges (siège vide, partie d'avant les rois : le roi Arcane). */
 export function seatKings(seats: Partial<Record<Color, SeatView | null>> | null | undefined): Kings {
-  return { w: normKing(seats?.w?.king), b: normKing(seats?.b?.king) };
+  return { w: seats?.w?.king || ARCANE_KING, b: seats?.b?.king || ARCANE_KING };
 }
 
 /**
@@ -33,10 +37,10 @@ export function seatKings(seats: Partial<Record<Color, SeatView | null>> | null 
  * son propre roi garde son skin ; un spectateur voit les deux rois Arcane. Renvoie des chaînes (Board est mémoïsé).
  */
 export function shownKings(kings: Partial<Kings> | null | undefined, you: Color | null, classic: boolean): Kings {
-  const w = normKing(kings?.w);
-  const b = normKing(kings?.b);
+  const w = kings?.w || ARCANE_KING;
+  const b = kings?.b || ARCANE_KING;
   if (!classic) return { w, b };
-  return { w: you === 'w' ? w : DEFAULT_KING, b: you === 'b' ? b : DEFAULT_KING };
+  return { w: you === 'w' ? w : ARCANE_KING, b: you === 'b' ? b : ARCANE_KING };
 }
 
 export const HISTORY_KEY = 'sm:parties';

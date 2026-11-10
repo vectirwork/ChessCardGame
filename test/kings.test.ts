@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { Color, PieceType } from '../src/shared/chess';
-import { BOT_LOOK, ITEMS, KING_ART, KING_BASE, ORACLE_LOOK, collectionOf, formatPrice, itemById, unitPrice } from '../src/shared/catalog';
+import { BOT_LOOK, DEFAULT_KING, ITEMS, KING_ART, KING_BASE, ORACLE_LOOK, collectionOf, formatPrice, itemById, unitPrice } from '../src/shared/catalog';
 import type { SeatView } from '../src/shared/protocol';
 import { crestUrl, kingUrl, pieceSvg, pieceUrl } from '../src/client/components/pieces';
 import { CLASSIC_KINGS_PREF, seatKings, shownKings } from '../src/client/features/history';
@@ -312,11 +312,14 @@ describe('rois : cimier (sceau de collection, avatar)', () => {
 describe('rois en partie : qui porte quel roi (features/history.ts, odyssee/data.ts)', () => {
   const seat = (king?: string) => ({ kind: 'user', name: 'x', online: true, skin: 'skin:arcane', king }) as unknown as SeatView;
 
-  it('rois des sièges : normalisés (siège vide, partie d’avant les rois, identifiant inconnu : Arcane)', () => {
-    expect(seatKings(null)).toEqual({ w: 'king:arcane', b: 'king:arcane' });
-    expect(seatKings({ w: null, b: null })).toEqual({ w: 'king:arcane', b: 'king:arcane' });
-    expect(seatKings({ w: seat('king:braise'), b: seat(undefined) })).toEqual({ w: 'king:braise', b: 'king:arcane' });
-    expect(seatKings({ w: seat('king:inconnu'), b: seat('skin:inferno') })).toEqual({ w: 'king:arcane', b: 'king:arcane' });
+  it('rois des sièges : siège vide ou partie d’avant les rois : Arcane ; un identifiant inconnu est dessiné en Arcane', () => {
+    expect(seatKings(null)).toEqual({ w: DEFAULT_KING, b: DEFAULT_KING });
+    expect(seatKings({ w: null, b: null })).toEqual({ w: DEFAULT_KING, b: DEFAULT_KING });
+    expect(seatKings({ w: seat('king:braise'), b: seat(undefined) })).toEqual({ w: 'king:braise', b: DEFAULT_KING });
+    // Le serveur normalise déjà les sièges (seatView) ; le client se replie au dessin (pieceUrl)
+    const k = seatKings({ w: seat('king:inconnu'), b: seat('') });
+    expect(k.b).toBe(DEFAULT_KING);
+    expect(pieceUrl('w', 'k', k.w)).toBe(pieceUrl('w', 'k'));
   });
 
   it('préférence « Rois adverses classiques » : seul son propre roi garde son skin ; un spectateur voit deux rois Arcane', () => {
@@ -326,8 +329,8 @@ describe('rois en partie : qui porte quel roi (features/history.ts, odyssee/data
     expect(shownKings(kings, 'w', true)).toEqual({ w: 'king:braise', b: 'king:arcane' });
     expect(shownKings(kings, 'b', true)).toEqual({ w: 'king:arcane', b: 'king:eclipse' });
     expect(shownKings(kings, null, true)).toEqual({ w: 'king:arcane', b: 'king:arcane' });
-    expect(shownKings(undefined, 'w', false)).toEqual({ w: 'king:arcane', b: 'king:arcane' });
-    expect(shownKings({ w: 'king:inconnu', b: 'king:rubis' }, 'b', false)).toEqual({ w: 'king:arcane', b: 'king:rubis' });
+    expect(shownKings(undefined, 'w', false)).toEqual({ w: DEFAULT_KING, b: DEFAULT_KING });
+    expect(shownKings({ b: 'king:rubis' }, 'b', true)).toEqual({ w: DEFAULT_KING, b: 'king:rubis' });
     expect(CLASSIC_KINGS_PREF).toBe('rois-classiques');
   });
 

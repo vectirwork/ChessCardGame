@@ -11,7 +11,7 @@ import { api, errMsg } from '../../api';
 import { Modal } from '../../components/Layout';
 import { StarMark } from '../PageScene';
 import { ItemThumb } from './ItemThumb';
-import { itemPhrase } from './trial';
+import { equipNote, itemPhrase } from './trial';
 
 export type Order = { kind: 'product'; product: Product } | { kind: 'cart'; itemIds: string[] };
 
@@ -111,7 +111,7 @@ export function CheckoutModal({ order, owned, demo, equipOwned, onEquipped, onCl
 
   return (
     <Modal onClose={busy ? undefined : onClose}>
-      <div className="co">
+      <div className="co-box">
         <p className="pg-kicker">
           <span className="pg-num">
             <StarMark size={12} />
@@ -155,7 +155,7 @@ export function CheckoutModal({ order, owned, demo, equipOwned, onEquipped, onCl
                 <input type="checkbox" checked={equip} onChange={e => setEquip(e.target.checked)} />
                 <span>
                   Les équiper dès la livraison
-                  <small> Vos adversaires verront votre roi et vos sorts dès votre prochaine partie.</small>
+                  <small> {capitalize(equipNote(items))}.</small>
                 </span>
               </label>
             )}
@@ -192,6 +192,8 @@ export function CheckoutModal({ order, owned, demo, equipOwned, onEquipped, onCl
     </Modal>
   );
 }
+
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export function LockIcon() {
   return (

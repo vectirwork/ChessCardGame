@@ -28,7 +28,7 @@ import type { Rayon } from './shop/RayonTabs';
 import { ShopDock } from './shop/ShopDock';
 import { Seal, ShopPromise } from './shop/ShopPromise';
 import { TrialAction, actionTexts } from './shop/TrialAction';
-import { PACKS, PREMIUM_COLLECTIONS, bestCollection, formatEssai, itemPhrase, itemState, mainAction, parseEssai, quoteTrial } from './shop/trial';
+import { PACKS, PREMIUM_COLLECTIONS, bestCollection, equipNote, formatEssai, itemPhrase, itemState, mainAction, parseEssai, quoteTrial } from './shop/trial';
 import type { CollectionHint, TrialDelta } from './shop/trial';
 import { storedTrial, useShopUrl, useTrial } from './shop/useTrial';
 import './shop/shop.css';
@@ -109,7 +109,7 @@ export default function Shop() {
       setUnbox(known);
       const worn = known.filter(i => isEquipped(user, i));
       let msg: string;
-      if (worn.length > 1) msg = 'Panoplie équipée : vos adversaires verront votre roi et vos sorts.';
+      if (worn.length > 1) msg = `Panoplie équipée : ${equipNote(worn)}.`;
       else if (worn.length === 1) msg = equippedMessage(worn[0]);
       else if (known.length === 1) msg = `Merci ! ${itemPhrase(itemById(known[0])!)} est dans votre collection.`;
       else msg = `Merci ! ${known.length} skins ajoutés à votre collection.`;
@@ -205,7 +205,7 @@ export default function Shop() {
     try {
       const r = await api<{ user: MeUser }>('/account/equip', { body: ids.length === 1 ? { itemId: ids[0] } : { itemIds: ids } });
       setMe(r.user);
-      let msg = ids.length > 1 ? 'Panoplie équipée : vos adversaires verront votre roi et vos sorts.' : equippedMessage(ids[0]);
+      let msg = ids.length > 1 ? `Panoplie équipée : ${equipNote(ids)}.` : equippedMessage(ids[0]);
       if (ids.some(i => itemById(i)?.kind === 'king') && (await gameInProgress())) msg += ' Votre nouveau roi vous attend à la prochaine partie.';
       toast(msg, 'success');
     } catch (e) {
@@ -241,7 +241,7 @@ export default function Shop() {
     if (rayon === 'collections') {
       const list = PREMIUM_COLLECTIONS.filter(c => !mine || [c.king, c.board, c.skin].some(i => t.owned.includes(i)));
       return (
-        <Rack rayon="collections" empty={list.length ? undefined : <EmptyMine />}>
+        <Rack key="collections" rayon="collections" empty={list.length ? undefined : <EmptyMine />}>
           {list.map(c => (
             <CollectionCard
               key={c.id}
@@ -261,10 +261,13 @@ export default function Shop() {
     const kind = RAYON_KIND[rayon];
     const list = ITEMS.filter(i => i.kind === kind && (!mine || t.owned.includes(i.id)));
     return (
-      <Rack rayon={rayon} empty={list.length ? undefined : <EmptyMine />}>
+      // Une clé par rayon : le portant repart du début (son défilement horizontal n'est pas celui du rayon d'avant)
+      <Rack key={rayon} rayon={rayon} empty={list.length ? undefined : <EmptyMine />}>
         {kind === 'skin' && GRIMOIRE && !mine && <GrimoireCard product={GRIMOIRE} owned={t.owned} loggedIn={loggedIn} sale={sale} ready={ready} onBuy={buy} />}
         {list.map(i => {
-          const state = itemState(i.id, t.pano, t.owned);
+          // Visiteur : la panoplie Arcane n'est « équipée » sur aucun compte ; ses objets sont offerts à tous
+          const raw = itemState(i.id, t.pano, t.owned);
+          const state = !loggedIn && raw === 'equipped' ? 'free' : raw;
           return (
             <ItemCard
               key={i.id}
@@ -334,6 +337,7 @@ export default function Shop() {
                 busy={!!busy && busy === (action.kind === 'equip' ? action.ids.join(',') : '')}
                 waiting={!ready}
                 demo={payments === 'demo'}
+                loggedIn={loggedIn}
                 onMain={onMain}
                 onEquipOwned={() => void equip(quote.equip)}
                 onRevertAll={() => {
@@ -352,38 +356,41 @@ export default function Shop() {
         </section>
       </div>
 
-      <section className="bz-colls" aria-labelledby="bz-colls-t">
-        <PageHead
-          as="h2"
-          place="Les collections"
-          aside={`${PREMIUM_COLLECTIONS.length} panoplies`}
-          title={
-            <span id="bz-colls-t">
-              Tout assorti, <em>en un geste.</em>
-            </span>
-          }
-          lede="Un roi, un échiquier et des sorts qui vont ensemble, et le sceau de la collection à côté de votre pseudo : on ne le trouve nulle part ailleurs."
-        />
-        <div className="bz-colls-grid">
-          {PREMIUM_COLLECTIONS.map(c => (
-            <CollectionCard
-              key={c.id}
-              c={c}
-              large
-              owned={t.owned}
-              loggedIn={loggedIn}
-              sale={sale}
-              ready={ready}
-              trying={t.trial.king === c.king && t.trial.board === c.board && t.trial.skin === c.skin}
-              onTry={c2 => {
-                tryCollection(c2);
-                backToCabin();
-              }}
-              onBuy={buy}
-            />
-          ))}
-        </div>
-      </section>
+      {/* Vitrine des collections (ordinateur) : inutile quand le rayon Collections est ouvert juste au-dessus */}
+      {rayon !== 'collections' && (
+        <section className="bz-colls" aria-labelledby="bz-colls-t">
+          <PageHead
+            as="h2"
+            place="Les collections"
+            aside={`${PREMIUM_COLLECTIONS.length} panoplies`}
+            title={
+              <span id="bz-colls-t">
+                Tout assorti, <em>en un geste.</em>
+              </span>
+            }
+            lede="Un roi, un échiquier et des sorts qui vont ensemble, et le sceau de la collection à côté de votre pseudo : on ne le trouve nulle part ailleurs."
+          />
+          <div className="bz-colls-grid">
+            {PREMIUM_COLLECTIONS.map(c => (
+              <CollectionCard
+                key={c.id}
+                c={c}
+                large
+                owned={t.owned}
+                loggedIn={loggedIn}
+                sale={sale}
+                ready={ready}
+                trying={t.trial.king === c.king && t.trial.board === c.board && t.trial.skin === c.skin}
+                onTry={c2 => {
+                  tryCollection(c2);
+                  backToCabin();
+                }}
+                onBuy={buy}
+              />
+            ))}
+          </div>
+        </section>
+      )}
       {TRESOR && <TresorBanner product={TRESOR} owned={t.owned} loggedIn={loggedIn} sale={sale} ready={ready} onBuy={buy} />}
 
       <ShopPromise />

@@ -45,6 +45,8 @@ interface Props {
   /** Le compte n'est pas encore chargé : les boutons attendent. */
   waiting: boolean;
   demo: boolean;
+  /** Connecté : « Équiper ce que je possède » est possible (paiements fermés, essai mêlé). */
+  loggedIn: boolean;
   onMain: () => void;
   /** Équiper seulement ce que l'on possède (paiements fermés, essai mêlé). */
   onEquipOwned: () => void;
@@ -52,39 +54,36 @@ interface Props {
   onHint: (h: CollectionHint) => void;
 }
 
-export function TrialAction({ quote, action, hint, busy, waiting, demo, onMain, onEquipOwned, onRevertAll, onHint }: Props) {
+export function TrialAction({ quote, action, hint, busy, waiting, demo, loggedIn, onMain, onEquipOwned, onRevertAll, onHint }: Props) {
   const t = actionTexts(quote, action);
   const collectionLine = quote.cart?.lines.find(l => l.productId.startsWith('col:'));
   return (
     <div className={`ta ${action.kind === 'none' ? 'is-idle' : ''}`}>
+      {collectionLine && action.kind !== 'none' ? (
+        <p className="ta-note">✦ {collectionLine.label} au prix de la collection, sceau compris</p>
+      ) : (
+        hint && (
+          <button type="button" className="ta-note ta-hint" onClick={() => onHint(hint)}>
+            ✦ La collection {hint.collection.name} les réunit avec {phraseOf(hint.extra)} : {formatPrice(hint.price)} →
+          </button>
+        )
+      )}
       <div className="ta-txt">
         <span className="ta-line">{t.line}</span>
-        {action.kind === 'none' ? (
-          <small className="ta-help">Touchez un skin pour l’essayer.</small>
-        ) : (
-          t.amount && <b className="ta-amount">{t.amount}</b>
-        )}
-        {collectionLine && action.kind !== 'none' && <small className="ta-coll">✦ {collectionLine.label} au prix de la collection, sceau compris</small>}
-        {hint && !collectionLine && (
-          <button type="button" className="ta-hint" onClick={() => onHint(hint)}>
-            La collection {hint.collection.name} les réunit avec {phraseOf(hint.extra)} : {formatPrice(hint.price)} →
+        {action.kind === 'none' ? <small className="ta-help">Touchez un skin pour l’essayer.</small> : t.amount && <b className="ta-amount">{t.amount}</b>}
+        {quote.changed.length > 0 && (
+          <button type="button" className="ta-revert" onClick={onRevertAll}>
+            Rétablir
           </button>
         )}
       </div>
       <div className="ta-btns">
-        {quote.changed.length > 0 && (
-          <button type="button" className="btn btn-ghost ta-revert" onClick={onRevertAll}>
-            Rétablir
-          </button>
-        )}
-        {action.kind === 'soon' && quote.equip.length > 0 && (
+        {action.kind === 'soon' && loggedIn && quote.equip.length > 0 && (
           <button type="button" className="btn ta-second" onClick={onEquipOwned} disabled={busy || waiting}>
             Équiper ce que je possède
           </button>
         )}
-        {t.button && (
-          <ActionButton label={t.button} kind={action.kind} busy={busy} disabled={waiting} onClick={onMain} />
-        )}
+        {t.button && <ActionButton label={t.button} kind={action.kind} busy={busy} disabled={waiting} onClick={onMain} />}
       </div>
       {demo && action.kind === 'buy' && (
         <p className="ta-demo">

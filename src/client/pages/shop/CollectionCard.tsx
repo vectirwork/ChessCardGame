@@ -150,14 +150,14 @@ export function GrimoireCard({ product, owned, loggedIn, sale, ready, onBuy }: {
             {product.compareAtCents && <s>{formatPrice(product.compareAtCents)}</s>}
           </span>
         </span>
+        {price === null && loggedIn ? (
+          <span className="ic-equip is-done">Possédé</span>
+        ) : (
+          <button type="button" className="ic-equip" disabled={loggedIn && (!sale || !ready)} onClick={() => onBuy(product)}>
+            {loggedIn && !sale && ready ? 'Bientôt en vente' : 'Acheter'}
+          </button>
+        )}
       </div>
-      {price === null && loggedIn ? (
-        <span className="ic-equip is-done">Possédé</span>
-      ) : (
-        <button type="button" className="ic-equip" disabled={loggedIn && (!sale || !ready)} onClick={() => onBuy(product)}>
-          {loggedIn && !sale && ready ? 'Bientôt' : 'Acheter'}
-        </button>
-      )}
     </div>
   );
 }

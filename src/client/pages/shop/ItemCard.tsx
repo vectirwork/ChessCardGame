@@ -38,7 +38,7 @@ export function ItemCard({ id, state, trying, canEquip, equipping, onTry, onEqui
           ) : state === 'owned' ? (
             <span className="ic-st">Possédé</span>
           ) : state === 'free' ? (
-            <span className="ic-st">Offert</span>
+            <span className="ic-price is-free">Gratuit</span>
           ) : (
             <span className="ic-price">{formatPrice(unitPrice(id))}</span>
           )}

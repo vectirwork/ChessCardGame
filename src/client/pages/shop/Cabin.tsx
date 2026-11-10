@@ -86,7 +86,11 @@ export function Cabin({ view, onView, trial, spellKick, reduced, soon, confirmin
   const skin = itemById(trial.skin);
   const gem = gemOf(trial.king);
   return (
-    <section className={`cab cab-${view}`} aria-label="Cabine d’essayage" style={{ '--gem': gem, '--sp': skin?.skin?.primary } as CSSProperties}>
+    <section
+      className={`cab cab-${view} ${soon ? 'is-soon' : ''}`}
+      aria-label="Cabine d’essayage"
+      style={{ '--gem': gem, '--sp': skin?.skin?.primary } as CSSProperties}
+    >
       <div className="cab-top">
         <span className="cab-k">
           Cabine <span className="cab-k-long">d’essayage</span>

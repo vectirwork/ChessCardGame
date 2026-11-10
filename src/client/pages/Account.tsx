@@ -289,7 +289,8 @@ function CollectionTab({ me }: { me: MeUser }) {
     try {
       const r = await api<{ user: MeUser }>('/account/equip', { body: { itemId: id } });
       setMe(r.user);
-      toast(`${itemById(id)?.name} équipé.`, 'success');
+      const it = itemById(id);
+      if (it) toast(`${itemPhrase(it)} ${it.kind === 'skin' ? 'équipés' : 'équipé'}.`, 'success');
       // Le roi est pris à l'assise : une partie en cours garde l'ancien
       if (itemById(id)?.kind === 'king') {
         const g = await api<{ games: { status: string }[] }>('/games/mine').catch(() => ({ games: [] }));
@@ -459,12 +460,8 @@ function PurchasesTab() {
                     ))}
                   </span>
                   {purchaseLabel(r)}
+                  {r.provider === 'demo' && <span className="badge">démo</span>}
                 </span>
-                {r.provider === 'demo' && (
-                  <span className="badge" style={{ marginLeft: 8 }}>
-                    démo
-                  </span>
-                )}
               </td>
               <td>{formatPrice(r.amount_cents)}</td>
               <td>

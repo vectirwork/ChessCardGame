@@ -3,6 +3,7 @@
 // Elle se cache quand le clavier virtuel est ouvert et ne prend jamais le focus d'elle-même. Toucher les vignettes
 // ramène à la cabine. La page réserve sa hauteur en bas (shop.css) : elle ne masque jamais la dernière carte.
 import { useEffect, useState } from 'react';
+import { formatPrice } from '../../../shared/catalog';
 import type { ItemKind } from '../../../shared/catalog';
 import { ItemThumb } from './ItemThumb';
 import { ActionButton, actionTexts } from './TrialAction';
@@ -26,10 +27,22 @@ export function ShopDock({ anchor, trial, quote, action, busy, waiting, onMain, 
 
   useEffect(() => {
     if (!anchor || !('IntersectionObserver' in window)) return;
-    const io = new IntersectionObserver(([e]) => setAway(!e.isIntersecting && e.boundingClientRect.top < window.innerHeight * 4), { threshold: 0 });
+    // L'en-tête du site est translucide et fixe : une ligne d'action passée dessous est hors de vue
+    const header = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--header-h')) || 64;
+    // Visible en entier ou presque : sinon la barre fixe prend le relais (elle porte le même bouton)
+    const io = new IntersectionObserver(([e]) => setAway(e.intersectionRatio < 0.9), {
+      threshold: [0, 0.9, 1],
+      rootMargin: `-${Math.round(header)}px 0px 0px 0px`,
+    });
     io.observe(anchor);
     return () => io.disconnect();
   }, [anchor]);
+
+  // Le pied de page commun réserve la hauteur de la barre (shop.css) : au bout de la page, rien n'est dessous
+  useEffect(() => {
+    document.body.classList.add('has-shop-dock');
+    return () => document.body.classList.remove('has-shop-dock');
+  }, []);
 
   useEffect(() => {
     const vv = window.visualViewport;
@@ -54,7 +67,7 @@ export function ShopDock({ anchor, trial, quote, action, busy, waiting, onMain, 
         <span>
           Essai : {n} skin{n > 1 ? 's' : ''}
         </span>
-        {total ? <b>{t.amount ?? ''}</b> : <b>{action.kind === 'equip' ? 'Possédé' : ''}</b>}
+        {total ? <b>{formatPrice(total)}</b> : <b>{action.kind === 'equip' ? 'À équiper' : 'Offert'}</b>}
       </span>
       {t.button && (
         <ActionButton

@@ -176,6 +176,20 @@ export function itemPhrase(it: Item): string {
   return it.name;
 }
 
+/**
+ * Ce que change l'équipement de ces objets, en une phrase sans majuscule ni point : le roi et les sorts se voient chez
+ * l'adversaire, l'échiquier reste chez soi (« vos adversaires verront votre roi dès votre prochaine partie ; votre
+ * échiquier vous suit dans toutes vos parties »).
+ */
+export function equipNote(ids: readonly string[]): string {
+  const kinds = new Set(ids.map(id => itemById(id)?.kind));
+  const seen = [kinds.has('king') && 'votre roi', kinds.has('skin') && 'vos sorts'].filter(Boolean).join(' et ');
+  const parts: string[] = [];
+  if (seen) parts.push(`vos adversaires verront ${seen} dès votre prochaine partie`);
+  if (kinds.has('board')) parts.push('votre échiquier vous suit dans toutes vos parties');
+  return parts.join(' ; ');
+}
+
 /** Libellé accessible d'une carte : « Roi de braise, roi, rareté rare, 2,99 €, en essai ». */
 export function cardLabel(it: Item, state: CardState, trying: boolean): string {
   const parts = [it.name, slotWord(it.kind), `rareté ${RARITY[it.rarity].label.toLowerCase()}`];
@@ -203,7 +217,8 @@ export type MainAction =
 export function mainAction(q: TrialQuote, opts: { loggedIn: boolean; sale: boolean }): MainAction {
   if (!q.changed.length) return { kind: 'none' };
   const cents = q.cart?.totalCents ?? 0;
-  if (!opts.loggedIn) return { kind: 'signup', cents };
+  // Visiteur : un compte pour acheter ou équiper ; paiements fermés, rien de payant ne s'achète, compte ou non
+  if (!opts.loggedIn) return !opts.sale && q.buy.length ? { kind: 'soon', cents } : { kind: 'signup', cents };
   if (!q.buy.length) return { kind: 'equip', ids: q.equip };
   if (!opts.sale) return { kind: 'soon', cents };
   return { kind: 'buy', ids: q.buy, cents };

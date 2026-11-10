@@ -100,7 +100,7 @@
 /* Cabine */
 
 .cab {
-  --cab-h: clamp(300px, calc(100svh - 500px), 470px);
+  --cab-h: clamp(300px, calc(100svh - 520px), 470px);
   position: relative;
   padding: 14px 16px 16px;
   border-radius: 22px;
@@ -166,9 +166,13 @@
 .seg-short {
   display: none;
 }
+/* Paiements fermés : un bandeau fin en tête de cabine, pris sur la hauteur de la vue */
+.cab.is-soon {
+  --cab-h: clamp(280px, calc(100svh - 556px), 440px);
+}
 .cab-soon {
   margin: 0 0 10px;
-  padding: 8px 14px;
+  padding: 6px 14px;
   border-radius: 12px;
   border: 1px solid var(--line);
   background: linear-gradient(90deg, rgb(243 201 105 / 0.14), rgb(243 201 105 / 0.04));
@@ -199,11 +203,16 @@
 
 /* Portrait du roi */
 .kp {
+  --kp-pad: 14px;
+  /* Taille des rois ; le socle se cale sur leur base */
+  --kw: min(calc(var(--cab-h) * 0.56), 250px);
+  /* Rois et socle centrés dans la hauteur libre au-dessus du nom et de l'encart des 36 px (≈ 106 px) */
+  --kp-off: max(0px, calc((var(--cab-h) - var(--kw) - 106px) / 2));
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
-  padding: 14px 14px 12px;
+  padding: var(--kp-pad) 14px 12px;
 }
 .kp-halo {
   position: absolute;
@@ -219,7 +228,7 @@
 .kp-ped {
   position: absolute;
   left: 50%;
-  top: calc(var(--cab-h) * 0.6);
+  top: calc(var(--kp-pad) + var(--kp-off) + var(--kw) - var(--cab-h) * 0.035);
   width: min(86%, calc(var(--cab-h) * 1.1));
   height: calc(var(--cab-h) * 0.1);
   transform: translateX(-50%);
@@ -234,6 +243,7 @@
   display: flex;
   justify-content: center;
   align-items: flex-start;
+  padding-top: var(--kp-off);
   gap: clamp(8px, 3%, 28px);
   min-height: 0;
 }
@@ -255,7 +265,7 @@
 }
 .kp-k {
   display: block;
-  width: min(calc(var(--cab-h) * 0.56), 250px);
+  width: var(--kw);
   aspect-ratio: 1;
   background-size: contain;
   background-repeat: no-repeat;
@@ -275,7 +285,7 @@
   bottom: 14px;
   display: grid;
   gap: 2px;
-  max-width: calc(100% - 210px);
+  max-width: calc(100% - 236px);
 }
 .kp-id b {
   font-family: var(--serif);
@@ -385,9 +395,10 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  flex-wrap: wrap;
+  max-width: 100%;
 }
 .cab-cap {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -404,15 +415,29 @@
   font-weight: 600;
   color: var(--text);
 }
+/* « Sort en cours » : lu par les lecteurs d'écran ; à l'écran, le point aux couleurs des sorts le dit */
 .cab-cap-k {
-  font-family: var(--caps);
-  font-size: 10px;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: var(--soft);
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.cab-cap-skin::before {
+  content: '· ';
 }
 .cab-cap-skin {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--faint);
+}
+.cab-cap {
+  min-width: 0;
+}
+.cab-side {
+  flex: none;
 }
 .cab-cast {
   display: inline-flex;
@@ -481,6 +506,20 @@
   display: grid;
   place-items: center;
   pointer-events: none;
+}
+.ub::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(70% 70% at 50% 46%, rgb(8 6 22 / 0.55), rgb(8 6 22 / 0.88));
+  opacity: 0;
+  animation: ub-veil 1.4s ease-out both;
+}
+@keyframes ub-veil {
+  25%,
+  70% {
+    opacity: 1;
+  }
 }
 .ub-ring {
   position: absolute;
@@ -629,22 +668,29 @@
   color: var(--text);
 }
 
-/* Ligne d'action */
+/* Ligne d'action : le résumé à gauche, le bouton principal à droite (une seule ligne, sans retour) ; la suggestion de
+   collection au-dessus, sur toute la largeur */
 .ta {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 10px 16px;
+  gap: 8px 16px;
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--hair);
 }
+.ta-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--gold);
+}
 .ta-txt {
   display: grid;
-  gap: 2px;
+  justify-items: start;
+  gap: 1px;
   min-width: 0;
-  flex: 1 1 200px;
 }
 .ta-line {
   font-size: 13px;
@@ -661,18 +707,12 @@
   font-size: 12.5px;
   color: var(--faint);
 }
-.ta-coll {
-  font-size: 12px;
-  color: var(--gold);
-}
 .ta-hint {
-  padding: 2px 0;
+  padding: 0;
   border: 0;
   background: none;
-  color: var(--gold);
   font: inherit;
   font-size: 12.5px;
-  line-height: 1.35;
   text-align: left;
   cursor: pointer;
 }
@@ -684,14 +724,26 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
   justify-content: flex-end;
 }
+/* « Rétablir » : un lien discret ; sa cible tactile déborde sans agrandir la ligne */
 .ta-revert {
+  position: relative;
   min-height: 44px;
-  padding: 0 14px;
-  font-size: 13px;
-  color: var(--dim);
+  margin: -12px 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--soft);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  text-decoration-color: rgb(255 255 255 / 0.25);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.ta-revert:hover {
+  color: var(--text);
 }
 .ta-second {
   min-height: 44px;
@@ -744,7 +796,7 @@
   display: none;
 }
 .ta-demo {
-  flex-basis: 100%;
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -826,7 +878,7 @@
 }
 .rt-surprise {
   margin-left: auto;
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 4px;
   border: 0;
   background: none;
@@ -959,6 +1011,9 @@
   color: var(--gold-hi);
   white-space: nowrap;
 }
+.ic-price.is-free {
+  color: var(--dim);
+}
 .ic-price s {
   margin-left: 6px;
   font-size: 14px;
@@ -1034,6 +1089,23 @@
 .ic-pack .ic-hit {
   cursor: default;
 }
+.ic-pack .ic-price {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 6px;
+}
+.ic-pack .ic-price s {
+  margin: 0;
+}
+.ic-pack .ic-equip {
+  position: relative;
+  right: auto;
+  bottom: auto;
+  align-self: stretch;
+  min-height: 34px;
+  margin-top: 8px;
+}
 .ic-pack-art {
   background:
     radial-gradient(40% 46% at 50% 50%, rgb(243 201 105 / 0.26), transparent 75%),
@@ -1087,7 +1159,7 @@
   display: flex;
   flex-direction: column;
   flex: 1;
-  padding: 2px 16px 16px;
+  padding: 10px 16px 16px;
 }
 .cc-name {
   margin: 4px 0 0;
@@ -1302,6 +1374,10 @@
 .tb-buy .cc-price b {
   font-size: 34px;
 }
+.tb-buy .btn-gold {
+  min-height: 44px;
+  white-space: nowrap;
+}
 
 /* Engagements */
 .sp {
@@ -1331,12 +1407,12 @@
 }
 
 /* ------------------------------------------------------------------------------------------ */
-/* Récapitulatif d'achat */
+/* Récapitulatif d’achat (.co-box : la classe .co est celle des coordonnées de l’échiquier, board.css) */
 
-.co h2 {
+.co-box h2 {
   margin: 0 0 6px;
 }
-.co .pg-kicker {
+.co-box .pg-kicker {
   margin-bottom: 12px;
 }
 .co-thumbs {
@@ -1424,13 +1500,16 @@
     gap: 10px;
     padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
     border-top: 1px solid var(--line);
-    background: rgb(10 7 24 / 0.96);
+    background: #0b0818;
     box-shadow: 0 -14px 30px -10px rgb(0 0 0 / 0.7);
     transform: translateY(110%);
     transition: transform 0.35s var(--ease);
   }
   .dock.on {
     transform: none;
+  }
+  .has-shop-dock .site-footer {
+    padding-bottom: calc(76px + env(safe-area-inset-bottom));
   }
   .dock-ths {
     display: flex;
@@ -1516,15 +1595,26 @@
   .seg-short {
     display: inline;
   }
+  .cab-soon {
+    padding: 5px 10px;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .seg {
+    padding: 2px;
+  }
   .seg button {
+    min-height: 44px;
     padding: 0 12px;
     font-size: 12px;
   }
   .kp {
-    padding: 10px 8px 8px;
+    --kp-pad: 10px;
+    --kw: calc(var(--cab-h) * 0.47);
+    padding: var(--kp-pad) 4px 8px;
   }
-  .kp-k {
-    width: calc(var(--cab-h) * 0.42);
+  .kp-duo {
+    gap: 0;
   }
   .kp-fig figcaption {
     font-size: 8.5px;
@@ -1614,11 +1704,19 @@
     width: 22px;
     height: 22px;
   }
+  /* Ligne d'action : le résumé (et « Rétablir » à droite), puis le bouton sur toute la largeur */
   .ta {
-    gap: 8px 10px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
   }
-  .ta-btns {
-    flex: 1 1 100%;
+  .ta-txt {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    column-gap: 12px;
+  }
+  .ta-txt > .ta-revert {
+    grid-column: 2;
+    grid-row: 1;
   }
   .ta-main {
     flex: 1;
@@ -1628,14 +1726,18 @@
   .ta-amount {
     font-size: 21px;
   }
-  /* Onglets collants sous l'en-tête, défilables */
+  /* Onglets collants sous l'en-tête, défilables ; les filtres défilent avec le rayon (.rt sans boîte : les onglets
+     collent sur toute la hauteur des rayons) */
   .bz-rayons .rt {
+    display: contents;
+  }
+  .rt-tabs {
     position: sticky;
     top: var(--header-h);
     z-index: 3;
     margin: 0 calc(-1 * var(--gutter));
     padding: 0 var(--gutter);
-    background: linear-gradient(180deg, rgb(11 8 30 / 0.97) 75%, rgb(11 8 30 / 0));
+    background: #0d0920;
   }
   .rt-tabs button {
     padding: 0 10px;
@@ -1679,16 +1781,14 @@
   .ic-hit {
     padding: 8px 8px 11px;
   }
-  /* Collections : cartes empilées, pleine largeur */
-  .rack-collections .rack-row {
-    flex-direction: column;
-    overflow: visible;
-    margin: 0;
-    padding: 0;
-    scroll-snap-type: none;
+  /* Collections : un portant aussi, de grandes cartes (la suivante dépasse du bord) */
+  .rack-row > .cc {
+    flex: none;
+    width: min(84vw, 330px);
+    scroll-snap-align: start;
   }
   .rack-collections .cc-thumb.th-card {
-    --th-h: 190px;
+    --th-h: 176px;
   }
   .tb {
     grid-template-columns: auto minmax(0, 1fr);
@@ -1711,6 +1811,9 @@
     justify-content: space-between;
     align-items: center;
   }
+  .tb-buy .cc-price {
+    grid-template-columns: auto;
+  }
   .tb-buy .cc-price b {
     font-size: 28px;
   }
@@ -1721,6 +1824,22 @@
   }
   .sp p {
     font-size: 13px;
+  }
+}
+
+@media (min-width: 1100px) and (max-height: 820px) {
+  .bz-band .pg-lede {
+    margin-top: 4px;
+  }
+  .kp {
+    --kw: calc(var(--cab-h) * 0.5);
+  }
+  .kp-id > span:last-child,
+  .proof-cap {
+    display: none;
+  }
+  .kp-id b {
+    font-size: 21px;
   }
 }
 

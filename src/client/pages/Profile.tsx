@@ -1,30 +1,23 @@
-// Profil public d'un joueur : son portrait à l'Observatoire.
+// Profil public d'un joueur : son portrait à l'Observatoire. L'avatar est le cimier de son roi, le sceau de sa
+// collection complète la plus rare est à côté de son pseudo, et sa panoplie (roi, échiquier, sorts) s'essaie dans la
+// boutique d'un geste.
 import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { itemById } from '../../shared/catalog';
+import { DEFAULT_BOARD, DEFAULT_SKIN, itemById, kingStyle, normKing } from '../../shared/catalog';
 import { RESULT_TEXT, ResultReason } from '../../shared/game';
-import type { GameSummary } from '../../shared/protocol';
+import type { GameSummary, ProfileResponse } from '../../shared/protocol';
 import { TIME_CONTROLS } from '../../shared/protocol';
 import { api, errMsg } from '../api';
+import { CollectionSeal } from '../components/CollectionSeal';
 import { PageLoader } from '../components/Layout';
+import { crestUrl } from '../components/pieces';
 import { useApp } from '../store';
 import { PageHead, PlacePage, ordinal, useTitle } from './PageScene';
+import { ItemThumb } from './shop/ItemThumb';
 
-interface ProfileData {
-  profile: {
-    username: string;
-    rating: number;
-    gamesPlayed: number;
-    wins: number;
-    losses: number;
-    draws: number;
-    skin: string;
-    memberSince: string;
-    rank: number | null;
-  };
-  games: GameSummary[];
-}
+/** Profil reçu. Un serveur d'avant les rois n'envoie ni roi, ni échiquier, ni sceau : repli sur la panoplie Arcane. */
+type ProfileData = ProfileResponse;
 
 export default function Profile() {
   const { username = '' } = useParams();
@@ -64,29 +57,31 @@ export default function Profile() {
   if (!data) return <PageLoader />;
   const p = data.profile;
   const winRate = p.gamesPlayed ? Math.round((p.wins / p.gamesPlayed) * 100) : 0;
-  const skin = itemById(p.skin);
+  const skin = itemById(p.skin)?.kind === 'skin' ? itemById(p.skin) : itemById(DEFAULT_SKIN);
+  const king = normKing(p.king);
+  const board = itemById(p.board ?? '')?.kind === 'board' ? p.board : DEFAULT_BOARD;
+  const look = [king, board, skin!.id];
   const isMe = me?.username === p.username;
   const share = (n: number) => (p.gamesPlayed ? `${(n / p.gamesPlayed) * 100}%` : '0%');
   return (
     <PlacePage place="observatoire" className="prof">
       <div className="prof-head">
         <div className="prof-id">
-          <span className="prof-avatar" style={{ '--p': skin?.skin?.primary ?? '#f3c969' } as CSSProperties} aria-hidden="true">
-            <span className="avatar lg">{p.username[0]?.toUpperCase()}</span>
+          <span className="prof-avatar has-crest" style={{ '--gem': kingStyle(king).gem } as CSSProperties} aria-hidden="true">
+            <span className="avatar lg avatar-crest" style={{ backgroundImage: crestUrl(king) }} />
           </span>
           <PageHead
             place="L’Observatoire"
             aside={p.rank ? `${ordinal(p.rank)} au classement` : 'Profil'}
-            title={p.username}
+            title={
+              <span className="prof-name">
+                {p.username}
+                <CollectionSeal id={p.seal} size={30} />
+              </span>
+            }
             lede={
               <>
                 Membre depuis {new Date(p.memberSince).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
-                {skin && (
-                  <>
-                    {' '}
-                    · skin <b className="prof-skin">{skin.name}</b>
-                  </>
-                )}
                 {isMe && (
                   <>
                     {' '}
@@ -95,7 +90,26 @@ export default function Profile() {
                 )}
               </>
             }
-          />
+          >
+            <Link
+              className="prof-look"
+              to={isMe ? '/compte?onglet=collection' : `/boutique?essai=${look.join(',')}`}
+              aria-label={isMe ? 'Ma panoplie : la changer dans mon compte' : `Essayer la panoplie de ${p.username} dans la boutique`}
+            >
+              <span className="prof-look-ths" aria-hidden="true">
+                {look.map(id => (
+                  <ItemThumb key={id} id={id} size="chip" />
+                ))}
+              </span>
+              <span className="prof-look-t">
+                <small>{isMe ? 'Ma panoplie' : 'Sa panoplie'}</small>
+                <span>
+                  <b className="prof-skin">{itemById(king)?.name}</b> · {itemById(board)?.name} · sorts {skin!.name}
+                </span>
+                <em>{isMe ? 'La changer dans mon compte →' : 'L’essayer dans la boutique →'}</em>
+              </span>
+            </Link>
+          </PageHead>
         </div>
         <div className="prof-rating">
           <b>{p.rating}</b>

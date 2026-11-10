@@ -3,11 +3,12 @@
 // serveur facture, puis revient à la boutique avec les objets livrés : la cabine les déballe.
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { formatPrice, itemById, productById } from '../../shared/catalog';
+import { formatPrice, itemById, productById, quoteCart } from '../../shared/catalog';
 import { CART_PRODUCT_ID } from '../../shared/protocol';
 import type { DemoCompleteResponse, DemoPurchase } from '../../shared/protocol';
 import { api, errMsg } from '../api';
 import { PageLoader, Spinner } from '../components/Layout';
+import { ownedIds } from '../skins';
 import { useApp } from '../store';
 import { PageHead, PlacePage, useTitle } from './PageScene';
 import { LockIcon } from './shop/CheckoutModal';
@@ -17,7 +18,7 @@ import { itemPhrase } from './shop/trial';
 export default function DemoCheckout() {
   useTitle('Paiement simulé');
   const { id = '' } = useParams();
-  const { setMe, toast } = useApp();
+  const { me, setMe, toast } = useApp();
   const navigate = useNavigate();
   const [p, setP] = useState<DemoPurchase | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +53,17 @@ export default function DemoCheckout() {
   // Objets de l'achat : renvoyés par le serveur ; à défaut (ancien serveur), ceux du produit
   const ids = (p.items?.length ? p.items : product?.items ?? []).filter(i => itemById(i));
   const title = product?.name ?? (ids.length === 1 ? itemPhrase(itemById(ids[0])!) : `Votre sélection (${ids.length} skins)`);
+  // Panier : une ligne par produit facturé (objet, ou collection complétée), comme sur Stripe. Calculée ici comme au
+  // serveur (quoteCart) ; montrée seulement si elle retombe sur le montant facturé, sinon une seule ligne.
+  const quoted = !product && p.status === 'pending' ? quoteCart(ids, ownedIds(me)) : null;
+  const lines =
+    quoted && quoted.totalCents === p.amountCents && quoted.lines.length > 1
+      ? quoted.lines.map(l => ({
+          label: l.label,
+          note: l.productId.startsWith('col:') ? 'Au prix de la collection, sceau compris' : undefined,
+          cents: l.cents,
+        }))
+      : [{ label: title, note: product?.description, cents: p.amountCents }];
   const pay = async () => {
     setBusy(true);
     try {
@@ -86,13 +98,15 @@ export default function DemoCheckout() {
             ))}
           </div>
         )}
-        <div className="checkout-line">
-          <span>
-            <b>{title}</b>
-            {product && <small className="muted">{product.description}</small>}
-          </span>
-          <b>{formatPrice(p.amountCents)}</b>
-        </div>
+        {lines.map(l => (
+          <div key={l.label} className="checkout-line">
+            <span>
+              <b>{l.label}</b>
+              {l.note && <small className="muted">{l.note}</small>}
+            </span>
+            <b>{formatPrice(l.cents)}</b>
+          </div>
+        ))}
         <div className="checkout-line total">
           <span>Total TTC</span>
           <b>{formatPrice(p.amountCents)}</b>

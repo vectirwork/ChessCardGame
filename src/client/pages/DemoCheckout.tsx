@@ -1,24 +1,29 @@
 // Page de paiement simulée (mode démo uniquement, sans Stripe) : la caisse du Bazar céleste.
+// Elle montre ce que contient l'achat (un produit, une collection complétée, ou le panier d'un essai) au montant que le
+// serveur facture, puis revient à la boutique avec les objets livrés : la cabine les déballe.
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { formatPrice, itemById, productById } from '../../shared/catalog';
-import type { MeUser } from '../../shared/protocol';
+import { CART_PRODUCT_ID } from '../../shared/protocol';
+import type { DemoCompleteResponse, DemoPurchase } from '../../shared/protocol';
 import { api, errMsg } from '../api';
 import { PageLoader, Spinner } from '../components/Layout';
 import { useApp } from '../store';
 import { PageHead, PlacePage, useTitle } from './PageScene';
-import { LockIcon, Swatch } from './Shop';
+import { LockIcon } from './shop/CheckoutModal';
+import { ItemThumb } from './shop/ItemThumb';
+import { itemPhrase } from './shop/trial';
 
 export default function DemoCheckout() {
   useTitle('Paiement simulé');
   const { id = '' } = useParams();
   const { setMe, toast } = useApp();
   const navigate = useNavigate();
-  const [p, setP] = useState<{ productId: string; amountCents: number; status: string } | null>(null);
+  const [p, setP] = useState<DemoPurchase | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    api<{ productId: string; amountCents: number; status: string }>(`/shop/demo/${id}`)
+    api<DemoPurchase>(`/shop/demo/${id}`)
       .then(setP)
       .catch(e => setError(errMsg(e)));
   }, [id]);
@@ -43,16 +48,17 @@ export default function DemoCheckout() {
       </PlacePage>
     );
   if (!p) return <PageLoader />;
-  const product = productById(p.productId);
-  const items = (product?.items ?? []).map(i => itemById(i)!).filter(Boolean);
+  const product = p.productId === CART_PRODUCT_ID ? undefined : productById(p.productId);
+  // Objets de l'achat : renvoyés par le serveur ; à défaut (ancien serveur), ceux du produit
+  const ids = (p.items?.length ? p.items : product?.items ?? []).filter(i => itemById(i));
+  const title = product?.name ?? (ids.length === 1 ? itemPhrase(itemById(ids[0])!) : `Votre sélection (${ids.length} skins)`);
   const pay = async () => {
     setBusy(true);
     try {
-      const r = await api<{ user: MeUser }>(`/shop/demo/${id}/complete`, { body: {} });
+      const r = await api<DemoCompleteResponse>(`/shop/demo/${id}/complete`, { body: {} });
       setMe(r.user);
-      toast('Paiement simulé réussi : vos objets sont dans votre collection.', 'success');
-      // Un objet : retour à sa fiche pour l'équiper ; un pack : la collection, où chaque objet s'équipe
-      navigate(items.length === 1 ? `/boutique?objet=${items[0].id}` : '/compte?onglet=collection');
+      // Retour à la cabine, qui déballe les objets livrés (et dit s'ils sont équipés)
+      navigate('/boutique', { state: { livre: r.items?.length ? r.items : ids, user: r.user } });
     } catch (e) {
       toast(errMsg(e), 'error');
       setBusy(false);
@@ -64,26 +70,26 @@ export default function DemoCheckout() {
       <PageHead
         place="La caisse du Bazar"
         aside="Mode démonstration"
-        title={product?.name ?? 'Votre achat'}
+        title={title}
         lede="Cette page remplace Stripe Checkout tant que les clés Stripe ne sont pas configurées. Aucune carte n’est demandée, rien n’est débité."
         center
       />
       <div className="co-card panel panel-pad">
         <span className="badge cyan">Paiement simulé</span>
-        {items.length > 0 && (
+        {ids.length > 0 && (
           <div className="co-items">
-            {items.map(it => (
-              <span key={it.id} className="bz-pack-chip">
-                <Swatch item={it} small />
-                <span>{it.name}</span>
+            {ids.map(i => (
+              <span key={i} className="co-item">
+                <ItemThumb id={i} size="chip" />
+                <span>{itemPhrase(itemById(i)!)}</span>
               </span>
             ))}
           </div>
         )}
         <div className="checkout-line">
           <span>
-            <b>{product?.name}</b>
-            <small className="muted">{product?.description}</small>
+            <b>{title}</b>
+            {product && <small className="muted">{product.description}</small>}
           </span>
           <b>{formatPrice(p.amountCents)}</b>
         </div>

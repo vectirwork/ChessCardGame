@@ -1,16 +1,20 @@
-// Gestion du compte : profil, sécurité, collection, achats, données personnelles.
+// Gestion du compte : profil, sécurité, collection (rois, échiquiers, sorts, sceaux), achats, données personnelles.
 import { useEffect, useState } from 'react';
-import type { FormEvent } from 'react';
+import type { CSSProperties, FormEvent } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
-import { ITEMS, formatPrice, kingStyle, productById } from '../../shared/catalog';
-import type { CSSProperties } from 'react';
-import type { MeUser } from '../../shared/protocol';
+import { COLLECTIONS, ITEMS, SLOTS, collectionById, collectionItems, formatPrice, itemById, productById, sealOf, unitPrice } from '../../shared/catalog';
+import type { ItemKind } from '../../shared/catalog';
+import { CART_PRODUCT_ID } from '../../shared/protocol';
+import type { MeUser, PurchaseRecord } from '../../shared/protocol';
 import { api, errMsg } from '../api';
-import { isEquipped } from '../skins';
+import { CollectionSeal } from '../components/CollectionSeal';
 import { PageLoader, Spinner } from '../components/Layout';
-import { useApp } from '../store';
+import { crestUrl } from '../components/pieces';
+import { CLASSIC_KINGS_PREF, equippedId, isEquipped, owns } from '../skins';
+import { useApp, usePref } from '../store';
 import { PageHead, PlacePage, StarMark, useTitle } from './PageScene';
-import { Swatch } from './Shop';
+import { ItemThumb, RarityGem } from './shop/ItemThumb';
+import { gemOf, itemPhrase } from './shop/trial';
 
 type Tab = 'profile' | 'security' | 'collection' | 'purchases' | 'data';
 
@@ -31,20 +35,30 @@ export default function Account() {
   if (!ready) return <PageLoader />;
   if (!me) return <Navigate to="/connexion?retour=/compte" replace />;
   const owned = ITEMS.filter(i => !i.free && me.items.includes(i.id)).length;
+  const king = equippedId(me, 'king');
   return (
     <PlacePage place="cabinet" className="acc" narrow>
       <div className="acc-head">
-        <span className="acc-avatar" aria-hidden="true">
-          <span className="avatar lg">{me.username[0]?.toUpperCase()}</span>
+        <span className="acc-avatar has-crest" aria-hidden="true" style={{ '--gem': gemOf(king) } as CSSProperties}>
+          <span className="avatar lg avatar-crest" style={{ backgroundImage: crestUrl(king) }} />
         </span>
-        <PageHead place="Le Cabinet" aside="Mon compte" title={me.username}>
+        <PageHead
+          place="Le Cabinet"
+          aside="Mon compte"
+          title={
+            <span className="acc-name">
+              {me.username}
+              <CollectionSeal id={sealOf(me.items)} size={26} />
+            </span>
+          }
+        >
           <div className="acc-badges">
             <span className="badge gold">Elo {me.rating}</span>
             <span className="badge">
               {me.gamesPlayed} {me.gamesPlayed > 1 ? 'parties classées' : 'partie classée'}
             </span>
             <span className="badge">
-              {owned} {owned > 1 ? 'objets premium' : 'objet premium'}
+              {owned} {owned > 1 ? 'skins premium' : 'skin premium'}
             </span>
             <Link to={`/joueur/${me.username}`} className="btn-line">
               Voir mon profil public
@@ -256,15 +270,31 @@ function SecurityTab() {
   );
 }
 
+const SLOT_TITLE: Record<ItemKind, string> = { king: 'Rois', board: 'Échiquiers', skin: 'Sorts' };
+const SLOT_RAYON: Record<ItemKind, string> = { king: 'rois', board: 'echiquiers', skin: 'sorts' };
+const SLOT_NOTE: Record<ItemKind, string> = {
+  king: 'Votre roi vous représente : vos adversaires le voient en face d’eux.',
+  board: 'Votre échiquier vous suit dans toutes vos parties. Vos adversaires gardent le leur.',
+  skin: 'Vos sorts s’animent avec ce skin, chez vous comme chez votre adversaire.',
+};
+
 function CollectionTab({ me }: { me: MeUser }) {
   const { setMe, toast } = useApp();
   const [busy, setBusy] = useState<string | null>(null);
+  const [later, setLater] = useState(false);
+  const [classic, setClassic] = usePref<boolean>(CLASSIC_KINGS_PREF, false);
+  const seal = sealOf(me.items);
   const equip = async (id: string) => {
     setBusy(id);
     try {
       const r = await api<{ user: MeUser }>('/account/equip', { body: { itemId: id } });
       setMe(r.user);
-      toast(`${ITEMS.find(i => i.id === id)?.name} équipé.`, 'success');
+      toast(`${itemById(id)?.name} équipé.`, 'success');
+      // Le roi est pris à l'assise : une partie en cours garde l'ancien
+      if (itemById(id)?.kind === 'king') {
+        const g = await api<{ games: { status: string }[] }>('/games/mine').catch(() => ({ games: [] }));
+        setLater(g.games.some(x => x.status !== 'ended'));
+      }
     } catch (e) {
       toast(errMsg(e), 'error');
     } finally {
@@ -272,49 +302,113 @@ function CollectionTab({ me }: { me: MeUser }) {
     }
   };
   return (
-    <div className="stack" style={{ gap: 30 }}>
-      {(['skin', 'board'] as const).map(kind => {
+    <div className="stack acc-coll-wrap" style={{ gap: 34 }}>
+      {SLOTS.map(kind => {
         const list = ITEMS.filter(i => i.kind === kind);
-        const has = list.filter(i => me.items.includes(i.id)).length;
+        const has = list.filter(i => owns(me, i.id)).length;
         return (
-          <section key={kind} className="acc-coll">
+          <section key={kind} className="acc-coll" aria-labelledby={`acc-coll-${kind}`}>
             <div className="acc-coll-head">
-              <h3>{kind === 'skin' ? 'Skins d’animation' : 'Plateaux'}</h3>
+              <h3 id={`acc-coll-${kind}`}>{SLOT_TITLE[kind]}</h3>
               <span className="faint">
                 {has} sur {list.length}
               </span>
+              <Link to={`/boutique?rayon=${SLOT_RAYON[kind]}`} className="acc-coll-more">
+                Voir le rayon
+              </Link>
             </div>
+            {kind === 'king' && later && (
+              <p className="notice acc-later" role="status">
+                <span className="notice-k">À la prochaine partie</span>
+                <span>Votre nouveau roi vous attend à la prochaine partie : celle en cours garde le roi pris à l’assise.</span>
+              </p>
+            )}
             <div className="collection">
               {list.map(i => {
-                const owned = me.items.includes(i.id);
+                const owned = owns(me, i.id);
                 const on = isEquipped(me, i.id);
-                const col = { '--p': i.skin ? i.skin.primary : i.board ? i.board.dark : kingStyle(i.id).gem };
                 return (
-                  <button
-                    key={i.id}
-                    type="button"
-                    className={`coll-item ${on ? 'on' : ''} ${owned ? '' : 'locked'}`}
-                    style={col as CSSProperties}
-                    onClick={() => owned && !on && equip(i.id)}
-                    disabled={!owned || busy === i.id}
-                    aria-pressed={on}
-                    aria-label={`${i.name} : ${on ? 'équipé' : owned ? 'équiper' : 'à découvrir dans la boutique'}`}
-                  >
-                    <span className="coll-swatch">
-                      <Swatch item={i} />
-                    </span>
+                  <div key={i.id} className={`coll-item ${on ? 'on' : ''} ${owned ? '' : 'locked'}`} style={{ '--gem': gemOf(i.id) } as CSSProperties}>
+                    <ItemThumb id={i.id} />
+                    <RarityGem rarity={i.rarity} />
                     <span className="coll-name">{i.name}</span>
-                    <small>{busy === i.id ? <Spinner /> : on ? 'Équipé' : owned ? 'Équiper' : 'Dans la boutique'}</small>
-                  </button>
+                    {on ? (
+                      <span className="coll-st on">Équipé</span>
+                    ) : owned ? (
+                      <button type="button" className="coll-btn" onClick={() => void equip(i.id)} disabled={busy === i.id} aria-label={`Équiper ${i.name}`}>
+                        {busy === i.id ? <Spinner /> : 'Équiper'}
+                      </button>
+                    ) : (
+                      <Link className="coll-try" to={`/boutique?rayon=${SLOT_RAYON[kind]}&essai=${i.id}`} aria-label={`Essayer ${i.name} dans la boutique`}>
+                        L’essayer · {formatPrice(unitPrice(i.id))}
+                      </Link>
+                    )}
+                  </div>
                 );
               })}
             </div>
+            <p className="acc-coll-note">{SLOT_NOTE[kind]}</p>
+            {kind === 'king' && (
+              <div className="acc-pref">
+                <span className="acc-pref-t">
+                  <b>Rois adverses</b>
+                  <small>En partie, le roi de votre adversaire s’affiche tel qu’il l’a choisi, ou en roi classique (Arcane) si vous préférez une lecture stricte.</small>
+                </span>
+                <span className="acc-pref-seg" role="group" aria-label="Rois adverses">
+                  <button type="button" className={!classic ? 'on' : ''} aria-pressed={!classic} onClick={() => setClassic(false)}>
+                    Tels qu’ils les ont choisis
+                  </button>
+                  <button type="button" className={classic ? 'on' : ''} aria-pressed={classic} onClick={() => setClassic(true)}>
+                    Classiques
+                  </button>
+                </span>
+              </div>
+            )}
           </section>
         );
       })}
+      <section className="acc-coll" aria-labelledby="acc-seals">
+        <div className="acc-coll-head">
+          <h3 id="acc-seals">Sceaux de collection</h3>
+          <span className="faint">{seal ? `Affiché : ${collectionById(seal)?.name}` : 'Aucun pour l’instant'}</span>
+          <Link to="/boutique?rayon=collections" className="acc-coll-more">
+            Voir les collections
+          </Link>
+        </div>
+        <div className="acc-seals">
+          {COLLECTIONS.filter(c => c.rarity !== 'offert').map(c => {
+            const items = collectionItems(c);
+            const n = items.filter(i => owns(me, i)).length;
+            const done = n === items.length;
+            return (
+              <Link
+                key={c.id}
+                to={`/boutique?rayon=collections&essai=${items.join(',')}`}
+                className={`acc-seal ${done ? 'done' : ''} ${seal === c.id ? 'shown' : ''}`}
+                style={{ '--gem': c.gem } as CSSProperties}
+                aria-label={`${c.name} : ${n} sur ${items.length}${done ? ', sceau obtenu' : ''}`}
+              >
+                <span className="acc-seal-medal">{done ? <CollectionSeal id={c.id} size={40} /> : <ItemThumb id={c.id} size="chip" />}</span>
+                <span className="acc-seal-txt">
+                  <b>{c.name}</b>
+                  <small>{done ? (seal === c.id ? 'Sceau affiché' : 'Sceau obtenu') : `${n} sur ${items.length}`}</small>
+                </span>
+                <span className="acc-seal-bar" aria-hidden="true">
+                  {items.map(i => (
+                    <i key={i} className={owns(me, i) ? 'on' : ''} />
+                  ))}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+        <p className="acc-coll-note">
+          Le sceau de votre collection complète la plus rare s’affiche à côté de votre pseudo : en partie, sur votre profil et au classement.
+        </p>
+      </section>
       <div className="acc-coll-foot">
         <StarMark size={12} />
-        <span>Un skin change l’animation de vos sorts, un plateau l’échiquier : vos adversaires les voient aussi.</span>
+        <span>Votre roi et vos sorts : vos adversaires les voient. Votre échiquier : il vous suit dans toutes vos parties.</span>
         <Link to="/boutique" className="btn-gold sm">
           Agrandir ma collection
         </Link>
@@ -324,9 +418,9 @@ function CollectionTab({ me }: { me: MeUser }) {
 }
 
 function PurchasesTab() {
-  const [rows, setRows] = useState<any[] | null>(null);
+  const [rows, setRows] = useState<PurchaseRecord[] | null>(null);
   useEffect(() => {
-    api<{ purchases: any[] }>('/account/purchases')
+    api<{ purchases: PurchaseRecord[] }>('/account/purchases')
       .then(r => setRows(r.purchases))
       .catch(() => setRows([]));
   }, []);
@@ -358,7 +452,14 @@ function PurchasesTab() {
             <tr key={r.id}>
               <td>{new Date(r.created_at).toLocaleDateString('fr-FR')}</td>
               <td>
-                {productById(r.product_id)?.name ?? r.product_id}
+                <span className="acc-buy">
+                  <span className="acc-buy-ths" aria-hidden="true">
+                    {(r.items ?? []).slice(0, 3).map(id => (
+                      <ItemThumb key={id} id={id} size="mini" />
+                    ))}
+                  </span>
+                  {purchaseLabel(r)}
+                </span>
                 {r.provider === 'demo' && (
                   <span className="badge" style={{ marginLeft: 8 }}>
                     démo
@@ -378,6 +479,14 @@ function PurchasesTab() {
       </p>
     </div>
   );
+}
+
+/** Libellé d'un achat : le produit, ou pour un panier « Votre sélection » et ses skins. */
+function purchaseLabel(r: PurchaseRecord): string {
+  const items = (r.items ?? []).map(itemById).filter(i => !!i);
+  if (r.product_id !== CART_PRODUCT_ID) return productById(r.product_id)?.name ?? r.product_id;
+  if (items.length === 1) return itemPhrase(items[0]!);
+  return `Votre sélection (${items.length} skins) : ${items.map(i => i!.name).join(', ')}`;
 }
 
 function DataTab() {

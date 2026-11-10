@@ -6,11 +6,38 @@
 //   rememberLocalGame(state, { white, black, you });   // partie locale terminée (contre l'IA dans le navigateur)
 //
 // Les parties en ligne se rouvrent dans l'Analyse par leur identifiant ; les parties locales emportent leur journal.
+//
+// Rois d'une partie (skins) : chaque camp porte son roi, pris à l'assise (view.seats[c].king) et vu de tous. La
+// préférence locale « Rois adverses classiques » (CLASSIC_KINGS_PREF, réglée dans le compte) remplace à l'affichage
+// les rois des autres par le roi Arcane : shownKings, lu par la partie, l'accueil et l'analyse.
 import type { Color } from '../../shared/chess';
 import type { CardId, Catalog } from '../../shared/cards';
+import { DEFAULT_KING, normKing } from '../../shared/catalog';
 import type { GameState, LogEntry, ResultReason } from '../../shared/game';
-import type { GameView } from '../../shared/protocol';
+import type { GameView, SeatView } from '../../shared/protocol';
 import { readJson, writeJson } from './storage';
+
+/** Préférence locale (usePref) : les rois des adversaires s'affichent en roi Arcane. Défaut : false. */
+export const CLASSIC_KINGS_PREF = 'rois-classiques';
+
+/** Roi de chaque camp (objets king:*). */
+export type Kings = Record<Color, string>;
+
+/** Rois d'une vue de partie : ceux des sièges, normalisés (siège vide, partie d'avant les rois, inconnu : Arcane). */
+export function seatKings(seats: Partial<Record<Color, SeatView | null>> | null | undefined): Kings {
+  return { w: normKing(seats?.w?.king), b: normKing(seats?.b?.king) };
+}
+
+/**
+ * Rois à dessiner sur l'échiquier de `you` (null : spectateur). Avec la préférence « Rois adverses classiques », seul
+ * son propre roi garde son skin ; un spectateur voit les deux rois Arcane. Renvoie des chaînes (Board est mémoïsé).
+ */
+export function shownKings(kings: Partial<Kings> | null | undefined, you: Color | null, classic: boolean): Kings {
+  const w = normKing(kings?.w);
+  const b = normKing(kings?.b);
+  if (!classic) return { w, b };
+  return { w: you === 'w' ? w : DEFAULT_KING, b: you === 'b' ? b : DEFAULT_KING };
+}
 
 export const HISTORY_KEY = 'sm:parties';
 const MAX = 60;
@@ -28,6 +55,8 @@ export interface PlayedGame {
   plies?: number;
   timeControl?: string;
   vsBot?: boolean;
+  /** Rois des deux camps (absent : partie enregistrée avant les rois, Arcane). */
+  kings?: Kings;
   /** Partie locale : de quoi la rejouer. */
   local?: { log: LogEntry[]; hands: Record<Color, CardId[]>; timed: boolean; catalog: Catalog };
 }
@@ -67,11 +96,12 @@ export function rememberView(view: GameView) {
     plies: view.state.ply,
     timeControl: tc,
     vsBot: view.seats.w?.kind === 'bot' || view.seats.b?.kind === 'bot',
+    kings: seatKings(view.seats),
   });
 }
 
 /** Partie locale terminée (accueil contre l'IA) : le journal suffit à la rejouer. */
-export function rememberLocalGame(state: GameState, meta: { white: string; black: string; you: Color; vsBot?: boolean; id?: string }) {
+export function rememberLocalGame(state: GameState, meta: { white: string; black: string; you: Color; vsBot?: boolean; id?: string; kings?: Kings }) {
   if (!state.log.length) return;
   const hands = {
     w: state.hands.w.map(h => h.card).filter((c): c is CardId => !!c),
@@ -88,6 +118,7 @@ export function rememberLocalGame(state: GameState, meta: { white: string; black
     catalog: state.catalog ?? 'duel',
     plies: state.ply,
     vsBot: meta.vsBot ?? true,
+    kings: meta.kings ? shownKings(meta.kings, null, false) : undefined,
     local: { log: state.log, hands, timed: state.timed, catalog: state.catalog ?? 'duel' },
   });
 }

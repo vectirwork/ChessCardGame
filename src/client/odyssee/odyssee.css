@@ -2302,6 +2302,96 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
     0 14px 24px -8px rgba(0, 0, 0, 0.7);
 }
 
+/* Rois debout sur l'étal : le blanc devant, le noir derrière (images figées, kingUrl). Le roi choisi s'avance et un
+   halo à la teinte de sa gemme s'allume dessous (transform et opacity seulement, aucune boucle). */
+.ody .o-throne {
+  padding-bottom: 8px;
+}
+.ody .o-kings {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+  align-items: end;
+}
+.ody .o-king {
+  position: relative;
+  height: 62px;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.ody .o-king::before {
+  content: '';
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  bottom: -6px;
+  height: 22px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--gem) 70%, transparent), transparent);
+  opacity: 0;
+  transition: opacity 0.5s;
+}
+.ody .o-king-w,
+.ody .o-king-b {
+  position: absolute;
+  bottom: 0;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  transition: transform 0.6s var(--ease);
+}
+.ody .o-king-b {
+  left: 34%;
+  width: 66%;
+  aspect-ratio: 1;
+  bottom: 9px;
+  opacity: 0.92;
+}
+.ody .o-king-w {
+  left: -4%;
+  width: 78%;
+  aspect-ratio: 1;
+  filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.45));
+}
+.ody .o-king:hover .o-king-w,
+.ody .o-king:focus-visible .o-king-w {
+  transform: translateY(-3px);
+}
+.ody .o-king.on::before {
+  opacity: 1;
+}
+.ody .o-king.on .o-king-w {
+  transform: translateY(-7px);
+}
+.ody .o-king.on .o-king-b {
+  transform: translateY(-4px);
+}
+
+/* Adversaire en direct (coque de la partie de l'accueil) : cimier de son roi de collection */
+.ody .o-opp-crest {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--gem) 55%, transparent);
+}
+.ody .o-opp-crest.w {
+  background:
+    var(--crest) center 42% / 84% no-repeat,
+    radial-gradient(circle at 50% 30%, #fffaf0, color-mix(in srgb, var(--gem) 34%, #d6cfbd) 78%);
+}
+.ody .o-opp-crest.b {
+  background:
+    var(--crest) center 42% / 84% no-repeat,
+    radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--gem) 46%, #e9e3f5), color-mix(in srgb, var(--gem) 30%, #4a4366) 80%);
+}
+.ody .gs.is-mobile .o-opp-crest {
+  width: 30px;
+  height: 30px;
+}
+
 /* ------------------------------------------------------------------------------------------ */
 /* Seuil : les trois portes sont des boutons */
 
@@ -3397,6 +3487,59 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
 @media (min-width: 821px) and (max-height: 760px) {
   .ody .o-bazar-col .o-packs {
     display: none;
+  }
+}
+/* Avec l'étagère des rois, la colonne tient toujours dans l'écran (mesuré : 794 px à 1440 × 900, 644 px à 1280 × 720,
+   contre 751 et 659 avant) : têtes d'étagère et cordons resserrés, prix des sorts dans la tête de l'étagère */
+@media (min-width: 821px) and (max-height: 1100px) {
+  .ody .o-bazar-col .o-kicker {
+    margin-bottom: 12px;
+  }
+  .ody .o-bazar-col .o-place-text {
+    margin-top: 12px;
+  }
+  .ody .o-bazar-col .o-shelf-head {
+    padding-bottom: 8px;
+    margin-bottom: 10px;
+  }
+  .ody .o-bazar-col .o-lantern-cord {
+    height: 10px;
+  }
+  .ody .o-bazar-col .o-lantern:nth-child(2n) .o-lantern-cord {
+    height: 22px;
+  }
+  .ody .o-bazar-col .o-lantern:nth-child(3n) .o-lantern-cord {
+    height: 16px;
+  }
+  .ody .o-bazar-col .o-lantern-name {
+    margin-top: 9px;
+  }
+  .ody .o-bazar-col .o-lantern-price,
+  .ody .o-bazar-col .o-shelf-hint {
+    display: none;
+  }
+  .ody .o-bazar-col .o-shelf-head .o-shelf-pick {
+    display: inline;
+  }
+  .ody .o-bazar-col .o-lantern-body {
+    height: 44px;
+  }
+  .ody .o-bazar-col .o-king {
+    height: 48px;
+  }
+}
+@media (min-width: 821px) and (max-height: 760px) {
+  .ody .o-bazar-col .o-lantern-name {
+    display: none;
+  }
+}
+.ody .o-shelf-head .o-shelf-pick {
+  display: none;
+}
+/* Téléphone : huit lanternes sur deux rangées de quatre (au lieu de trois rangées, la dernière à trous) */
+@media (max-width: 819px) {
+  .ody .o-lantern {
+    width: 22%;
   }
 }
 @media (max-width: 819px) {

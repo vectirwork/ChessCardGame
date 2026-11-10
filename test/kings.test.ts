@@ -2,13 +2,17 @@
 // - le roi Arcane et tout identifiant inconnu donnent exactement la data URI d'avant les skins (empreintes figées) ;
 // - le générateur reproduit les 14 SVG de référence de la direction artistique (test/fixtures/rois/), aux
 //   identifiants près ;
-// - gabarit de la chute du mat (boîte 22..78 × 3,5..90, pied commun), légèreté, luminances des deux camps.
+// - gabarit de la chute du mat (boîte 22..78 × 3,5..90, pied commun), légèreté, luminances des deux camps ;
+// - en partie : rois des sièges, préférence « Rois adverses classiques », rois de l'Oracle et de la descente.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { Color, PieceType } from '../src/shared/chess';
-import { ITEMS, KING_ART, KING_BASE } from '../src/shared/catalog';
+import { BOT_LOOK, ITEMS, KING_ART, KING_BASE, ORACLE_LOOK, collectionOf, formatPrice, itemById, unitPrice } from '../src/shared/catalog';
+import type { SeatView } from '../src/shared/protocol';
 import { crestUrl, kingUrl, pieceSvg, pieceUrl } from '../src/client/components/pieces';
+import { CLASSIC_KINGS_PREF, seatKings, shownKings } from '../src/client/features/history';
+import { PACKS, PLACES, priceOf } from '../src/client/odyssee/data';
 
 const COLORS: Color[] = ['w', 'b'];
 const TYPES: PieceType[] = ['p', 'n', 'b', 'r', 'q', 'k'];
@@ -302,5 +306,59 @@ describe('rois : cimier (sceau de collection, avatar)', () => {
       expect(decodeURIComponent(u)).toContain('viewBox="30 0 40 40"');
       expect(crestUrl(id, 'b')).not.toBe(u);
     }
+  });
+});
+
+describe('rois en partie : qui porte quel roi (features/history.ts, odyssee/data.ts)', () => {
+  const seat = (king?: string) => ({ kind: 'user', name: 'x', online: true, skin: 'skin:arcane', king }) as unknown as SeatView;
+
+  it('rois des sièges : normalisés (siège vide, partie d’avant les rois, identifiant inconnu : Arcane)', () => {
+    expect(seatKings(null)).toEqual({ w: 'king:arcane', b: 'king:arcane' });
+    expect(seatKings({ w: null, b: null })).toEqual({ w: 'king:arcane', b: 'king:arcane' });
+    expect(seatKings({ w: seat('king:braise'), b: seat(undefined) })).toEqual({ w: 'king:braise', b: 'king:arcane' });
+    expect(seatKings({ w: seat('king:inconnu'), b: seat('skin:inferno') })).toEqual({ w: 'king:arcane', b: 'king:arcane' });
+  });
+
+  it('préférence « Rois adverses classiques » : seul son propre roi garde son skin ; un spectateur voit deux rois Arcane', () => {
+    const kings = { w: 'king:braise', b: 'king:eclipse' };
+    expect(shownKings(kings, 'w', false)).toEqual(kings);
+    expect(shownKings(kings, null, false)).toEqual(kings);
+    expect(shownKings(kings, 'w', true)).toEqual({ w: 'king:braise', b: 'king:arcane' });
+    expect(shownKings(kings, 'b', true)).toEqual({ w: 'king:arcane', b: 'king:eclipse' });
+    expect(shownKings(kings, null, true)).toEqual({ w: 'king:arcane', b: 'king:arcane' });
+    expect(shownKings(undefined, 'w', false)).toEqual({ w: 'king:arcane', b: 'king:arcane' });
+    expect(shownKings({ w: 'king:inconnu', b: 'king:rubis' }, 'b', false)).toEqual({ w: 'king:arcane', b: 'king:rubis' });
+    expect(CLASSIC_KINGS_PREF).toBe('rois-classiques');
+  });
+
+  it("l'Oracle et les IA de niveau 2 et 3 portent des rois dessinés", () => {
+    expect(Object.hasOwn(KING_ART, ORACLE_LOOK.king)).toBe(true);
+    for (const l of [2, 3] as const) expect(Object.hasOwn(KING_ART, BOT_LOOK[l].king)).toBe(true);
+  });
+
+  it('descente : roi, échiquier et sorts de chaque lieu existent ; Pics, Sablier, Bazar et Seuil montrent chacun une collection', () => {
+    for (const p of PLACES) {
+      expect(itemById(p.king)?.kind, `${p.id} roi`).toBe('king');
+      expect(itemById(p.theme)?.kind, `${p.id} échiquier`).toBe('board');
+      expect(itemById(p.skin)?.kind, `${p.id} sorts`).toBe('skin');
+    }
+    const shown = new Set<string>();
+    for (const id of ['pics', 'sablier', 'bazar', 'seuil']) {
+      const p = PLACES.find(x => x.id === id)!;
+      const c = collectionOf(p.king)!;
+      expect(c.rarity, `${id} : collection premium`).not.toBe('offert');
+      expect([c.king, c.board, c.skin], id).toEqual([p.king, p.theme, p.skin]);
+      shown.add(c.id);
+    }
+    expect(shown.size, 'une collection différente par lieu').toBe(4);
+  });
+
+  it('Bazar de l’accueil : prix du catalogue (unitPrice), « Offert » pour les objets gratuits, packs en vente', () => {
+    expect(priceOf('king:arcane')).toBe('Offert');
+    for (const k of DRAWN) expect(priceOf(k)).toBe(formatPrice(unitPrice(k)));
+    expect(priceOf('board:ruby')).toBe(formatPrice(199));
+    expect(priceOf('skin:celestial')).toBe(formatPrice(399));
+    expect(priceOf('inconnu')).toBe('');
+    expect(PACKS.map(p => p.id).sort()).toEqual(['pack:skins', 'pack:tresor']);
   });
 });

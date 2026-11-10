@@ -14,15 +14,20 @@
 // ce même échiquier. Le visiteur peut alors avoir les Noirs ; ses coups partent au serveur (et s'affichent aussitôt),
 // ceux de l'adversaire arrivent par game:update et s'animent. Rien n'est sauvegardé localement : la partie est au
 // serveur, et la partie contre l'Oracle reprend ensuite.
+//
+// Rois : contre l'Oracle, le visiteur (Blancs) porte son roi équipé et l'Oracle le Roi éclipse (ORACLE_LOOK) ; en
+// direct, chaque camp porte le roi de son siège (view.seats[c].king, comme sur la page de partie). La préférence
+// « Rois adverses classiques » remet le roi d'en face en roi Arcane. Deux chaînes dans boardProps (Board est mémoïsé).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BOT_PROFILES, askBot } from '../ai';
-import { rememberLocalGame } from '../features/history';
+import { rememberLocalGame, seatKings, shownKings } from '../features/history';
+import type { Kings } from '../features/history';
 import type { BotLevel } from '../ai';
 import { CARDS, isCardId } from '../../shared/cards';
 import type { CardDef, Catalog } from '../../shared/cards';
 import { opposite } from '../../shared/chess';
 import type { Color, PieceType } from '../../shared/chess';
-import { skinStyle } from '../../shared/catalog';
+import { DEFAULT_KING, ORACLE_LOOK, normKing, skinStyle } from '../../shared/catalog';
 import { cardOptions, cardPlayable, createGame, dealHands, legalMovesOf, playCard, playMove, positionKey, sideInCheck } from '../../shared/game';
 import type { Ack, GameUpdate, GameView, JoinReply } from '../../shared/protocol';
 import { emitAck, getSocket } from '../socket';
@@ -60,6 +65,10 @@ interface DuelInfo {
   claimAfterMs: number;
   /** L'IA joue pour ce camp (relais : le joueur ne jouait plus), jusqu'à ce qu'il reprenne la main. */
   standIn: Record<Color, boolean>;
+  /** Roi de chaque siège (pris à l'assise, vu des deux joueurs). */
+  kings: Kings;
+  /** Sceau de collection de chaque siège, ou null. */
+  seals: Record<Color, string | null>;
 }
 
 export const PLAYER: Color = 'w';
@@ -139,14 +148,29 @@ export interface LiveGameOptions {
   theme: string;
   /** Mode immersif : sorts animés en 3D, l'IA joue. */
   active: boolean;
-  /** Skin des sorts de l'IA. */
+  /** Skin des sorts de l'IA (défaut : ORACLE_LOOK). */
   botSkin?: string;
+  /** Roi du joueur (objet king:*) contre l'Oracle et, en direct, en attendant la vue du serveur. Défaut : Arcane. */
+  king?: string;
+  /** Roi de l'Oracle (défaut : ORACLE_LOOK, le Roi éclipse). */
+  botKing?: string;
+  /** Préférence « Rois adverses classiques » : le roi d'en face est dessiné en roi Arcane. */
+  classicKings?: boolean;
   /** Préparer la scène 3D (three.js, ~1 s de calcul sur un téléphone) : dès que le visiteur manifeste l'intention de
    *  jouer. Elle est de toute façon créée au passage en mode immersif ; jamais au chargement de la page. */
   warm?: boolean;
 }
 
-export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm = false }: LiveGameOptions) {
+export function useLiveGame({
+  skin,
+  theme,
+  active,
+  botSkin = ORACLE_LOOK.skin,
+  king = DEFAULT_KING,
+  botKing = ORACLE_LOOK.king,
+  classicKings = false,
+  warm = false,
+}: LiveGameOptions) {
   // Chaque visite commence une partie neuve (retour du fondateur : « le site peut m'oublier un peu quand je recharge
   // la page »). La partie d'avant reste proposée, discrètement, jusqu'au premier coup de la nouvelle.
   const [previous, setPrevious] = useState<GameState | null>(() => {
@@ -200,6 +224,9 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
   }, [vfxNow, me]);
 
   const stateRef = useRef(state);
+  /** Rois de la partie contre l'Oracle, tels qu'ils sont portés (gardés avec la partie terminée, pour l'analyse). */
+  const oracleKingsRef = useRef<Kings>({ w: normKing(king), b: normKing(botKing) });
+  oracleKingsRef.current = { w: normKing(king), b: normKing(botKing) };
   const activeRef = useRef(active);
   const levelRef = useRef(level);
   const epochRef = useRef(0);
@@ -228,7 +255,7 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
       // direct est gardée par le serveur.
       if (!duelRef.current && n.result && !stateRef.current.result && n.result.reason !== 'aborted') {
         try {
-          rememberLocalGame(n, { white: 'Vous', black: `L'Oracle (${BOT_PROFILES[levelRef.current].name})`, you: PLAYER, vsBot: true });
+          rememberLocalGame(n, { white: 'Vous', black: `L'Oracle (${BOT_PROFILES[levelRef.current].name})`, you: PLAYER, vsBot: true, kings: oracleKingsRef.current });
         } catch {
           // stockage indisponible : la partie n'est simplement pas gardée
         }
@@ -441,6 +468,8 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
       away: v.away[opposite(meRef.current)],
       claimAfterMs: v.claimAfterMs,
       standIn: { w: !!v.standIn?.w, b: !!v.standIn?.b },
+      kings: seatKings(v.seats),
+      seals: { w: v.seats.w?.seal ?? null, b: v.seats.b?.seal ?? null },
     });
   }, []);
 
@@ -605,6 +634,13 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
   // Catalogue absent : ancienne sauvegarde (Duel) ; les nouvelles parties sont toujours aux Pouvoirs
   const catalog: Catalog = state.catalog ?? 'duel';
 
+  // Rois portés : contre l'Oracle, le roi équipé du visiteur et celui de l'Oracle ; en direct, ceux des sièges (en
+  // attendant la vue du serveur, le sien et le roi Arcane en face). Puis la préférence « Rois adverses classiques ».
+  const worn: Kings = duel
+    ? duelInfo?.kings ?? (duel.me === 'w' ? { w: normKing(king), b: DEFAULT_KING } : { w: DEFAULT_KING, b: normKing(king) })
+    : { w: normKing(king), b: normKing(botKing) };
+  const { w: kingW, b: kingB } = shownKings(worn, me, classicKings);
+
   // Propriétés de l'échiquier jouable : le même objet tant que la partie ne change pas. Recréées à chaque rendu, elles
   // rendaient inutile la mémoïsation de Board, réconcilié (64 cases, pièces, coordonnées) à chaque rendu de l'accueil :
   // seuils de la descente, sorts de la démonstration, survols, même caché hors du héros
@@ -625,8 +661,10 @@ export function useLiveGame({ skin, theme, active, botSkin = 'skin:void', warm =
       onTarget,
       hidden,
       locked: !myTurn,
+      kingW,
+      kingB,
     }),
-    [state, me, theme, legal, onMove, lastMove, options, selectedDef, partial, onTarget, hidden, myTurn],
+    [state, me, theme, legal, onMove, lastMove, options, selectedDef, partial, onTarget, hidden, myTurn, kingW, kingB],
   );
 
   return {

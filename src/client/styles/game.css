@@ -244,6 +244,24 @@
 .gp-presence.on {
   background: var(--success);
 }
+/* Roi de collection : la pastille montre son cimier (parts.tsx, Avatar), dans la couleur du joueur, sur un fond
+   teinté de la gemme du roi. Image fixe (data URI en cache), aucune animation. */
+:is(.gs-opp-id, .gp-self-id) .gp-avatar.has-crest.w {
+  background:
+    var(--crest) center 42% / 84% no-repeat,
+    radial-gradient(circle at 50% 30%, #fffaf0, color-mix(in srgb, var(--gem) 34%, #d6cfbd) 78%);
+  border-color: color-mix(in srgb, var(--gem) 55%, transparent);
+}
+:is(.gs-opp-id, .gp-self-id) .gp-avatar.has-crest.b {
+  background:
+    var(--crest) center 42% / 84% no-repeat,
+    radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--gem) 46%, #e9e3f5), color-mix(in srgb, var(--gem) 30%, #4a4366) 80%);
+  border-color: color-mix(in srgb, var(--gem) 55%, transparent);
+}
+/* Sceau de collection, entre la pastille et le pseudo (CollectionSeal, global.css) */
+:is(.gs-opp-id, .gp-self-id) .gp-seal {
+  align-self: center;
+}
 .gs.is-mobile .gs-opp-id .gp-avatar,
 .gp-self.is-mobile .gp-self-id .gp-avatar {
   width: 30px;

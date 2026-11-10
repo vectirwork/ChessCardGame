@@ -5,6 +5,9 @@
 // Fonctions : pendules exactes, coups optimistes, cartes et ciblage, file d'animation des sorts (garde-fou
 // castSafely), salle d'attente et lien d'invitation, pseudo des invités, spectateurs, nulle, abandon, annulation,
 // réclamation de victoire, revanche, émotes, fin de partie, Présages annoncés et catalogue de la partie.
+// Rois : chaque camp porte le roi de son siège (view.seats[c].king, pris à l'assise, vu des deux joueurs et des
+// spectateurs) ; la préférence « Rois adverses classiques » remet les autres en roi Arcane. L'échiquier reste celui
+// de celui qui regarde (me.equippedBoard).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -19,20 +22,20 @@ import { EMOTES } from '../../shared/protocol';
 import { Board, BoardHandle, checkSquare } from '../components/Board';
 import { MATE_FALL_MS, matedKing } from '../components/mate';
 import { Modal, Spinner } from '../components/Layout';
-import { rememberView } from '../features/history';
+import { CLASSIC_KINGS_PREF, rememberView, seatKings, shownKings } from '../features/history';
 import { castSafely } from '../odyssee/castSafely';
 import { GameShell, PowersPanel, PremoveNote, castMessage, castThisTurn, gameLayout, handNotes } from '../odyssee/shell';
 import type { ShellAction, ShellPrompt } from '../odyssee/shell';
 import { emitAck, getSocket } from '../socket';
 import { playCardSound, playSound, setSoundEnabled, soundEnabled } from '../sound';
-import { getGuestName, setGuestName, useApp } from '../store';
+import { getGuestName, setGuestName, useApp, usePref } from '../store';
 import { useVfx } from '../vfx/useVfx';
 import { AwayNotice, CastBanner, DrawOffer, EndCard, FirstMoveCountdown, JoinSheet, WaitingCard, rematchLabel, resultTitle } from './overlays';
 import { CardDraft } from './CardDraft';
 import { deNom } from './names';
 import type { Casting } from './overlays';
 import {
-  Avatar, Captured, Clock, EmoteBubble, MoveList, SeatName, catalogDescription, catalogTag, colorName, modeLabel,
+  Avatar, Captured, Clock, EmoteBubble, MoveList, SeatName, SeatSeal, catalogDescription, catalogTag, colorName, modeLabel,
   seatSub, tcLabel,
 } from './parts';
 
@@ -88,6 +91,7 @@ export default function GamePage() {
   const [emoteOpen, setEmoteOpen] = useState(false);
   const [announce, setAnnounce] = useState<{ text: string; key: number } | null>(null);
   const [warm, setWarm] = useState(false);
+  const [classicKings] = usePref<boolean>(CLASSIC_KINGS_PREF, false);
   const layout = useStageLayout();
   const boardRef = useRef<BoardHandle>(null);
   /** Pré-coups en attente (Board) : affichés dans le statut, avec de quoi les annuler. */
@@ -612,6 +616,8 @@ export default function GamePage() {
 
   const oppSeat = view.seats[top];
   const selfSeat = view.seats[bottom];
+  // Rois des deux camps : ceux des sièges (deux chaînes, Board est mémoïsé)
+  const kings = shownKings(seatKings(view.seats), you, classicKings);
 
   // Bandeau sur le haut de l'échiquier : une proposition de l'adversaire ne se rate pas (ordinateur comme mobile)
   const rematchAsked = ended && view.rematch.next === null && !!you && view.rematch[opposite(you)] && !view.rematch[you];
@@ -676,6 +682,7 @@ export default function GamePage() {
       </div>
       <div className="gp-self-id">
         <Avatar seat={selfSeat} color={bottom} />
+        <SeatSeal seat={selfSeat} size={layout.mobile ? 16 : 18} />
         <div>
           <b>
             <SeatName seat={selfSeat} />
@@ -720,6 +727,8 @@ export default function GamePage() {
         pos={state.pos}
         orientation={orientation}
         theme={me?.equippedBoard}
+        kingW={kings.w}
+        kingB={kings.b}
         legal={legal}
         onMove={onMove}
         lastMove={lastMove}
@@ -771,7 +780,12 @@ export default function GamePage() {
           // Main visible, en éventail retourné en haut à droite (coque)
           hand: hasCards && view.status !== 'waiting' ? known(state.hands[top]) : [],
           handLabel: you ? 'Cartes de votre adversaire' : `Cartes ${oppSeat?.name ? deNom(oppSeat.name) : `des ${colorName(top)}`}`,
-          avatar: <Avatar seat={oppSeat} color={top} />,
+          avatar: (
+            <>
+              <Avatar seat={oppSeat} color={top} />
+              <SeatSeal seat={oppSeat} size={layout.mobile ? 16 : 18} />
+            </>
+          ),
           extra: (
             <>
               <div className={`gp-opp-extra ${isActive(top) ? 'is-turn' : ''}`}>

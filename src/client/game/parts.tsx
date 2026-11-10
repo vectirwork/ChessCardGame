@@ -11,7 +11,9 @@ import type { GameState, LogEntry } from '../../shared/game';
 import { describeCardPlay } from '../../shared/game';
 import type { ClockView, GameView, SeatView } from '../../shared/protocol';
 import { TIME_CONTROLS } from '../../shared/protocol';
-import { pieceUrl } from '../components/pieces';
+import { DEFAULT_KING, kingStyle, normKing } from '../../shared/catalog';
+import { CollectionSeal } from '../components/CollectionSeal';
+import { crestUrl, pieceUrl } from '../components/pieces';
 import { OracleEye } from '../odyssee/shell';
 import { playSound } from '../sound';
 
@@ -160,14 +162,31 @@ export function Captured({ state, color }: { state: GameState; color: Color }) {
 // ---------------------------------------------------------------------------------------------
 // Joueurs
 
+/**
+ * Pastille d'un joueur : l'œil de l'Oracle pour l'IA ; pour un joueur, le cimier de son roi (crestUrl, dans sa couleur,
+ * sur un fond teinté de la gemme du roi) s'il porte un roi de collection, sinon son initiale (roi Arcane). Image fixe :
+ * une data URI en cache, aucune animation.
+ */
 export function Avatar({ seat, color }: { seat: SeatView | null; color: Color }) {
   if (seat?.kind === 'bot') return <OracleEye />;
+  const king = normKing(seat?.king);
+  const crest = king !== DEFAULT_KING;
   return (
-    <span className={`gp-avatar ${color}`} aria-hidden="true">
-      {(seat?.name ?? '·')[0]?.toUpperCase()}
+    <span
+      className={`gp-avatar ${color} ${crest ? 'has-crest' : ''}`}
+      style={crest ? ({ '--crest': crestUrl(king, color), '--gem': kingStyle(king).gem } as CSSProperties) : undefined}
+      aria-hidden="true"
+    >
+      {!crest && (seat?.name ?? '·')[0]?.toUpperCase()}
       {seat && <i className={`gp-presence ${seat.online ? 'on' : ''}`} />}
     </span>
   );
+}
+
+/** Sceau de collection du joueur (à côté de son pseudo), s'il a complété une collection premium. */
+export function SeatSeal({ seat, size = 18 }: { seat: SeatView | null; size?: number }) {
+  if (!seat?.seal || seat.kind === 'bot') return null;
+  return <CollectionSeal id={seat.seal} size={size} className="gp-seal" />;
 }
 
 export function SeatName({ seat }: { seat: SeatView | null }) {

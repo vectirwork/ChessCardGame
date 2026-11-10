@@ -853,3 +853,107 @@
     opacity: 0;
   }
 }
+
+/* Habillage des échiquiers ----------------------------------------------------------------------------------------
+   Décors de BoardStyle (src/shared/skins/boards.ts), posés par boardTheme.ts : classes et variables sur .board-wrap.
+   Tout est statique : ni animation ni transition, rien sur les 64 cases. Les décors sont peints avec le cadre et la
+   grille, dans leurs calques actuels : aucun calque composé de plus, aucune repeinte au repos.
+   Les images (url) ne sont pas ici : boardTheme les écrit en toutes lettres dans une feuille par thème (.bt-<thème>),
+   sans var(), pour qu'un recalcul de style (sort en cours, défilement de l'accueil) ne repeigne pas l'échiquier.
+   Ici, seulement des propriétés détaillées : positions, tailles, tranches, couleurs et ombres, qui peuvent venir de
+   variables sans rien repeindre. */
+
+/* Liseré : un filet de 1,5 px entre le cadre et les cases */
+.has-fillet .squares {
+  box-shadow: 0 0 0 1.5px var(--fillet);
+}
+
+/* Incrustation : un seul SVG étiré sur la grille, au-dessus des cases et de leur texture, sous les pièces. Les états
+   de jeu restent au-dessus : échec, Mur de glace et Faille (z-index 1, après elle dans l'arbre), indices, cibles et
+   choix (z-index 2), climat (z-index 3). Dernier coup, sélection, pré-coups et survol du glisser montent à son niveau
+   (z-index 1, après elle) ; les coordonnées passent au niveau des indices pour rester au-dessus de ces voiles. */
+.has-inlay .squares::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background-position: 0 0;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+}
+.has-inlay .sq.last::after,
+.has-inlay .sq.sel::after,
+.has-inlay .sq.pm-from::after,
+.has-inlay .sq.pm-to::after {
+  z-index: 1;
+}
+.has-inlay .sq.hover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  box-shadow: inset 0 0 0 4px rgba(255, 255, 255, 0.75);
+}
+.has-inlay .sq.hover-cap::after {
+  box-shadow: inset 0 0 0 4px rgba(255, 214, 120, 0.95), inset 0 0 22px rgba(255, 120, 80, 0.55);
+}
+.has-inlay .co {
+  z-index: 2;
+}
+
+/* Frise du cadre (border-image, image dans .bt-<thème>) : une bande de 10 px, l'épaisseur exacte du cadre. Le fond
+   part du bord extérieur, comme sans bordure : le reflet du coin haut-gauche reste en place. Les motifs d'angle
+   tiennent dans l'arrondi de 14 px (border-image ne le suit pas). */
+.fa-border .board::before {
+  border-width: 10px;
+  border-style: solid;
+  border-color: transparent;
+  border-image-slice: var(--fa-slice);
+  border-image-width: 10px;
+  border-image-repeat: round;
+  background-origin: border-box;
+}
+
+/* Lueurs du cadre : un dégradé ajouté devant var(--frame), des ombres en tête de la liste d'origine */
+.has-glow .board::before {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.14), transparent 40%),
+    var(--frame-bg, none),
+    var(--frame);
+  box-shadow:
+    var(--frame-shadow, 0 0 transparent),
+    0 30px 70px -20px rgba(0, 0, 0, 0.85),
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+/* Une même image aux quatre coins du cadre, et au milieu de chaque côté avec fa-mid (images dans .bt-<thème> : quatre
+   ou huit fois la même data URI, puis le reflet du cadre en SVG ; la couleur var(--frame) reste celle de .board).
+   Tailles fixes en px : l'image tient dans le cadre quelle que soit la taille de l'échiquier. */
+.fa-corners .board::before {
+  background-position:
+    left var(--fa-at) top var(--fa-at),
+    right var(--fa-at) top var(--fa-at),
+    left var(--fa-at) bottom var(--fa-at),
+    right var(--fa-at) bottom var(--fa-at),
+    0 0;
+  background-size: var(--fa-size), var(--fa-size), var(--fa-size), var(--fa-size), 100% 100%;
+  background-repeat: no-repeat;
+}
+.fa-corners.fa-mid .board::before {
+  background-position:
+    left var(--fa-at) top var(--fa-at),
+    right var(--fa-at) top var(--fa-at),
+    left var(--fa-at) bottom var(--fa-at),
+    right var(--fa-at) bottom var(--fa-at),
+    center top var(--fa-mid-at),
+    center bottom var(--fa-mid-at),
+    left var(--fa-mid-at) center,
+    right var(--fa-mid-at) center,
+    0 0;
+  background-size:
+    var(--fa-size), var(--fa-size), var(--fa-size), var(--fa-size),
+    var(--fa-mid), var(--fa-mid), var(--fa-mid), var(--fa-mid),
+    100% 100%;
+}

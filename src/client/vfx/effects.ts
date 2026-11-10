@@ -7,7 +7,7 @@ import { CARDS } from '../../shared/cards';
 import type { CardId } from '../../shared/cards';
 import { Particles } from './particles';
 import { Cine, Fx, Marker, VfxStage, disposeObject, ease } from './stage';
-import { bandTexture, beamTexture, flourishTexture, particleTexture, softDiskTexture } from './textures';
+import { FLOURISH_SIZE, LAUREL_R, bandTexture, beamTexture, flourishTexture, particleTexture, softDiskTexture } from './textures';
 
 const C = (hex: string) => new THREE.Color(hex);
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
@@ -21,6 +21,11 @@ const palette = (skin: SkinStyle): Palette => ({ p: C(skin.primary), s: C(skin.s
 const pick = (pal: Palette) => (Math.random() < 0.5 ? pal.p : Math.random() < 0.6 ? pal.s : pal.a);
 /** Couleur visible même pour les skins sombres (Néant). */
 const glowColor = (skin: SkinStyle) => (skin.particle === 'void' ? C(skin.accent) : C(skin.primary));
+/**
+ * Teinte du motif d'ornement : celle des effets (glowColor), sauf le filigrane, un travail d'orfèvre, qui prend la
+ * couleur secondaire du skin (l'or d'Écarlate : « des éclats de rubis […] sous un anneau de filigrane d'or »).
+ */
+export const flourishColor = (skin: SkinStyle) => (skin.flourish === 'filigree' ? C(skin.secondary) : glowColor(skin));
 
 function additive(color: THREE.Color, opts: Partial<THREE.MeshBasicMaterialParameters> = {}) {
   return new THREE.MeshBasicMaterial({
@@ -53,8 +58,17 @@ function spawn(stage: VfxStage, obj: THREE.Object3D, life: number, anim: (k: num
 // ---------------------------------------------------------------------------------------------
 // Briques
 
-export function flourishDisk(stage: VfxStage, skin: SkinStyle, at: THREE.Vector3, radius: number, life: number, delay = 0, spin = 0.8) {
-  const mat = additive(glowColor(skin), { map: flourishTexture(skin.flourish), opacity: 0 });
+/**
+ * Motif d'ornement du skin, posé à plat sous `at` : il s'ouvre (échelle), tourne (`spin`, radians par seconde) et
+ * s'efface sur ses 30 derniers pour cent. `peak` : opacité au plus fort. La couronne de laurier ne tourne pas : elle se
+ * referme (laurelDisk).
+ */
+export function flourishDisk(stage: VfxStage, skin: SkinStyle, at: THREE.Vector3, radius: number, life: number, delay = 0, spin = 0.8, peak = 0.95) {
+  if (skin.flourish === 'laurel') {
+    laurelDisk(stage, skin, at, radius, life, delay, peak);
+    return;
+  }
+  const mat = additive(flourishColor(skin), { map: flourishTexture(skin.flourish), opacity: 0 });
   const m = new THREE.Mesh(new THREE.PlaneGeometry(radius * 2, radius * 2), mat);
   m.position.set(at.x, at.y, 0.02);
   m.renderOrder = 2;
@@ -62,7 +76,44 @@ export function flourishDisk(stage: VfxStage, skin: SkinStyle, at: THREE.Vector3
     const s = ease.outBack(Math.min(1, k * 4));
     m.scale.setScalar(Math.max(0.01, s));
     m.rotation.z = t * spin;
-    mat.opacity = k < 0.7 ? Math.min(1, k * 6) * 0.95 : (1 - (k - 0.7) / 0.3) * 0.95;
+    mat.opacity = k < 0.7 ? Math.min(1, k * 6) * peak : (1 - (k - 0.7) / 0.3) * peak;
+  }, delay);
+}
+
+/** Ouverture de la couronne de laurier au début de son animation (radians, chaque rameau). */
+const LAUREL_OPEN = 0.5;
+
+/**
+ * Couronne de laurier (skin Laurier) : « une couronne de vainqueur qui se referme à chaque sort ». Les deux moitiés de
+ * la texture, un rameau chacune, sont deux plans qui pivotent autour du nœud, en bas : écartées au départ, elles se
+ * referment pendant le premier tiers de la vie du motif (sans rebond, pour que les moitiés ne se chevauchent pas),
+ * puis la couronne reste droite, ouverture en haut de l'écran, et s'efface comme les autres motifs.
+ */
+function laurelDisk(stage: VfxStage, skin: SkinStyle, at: THREE.Vector3, radius: number, life: number, delay: number, peak: number) {
+  const mat = additive(flourishColor(skin), { map: flourishTexture('laurel'), opacity: 0 });
+  // Nœud des rameaux (charnière), sous le centre : LAUREL_R pixels sur 256 de demi-texture
+  const pivot = (LAUREL_R / (FLOURISH_SIZE / 2)) * radius;
+  const group = new THREE.Group();
+  group.position.set(at.x, at.y, 0.02);
+  group.renderOrder = 2;
+  const halves = ([-1, 1] as const).map(side => {
+    const g = new THREE.PlaneGeometry(radius, radius * 2);
+    // Moitié gauche (u de 0 à 0,5) ou droite (u de 0,5 à 1) de la texture
+    const uv = g.getAttribute('uv') as THREE.BufferAttribute;
+    for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * 0.5 + (side > 0 ? 0.5 : 0));
+    // Origine du plan au nœud : il pivote autour
+    g.translate((side * radius) / 2, pivot, 0);
+    const half = new THREE.Mesh(g, mat);
+    half.position.set(0, -pivot, 0);
+    half.renderOrder = 2;
+    group.add(half);
+    return { half, side };
+  });
+  spawn(stage, group, life, k => {
+    const close = ease.outCubic(Math.min(1, k * 3));
+    for (const { half, side } of halves) half.rotation.z = -side * LAUREL_OPEN * (1 - close);
+    group.scale.setScalar(0.72 + 0.28 * close);
+    mat.opacity = k < 0.7 ? Math.min(1, k * 6) * peak : (1 - (k - 0.7) / 0.3) * peak;
   }, delay);
 }
 
@@ -184,7 +235,7 @@ function scorch(stage: VfxStage, skin: SkinStyle, at: THREE.Vector3) {
     mat.opacity = 0.55 * (1 - k);
     disk.scale.setScalar(0.6 + ease.outCubic(Math.min(1, k * 3)) * 0.5);
   });
-  const glow = additive(glowColor(skin), { map: tex, opacity: 0.9 });
+  const glow = additive(flourishColor(skin), { map: tex, opacity: 0.9 });
   const ring = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), glow);
   ring.position.set(at.x, at.y, 0.02);
   spawn(stage, ring, 1.2, (k, t) => {
@@ -1034,6 +1085,64 @@ export function playArrival(stage: VfxStage, e: Effect, skin: SkinStyle) {
   if (!stage.ok) return;
   const info: CardInfo = { card: e.card, caster: e.caster, targets: [], pieces: [], skin: e.skin };
   void runScene(stage, info, skin, { impact: () => {} }, { tilt: false });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Coup de grâce
+
+/**
+ * Durée du coup de grâce (secondes) : celle de la chute du roi maté (mate.ts, MATE_FALL_MS = 1250), qu'il ne dépasse
+ * jamais. La carte de fin de partie attend la fin de la chute : elle ne recouvre rien.
+ */
+export const FINALE_S = 1.25;
+/** Instants de la chute (board.css, @keyframes pi-fall-*) : le roi frissonne, bascule, puis touche sa case. */
+const FALL = { tremble: 0.18, topple: 0.4, impact: 0.84 };
+
+/**
+ * Coup de grâce : pendant la chute du roi maté, une gerbe aux couleurs des sorts du vainqueur jaillit de sa case.
+ * - Le motif du vainqueur s'ouvre sous le roi quand il frissonne (plus discret que celui d'un sort : il ne cache pas la
+ *   chute).
+ * - Une gerbe de ses particules part quand le roi bascule et retombe (ou monte, selon le `drift` du skin).
+ * - Une onde fine marque l'instant où le roi touche sa case.
+ * Tout s'éteint avant FINALE_S : la scène s'arrête d'elle-même ensuite, rien ne tourne en boucle. Ni inclinaison, ni
+ * secousse, ni éclair plein écran : l'échiquier ne bouge pas pendant la chute.
+ * Renvoie false si rien n'est joué : scène sans WebGL, mouvement réduit (le roi est alors couché d'emblée), case hors
+ * de l'échiquier. L'appelant peut se rabattre sur l'éclat CSS `.board-burst`, que le mouvement réduit coupe aussi.
+ * À appeler une fois, quand la case du roi maté (mate.ts, matedKing) passe de null à une case.
+ */
+export function playFinale(stage: VfxStage, square: number, skin: SkinStyle): boolean {
+  if (!stage.ok || stage.reduced || !Number.isInteger(square) || square < 0 || square > 63) return false;
+  const at = stage.local(square);
+  flourishDisk(stage, skin, at, 0.95, FINALE_S - FALL.tremble, FALL.tremble, 1.1, 0.75);
+  // Gerbe : 64 particules lancées en 0,14 s depuis le bord de la case, vers l'extérieur et un peu vers le haut (elles
+  // s'écartent du roi au lieu de le couvrir), éteintes avant la fin de la chute
+  const ps = stage.particles(skin);
+  const pal = palette(skin);
+  const n = 64, span = 0.14;
+  let emitted = 0;
+  let t = 0;
+  stage.add({
+    update(dt) {
+      t += dt;
+      const target = t < FALL.topple ? 0 : Math.min(n, Math.ceil(((t - FALL.topple) / span) * n));
+      for (; emitted < target; emitted++) {
+        const a = Math.random() * Math.PI * 2;
+        const r = rnd(0.32, 0.48);
+        const v = rnd(1.4, 2.8);
+        const el = rnd(0.12, 0.42);
+        ps.emit({
+          x: at.x + Math.cos(a) * r, y: at.y + Math.sin(a) * r, z: 0.1,
+          vx: Math.cos(a) * v * (1 - el), vy: Math.sin(a) * v * (1 - el), vz: v * el * 1.6,
+          color: pick(pal), size: 0.13 * rnd(0.6, 1.3),
+          life: Math.max(0.05, Math.min(rnd(0.55, 0.8), FINALE_S - 0.02 - t)),
+          gravity: -3 + skin.drift * 1.6, drag: 1.6, spin: rnd(-4, 4),
+        });
+      }
+      return emitted < n;
+    },
+  });
+  shockwave(stage, glowColor(skin), at, 1.25, FINALE_S - FALL.impact - 0.02, FALL.impact, 0.05);
+  return true;
 }
 
 /** Annonce d'un Présage : un sceau s'allume du côté du lanceur, sans plus ; la carte agira à son prochain tour. */

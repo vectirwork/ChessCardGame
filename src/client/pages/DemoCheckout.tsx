@@ -53,11 +53,11 @@ export default function DemoCheckout() {
   // Objets de l'achat : renvoyés par le serveur ; à défaut (ancien serveur), ceux du produit
   const ids = (p.items?.length ? p.items : product?.items ?? []).filter(i => itemById(i));
   const title = product?.name ?? (ids.length === 1 ? itemPhrase(itemById(ids[0])!) : `Votre sélection (${ids.length} skins)`);
-  // Panier : une ligne par produit facturé (objet, ou collection complétée), comme sur Stripe. Calculée ici comme au
-  // serveur (quoteCart) ; montrée seulement si elle retombe sur le montant facturé, sinon une seule ligne.
+  // Panier : une ligne par produit facturé (objet, ou collection complétée, même seule), comme sur Stripe. Calculée ici
+  // comme au serveur (quoteCart) ; montrée seulement si elle retombe sur le montant facturé, sinon une seule ligne.
   const quoted = !product && p.status === 'pending' ? quoteCart(ids, ownedIds(me)) : null;
   const lines =
-    quoted && quoted.totalCents === p.amountCents && quoted.lines.length > 1
+    quoted && quoted.totalCents === p.amountCents && quoted.lines.length >= 1
       ? quoted.lines.map(l => ({
           label: l.label,
           note: l.productId.startsWith('col:') ? 'Au prix de la collection, sceau compris' : undefined,

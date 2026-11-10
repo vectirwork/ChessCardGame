@@ -818,6 +818,26 @@
   width: 44px;
   height: 44px;
 }
+/* Sceau pas encore obtenu : médaillon éteint (gris, estompé, figé) et anneau en pointillés ; l'anneau d'or plein est
+   réservé aux sceaux obtenus */
+.acc-seal:not(.done) .acc-seal-medal {
+  position: relative;
+}
+.acc-seal:not(.done) .acc-seal-medal .th {
+  filter: grayscale(1);
+  opacity: 0.45;
+}
+.acc-seal:not(.done) .acc-seal-medal .th-crest {
+  box-shadow: none;
+}
+.acc-seal:not(.done) .acc-seal-medal::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  border: 1.5px dashed rgb(243 201 105 / 0.45);
+  pointer-events: none;
+}
 .acc-seal-txt {
   display: grid;
   min-width: 0;

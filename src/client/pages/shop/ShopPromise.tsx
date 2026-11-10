@@ -18,7 +18,7 @@ export function ShopPromise() {
       <div>
         <span className="sp-k">Livré à l’instant</span>
         <p>
-          Paiement sécurisé par Stripe, prix TTC, ajouté à votre collection et équipé dès la confirmation. <Link to="/cgv">Conditions de vente</Link>
+          Paiement sécurisé par Stripe, prix TTC, ajouté à votre collection dès la confirmation, et équipé si vous le souhaitez. <Link to="/cgv">Conditions de vente</Link>
         </p>
       </div>
     </section>

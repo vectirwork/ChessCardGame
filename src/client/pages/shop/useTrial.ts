@@ -9,6 +9,8 @@ import { formatEssai, normalize, parseEssai, revertSlot, surprise as draw, toggl
 import type { Trial, TrialDelta } from './trial';
 
 const STORE_KEY = 'sm:essai';
+/** Essai vide gardé (après « Rétablir ») : l'arrivée suivante ne remet pas le roi mis en avant. */
+const EMPTY = '-';
 
 export function storedTrial(): TrialDelta {
   try {
@@ -18,11 +20,18 @@ export function storedTrial(): TrialDelta {
   }
 }
 
+/** Un essai (même vide) a-t-il déjà été gardé dans cette session ? */
+export function hasStoredTrial(): boolean {
+  try {
+    return sessionStorage.getItem(STORE_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
 function storeTrial(delta: TrialDelta) {
   try {
-    const s = formatEssai(delta);
-    if (s) sessionStorage.setItem(STORE_KEY, s);
-    else sessionStorage.removeItem(STORE_KEY);
+    sessionStorage.setItem(STORE_KEY, formatEssai(delta) || EMPTY);
   } catch {
     // stockage indisponible : l'adresse suffit
   }

@@ -47,6 +47,8 @@ interface Props {
   demo: boolean;
   /** Connecté : « Équiper ce que je possède » est possible (paiements fermés, essai mêlé). */
   loggedIn: boolean;
+  /** Rangée des boutons : la barre fixe du téléphone se montre quand elle sort de l'écran. */
+  btnsRef?: (el: HTMLDivElement | null) => void;
   onMain: () => void;
   /** Équiper seulement ce que l'on possède (paiements fermés, essai mêlé). */
   onEquipOwned: () => void;
@@ -54,7 +56,7 @@ interface Props {
   onHint: (h: CollectionHint) => void;
 }
 
-export function TrialAction({ quote, action, hint, busy, waiting, demo, loggedIn, onMain, onEquipOwned, onRevertAll, onHint }: Props) {
+export function TrialAction({ quote, action, hint, busy, waiting, demo, loggedIn, btnsRef, onMain, onEquipOwned, onRevertAll, onHint }: Props) {
   const t = actionTexts(quote, action);
   const collectionLine = quote.cart?.lines.find(l => l.productId.startsWith('col:'));
   return (
@@ -77,7 +79,7 @@ export function TrialAction({ quote, action, hint, busy, waiting, demo, loggedIn
           </button>
         )}
       </div>
-      <div className="ta-btns">
+      <div className="ta-btns" ref={btnsRef}>
         {action.kind === 'soon' && loggedIn && quote.equip.length > 0 && (
           <button type="button" className="btn ta-second" onClick={onEquipOwned} disabled={busy || waiting}>
             Équiper ce que je possède

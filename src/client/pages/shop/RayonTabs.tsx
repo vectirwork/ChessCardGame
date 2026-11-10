@@ -1,5 +1,7 @@
 // Onglets des rayons (Rois · Échiquiers · Sorts · Collections), filtres (Tout · Ma collection) et « Surprenez-moi ».
-// role="tablist" : on passe d'un onglet à l'autre avec les flèches, Début et Fin.
+// role="tablist" : on passe d'un onglet à l'autre avec les flèches, Début et Fin. Seul le panneau de l'onglet actif est
+// dans la page : aria-controls n'est posé que sur lui. Sur téléphone, les filtres passent sous le portant et
+// « Surprenez-moi » en tête de cabine (shop.css).
 import { useRef } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
 
@@ -44,7 +46,7 @@ export function RayonTabs({ rayon, counts, onRayon, mine, onMine, onSurprise }: 
             type="button"
             role="tab"
             id={`rt-${r}`}
-            aria-controls={`rayon-${r}`}
+            aria-controls={rayon === r ? `rayon-${r}` : undefined}
             aria-selected={rayon === r}
             tabIndex={rayon === r ? 0 : -1}
             className={rayon === r ? 'on' : ''}

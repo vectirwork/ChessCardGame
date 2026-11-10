@@ -224,6 +224,81 @@ export function mainAction(q: TrialQuote, opts: { loggedIn: boolean; sale: boole
   return { kind: 'buy', ids: q.buy, cents };
 }
 
+/**
+ * Ordre d'un rayon : les nouveautés d'abord, puis les autres objets payants, les objets offerts à la fin (sur le portant
+ * du téléphone, les premières cartes visibles sont celles que l'on vient voir). Ordre du catalogue à égalité.
+ */
+export function rackOrder<T extends Pick<Item, 'free' | 'isNew'>>(items: readonly T[]): T[] {
+  const rank = (i: T) => (i.free ? 2 : i.isNew ? 0 : 1);
+  return [...items].sort((a, b) => rank(a) - rank(b));
+}
+
+/** Achat présenté au récapitulatif : un produit (objet, collection, pack) ou le panier de l'essai. */
+export type Order = { kind: 'product'; product: Product } | { kind: 'cart'; itemIds: string[] };
+
+export interface OrderLine {
+  label: string;
+  note?: string;
+  items: string[];
+  cents: number;
+}
+
+/** Récapitulatif d'un achat pour qui possède `owned`, aux montants que le serveur facture (productPrice, quoteCart). */
+export interface OrderSummary {
+  lines: OrderLine[];
+  /** Objets nouveaux (ceux d'un pack déjà possédés n'y sont pas). */
+  items: string[];
+  totalCents: number;
+  /** Économie sur le prix à l'unité des objets nouveaux ; 0 si l'achat n'en fait pas. */
+  savingCents: number;
+  /** Pack : objets déjà possédés (son prix ne change pas). */
+  have: number;
+  /** Pack : nombre d'objets qu'il contient. */
+  of: number;
+}
+
+const sumUnit = (ids: readonly string[]) => ids.reduce((s, i) => s + unitPrice(i), 0);
+
+/** null : rien à payer (tout est déjà possédé, ou panier invalide). */
+export function orderSummary(order: Order, owned: readonly string[]): OrderSummary | null {
+  const have = new Set(owned);
+  let lines: OrderLine[];
+  let packHave = 0;
+  let packOf = 0;
+  if (order.kind === 'product') {
+    const p = order.product;
+    const cents = productPrice(p, owned);
+    if (cents === null) return null;
+    const missing = p.items.filter(i => !have.has(i));
+    const partial = p.kind === 'collection' && missing.length < p.items.length;
+    if (p.kind === 'pack') {
+      packHave = p.items.length - missing.length;
+      packOf = p.items.length;
+    }
+    const n = missing.length;
+    lines = [
+      {
+        label: p.name,
+        note: partial ? `Compléter la collection : ${n} skin${n > 1 ? 's' : ''} manquant${n > 1 ? 's' : ''}` : p.description,
+        items: missing,
+        cents,
+      },
+    ];
+  } else {
+    const q = quoteCart(order.itemIds, owned);
+    if (!q) return null;
+    lines = q.lines.map(l => ({
+      label: l.label,
+      note: l.productId.startsWith('col:') ? 'Au prix de la collection, sceau compris' : undefined,
+      items: l.items,
+      cents: l.cents,
+    }));
+  }
+  const items = lines.flatMap(l => l.items);
+  const totalCents = lines.reduce((s, l) => s + l.cents, 0);
+  return { lines, items, totalCents, savingCents: Math.max(0, sumUnit(items) - totalCents), have: packHave, of: packOf };
+}
+
 /** Produits « pack » en vente (Trésor du Bazar, Grimoire des sorts). */
 export const PACKS = PRODUCTS.filter(p => p.kind === 'pack');
 /** Collections premium, dans l'ordre du catalogue. */

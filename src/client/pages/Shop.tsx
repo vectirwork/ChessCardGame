@@ -8,7 +8,7 @@
 // ?achat=<session> (retour de Stripe), ?annule=1 (paiement annulé, l'essai est gardé).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ITEMS, formatPrice, itemById, unitPrice } from '../../shared/catalog';
+import { ITEMS, collectionById, formatPrice, itemById, unitPrice } from '../../shared/catalog';
 import type { Collection, ItemKind, Product } from '../../shared/catalog';
 import type { ConfirmResponse, MeUser } from '../../shared/protocol';
 import { api, errMsg } from '../api';
@@ -18,7 +18,7 @@ import { PageHead, PlacePage, StarMark, useTitle } from './PageScene';
 import { Cabin } from './shop/Cabin';
 import type { CabinView } from './shop/Cabin';
 import { CheckoutModal, DELIVERY_KEY } from './shop/CheckoutModal';
-import type { Order } from './shop/CheckoutModal';
+import type { Delivery } from './shop/CheckoutModal';
 import { CollectionCard, GrimoireCard, TresorBanner } from './shop/CollectionCard';
 import { ItemCard } from './shop/ItemCard';
 import { PanoplieBar } from './shop/PanoplieBar';
@@ -28,14 +28,16 @@ import type { Rayon } from './shop/RayonTabs';
 import { ShopDock } from './shop/ShopDock';
 import { Seal, ShopPromise } from './shop/ShopPromise';
 import { TrialAction, actionTexts } from './shop/TrialAction';
-import { PACKS, PREMIUM_COLLECTIONS, bestCollection, equipNote, formatEssai, itemPhrase, itemState, mainAction, parseEssai, quoteTrial } from './shop/trial';
-import type { CollectionHint, TrialDelta } from './shop/trial';
-import { storedTrial, useShopUrl, useTrial } from './shop/useTrial';
+import {
+  PACKS, PREMIUM_COLLECTIONS, bestCollection, equipNote, formatEssai, itemPhrase, itemState, mainAction, parseEssai, quoteTrial, rackOrder, withCollection,
+} from './shop/trial';
+import type { CollectionHint, Order, TrialDelta } from './shop/trial';
+import { hasStoredTrial, storedTrial, useShopUrl, useTrial } from './shop/useTrial';
 import './shop/shop.css';
 
 const KIND_RAYON: Record<ItemKind, Rayon> = { king: 'rois', board: 'echiquiers', skin: 'sorts' };
 const RAYON_KIND: Record<Exclude<Rayon, 'collections'>, ItemKind> = { rois: 'king', echiquiers: 'board', sorts: 'skin' };
-/** Roi mis en essai à l'arrivée, quand rien d'autre n'est demandé. */
+/** Roi mis en essai à la première arrivée de la session, quand rien d'autre n'est demandé. */
 const FEATURED: TrialDelta = { king: 'king:braise' };
 const GRIMOIRE = PACKS.find(p => p.id === 'pack:skins');
 const TRESOR = PACKS.find(p => p.id === 'pack:tresor');
@@ -49,14 +51,28 @@ function arrival() {
   if (Object.keys(fromUrl).length) delta = fromUrl;
   else if (objet) delta = { [objet.kind]: objet.id };
   else {
+    // Un essai déjà gardé dans la session, même vide (« Rétablir »), est repris tel quel
     const stored = storedTrial();
-    delta = Object.keys(stored).length ? stored : q.get('achat') ? {} : FEATURED;
+    delta = Object.keys(stored).length ? stored : q.get('achat') || hasStoredTrial() ? {} : FEATURED;
   }
   const r = q.get('rayon') as Rayon | null;
   const rayon: Rayon =
     r && RAYONS.includes(r) ? r : window.location.hash === '#grimoires' ? 'collections' : objet ? KIND_RAYON[objet.kind] : 'rois';
   const view: CabinView = objet && objet.kind !== 'king' ? 'partie' : 'roi';
   return { delta, rayon, view, achat: q.get('achat'), annule: !!q.get('annule') };
+}
+
+/** Requête média suivie (rotation, fenêtre redimensionnée). */
+function useMedia(query: string): boolean {
+  const [on, setOn] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const m = window.matchMedia(query);
+    const change = () => setOn(m.matches);
+    change();
+    m.addEventListener('change', change);
+    return () => m.removeEventListener('change', change);
+  }, [query]);
+  return on;
 }
 
 export default function Shop() {
@@ -76,8 +92,11 @@ export default function Shop() {
   const [busy, setBusy] = useState<string | null>(null);
   const [casting, setCasting] = useState(false);
   const [lastTried, setLastTried] = useState<string | null>(null);
-  const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [reduced] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  // Téléphone : la ligne d'action passe sous le portant (la barre fixe porte le même bouton), pour que la vue de la
+  // cabine et le portant tiennent ensemble à l'écran
+  const phone = useMedia('(max-width: 700px)');
   const cabinRef = useRef<HTMLDivElement>(null);
 
   const loggedIn = !!me;
@@ -92,8 +111,18 @@ export default function Shop() {
   // Livraison (retour de Stripe, paiement simulé) : déballage, essai = objets livrés, message
 
   const deliver = useCallback(
-    async (items: string[], user: MeUser) => {
-      setMe(user);
+    async (items: string[], user: MeUser, equipOwned: readonly string[] = []) => {
+      // Objets déjà possédés de l'essai, équipés avec l'achat (case cochée au récapitulatif) : maintenant qu'il est livré
+      let u = user;
+      const extra = equipOwned.filter(i => owns(u, i) && !isEquipped(u, i));
+      if (extra.length) {
+        try {
+          u = (await api<{ user: MeUser }>('/account/equip', { body: extra.length === 1 ? { itemId: extra[0] } : { itemIds: extra } })).user;
+        } catch {
+          // l'achat est livré ; ces objets s'équipent ensuite d'un geste
+        }
+      }
+      setMe(u);
       const known = items.filter(i => itemById(i));
       // Un objet par emplacement : il entre dans la cabine (s'il est équipé, l'essai redevient la panoplie)
       const delta: TrialDelta = {};
@@ -107,7 +136,7 @@ export default function Shop() {
       t.set(delta);
       setView(known.some(i => itemById(i)?.kind === 'king') ? 'roi' : 'partie');
       setUnbox(known);
-      const worn = known.filter(i => isEquipped(user, i));
+      const worn = [...known, ...extra].filter(i => isEquipped(u, i));
       let msg: string;
       if (worn.length > 1) msg = `Panoplie équipée : ${equipNote(worn)}.`;
       else if (worn.length === 1) msg = equippedMessage(worn[0]);
@@ -126,9 +155,10 @@ export default function Shop() {
     if (!start.achat || !ready) return;
     if (!me) return;
     setConfirming(true);
+    const d = readDelivery();
     api<ConfirmResponse>(`/shop/confirm/${encodeURIComponent(start.achat)}`)
       .then(r => {
-        if (r.status === 'paid') void deliver(r.items ?? readDelivery(), r.user);
+        if (r.status === 'paid') void deliver(r.items ?? d.items, r.user, d.equipOwned);
         else {
           setMe(r.user);
           toast('Paiement en cours de validation : il apparaîtra d’ici quelques instants.');
@@ -146,7 +176,7 @@ export default function Shop() {
   useEffect(() => {
     const st = location.state as { livre?: string[]; user?: MeUser } | null;
     if (!st?.livre || !st.user) return;
-    void deliver(st.livre, st.user);
+    void deliver(st.livre, st.user, readDelivery().equipOwned);
     clearDelivery();
     window.history.replaceState({ ...window.history.state, usr: null }, '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -194,9 +224,13 @@ export default function Shop() {
     setView(k === 'king' ? 'roi' : 'partie');
   };
 
-  const signup = () => {
-    const essai = formatEssai(t.delta);
-    navigate(`/inscription?retour=${encodeURIComponent(`/boutique${essai ? `?essai=${essai}` : ''}`)}`);
+  /** Inscription, puis retour à la boutique avec cet essai et ce rayon. */
+  const signup = (delta: TrialDelta = t.delta, to: Rayon = rayon) => {
+    const q: string[] = [];
+    if (to !== 'rois') q.push(`rayon=${to}`);
+    const essai = formatEssai(delta);
+    if (essai) q.push(`essai=${essai}`);
+    navigate(`/inscription?retour=${encodeURIComponent(`/boutique${q.length ? `?${q.join('&')}` : ''}`)}`);
   };
 
   const equip = async (ids: string[]) => {
@@ -216,8 +250,15 @@ export default function Shop() {
   };
 
   const buy = (p: Product) => {
-    if (!me) return signup();
-    setOrder({ order: { kind: 'product', product: p }, equipOwned: [] });
+    const c = p.kind === 'collection' ? collectionById(p.id) : undefined;
+    if (!me) {
+      // Visiteur : on revient de l'inscription avec ce qu'il voulait acheter (la collection en essai, son rayon)
+      if (c) return signup(withCollection(t.delta, t.pano, c), 'collections');
+      return signup(t.delta, p.id === 'pack:skins' ? 'sorts' : rayon);
+    }
+    // Collection complétée : les pièces déjà possédées sont équipées avec les nouvelles (à la livraison, case cochée)
+    const equipOwned = c ? p.items.filter(i => owns(me, i) && !isEquipped(me, i)) : [];
+    setOrder({ order: { kind: 'product', product: p }, equipOwned });
   };
 
   const onMain = () => {
@@ -225,6 +266,8 @@ export default function Shop() {
     else if (action.kind === 'buy') setOrder({ order: { kind: 'cart', itemIds: action.ids }, equipOwned: quote.equip });
     else if (action.kind === 'signup') signup();
   };
+
+  const onUnboxDone = useCallback(() => setUnbox(null), []);
 
   const backToCabin = () => cabinRef.current?.scrollIntoView({ block: 'start', behavior: reduced ? 'auto' : 'smooth' });
 
@@ -236,6 +279,27 @@ export default function Shop() {
   for (const i of ITEMS) counts[KIND_RAYON[i.kind]]++;
   const live = liveText(lastTried, quote, action);
   const onCasting = useCallback((on: boolean) => setCasting(on), []);
+
+  // Ligne d'action : dans la cabine, ou sous le portant sur téléphone. La barre fixe observe ses boutons.
+  const trialAction = (
+    <TrialAction
+      quote={quote}
+      action={action}
+      hint={hint}
+      busy={!!busy && busy === (action.kind === 'equip' ? action.ids.join(',') : '')}
+      waiting={!ready}
+      demo={payments === 'demo'}
+      loggedIn={loggedIn}
+      btnsRef={setAnchor}
+      onMain={onMain}
+      onEquipOwned={() => void equip(quote.equip)}
+      onRevertAll={() => {
+        t.revertAll();
+        setLastTried(null);
+      }}
+      onHint={onHint}
+    />
+  );
 
   const rack = () => {
     if (rayon === 'collections') {
@@ -259,7 +323,7 @@ export default function Shop() {
       );
     }
     const kind = RAYON_KIND[rayon];
-    const list = ITEMS.filter(i => i.kind === kind && (!mine || t.owned.includes(i.id)));
+    const list = rackOrder(ITEMS.filter(i => i.kind === kind && (!mine || t.owned.includes(i.id))));
     return (
       // Une clé par rayon : le portant repart du début (son défilement horizontal n'est pas celui du rayon d'avant)
       <Rack key={rayon} rayon={rayon} empty={list.length ? undefined : <EmptyMine />}>
@@ -324,29 +388,13 @@ export default function Shop() {
             soon={ready && payments === 'off'}
             confirming={confirming}
             unbox={unbox}
-            onUnboxDone={() => setUnbox(null)}
+            onUnboxDone={onUnboxDone}
             live={live}
             onCasting={onCasting}
+            onSurprise={surprise}
           >
             <PanoplieBar trial={t.trial} pano={t.pano} owned={t.owned} loggedIn={loggedIn} onOpen={openSlot} onRevert={t.revert} />
-            <div ref={setAnchor}>
-              <TrialAction
-                quote={quote}
-                action={action}
-                hint={hint}
-                busy={!!busy && busy === (action.kind === 'equip' ? action.ids.join(',') : '')}
-                waiting={!ready}
-                demo={payments === 'demo'}
-                loggedIn={loggedIn}
-                onMain={onMain}
-                onEquipOwned={() => void equip(quote.equip)}
-                onRevertAll={() => {
-                  t.revertAll();
-                  setLastTried(null);
-                }}
-                onHint={onHint}
-              />
-            </div>
+            {!phone && trialAction}
           </Cabin>
         </div>
 
@@ -354,6 +402,7 @@ export default function Shop() {
           <RayonTabs rayon={rayon} counts={counts} onRayon={setRayon} mine={loggedIn ? mine : null} onMine={setMine} onSurprise={surprise} />
           {rack()}
         </section>
+        {phone && <div className="bz-act">{trialAction}</div>}
       </div>
 
       {/* Vitrine des collections (ordinateur) : inutile quand le rayon Collections est ouvert juste au-dessus */}
@@ -403,7 +452,6 @@ export default function Shop() {
           owned={t.owned}
           demo={payments === 'demo'}
           equipOwned={order.equipOwned}
-          onEquipped={setMe}
           onClose={() => setOrder(null)}
         />
       )}
@@ -434,12 +482,13 @@ async function gameInProgress(): Promise<boolean> {
   }
 }
 
-/** Objets attendus au retour du paiement (gardés avant de partir payer). */
-function readDelivery(): string[] {
+/** Livraison attendue au retour du paiement (gardée avant de partir payer). */
+function readDelivery(): Delivery {
   try {
-    return (JSON.parse(sessionStorage.getItem(DELIVERY_KEY) ?? '{}') as { items?: string[] }).items ?? [];
+    const d = JSON.parse(sessionStorage.getItem(DELIVERY_KEY) ?? '{}') as Partial<Delivery>;
+    return { items: d.items ?? [], equip: !!d.equip, equipOwned: d.equip ? (d.equipOwned ?? []) : [] };
   } catch {
-    return [];
+    return { items: [], equip: false, equipOwned: [] };
   }
 }
 function clearDelivery() {

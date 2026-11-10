@@ -1,58 +1,32 @@
 // Récapitulatif d'achat : un produit (skin, collection à prix « compléter », pack) ou le panier de l'essai (plusieurs
 // skins, une ligne par produit facturé, comme sur Stripe). Case « Les équiper dès la livraison » cochée d'office (un
 // choix d'affichage, pas une dépense) ; case de renoncement au droit de rétractation (L221-28) jamais cochée d'office.
-// Le montant affiché est celui que le serveur facture (productPrice, quoteCart).
+// Le montant affiché est celui que le serveur facture (productPrice, quoteCart). Un pack garde son prix fixe : les objets
+// déjà possédés sont dits, et l'économie ne compte que les objets nouveaux.
+// Rien ne change sur le compte avant le paiement : les objets déjà possédés de l'essai (« Également équipés ») sont
+// équipés au retour, une fois l'achat livré, et seulement si la case est cochée (Shop.tsx, deliver).
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { SLOTS, formatPrice, itemById, productPrice, quoteCart, unitPrice } from '../../../shared/catalog';
-import type { Product } from '../../../shared/catalog';
-import type { CheckoutRequest, MeUser } from '../../../shared/protocol';
+import { SLOTS, formatPrice, itemById } from '../../../shared/catalog';
+import type { CheckoutRequest } from '../../../shared/protocol';
 import { api, errMsg } from '../../api';
 import { Modal } from '../../components/Layout';
 import { StarMark } from '../PageScene';
 import { ItemThumb } from './ItemThumb';
-import { equipNote, itemPhrase } from './trial';
+import { equipNote, itemPhrase, orderSummary } from './trial';
+import type { Order } from './trial';
 
-export type Order = { kind: 'product'; product: Product } | { kind: 'cart'; itemIds: string[] };
+export type { Order } from './trial';
 
-/** Clé de sessionStorage : la livraison attendue au retour (objets, équipés ou non), pour le déballage. */
+/** Clé de sessionStorage : la livraison attendue au retour (objets, équipés ou non, objets possédés à équiper avec). */
 export const DELIVERY_KEY = 'sm:livraison';
 
-interface Line {
-  label: string;
-  note?: string;
+/** Livraison attendue, gardée avant de partir payer. */
+export interface Delivery {
   items: string[];
-  cents: number;
-  /** Prix à l'unité des objets de la ligne, s'il est plus haut (économie). */
-  unit: number;
-}
-
-function linesOf(order: Order, owned: string[]): Line[] | null {
-  if (order.kind === 'product') {
-    const p = order.product;
-    const cents = productPrice(p, owned);
-    if (cents === null) return null;
-    const missing = p.items.filter(i => !owned.includes(i));
-    const partial = p.kind === 'collection' && cents < p.priceCents;
-    return [
-      {
-        label: p.name,
-        note: partial ? `Compléter la collection : ${missing.length} skin${missing.length > 1 ? 's' : ''} manquant${missing.length > 1 ? 's' : ''}` : p.description,
-        items: partial ? missing : p.items,
-        cents,
-        unit: (partial ? missing : p.items).reduce((s, i) => s + unitPrice(i), 0),
-      },
-    ];
-  }
-  const q = quoteCart(order.itemIds, owned);
-  if (!q) return null;
-  return q.lines.map(l => ({
-    label: l.label,
-    note: l.productId.startsWith('col:') ? 'Au prix de la collection, sceau compris' : undefined,
-    items: l.items,
-    cents: l.cents,
-    unit: l.items.reduce((s, i) => s + unitPrice(i), 0),
-  }));
+  equip: boolean;
+  /** Objets déjà possédés de l'essai, à équiper au retour (case cochée seulement). */
+  equipOwned: string[];
 }
 
 /** Un objet par emplacement au plus : on peut les équiper à la livraison. */
@@ -64,41 +38,37 @@ interface Props {
   order: Order;
   owned: string[];
   demo: boolean;
-  /** Objets possédés de l'essai, équipés juste avant de partir payer. */
+  /** Objets déjà possédés à équiper avec l'achat (essai mêlé, collection complétée), une fois l'achat livré. */
   equipOwned: string[];
-  onEquipped: (me: MeUser) => void;
   onClose: () => void;
 }
 
-export function CheckoutModal({ order, owned, demo, equipOwned, onEquipped, onClose }: Props) {
-  const lines = linesOf(order, owned);
-  const items = lines?.flatMap(l => l.items) ?? [];
+export function CheckoutModal({ order, owned, demo, equipOwned, onClose }: Props) {
+  const sum = orderSummary(order, owned);
+  const lines = sum?.lines ?? null;
+  const items = sum?.items ?? [];
   const canEquip = items.length > 0 && equippable(items);
+  const also = canEquip ? equipOwned.filter(i => itemById(i) && !items.includes(i)) : [];
   const [equip, setEquip] = useState(true);
   const [waiver, setWaiver] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const firstRef = useRef<HTMLInputElement>(null);
   useEffect(() => firstRef.current?.focus(), []);
-  const total = lines?.reduce((s, l) => s + l.cents, 0) ?? 0;
-  const unit = lines?.reduce((s, l) => s + l.unit, 0) ?? 0;
-  const pack = order.kind === 'product' && order.product.kind === 'pack' ? order.product : null;
-  const saving = pack?.compareAtCents ? pack.compareAtCents - total : unit - total;
+  const total = sum?.totalCents ?? 0;
+  const saving = sum?.savingCents ?? 0;
   const title = order.kind === 'product' ? order.product.name : items.length === 1 ? itemPhrase(itemById(items[0])!) : `Votre sélection (${items.length} skins)`;
 
   const pay = async () => {
     setBusy(true);
     setError(null);
     try {
-      if (equipOwned.length) {
-        const r = await api<{ user: MeUser }>('/account/equip', { body: equipOwned.length === 1 ? { itemId: equipOwned[0] } : { itemIds: equipOwned } });
-        onEquipped(r.user);
-      }
       const doEquip = canEquip && equip;
       const body: CheckoutRequest = order.kind === 'product' ? { productId: order.product.id, waiver: true, equip: doEquip } : { itemIds: items, waiver: true, equip: doEquip };
       const r = await api<{ url: string }>('/shop/checkout', { body });
       try {
-        sessionStorage.setItem(DELIVERY_KEY, JSON.stringify({ items, equip: doEquip }));
+        const d: Delivery = { items, equip: doEquip, equipOwned: doEquip ? also : [] };
+        sessionStorage.setItem(DELIVERY_KEY, JSON.stringify(d));
       } catch {
         // stockage indisponible : le déballage se contente des objets renvoyés par le serveur
       }
@@ -123,8 +93,13 @@ export function CheckoutModal({ order, owned, demo, equipOwned, onEquipped, onCl
           <p className="form-error">Vous possédez déjà tout ce que contient cet achat.</p>
         ) : (
           <>
+            {sum!.have > 0 && (
+              <p className="co-have">
+                Vous possédez déjà {sum!.have} objet{sum!.have > 1 ? 's' : ''} sur {sum!.of} : le prix du pack ne change pas. Nouveau pour vous :
+              </p>
+            )}
             <div className="co-thumbs">
-              {items.slice(0, 21).map(id => (
+              {items.map(id => (
                 <span key={id} className="co-thumb" title={itemById(id)?.name}>
                   <ItemThumb id={id} size="chip" />
                   {items.length <= 4 && <span>{itemById(id)?.name}</span>}
@@ -155,7 +130,12 @@ export function CheckoutModal({ order, owned, demo, equipOwned, onEquipped, onCl
                 <input type="checkbox" checked={equip} onChange={e => setEquip(e.target.checked)} />
                 <span>
                   Les équiper dès la livraison
-                  <small> {capitalize(equipNote(items))}.</small>
+                  {also.length > 0 && (
+                    <small className="co-also">
+                      Également équipé{also.length > 1 ? 's' : ''} : {also.map(i => `${itemPhrase(itemById(i)!)}`).join(', ')} (déjà à vous).
+                    </small>
+                  )}
+                  <small> {capitalize(equipNote([...items, ...also]))}.</small>
                 </span>
               </label>
             )}

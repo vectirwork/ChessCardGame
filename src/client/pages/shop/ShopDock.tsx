@@ -1,5 +1,6 @@
 // Barre d'achat fixe (téléphone et tablette, sous 1100 px) : elle apparaît quand l'essai diffère de la panoplie et que
-// la ligne d'action de la cabine est hors de l'écran (IntersectionObserver). Entrée et sortie en translateY seulement.
+// les boutons de la ligne d'action sont hors de l'écran (IntersectionObserver ; sur téléphone, la ligne d'action est
+// sous le portant). Entrée et sortie en translateY seulement.
 // Elle se cache quand le clavier virtuel est ouvert et ne prend jamais le focus d'elle-même. Toucher les vignettes
 // ramène à la cabine. La page réserve sa hauteur en bas (shop.css) : elle ne masque jamais la dernière carte.
 import { useEffect, useState } from 'react';
@@ -10,7 +11,7 @@ import { ActionButton, actionTexts } from './TrialAction';
 import type { MainAction, Trial, TrialQuote } from './trial';
 
 interface Props {
-  /** Ligne d'action de la cabine : la barre se montre quand elle sort de l'écran. */
+  /** Boutons de la ligne d'action : la barre se montre quand ils sortent de l'écran (un seul bouton à l'écran). */
   anchor: HTMLElement | null;
   trial: Trial;
   quote: TrialQuote;

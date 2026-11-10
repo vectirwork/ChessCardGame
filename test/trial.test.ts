@@ -4,8 +4,8 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_ITEM, FREE_ITEMS, ITEMS, SLOTS, collectionById, productById, productPrice } from '../src/shared/catalog';
 import {
-  bestCollection, cardLabel, changedSlots, equipNote, formatEssai, itemState, mainAction, normalize, parseEssai, quoteTrial, revertSlot, surprise, toggleItem,
-  trialOf, withCollection,
+  bestCollection, cardLabel, changedSlots, equipNote, formatEssai, itemState, mainAction, normalize, orderSummary, parseEssai, quoteTrial, rackOrder,
+  revertSlot, surprise, toggleItem, trialOf, withCollection,
 } from '../src/client/pages/shop/trial';
 import type { Trial } from '../src/client/pages/shop/trial';
 import { itemById } from '../src/shared/catalog';
@@ -178,5 +178,64 @@ describe('état et libellé des cartes', () => {
     expect(norm(cardLabel(itemById('king:braise')!, 'price', true))).toBe('Roi de braise, roi, rareté rare, 2,99 €, en essai');
     expect(cardLabel(itemById('board:ruby')!, 'owned', false)).toBe('Rubis, échiquier, rareté épique, possédé');
     expect(cardLabel(itemById('skin:arcane')!, 'equipped', false)).toBe('Arcane, sorts, rareté offert, équipé');
+  });
+});
+
+describe('récapitulatif d’achat', () => {
+  const tresor = productById('pack:tresor')!;
+  const grimoire = productById('pack:skins')!;
+
+  it('pack sans objet possédé : économie = prix barré − prix du pack', () => {
+    const r = orderSummary({ kind: 'product', product: tresor }, owned())!;
+    expect(r.items).toHaveLength(21);
+    expect(r.totalCents).toBe(2499);
+    expect(r.savingCents).toBe(tresor.compareAtCents! - 2499);
+    expect(r.have).toBe(0);
+  });
+
+  it('pack dont des objets sont possédés : seuls les nouveaux comptent, ni dans l’économie ni dans les vignettes', () => {
+    // 20 objets sur 21 : le dernier vaut moins que le pack, aucune économie n'est annoncée
+    const mine = tresor.items.slice(0, 20);
+    const r = orderSummary({ kind: 'product', product: tresor }, owned(...mine))!;
+    expect(r.items).toEqual([tresor.items[20]]);
+    expect(r.have).toBe(20);
+    expect(r.of).toBe(21);
+    expect(r.totalCents).toBe(2499);
+    expect(r.savingCents).toBe(0);
+    // Grimoire : 3 sorts sur 7 déjà possédés
+    const g = orderSummary({ kind: 'product', product: grimoire }, owned(...grimoire.items.slice(0, 3)))!;
+    expect(g.have).toBe(3);
+    expect(g.items).toEqual(grimoire.items.slice(3));
+    expect(g.savingCents).toBe(Math.max(0, g.items.reduce((s, i) => s + productPrice(productById(i)!, [])!, 0) - 1299));
+    // Tout possédé : rien à payer
+    expect(orderSummary({ kind: 'product', product: grimoire }, owned(...grimoire.items))).toBeNull();
+  });
+
+  it('collection à compléter et panier : lignes et économie aux montants du serveur', () => {
+    const forge = productById('col:inferno')!;
+    const c = orderSummary({ kind: 'product', product: forge }, owned('skin:inferno'))!;
+    expect(c.totalCents).toBe(300);
+    expect(c.items).toEqual(['king:braise', 'board:obsidian']);
+    expect(c.lines[0].note).toMatch(/^Compléter la collection : 2 skins manquants/);
+    // 2,99 + 1,99 − 3,00
+    expect(c.savingCents).toBe(198);
+    const cart = orderSummary({ kind: 'cart', itemIds: ['king:braise', 'board:obsidian'] }, owned('skin:inferno'))!;
+    expect(cart.lines.map(l => l.label)).toEqual([forge.name]);
+    expect(cart.totalCents).toBe(300);
+    expect(orderSummary({ kind: 'cart', itemIds: ['king:astral'] }, owned())!.savingCents).toBe(0);
+  });
+});
+
+describe('ordre des rayons', () => {
+  it('nouveautés d’abord, objets offerts à la fin, ordre du catalogue à égalité', () => {
+    for (const kind of SLOTS) {
+      const list = rackOrder(ITEMS.filter(i => i.kind === kind));
+      const rank = list.map(i => (i.free ? 2 : i.isNew ? 0 : 1));
+      expect(rank).toEqual([...rank].sort((a, b) => a - b));
+      expect(list).toHaveLength(ITEMS.filter(i => i.kind === kind).length);
+      const firstFree = list.findIndex(i => i.free);
+      expect(list.slice(firstFree).every(i => i.free)).toBe(true);
+    }
+    expect(rackOrder(ITEMS.filter(i => i.kind === 'board')).slice(0, 3).map(i => i.id)).toEqual(['board:grille', 'board:horizon', 'board:ciel']);
   });
 });

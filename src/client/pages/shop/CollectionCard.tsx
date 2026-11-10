@@ -2,6 +2,7 @@
 // l'exclusivité (le sceau de collection), le prix (barré : la somme à l'unité) ou « Compléter la collection », et deux
 // gestes : Essayer (les trois skins dans la cabine) et Acheter.
 // Variantes : `compact` (rayon Collections) et `large` (vitrine de l'ordinateur, avec l'accroche).
+// Paiements fermés : « Bientôt en vente », désactivé, pour tous (un visiteur ne part pas s'inscrire pour rien).
 import type { CSSProperties } from 'react';
 import { collectionItems, formatPrice, itemById, productById, productPrice } from '../../../shared/catalog';
 import type { Collection, Product } from '../../../shared/catalog';
@@ -74,8 +75,8 @@ export function CollectionCard({ c, owned, loggedIn, sale, ready, large, trying,
               {trying ? 'En essai' : 'Essayer'}
             </button>
             {!(complete && loggedIn) && (
-              <button type="button" className="cc-buy" disabled={loggedIn && (!sale || !ready)} onClick={() => onBuy(product)}>
-                {!loggedIn ? 'Acheter' : !sale && ready ? 'Bientôt en vente' : 'Acheter'}
+              <button type="button" className="cc-buy" disabled={!sale || !ready} onClick={() => onBuy(product)}>
+                {buyLabel(sale, ready, 'Acheter')}
               </button>
             )}
           </div>
@@ -119,8 +120,8 @@ export function TresorBanner({ product, owned, loggedIn, sale, ready, onBuy }: {
         {price === null && loggedIn ? (
           <span className="cc-done">Déjà dans votre collection</span>
         ) : (
-          <button type="button" className="btn-gold sm" disabled={loggedIn && (!sale || !ready)} onClick={() => onBuy(product)}>
-            {loggedIn && !sale && ready ? 'Bientôt en vente' : `Acheter le Trésor`}
+          <button type="button" className="btn-gold sm" disabled={!sale || !ready} onClick={() => onBuy(product)}>
+            {buyLabel(sale, ready, 'Acheter le Trésor')}
           </button>
         )}
       </div>
@@ -128,9 +129,16 @@ export function TresorBanner({ product, owned, loggedIn, sale, ready, onBuy }: {
   );
 }
 
-/** Carte du Grimoire des sorts, en tête du rayon Sorts. */
+/** Libellé d'un bouton d'achat : « Bientôt en vente » quand les paiements sont fermés (une fois l'état connu). */
+const buyLabel = (sale: boolean, ready: boolean, label: string) => (!sale && ready ? 'Bientôt en vente' : label);
+
+/**
+ * Grimoire des sorts, en tête du rayon Sorts : un bandeau sur toute la largeur de la grille (ordinateur), une grande
+ * carte au début du portant (téléphone). Un pack garde son prix fixe : les sorts déjà possédés sont dits.
+ */
 export function GrimoireCard({ product, owned, loggedIn, sale, ready, onBuy }: { product: Product; owned: string[]; loggedIn: boolean; sale: boolean; ready: boolean; onBuy: (p: Product) => void }) {
   const price = productPrice(product, owned);
+  const have = product.items.filter(i => owned.includes(i)).length;
   return (
     <div className="ic ic-pack r-legendaire" style={{ '--gem': '#f3c969' } as CSSProperties}>
       <div className="ic-hit">
@@ -141,22 +149,29 @@ export function GrimoireCard({ product, owned, loggedIn, sale, ready, onBuy }: {
           <span className="ic-pack-book" />
         </span>
         {product.badge && <span className="ic-new">{product.badge}</span>}
-        <RarityGem rarity="legendaire" label={`Pack · ${product.items.length} sorts`} />
-        <span className="ic-name">{product.name}</span>
-        <span className="ic-desc">{product.description}</span>
-        <span className="ic-foot">
+        <span className="ic-pack-txt">
+          <RarityGem rarity="legendaire" label={`Pack · ${product.items.length} sorts`} />
+          <span className="ic-name">{product.name}</span>
+          <span className="ic-desc">{product.description}</span>
+          {loggedIn && have > 0 && price !== null && (
+            <small className="ic-pack-have">
+              Vous possédez déjà {have} sort{have > 1 ? 's' : ''} sur {product.items.length} : le prix du Grimoire ne change pas.
+            </small>
+          )}
+        </span>
+        <span className="ic-pack-buy">
           <span className="ic-price">
             {formatPrice(product.priceCents)}
             {product.compareAtCents && <s>{formatPrice(product.compareAtCents)}</s>}
           </span>
+          {price === null && loggedIn ? (
+            <span className="ic-equip is-done">Possédé</span>
+          ) : (
+            <button type="button" className="ic-equip" disabled={!sale || !ready} onClick={() => onBuy(product)}>
+              {buyLabel(sale, ready, 'Acheter')}
+            </button>
+          )}
         </span>
-        {price === null && loggedIn ? (
-          <span className="ic-equip is-done">Possédé</span>
-        ) : (
-          <button type="button" className="ic-equip" disabled={loggedIn && (!sale || !ready)} onClick={() => onBuy(product)}>
-            {loggedIn && !sale && ready ? 'Bientôt en vente' : 'Acheter'}
-          </button>
-        )}
       </div>
     </div>
   );

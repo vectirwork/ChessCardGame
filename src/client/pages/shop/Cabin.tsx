@@ -32,11 +32,13 @@ interface Props {
   /** Annonce lue par les lecteurs d'écran (essai, prix). */
   live: string;
   onCasting: (on: boolean) => void;
+  /** « Surprenez-moi » en tête de cabine (téléphone ; ailleurs, il est dans les onglets des rayons). */
+  onSurprise: () => void;
   /** Barre de panoplie et ligne d'action. */
   children: ReactNode;
 }
 
-export function Cabin({ view, onView, trial, spellKick, reduced, soon, confirming, unbox, onUnboxDone, live, onCasting, children }: Props) {
+export function Cabin({ view, onView, trial, spellKick, reduced, soon, confirming, unbox, onUnboxDone, live, onCasting, onSurprise, children }: Props) {
   const viewRef = useRef<HTMLDivElement>(null);
   const [side, setSide] = useState<Color>('w');
   const [play, setPlay] = useState<PlayRequest>({ key: 0, count: 0 });
@@ -95,6 +97,9 @@ export function Cabin({ view, onView, trial, spellKick, reduced, soon, confirmin
         <span className="cab-k">
           Cabine <span className="cab-k-long">d’essayage</span>
         </span>
+        <button type="button" className="cab-surprise" onClick={onSurprise}>
+          ✦ Surprenez-moi
+        </button>
         <div className="seg" role="group" aria-label="Vue de la cabine">
           <button type="button" className={view === 'roi' ? 'on' : ''} aria-pressed={view === 'roi'} onClick={() => onView('roi')}>
             <span className="seg-long">Portrait du roi</span>
@@ -150,7 +155,7 @@ export function Cabin({ view, onView, trial, spellKick, reduced, soon, confirmin
             </div>
           </div>
         )}
-        {unbox && <Unboxing items={unbox} onDone={onUnboxDone} />}
+        {unbox && <Unboxing key={unbox.join()} items={unbox} onDone={onUnboxDone} />}
         {confirming && (
           <div className="cab-wait" role="status">
             <Spinner /> Validation de votre paiement…

@@ -22,8 +22,9 @@
 //
 // Vérifié automatiquement (assert) :
 // - à 1440 × 900, le bouton principal de la cabine est dans l'écran ; à 1280 × 720, après 100 px de défilement ;
-// - sur téléphone, la boutique (au-dessus du pied de page commun) fait 2 200 px au plus ; le dock est fixe et, page
-//   défilée au bout, ne recouvre ni la dernière carte ni les engagements ;
+// - sur téléphone, la boutique (au-dessus du pied de page commun) fait 2 200 px au plus ; la vue de la cabine et le
+//   portant tiennent ensemble à l'écran au-dessus du dock ; le dock est fixe, se retire quand les boutons de la ligne
+//   d'action sont à l'écran et, page défilée au bout, ne recouvre ni la dernière carte ni les engagements ;
 // - onglets au clavier (flèches, Début, Fin), libellés des cartes, zone aria-live, cibles d'au moins 44 px ;
 // - adresse ?essai= écrite, puis relue au rechargement ;
 // - parcours démo : essai de 2 skins, « Acheter et équiper », retour, les deux sont équipés, le roi est vu en partie.
@@ -275,14 +276,26 @@ if (BANC) {
   assert.deepEqual(small, [], 'cibles tactiles d’au moins 44 px');
   step(`téléphone : boutique de ${Math.round(m.footer)} px, cibles d’au moins 44 px`);
 
-  // Portant : le dock apparaît quand la ligne d'action sort de l'écran
-  const rt = await box(page, '.bz-rayons');
-  await page.evaluate(y => window.scrollTo(0, y), rt.y - 70);
+  // Portant : on essaie sous le miroir. La vue de la cabine juste sous l'en-tête, la vue et le portant tiennent ensemble
+  // au-dessus du dock ; la ligne d'action (sous le portant sur téléphone) est hors de l'écran, le dock porte son bouton
+  const headerH = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--header-h')) || 64);
+  const vt = await page.evaluate(() => document.querySelector('.cab-view').getBoundingClientRect().top + scrollY);
+  await page.evaluate(y => window.scrollTo(0, y), vt - headerH);
   await page.waitForTimeout(700);
   await shot(page, 'tel-portant.png');
   assert.ok(await page.locator('.dock.on').count(), 'dock visible sous la cabine');
   const dock = await box(page, '.dock');
   assert.ok(Math.abs(dock.y + dock.height - 915) <= 1, 'dock collé au bas de l’écran');
+  const vue = await box(page, '.cab-view');
+  const portant = await box(page, '.rack-row');
+  assert.ok(vue.y >= headerH - 1 && portant.y + portant.height <= dock.y, `vue (${vue.y}) et portant (bas à ${portant.y + portant.height}) à l’écran ensemble, au-dessus du dock (${dock.y})`);
+  // Ligne d'action à l'écran : un seul bouton, le dock se retire
+  const act = await box(page, '.bz-act .ta-btns');
+  await page.evaluate(y => window.scrollTo(0, y), act.y + (await page.evaluate(() => scrollY)) - 400);
+  await page.waitForTimeout(700);
+  assert.equal(await page.locator('.dock.on').count(), 0, 'dock retiré quand les boutons de la ligne d’action sont à l’écran');
+  await page.evaluate(y => window.scrollTo(0, y), vt - headerH);
+  await page.waitForTimeout(700);
   // Glisser dans le portant : essayer un autre roi
   await page.locator('.rack-row').evaluate(e => e.scrollBy({ left: 300 }));
   await page.waitForTimeout(400);

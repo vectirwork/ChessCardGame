@@ -349,3 +349,36 @@ Mesure d'une visite neuve à l'ordinateur (premier geste puis descente continue 
 
 Ce qu'il reste de régulier : Lenis fait travailler le fil principal à chaque image (décor écrit par le script,
 animations en boucle réévaluées). Le supprimer rendrait la molette moins douce : décision du fondateur.
+
+## 9-10 novembre : la boutique et les skins
+
+> « Retravaille la boutique : je veux qu'on puisse customiser son roi, l'échiquier, les sorts, et que ce soit plus
+> visuel ; une vraie notion de skin. »
+
+Atelier d'agents (directeur artistique, designer de la boutique, architecte, trois artistes, jury), puis réalisation
+en lots parallèles relus par des relecteurs adverses, intégration et vérification.
+
+- [x] **Trois emplacements** équipés séparément : le **Roi** (vu de l'adversaire et des spectateurs, pris à l'assise),
+  l'**Échiquier** (vu de soi seulement) et les **Sorts** (vus des deux joueurs, avec chaque sort lancé).
+- [x] **8 collections** (roi, échiquier et sorts assortis, rareté Offert / Rare / Épique / Légendaire) : Arcane (offerte),
+  Jardin de jade, Néon 2084, Forge d'Inferno, Olympe, Cour écarlate, Néant, Voûte céleste. 7 rois dessinés en SVG
+  léger (deux palettes chacun, lisibles à 36 px, même gabarit que le roi actuel : la chute du mat est la même),
+  3 échiquiers nouveaux (Grille 2084, Horizon des événements, Carte du ciel) et des décors statiques (incrustation,
+  frise, liseré, lueurs), 2 sorts nouveaux (Laurier, Écarlate). Une collection complète donne un **sceau** à côté du
+  pseudo (en partie, au classement, au profil).
+- [x] **Boutique** : cabine d'essayage (roi blanc et noir, échiquier avec son roi, sort qui joue ; tout s'essaie avant
+  d'acheter), rayons Rois / Échiquiers / Sorts / Collections, achat et équipement d'un geste, prix « compléter la
+  collection », Trésor du Bazar (tout), Grimoire des sorts ; texte corrigé : l'échiquier n'est vu que par soi.
+- [x] **En partie** : chaque camp porte son roi ; l'Oracle joue avec le Roi éclipse ; préférence « rois adverses
+  classiques » dans le compte. **Coup de grâce** : au mat, une gerbe aux couleurs des sorts du vainqueur accompagne la
+  chute du roi.
+- [x] Serveur : paiement au prix juste, achats d'un panier, promesses des anciens packs tenues (livrées une fois),
+  remboursements génériques, e-mails regroupés.
+
+Mesures (alternées, trois passages) : sur téléphone, aucune différence (fluidité 63 à 64 % dans les deux versions,
+aucune tuile manquante) ; sur ordinateur, 5 à 10 % de travail du fil principal en plus pendant la descente (rois
+dessinés et décors d'échiquier sur l'accueil).
+
+À valider par le fondateur : la grille de prix (aucun prix existant ne monte), les nouveaux sorts et échiquiers offerts
+aux acheteurs du Grimoire complet (pas les rois), l'Oracle en Roi éclipse, les cases d'Obsidienne éclaircies.
+Plus tard : jeux de pièces complets, cadres et dos des cartes, particule « feuille » pour Laurier.

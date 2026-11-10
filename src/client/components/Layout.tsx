@@ -59,7 +59,7 @@ const SECTIONS: { title: string; links: { to: string; label: string; hint?: stri
     links: [
       { to: '/classement', label: 'Classement' },
       { to: '/parties', label: 'Mes parties' },
-      { to: '/boutique', label: 'Boutique', hint: 'Skins et plateaux, rien d’autre' },
+      { to: '/boutique', label: 'Boutique', hint: 'Rois, échiquiers et sorts : rien d’autre' },
     ],
   },
 ];
@@ -99,7 +99,7 @@ function UserMenu() {
           <Link role="menuitem" to={`/joueur/${me.username}`}>Mon profil</Link>
           <Link role="menuitem" to="/parties">Mes parties</Link>
           <Link role="menuitem" to="/compte">Mon compte</Link>
-          <Link role="menuitem" to="/boutique">Ma collection</Link>
+          <Link role="menuitem" to="/compte?onglet=collection">Ma collection</Link>
           {me.isAdmin && <Link role="menuitem" to="/admin">Administration</Link>}
           <div className="sep" />
           <button

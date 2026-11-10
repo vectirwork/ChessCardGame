@@ -773,6 +773,7 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
 .ody .o-astre-board .board::before,
 .ody .o-astre:not(.is-game) .o-astre-game .board::before {
   box-shadow:
+    var(--frame-shadow, 0 0 transparent),
     0 0 0 1px rgba(255, 255, 255, 0.08),
     inset 0 0 0 1px rgba(255, 255, 255, 0.1),
     0 6px 0 color-mix(in srgb, var(--frame) 70%, #000),
@@ -3498,7 +3499,7 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
   color: #fff;
   border-bottom-color: var(--gold);
 }
-@media (min-width: 821px) and (max-height: 1000px) {
+@media (min-width: 820px) and (max-height: 1000px) {
   .ody .o-bazar .o-sticky {
     padding-top: 64px;
   }
@@ -3523,7 +3524,7 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
    cordons, le corps des lanternes et la hauteur de l'étal des rois. Mesuré, blocs révélés, visiteur anonyme : colonne de
    783 px à 1440 × 900 (750 avant les rois), 713 px à 1280 × 800 avec les packs, 624 px à 1366 × 768 et 617 px à
    1280 × 720 sans eux ; dans l'écran de 900 × 700 à 1920 × 1080. */
-@media (min-width: 821px) and (max-height: 1100px) {
+@media (min-width: 820px) and (max-height: 1100px) {
   .ody .o-bazar-col .o-kicker {
     margin-bottom: 12px;
   }
@@ -3569,12 +3570,12 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
 }
 /* Écrans de 800 px de haut ou moins (1280 × 800, 1366 × 768, 1280 × 720) : titre, sceau et marges resserrés ; sous
    790 px, sans les packs (le lien « Entrer dans la boutique » et l'objet choisi restent) */
-@media (min-width: 821px) and (max-height: 790px) {
+@media (min-width: 820px) and (max-height: 790px) {
   .ody .o-bazar-col .o-packs {
     display: none;
   }
 }
-@media (min-width: 821px) and (max-height: 800px) {
+@media (min-width: 820px) and (max-height: 800px) {
   /* Le sceau « Zéro pay-to-win » remonte et rapetisse : le texte, remonté avec le titre, ne passe pas dessous */
   .ody .o-bazar-col .o-seal {
     top: 30px;

@@ -94,6 +94,15 @@ Mettre à jour plus tard : `git pull && docker compose up -d --build` (les parti
 
 Pour tester sans risque, utilisez d'abord une clé `sk_test_…` et la carte `4242 4242 4242 4242`.
 
+Remboursements et promesses des packs :
+- **Remboursement complet** (dans Stripe) : les objets de l'achat sont retirés automatiquement, et l'emplacement équipé
+  revient à l'objet offert s'il n'est plus possédé.
+- **Remboursement partiel** : rien n'est retiré automatiquement ; un avertissement est écrit dans le journal du serveur.
+  Remboursez l'achat en entier, ou retirez l'objet à la main dans l'administration.
+- **Promesses des packs** (« et les prochains offerts ») : les objets promis sont livrés une seule fois par achat (au
+  démarrage du serveur, ou à la livraison d'un pack ancien) et notés dans `purchases.items`. Un objet retiré par
+  l'administrateur ne revient donc pas au redémarrage suivant.
+
 ### 6. E-mails
 
 Sans SMTP, les e-mails (vérification, mot de passe oublié, confirmation d'achat) sont seulement écrits dans les logs.

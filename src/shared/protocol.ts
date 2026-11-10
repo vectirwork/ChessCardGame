@@ -250,6 +250,10 @@ export type EquipRequest = { itemId: string } | { itemIds: string[] };
  * Payer (POST /api/shop/checkout) : un produit (objet, collection « à compléter », pack) ou un panier d'essai
  * (`itemIds`, au plus un objet par emplacement). `equip` : équiper ce qui est livré, dès la livraison.
  */
+/**
+ * Paiement d'un produit ou d'un panier d'objets. `equip` n'équipe que les objets livrés par l'achat (payés) ; les objets
+ * déjà possédés ou offerts de l'essai s'équipent côté client, au retour d'un paiement réussi (boutique, Delivery).
+ */
 export type CheckoutRequest = ({ productId: string } | { itemIds: string[] }) & { waiver: true; equip?: boolean };
 
 export interface MeResponse {

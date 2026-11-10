@@ -325,6 +325,31 @@ export default function GamePage() {
   }, [state]);
   const check = state && !state.result ? checkSquare(state.pos, sideInCheck(state) ? state.pos.turn : null) : null;
   const mated = state ? matedKing(state) : null;
+  // Textures des sorts des deux joueurs préparées au repos, dès que la scène 3D existe : le premier sort de chacun ne
+  // les envoie plus au processeur graphique au milieu de son animation
+  const wSkin = view?.seats.w?.skin;
+  const bSkin = view?.seats.b?.skin;
+  useEffect(() => {
+    if (vfx) void vfx.stage.warm([], vfx.m.warmTextures([skinStyle(wSkin), skinStyle(bSkin)]));
+  }, [vfx, wSkin, bSkin]);
+  // Coup de grâce : au mat, une gerbe aux couleurs des sorts du vainqueur accompagne la chute du roi (une fois par mat ;
+  // sans scène 3D prête, ou en mouvement réduit, la chute seule, comme avant). Calée sur l'animation de la chute.
+  const finaleRef = useRef<number | null>(null);
+  const winner = state?.result?.winner ?? null;
+  useEffect(() => {
+    if (mated === null) {
+      finaleRef.current = null;
+      return;
+    }
+    if (finaleRef.current === mated || !winner) return;
+    finaleRef.current = mated;
+    const v = vfxRef.current;
+    if (!v) return;
+    const anim = wrapEl?.querySelector('.piece.is-mated .pi-fall')?.getAnimations()[0];
+    const ms = typeof anim?.currentTime === 'number' ? anim.currentTime : 0;
+    v.m.playFinale(v.stage, mated, skinStyle(view?.seats[winner]?.skin), ms);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mated, winner]);
   const myHand = useMemo(() => (you && state ? known(state.hands[you]) : []), [you, state]);
   const playable = useMemo(
     () =>

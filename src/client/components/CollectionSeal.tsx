@@ -1,7 +1,7 @@
 // Sceau de collection : l'exclusivité des collections premium complètes (sealOf, catalog.ts). C'est le cimier du roi de
 // la collection (crestUrl) dans un médaillon cerclé d'or, à la teinte de la collection, montré à côté du pseudo (en-tête
 // de partie, profil, classement). Aucun nouveau dessin, aucune animation.
-// À ne pas confondre avec le sceau « Zéro pay-to-win » de la boutique (Seal, Shop.tsx).
+// À ne pas confondre avec le sceau « Zéro pay-to-win » de la boutique (Seal, pages/shop/ShopPromise.tsx).
 import type { CSSProperties } from 'react';
 import { collectionById } from '../../shared/catalog';
 import { crestUrl } from './pieces';

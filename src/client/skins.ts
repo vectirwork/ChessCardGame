@@ -10,9 +10,10 @@ const FIELD = { king: 'equippedKing', board: 'equippedBoard', skin: 'equippedSki
 
 /**
  * Préférence locale « Rois adverses classiques » (usePref) : en partie, le roi adverse s'affiche en roi Arcane. Lue en
- * partie, à l'accueil et dans l'analyse ; réglée dans le compte. Même clé que features/history.ts.
+ * partie, à l'accueil et dans l'analyse ; réglée dans le compte. Définie dans features/history.ts, qui reste léger
+ * (« Mes parties » n'importe pas le catalogue).
  */
-export const CLASSIC_KINGS_PREF = 'rois-classiques';
+export { CLASSIC_KINGS_PREF } from './features/history';
 
 /** Objet porté dans un emplacement (défaut si non connecté, ou si le serveur ne l'envoie pas encore). */
 export function equippedId(me: Me, kind: ItemKind): string {

@@ -219,6 +219,26 @@ export function useLiveGame({
     v.stage.syncMarkers(activeRef.current ? s.effects : [], s.pos);
   }, []);
   const { ready: vfxReady, now: vfxNow } = useSharedVfx(armed ? wrapEl : null, PLAYER, 'odyssee-stage', !active, onVfx);
+  // Coup de grâce : au mat, une gerbe aux couleurs des sorts du vainqueur accompagne la chute du roi (une fois par mat ;
+  // seulement si la scène 3D est à la partie, sinon la chute seule, comme avant)
+  const finaleRef = useRef<number | null>(null);
+  const matedSq = matedKing(state);
+  const winnerColor = state.result?.winner ?? null;
+  useEffect(() => {
+    if (matedSq === null) {
+      finaleRef.current = null;
+      return;
+    }
+    if (finaleRef.current === matedSq || !winnerColor) return;
+    finaleRef.current = matedSq;
+    const v = vfxNow.current;
+    if (!v) return;
+    const anim = wrapEl?.querySelector('.piece.is-mated .pi-fall')?.getAnimations()[0];
+    const ms = typeof anim?.currentTime === 'number' ? anim.currentTime : 0;
+    // Sorts du vainqueur : les vôtres, ou ceux de l'Oracle (en duel, ceux de l'adversaire ne sont pas connus ici)
+    v.m.playFinale(v.stage, matedSq, skinStyle(winnerColor === meRef.current ? skin : botSkin), ms);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matedSq, winnerColor]);
   useEffect(() => {
     vfxNow.current?.stage.setOrientation(me, stateRef.current.effects, stateRef.current.pos);
   }, [vfxNow, me]);

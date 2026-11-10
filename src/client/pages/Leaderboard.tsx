@@ -1,19 +1,16 @@
-// Classement Elo des parties classées : le Hall des archimages.
+// Classement Elo des parties classées : le Hall des archimages. Le sceau de collection d'un joueur (sa collection
+// complète la plus rare) est à côté de son pseudo.
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import type { LeaderboardResponse, LeaderboardRow } from '../../shared/protocol';
 import { api } from '../api';
+import { CollectionSeal } from '../components/CollectionSeal';
 import { PageLoader } from '../components/Layout';
 import { useApp } from '../store';
 import { PageHead, PlacePage, StarMark, ordinal, useTitle } from './PageScene';
 
-interface Row {
-  username: string;
-  rating: number;
-  games_played: number;
-  wins: number;
-  losses: number;
-  draws: number;
-}
+/** Ligne du classement : un serveur d'avant les sceaux ne les envoie pas. */
+type Row = Omit<LeaderboardRow, 'seal'> & { seal?: string | null };
 
 const PLACE_LABEL = ['Premier', 'Deuxième', 'Troisième'];
 
@@ -22,7 +19,7 @@ export default function Leaderboard() {
   const [rows, setRows] = useState<Row[] | null>(null);
   const { me } = useApp();
   useEffect(() => {
-    api<{ players: Row[] }>('/leaderboard')
+    api<LeaderboardResponse>('/leaderboard')
       .then(r => setRows(r.players))
       .catch(() => setRows([]));
   }, []);
@@ -77,6 +74,7 @@ export default function Leaderboard() {
                 </span>
                 <Link to={`/joueur/${r.username}`} className="lb-name">
                   {r.username}
+                  <CollectionSeal id={r.seal} size={20} />
                 </Link>
                 <b className="lb-rating">{r.rating}</b>
                 <span className="lb-sub">
@@ -101,7 +99,10 @@ export default function Leaderboard() {
                   <tr key={r.username} className={me?.username === r.username ? 'me' : ''}>
                     <td className="rank">{i < 3 ? <span className={`lb-rank r${i + 1}`}>{i + 1}</span> : i + 1}</td>
                     <td>
-                      <Link to={`/joueur/${r.username}`}>{r.username}</Link>
+                      <Link to={`/joueur/${r.username}`} className="lb-who">
+                        {r.username}
+                        <CollectionSeal id={r.seal} size={18} />
+                      </Link>
                     </td>
                     <td>
                       <b>{r.rating}</b>

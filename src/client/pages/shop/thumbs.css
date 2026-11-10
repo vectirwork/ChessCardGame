@@ -1,0 +1,365 @@
+/* Vignettes des skins (ItemThumb.tsx) : boutique, compte, récapitulatif et paiement simulé.
+   Tout est statique : aucune animation, aucune transition. L'échiquier incliné est un rotateX fixe dans la structure de
+   Board (.board-wrap > .board > .squares), réduit par transform : les décors de boardTheme s'y posent comme sur un vrai
+   échiquier, et une vignette ne crée aucun nœud SVG (rois et sceaux en background-image ou en CSS). */
+
+.th {
+  position: relative;
+  display: block;
+  flex: none;
+  pointer-events: none;
+  --gem: #f3c969;
+}
+.th-card {
+  height: var(--th-h, 138px);
+  border-radius: 11px;
+  overflow: hidden;
+  background:
+    radial-gradient(80% 70% at 50% 76%, color-mix(in srgb, var(--gem) 26%, transparent), transparent 72%),
+    linear-gradient(180deg, rgb(255 255 255 / 0.045), rgb(0 0 0 / 0.22));
+}
+.th-chip {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: radial-gradient(70% 70% at 50% 60%, color-mix(in srgb, var(--gem) 22%, transparent), rgb(0 0 0 / 0.25));
+}
+.th-mini {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: rgb(0 0 0 / 0.25);
+}
+
+/* Rois */
+.th-k {
+  position: absolute;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center bottom;
+}
+.th-duo {
+  position: absolute;
+  inset: 0;
+}
+.th-duo::after {
+  /* ombre au sol, sous les deux rois */
+  content: '';
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  bottom: 5%;
+  height: 12%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(0 0 0 / 0.55), transparent);
+}
+.th-duo .th-k {
+  z-index: 1;
+  filter: drop-shadow(0 6px 6px rgb(0 0 0 / 0.5));
+}
+.th-kw {
+  width: 81%;
+  height: 81%;
+  left: calc(50% - 54%);
+  bottom: 7%;
+  max-width: 128px;
+}
+.th-kb {
+  width: 67%;
+  height: 67%;
+  left: calc(50% - 4%);
+  bottom: 9%;
+  max-width: 106px;
+}
+.th-card .th-kw {
+  width: calc(var(--th-h, 138px) * 0.81);
+  height: calc(var(--th-h, 138px) * 0.81);
+  left: calc(50% - var(--th-h, 138px) * 0.54);
+}
+.th-card .th-kb {
+  width: calc(var(--th-h, 138px) * 0.67);
+  height: calc(var(--th-h, 138px) * 0.67);
+  left: calc(50% - var(--th-h, 138px) * 0.04);
+}
+.th-solo {
+  inset: 2px;
+  background-position: center;
+  filter: drop-shadow(0 2px 2px rgb(0 0 0 / 0.5));
+}
+
+/* Échiquier : coin de 4 × 4 cases, dans la structure de Board, réduit et (sur les cartes) incliné */
+.th-board {
+  position: absolute;
+  inset: 0;
+  --bw: 176px;
+  --bs: 0.56;
+}
+.th-board .board-wrap {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--bw);
+  margin: calc(var(--bw) / -2) 0 0 calc(var(--bw) / -2);
+  transform: scale(var(--bs));
+  perspective: 560px;
+}
+.th-board.is-tilted .board-wrap {
+  --tilt: 48deg;
+  top: 47%;
+}
+.th-board .squares {
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(4, 1fr);
+}
+/* Incrustation : le quart haut-droit de l'échiquier (même parité de cases : a1 sombre) */
+.th-board .board-wrap.has-inlay .squares::before {
+  background-size: 200% 200%;
+  background-position: 100% 0;
+}
+.th-board .board::before {
+  box-shadow:
+    0 26px 40px -16px rgb(0 0 0 / 0.85),
+    0 0 0 1px rgb(255 255 255 / 0.06),
+    inset 0 0 0 1px rgb(255 255 255 / 0.08);
+}
+.th-board-king {
+  position: absolute;
+  z-index: 1;
+  left: calc(50% - 6px);
+  bottom: 24%;
+  width: 42%;
+  height: 42%;
+  max-width: 64px;
+  max-height: 64px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center bottom;
+  filter: drop-shadow(0 6px 5px rgb(0 0 0 / 0.55));
+}
+.th-chip .th-board {
+  --bw: 80px;
+  --bs: 0.4;
+}
+.th-mini .th-board {
+  --bw: 80px;
+  --bs: 0.24;
+}
+
+/* Sorts : sceau figé (anneau, cœur, 8 particules à la forme du skin) */
+.th-is-skin.th-card {
+  background:
+    radial-gradient(46% 52% at 50% 50%, color-mix(in srgb, var(--gem) 30%, transparent), transparent 75%),
+    linear-gradient(180deg, rgb(255 255 255 / 0.045), rgb(0 0 0 / 0.22));
+}
+.th-seal {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--seal, 92px);
+  height: var(--seal, 92px);
+  margin: calc(var(--seal, 92px) / -2) 0 0 calc(var(--seal, 92px) / -2);
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--s) 28%, transparent), transparent 70%);
+}
+.th-chip .th-seal {
+  --seal: 34px;
+}
+.th-mini .th-seal {
+  --seal: 20px;
+}
+.th-seal-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px dashed color-mix(in srgb, var(--a) 72%, transparent);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--p) 40%, transparent), inset 0 0 14px color-mix(in srgb, var(--p) 34%, transparent);
+}
+.th-seal-ring.r2 {
+  inset: 16%;
+  border: 1px solid color-mix(in srgb, var(--p) 70%, transparent);
+  box-shadow: none;
+}
+.th-seal-core {
+  position: absolute;
+  inset: 33%;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff 0%, var(--p) 34%, color-mix(in srgb, var(--s) 60%, transparent) 64%, transparent 74%);
+}
+.th-seal i {
+  position: absolute;
+  inset: 0;
+  transform: rotate(calc(var(--i) * 45deg + 22.5deg));
+}
+.th-seal i::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -4px;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  border-radius: 50%;
+  background: var(--a);
+  box-shadow: 0 0 8px var(--p), 0 0 2px var(--a);
+}
+.th-chip .th-seal i,
+.th-mini .th-seal i,
+.th-mini .th-seal-ring.r2 {
+  display: none;
+}
+.th-chip .th-seal-ring {
+  box-shadow: 0 0 10px color-mix(in srgb, var(--p) 45%, transparent);
+}
+/* Formes des particules */
+.th-seal.p-pixel i::before {
+  border-radius: 1px;
+  width: 7px;
+  height: 7px;
+}
+.th-seal.p-ember i::before {
+  width: 6px;
+  height: 10px;
+  margin-left: -3px;
+  border-radius: 50% 50% 40% 40%;
+  background: linear-gradient(180deg, var(--a), var(--p));
+}
+.th-seal.p-petal i::before {
+  width: 9px;
+  height: 13px;
+  margin-left: -4.5px;
+  border-radius: 80% 0 80% 0;
+  background: var(--p);
+}
+.th-seal.p-star i::before {
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  border-radius: 0;
+  background: #fff6d8;
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+}
+.th-seal.p-void i::before {
+  background: #0a0014;
+  box-shadow: 0 0 0 1.5px var(--p), 0 0 8px var(--p);
+}
+.th-seal.p-shard i::before {
+  width: 7px;
+  height: 12px;
+  margin-left: -3.5px;
+  border-radius: 0;
+  background: linear-gradient(160deg, var(--a), var(--p) 55%, color-mix(in srgb, var(--p) 60%, #3a0010));
+  clip-path: polygon(50% 0, 100% 45%, 50% 100%, 0 45%);
+}
+.th-seal.p-glow i::before {
+  width: 7px;
+  height: 7px;
+}
+/* Motifs de l'anneau */
+.th-seal.f-grid .th-seal-ring {
+  border-radius: 8px;
+}
+.th-seal.f-flames .th-seal-ring,
+.th-seal.f-vortex .th-seal-ring {
+  border-style: dotted;
+  border-width: 3px;
+}
+.th-seal.f-constellation .th-seal-ring {
+  border-style: solid;
+  border-width: 1px;
+}
+.th-seal.f-laurel .th-seal-ring,
+.th-seal.f-filigree .th-seal-ring {
+  border: 2px double color-mix(in srgb, var(--s) 80%, var(--a));
+}
+.th-seal.f-filigree .th-seal-ring.r2 {
+  border: 1px dashed #ffc861;
+}
+.th-seal.f-laurel .th-seal-ring.r2 {
+  border-color: color-mix(in srgb, var(--s) 70%, transparent);
+}
+.th-seal.p-void .th-seal-core {
+  background: radial-gradient(circle, #050008 42%, var(--p) 60%, transparent 74%);
+}
+
+/* Collection : triptyque */
+.th-trip {
+  position: absolute;
+  inset: 0;
+}
+.th-trip-halo {
+  position: absolute;
+  left: 50%;
+  top: 4%;
+  width: 70%;
+  aspect-ratio: 1;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--gem) 55%, transparent);
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--gem) 34%, transparent), transparent 75%);
+  box-shadow: 0 0 30px -6px color-mix(in srgb, var(--gem) 50%, transparent);
+}
+.th-trip-seal {
+  --seal: 64%;
+  opacity: 0.55;
+  top: 36%;
+  width: auto;
+  height: auto;
+  aspect-ratio: 1;
+  left: 18%;
+  right: 18%;
+  margin: 0;
+  transform: translateY(-50%);
+}
+.th-trip-board {
+  --bw: 200px;
+  --bs: 0.9;
+}
+.th-trip-board.is-tilted .board-wrap {
+  top: 64%;
+  --tilt: 56deg;
+}
+.th-trip-kings .th-kw {
+  width: 44%;
+  height: 54%;
+  left: 13%;
+  bottom: 13%;
+  max-width: none;
+}
+.th-trip-kings .th-kb {
+  width: 38%;
+  height: 47%;
+  left: 51%;
+  bottom: 16%;
+  max-width: none;
+}
+.th-crest {
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background-position: center 40%;
+  background-size: 86%;
+  background-repeat: no-repeat;
+  background-color: color-mix(in srgb, var(--gem) 34%, #120c24);
+  box-shadow: inset 0 0 0 1.5px #f3c969;
+}
+
+/* Pierre de rareté : losange de 7 px, halo de sa couleur, libellé en petites capitales */
+.gem {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--caps);
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--rc);
+  white-space: nowrap;
+}
+.gem i {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  transform: rotate(45deg);
+  background: var(--rc);
+  box-shadow: 0 0 8px var(--rc);
+}

@@ -1,639 +1,509 @@
-// Boutique : le Bazar céleste. Skins d'animation (lanternes), plateaux (carreaux posés sur l'étal), packs (grimoires).
-// L'échiquier de la vitrine lance de vrais sorts avec le skin choisi, sur le plateau choisi. Paiement par Stripe
-// Checkout ; en mode démo, une page simulée (/boutique/demo/:id) le remplace. Rien ne donne d'avantage en partie.
-// Liens utiles : /boutique?objet=skin:inferno présélectionne un objet, /boutique#grimoires mène aux packs.
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { CARDS, CARD_IDS, inCatalog } from '../../shared/cards';
-import type { CardId } from '../../shared/cards';
-import { fromFen } from '../../shared/chess';
-import { ITEMS, Item, PRODUCTS, Product, boardStyle, formatPrice, itemById, kingStyle } from '../../shared/catalog';
-import type { MeUser } from '../../shared/protocol';
+// Boutique : le Bazar céleste, devenu une cabine d'essayage. On compose sa panoplie (roi, échiquier, sorts) en touchant
+// des cartes dessinées, on la voit tout de suite (le roi en portrait, puis en partie avec ses sorts), et l'on achète
+// puis équipe d'un seul geste. Les collections assorties ajoutent une exclusivité : le sceau de collection.
+// Composants dans pages/shop/ (cabine, rayons, cartes, déballage…) ; état de la page ici : essai, rayon, vue, adresse,
+// retour du paiement. Rien ne donne d'avantage en partie.
+// Adresses : /boutique?essai=king:braise,board:ruby (essai, partageable), ?rayon=rois|echiquiers|sorts|collections,
+// ?objet=skin:inferno (ancienne adresse : essaie l'objet et ouvre son rayon), #grimoires (rayon Collections),
+// ?achat=<session> (retour de Stripe), ?annule=1 (paiement annulé, l'essai est gardé).
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { ITEMS, collectionById, formatPrice, itemById, unitPrice } from '../../shared/catalog';
+import type { Collection, ItemKind, Product } from '../../shared/catalog';
+import type { ConfirmResponse, MeUser } from '../../shared/protocol';
 import { api, errMsg } from '../api';
-import { Board } from '../components/Board';
-import { kingUrl } from '../components/pieces';
-import { Modal, Spinner } from '../components/Layout';
-import { liveCatalog } from '../odyssee/data';
-import { StageBoard } from '../odyssee/StageBoard';
-import { isEquipped } from '../skins';
+import { isEquipped, owns } from '../skins';
 import { useApp } from '../store';
 import { PageHead, PlacePage, StarMark, useTitle } from './PageScene';
+import { Cabin } from './shop/Cabin';
+import type { CabinView } from './shop/Cabin';
+import { CheckoutModal, DELIVERY_KEY } from './shop/CheckoutModal';
+import type { Delivery } from './shop/CheckoutModal';
+import { CollectionCard, GrimoireCard, TresorBanner } from './shop/CollectionCard';
+import { ItemCard } from './shop/ItemCard';
+import { PanoplieBar } from './shop/PanoplieBar';
+import { Rack } from './shop/Rack';
+import { RAYONS, RayonTabs } from './shop/RayonTabs';
+import type { Rayon } from './shop/RayonTabs';
+import { ShopDock } from './shop/ShopDock';
+import { Seal, ShopPromise } from './shop/ShopPromise';
+import { TrialAction, actionTexts } from './shop/TrialAction';
+import {
+  PACKS, PREMIUM_COLLECTIONS, bestCollection, equipNote, formatEssai, itemPhrase, itemState, mainAction, parseEssai, quoteTrial, rackOrder, withCollection,
+} from './shop/trial';
+import type { CollectionHint, Order, TrialDelta } from './shop/trial';
+import { hasStoredTrial, storedTrial, useShopUrl, useTrial } from './shop/useTrial';
+import './shop/shop.css';
 
-const SKINS = ITEMS.filter(i => i.kind === 'skin');
-const BOARDS = ITEMS.filter(i => i.kind === 'board');
-const PACKS = PRODUCTS.filter(p => p.id.startsWith('pack:'));
-/** Position de départ, comme l'échiquier de démonstration : le passage à la scène des sorts ne se voit pas. */
-const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
-/** Sorts montrés par l'aperçu, dans cet ordre, parmi les cartes du catalogue en jeu (les 8 pouvoirs ; Duel seulement si le moteur n'a pas encore les Pouvoirs). */
-const PREVIEW_ORDER = ['ice_wall', 'rift', 'tide', 'blast', 'ice_age', 'blood_moon', 'truce', 'hourglass'];
-const KIND_LABEL: Record<Item['kind'], string> = { skin: 'Skin d’animation', board: 'Plateau', king: 'Roi' };
+const KIND_RAYON: Record<ItemKind, Rayon> = { king: 'rois', board: 'echiquiers', skin: 'sorts' };
+const RAYON_KIND: Record<Exclude<Rayon, 'collections'>, ItemKind> = { rois: 'king', echiquiers: 'board', sorts: 'skin' };
+/** Roi mis en essai à la première arrivée de la session, quand rien d'autre n'est demandé. */
+const FEATURED: TrialDelta = { king: 'king:braise' };
+const GRIMOIRE = PACKS.find(p => p.id === 'pack:skins');
+const TRESOR = PACKS.find(p => p.id === 'pack:tresor');
 
-const productOf = (itemId: string) => PRODUCTS.find(p => p.id === itemId) ?? PRODUCTS.find(p => p.items.length === 1 && p.items[0] === itemId);
-const packsWith = (itemId: string) => PACKS.filter(p => p.items.includes(itemId));
+/** Arrivée : essai, rayon et vue d'après l'adresse (lue une fois). */
+function arrival() {
+  const q = new URLSearchParams(window.location.search);
+  const objet = itemById(q.get('objet') ?? '');
+  const fromUrl = parseEssai(q.get('essai'));
+  let delta: TrialDelta;
+  if (Object.keys(fromUrl).length) delta = fromUrl;
+  else if (objet) delta = { [objet.kind]: objet.id };
+  else {
+    // Un essai déjà gardé dans la session, même vide (« Rétablir »), est repris tel quel
+    const stored = storedTrial();
+    delta = Object.keys(stored).length ? stored : q.get('achat') || hasStoredTrial() ? {} : FEATURED;
+  }
+  const r = q.get('rayon') as Rayon | null;
+  const rayon: Rayon =
+    r && RAYONS.includes(r) ? r : window.location.hash === '#grimoires' ? 'collections' : objet ? KIND_RAYON[objet.kind] : 'rois';
+  const view: CabinView = objet && objet.kind !== 'king' ? 'partie' : 'roi';
+  return { delta, rayon, view, achat: q.get('achat'), annule: !!q.get('annule') };
+}
+
+/** Requête média suivie (rotation, fenêtre redimensionnée). */
+function useMedia(query: string): boolean {
+  const [on, setOn] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const m = window.matchMedia(query);
+    const change = () => setOn(m.matches);
+    change();
+    m.addEventListener('change', change);
+    return () => m.removeEventListener('change', change);
+  }, [query]);
+  return on;
+}
 
 export default function Shop() {
   useTitle('Boutique');
   const { me, setMe, toast, payments, ready } = useApp();
-  const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
-  const initial = itemById(params.get('objet') ?? '');
-  const [skinPick, setSkinPick] = useState(initial?.kind === 'skin' ? initial.id : 'skin:inferno');
-  const [boardPick, setBoardPick] = useState(initial?.kind === 'board' ? initial.id : 'board:obsidian');
-  const [focus, setFocus] = useState<string>(initial?.id ?? 'skin:inferno');
-  const [buying, setBuying] = useState<Product | null>(null);
+  const location = useLocation();
+  const [start] = useState(arrival);
+  const t = useTrial(me, () => start.delta);
+  const [rayon, setRayon] = useState<Rayon>(start.rayon);
+  const [view, setView] = useState<CabinView>(start.view);
+  const [mine, setMine] = useState(false);
+  const [spellKick, setSpellKick] = useState(0);
+  const [order, setOrder] = useState<{ order: Order; equipOwned: string[] } | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [unbox, setUnbox] = useState<string[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [casting, setCasting] = useState(false);
+  const [lastTried, setLastTried] = useState<string | null>(null);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [reduced] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-  // Le vrai sort (scène 3D) n'est créé qu'au repos après l'ouverture, ou au premier choix d'un skin
-  const [live, setLive] = useState(false);
-  const [casting, setCasting] = useState<CardId | null>(null);
-  const [playSignal, setPlaySignal] = useState(0);
-  const [visible, setVisible] = useState(true);
-  const stageRef = useRef<HTMLDivElement>(null);
-  const catalog = useMemo(() => liveCatalog(), []);
-  const previewCards = useMemo(
-    () => PREVIEW_ORDER.filter(id => (CARD_IDS as string[]).includes(id) && inCatalog(id as CardId, catalog)) as CardId[],
-    [catalog],
+  // Téléphone : la ligne d'action passe sous le portant (la barre fixe porte le même bouton), pour que la vue de la
+  // cabine et le portant tiennent ensemble à l'écran
+  const phone = useMedia('(max-width: 700px)');
+  const cabinRef = useRef<HTMLDivElement>(null);
+
+  const loggedIn = !!me;
+  const sale = payments !== 'off' && ready;
+  const quote = useMemo(() => quoteTrial(t.trial, t.pano, t.owned), [t.trial, t.pano, t.owned]);
+  const action = useMemo(() => mainAction(quote, { loggedIn, sale }), [quote, loggedIn, sale]);
+  const hint = useMemo(() => bestCollection(t.trial, t.pano, t.owned), [t.trial, t.pano, t.owned]);
+
+  useShopUrl(rayon, t.delta, confirming);
+
+  // ---------------------------------------------------------------------------------------------
+  // Livraison (retour de Stripe, paiement simulé) : déballage, essai = objets livrés, message
+
+  const deliver = useCallback(
+    async (items: string[], user: MeUser, equipOwned: readonly string[] = []) => {
+      // Objets déjà possédés de l'essai, équipés avec l'achat (case cochée au récapitulatif) : maintenant qu'il est livré
+      let u = user;
+      const extra = equipOwned.filter(i => owns(u, i) && !isEquipped(u, i));
+      if (extra.length) {
+        try {
+          u = (await api<{ user: MeUser }>('/account/equip', { body: extra.length === 1 ? { itemId: extra[0] } : { itemIds: extra } })).user;
+        } catch {
+          // l'achat est livré ; ces objets s'équipent ensuite d'un geste
+        }
+      }
+      setMe(u);
+      const known = items.filter(i => itemById(i));
+      // Un objet par emplacement : il entre dans la cabine (s'il est équipé, l'essai redevient la panoplie)
+      const delta: TrialDelta = {};
+      const many = new Set<ItemKind>();
+      for (const id of known) {
+        const k = itemById(id)!.kind;
+        if (delta[k]) many.add(k);
+        else delta[k] = id;
+      }
+      for (const k of many) delete delta[k];
+      t.set(delta);
+      setView(known.some(i => itemById(i)?.kind === 'king') ? 'roi' : 'partie');
+      setUnbox(known);
+      const worn = [...known, ...extra].filter(i => isEquipped(u, i));
+      let msg: string;
+      if (worn.length > 1) msg = `Panoplie équipée : ${equipNote(worn)}.`;
+      else if (worn.length === 1) msg = equippedMessage(worn[0]);
+      else if (known.length === 1) msg = `Merci ! ${itemPhrase(itemById(known[0])!)} est dans votre collection.`;
+      else msg = `Merci ! ${known.length} skins ajoutés à votre collection.`;
+      if (worn.some(i => itemById(i)?.kind === 'king') && (await gameInProgress())) msg += ' Votre nouveau roi vous attend à la prochaine partie.';
+      toast(msg, 'success');
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [setMe, toast],
   );
-  const [round, setRound] = useState(0);
-  const [equipping, setEquipping] = useState<string | null>(null);
 
+  // Retour de Stripe (?achat=<session>) : on vérifie le paiement sans attendre le webhook
   useEffect(() => {
-    if (reduced) return;
-    type IdleWin = Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
-    const w = window as IdleWin;
-    let idle = 0;
-    const t = window.setTimeout(() => {
-      if (w.requestIdleCallback) idle = w.requestIdleCallback(() => setLive(true), { timeout: 2500 });
-      else setLive(true);
-    }, 1600);
-    return () => {
-      window.clearTimeout(t);
-      if (idle) w.cancelIdleCallback?.(idle);
-    };
-  }, [reduced]);
-
-  // La démonstration se met en pause quand la vitrine sort de l'écran
-  useEffect(() => {
-    const el = stageRef.current;
-    if (!el || !('IntersectionObserver' in window)) return;
-    const io = new IntersectionObserver(([e]) => setVisible(e.isIntersecting), { threshold: 0.05 });
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
-
-  // Retour de Stripe Checkout (?achat=<session>) ou paiement annulé (?annule=1)
-  useEffect(() => {
-    const sid = params.get('achat');
-    if (params.get('annule')) {
-      toast('Paiement annulé : aucun montant n’a été débité.');
-      setParams({}, { replace: true });
-    }
-    if (!sid || !me) return;
+    if (start.annule) toast('Paiement annulé : aucun montant n’a été débité. Votre essai est gardé.');
+    if (!start.achat || !ready) return;
+    if (!me) return;
     setConfirming(true);
-    api<{ status: string; user: MeUser }>(`/shop/confirm/${encodeURIComponent(sid)}`)
+    const d = readDelivery();
+    api<ConfirmResponse>(`/shop/confirm/${encodeURIComponent(start.achat)}`)
       .then(r => {
-        setMe(r.user);
-        if (r.status === 'paid') toast('Merci ! Votre achat est disponible dans votre collection.', 'success');
-        else toast('Paiement en cours de validation : il apparaîtra d’ici quelques instants.');
+        if (r.status === 'paid') void deliver(r.items ?? d.items, r.user, d.equipOwned);
+        else {
+          setMe(r.user);
+          toast('Paiement en cours de validation : il apparaîtra d’ici quelques instants.');
+        }
       })
       .catch(e => toast(errMsg(e), 'error'))
       .finally(() => {
         setConfirming(false);
-        setParams({}, { replace: true });
+        clearDelivery();
       });
-  }, [params, me, setMe, toast, setParams]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
 
-  // Ancre #grimoires (lien depuis l'accueil). Arrivée sur un objet (?objet=, retour de la caisse) : sur mobile, la
-  // fiche est sous les étagères ; on l'amène à l'écran pour que l'achat ou l'équipement soit à portée de main.
+  // Paiement simulé réussi (mode démo) : la page de démo revient ici avec les objets livrés
   useEffect(() => {
-    if (window.location.hash === '#grimoires') {
-      document.getElementById('grimoires')?.scrollIntoView();
-      return;
-    }
-    if (!initial) return;
-    const t = window.setTimeout(() => {
-      const el = document.querySelector('.bz-fiche');
-      if (el && el.getBoundingClientRect().top > window.innerHeight * 0.8) el.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
-    }, 350);
-    return () => window.clearTimeout(t);
+    const st = location.state as { livre?: string[]; user?: MeUser } | null;
+    if (!st?.livre || !st.user) return;
+    void deliver(st.livre, st.user, readDelivery().equipOwned);
+    clearDelivery();
+    window.history.replaceState({ ...window.history.state, usr: null }, '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const owned = (id: string) => !!itemById(id)?.free || !!me?.items.includes(id);
-  const equipped = (id: string) => isEquipped(me, id);
+  // Ancre #grimoires : le rayon Collections, à l'écran
+  useEffect(() => {
+    if (window.location.hash !== '#grimoires') return;
+    const tm = window.setTimeout(() => document.getElementById('rayons')?.scrollIntoView({ block: 'start' }), 120);
+    return () => window.clearTimeout(tm);
+  }, []);
 
-  const equip = async (id: string) => {
-    setEquipping(id);
+  // ---------------------------------------------------------------------------------------------
+  // Gestes
+
+  const tryItem = (id: string) => {
+    const it = itemById(id);
+    if (!it) return;
+    const on = t.trial[it.kind] !== id || t.pano[it.kind] === id;
+    t.tryItem(id);
+    setLastTried(on ? id : null);
+    if (it.kind === 'king') setView('roi');
+    else setView('partie');
+    if (it.kind === 'skin' && on) setSpellKick(n => n + 1);
+  };
+
+  const tryCollection = (c: Collection) => {
+    t.tryCollection(c);
+    setLastTried(c.id);
+    setView('partie');
+    setSpellKick(n => n + 1);
+  };
+
+  const onHint = (h: CollectionHint) => tryCollection(h.collection);
+
+  const surprise = () => {
+    t.surprise();
+    setLastTried(null);
+    setView('partie');
+    setSpellKick(n => n + 1);
+  };
+
+  const openSlot = (k: ItemKind) => {
+    setRayon(KIND_RAYON[k]);
+    setView(k === 'king' ? 'roi' : 'partie');
+  };
+
+  /** Inscription, puis retour à la boutique avec cet essai et ce rayon. */
+  const signup = (delta: TrialDelta = t.delta, to: Rayon = rayon) => {
+    const q: string[] = [];
+    if (to !== 'rois') q.push(`rayon=${to}`);
+    const essai = formatEssai(delta);
+    if (essai) q.push(`essai=${essai}`);
+    navigate(`/inscription?retour=${encodeURIComponent(`/boutique${q.length ? `?${q.join('&')}` : ''}`)}`);
+  };
+
+  const equip = async (ids: string[]) => {
+    if (!ids.length) return;
+    setBusy(ids.join(','));
     try {
-      const r = await api<{ user: MeUser }>('/account/equip', { body: { itemId: id } });
+      const r = await api<{ user: MeUser }>('/account/equip', { body: ids.length === 1 ? { itemId: ids[0] } : { itemIds: ids } });
       setMe(r.user);
-      toast(`${itemById(id)?.name} équipé : vos adversaires le verront.`, 'success');
+      let msg = ids.length > 1 ? `Panoplie équipée : ${equipNote(ids)}.` : equippedMessage(ids[0]);
+      if (ids.some(i => itemById(i)?.kind === 'king') && (await gameInProgress())) msg += ' Votre nouveau roi vous attend à la prochaine partie.';
+      toast(msg, 'success');
     } catch (e) {
       toast(errMsg(e), 'error');
     } finally {
-      setEquipping(null);
+      setBusy(null);
     }
   };
 
-  const buy = (product: Product) => {
+  const buy = (p: Product) => {
+    const c = p.kind === 'collection' ? collectionById(p.id) : undefined;
     if (!me) {
-      const back = product.id.startsWith('pack:') ? '/boutique#grimoires' : `/boutique?objet=${product.id}`;
-      navigate(`/inscription?retour=${encodeURIComponent(back)}`);
-      return;
+      // Visiteur : on revient de l'inscription avec ce qu'il voulait acheter (la collection en essai, son rayon)
+      if (c) return signup(withCollection(t.delta, t.pano, c), 'collections');
+      return signup(t.delta, p.id === 'pack:skins' ? 'sorts' : rayon);
     }
-    setBuying(product);
+    // Collection complétée : les pièces déjà possédées sont équipées avec les nouvelles (à la livraison, case cochée)
+    const equipOwned = c ? p.items.filter(i => owns(me, i) && !isEquipped(me, i)) : [];
+    setOrder({ order: { kind: 'product', product: p }, equipOwned });
   };
 
-  const pickSkin = (id: string) => {
-    setSkinPick(id);
-    setFocus(id);
-    setRound(n => n + 1);
-    setCasting(null);
-    setLive(true);
-    if (reduced) setPlaySignal(n => n + 1);
-  };
-  const pickBoard = (id: string) => {
-    setBoardPick(id);
-    setFocus(id);
+  const onMain = () => {
+    if (action.kind === 'equip') void equip(action.ids);
+    else if (action.kind === 'buy') setOrder({ order: { kind: 'cart', itemIds: action.ids }, equipOwned: quote.equip });
+    else if (action.kind === 'signup') signup();
   };
 
-  const item = itemById(focus)!;
-  const skin = itemById(skinPick)!.skin!;
-  const sale = payments !== 'off' && ready;
-  const ownedCount = me ? ITEMS.filter(i => !i.free && me.items.includes(i.id)).length : 0;
-  const premiumCount = ITEMS.filter(i => !i.free).length;
+  const onUnboxDone = useCallback(() => setUnbox(null), []);
+
+  const backToCabin = () => cabinRef.current?.scrollIntoView({ block: 'start', behavior: reduced ? 'auto' : 'smooth' });
+
+  // ---------------------------------------------------------------------------------------------
+  // Affichage
+
+  const ownedCount = ITEMS.filter(i => owns(me, i.id)).length;
+  const counts = { rois: 0, echiquiers: 0, sorts: 0, collections: PREMIUM_COLLECTIONS.length } as Record<Rayon, number>;
+  for (const i of ITEMS) counts[KIND_RAYON[i.kind]]++;
+  const live = liveText(lastTried, quote, action);
+  const onCasting = useCallback((on: boolean) => setCasting(on), []);
+
+  // Ligne d'action : dans la cabine, ou sous le portant sur téléphone. La barre fixe observe ses boutons.
+  const trialAction = (
+    <TrialAction
+      quote={quote}
+      action={action}
+      hint={hint}
+      busy={!!busy && busy === (action.kind === 'equip' ? action.ids.join(',') : '')}
+      waiting={!ready}
+      demo={payments === 'demo'}
+      loggedIn={loggedIn}
+      btnsRef={setAnchor}
+      onMain={onMain}
+      onEquipOwned={() => void equip(quote.equip)}
+      onRevertAll={() => {
+        t.revertAll();
+        setLastTried(null);
+      }}
+      onHint={onHint}
+    />
+  );
+
+  const rack = () => {
+    if (rayon === 'collections') {
+      const list = PREMIUM_COLLECTIONS.filter(c => !mine || [c.king, c.board, c.skin].some(i => t.owned.includes(i)));
+      return (
+        <Rack key="collections" rayon="collections" empty={list.length ? undefined : <EmptyMine />}>
+          {list.map(c => (
+            <CollectionCard
+              key={c.id}
+              c={c}
+              owned={t.owned}
+              loggedIn={loggedIn}
+              sale={sale}
+              ready={ready}
+              trying={t.trial.king === c.king && t.trial.board === c.board && t.trial.skin === c.skin}
+              onTry={tryCollection}
+              onBuy={buy}
+            />
+          ))}
+        </Rack>
+      );
+    }
+    const kind = RAYON_KIND[rayon];
+    const list = rackOrder(ITEMS.filter(i => i.kind === kind && (!mine || t.owned.includes(i.id))));
+    return (
+      // Une clé par rayon : le portant repart du début (son défilement horizontal n'est pas celui du rayon d'avant)
+      <Rack key={rayon} rayon={rayon} empty={list.length ? undefined : <EmptyMine />}>
+        {kind === 'skin' && GRIMOIRE && !mine && <GrimoireCard product={GRIMOIRE} owned={t.owned} loggedIn={loggedIn} sale={sale} ready={ready} onBuy={buy} />}
+        {list.map(i => {
+          // Visiteur : la panoplie Arcane n'est « équipée » sur aucun compte ; ses objets sont offerts à tous
+          const raw = itemState(i.id, t.pano, t.owned);
+          const state = !loggedIn && raw === 'equipped' ? 'free' : raw;
+          return (
+            <ItemCard
+              key={i.id}
+              id={i.id}
+              state={state}
+              trying={t.trial[i.kind] === i.id && t.pano[i.kind] !== i.id}
+              canEquip={loggedIn && (state === 'owned' || state === 'free')}
+              equipping={busy === i.id}
+              onTry={tryItem}
+              onEquip={id => void equip([id])}
+            />
+          );
+        })}
+      </Rack>
+    );
+  };
 
   return (
-    <PlacePage place="bazar" className="bz">
-      {confirming && (
-        <div className="notice bz-notice" role="status">
-          <Spinner /> Validation de votre paiement…
+    <PlacePage place="bazar" className={`bz ${casting ? 'is-casting' : ''}`}>
+      <header className={`bz-band ${loggedIn ? '' : 'is-guest'}`}>
+        <PageHead
+          num="V"
+          place="Le Bazar céleste"
+          aside="Boutique"
+          title={
+            <>
+              Votre roi, votre échiquier, <em>vos sorts.</em>
+            </>
+          }
+          lede={
+            loggedIn
+              ? 'Essayez tout dans la cabine, gratuitement. Des skins qui changent l’apparence, jamais la partie.'
+              : 'Essayez tout librement. Un compte gratuit garde vos skins et les montre à vos adversaires.'
+          }
+        />
+        <div className="bz-band-side">
+          {loggedIn && (
+            <span className="bz-count">
+              <StarMark size={11} /> Ma collection : {ownedCount} sur {ITEMS.length}
+            </span>
+          )}
+          <Seal />
         </div>
-      )}
+      </header>
 
-      <section className="bz-vitrine" aria-label="Vitrine">
-        <div className="bz-col">
-          <div className="bz-head">
-            <PageHead
-              num="V"
-              place="Le Bazar céleste"
-              aside="Boutique"
-              title={
-                <>
-                  Faites briller <em>vos sorts.</em>
-                </>
-              }
-              lede="Des skins d’animation pour vos cartes et des plateaux, que vos adversaires voient aussi. De l’apparence, rien d’autre : toutes les cartes, tous les modes et le classement restent gratuits."
-            />
-            <Seal />
-          </div>
-
-          <div className="bz-shelves">
-            <div className="bz-shelf">
-              <div className="bz-shelf-head">
-                <span>Skins d’animation</span>
-                <small>Allumez une lanterne : l’échiquier lance un sort avec ce skin</small>
-              </div>
-              <div className="bz-lanterns" role="group" aria-label="Skins d’animation">
-                {SKINS.map((s, i) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    className={`bz-lantern ${skinPick === s.id ? 'on' : ''}`}
-                    style={{ '--p': s.skin!.primary, '--s': s.skin!.secondary, '--a': s.skin!.accent, '--i': i } as CSSProperties}
-                    onClick={() => pickSkin(s.id)}
-                    aria-pressed={skinPick === s.id}
-                    aria-label={`${s.name}, ${stateLabel(s.id)}`}
-                  >
-                    <span className="bz-lantern-cord" />
-                    <span className="bz-lantern-body">
-                      <span className="bz-lantern-orb" />
-                    </span>
-                    <span className="bz-lantern-name">{s.name}</span>
-                    <span className="bz-lantern-price">{stateLabel(s.id)}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="bz-shelf">
-              <div className="bz-shelf-head">
-                <span>Plateaux</span>
-                <small>
-                  {itemById(boardPick)?.name} · {stateLabel(boardPick)}
-                </small>
-              </div>
-              <div className="bz-stall">
-                <div className="bz-swatches" role="group" aria-label="Plateaux">
-                  {BOARDS.map(b => (
-                    <button
-                      key={b.id}
-                      type="button"
-                      className={`bz-swatch ${boardPick === b.id ? 'on' : ''}`}
-                      style={{ '--l': b.board!.light, '--d': b.board!.dark, '--f': b.board!.frame } as CSSProperties}
-                      onClick={() => pickBoard(b.id)}
-                      aria-pressed={boardPick === b.id}
-                      aria-label={`${b.name}, ${stateLabel(b.id)}`}
-                      title={b.name}
-                    >
-                      <span className="bz-swatch-tile">
-                        <span className="bz-swatch-grid" />
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                <span className="bz-stall-shelf" />
-              </div>
-            </div>
-          </div>
+      <div className="bz-main">
+        <div className="bz-cabin" ref={cabinRef}>
+          <Cabin
+            view={view}
+            onView={setView}
+            trial={t.trial}
+            spellKick={spellKick}
+            reduced={reduced}
+            soon={ready && payments === 'off'}
+            confirming={confirming}
+            unbox={unbox}
+            onUnboxDone={onUnboxDone}
+            live={live}
+            onCasting={onCasting}
+            onSurprise={surprise}
+          >
+            <PanoplieBar trial={t.trial} pano={t.pano} owned={t.owned} loggedIn={loggedIn} onOpen={openSlot} onRevert={t.revert} />
+            {!phone && trialAction}
+          </Cabin>
         </div>
 
-        <div className="bz-stage">
-          <div className="bz-view">
-            <div className="bz-stage-glow" style={{ '--p': skin.primary, '--s': skin.secondary } as CSSProperties} />
-            <div className="bz-board" ref={stageRef}>
-              {live ? (
-                <StageBoard
-                  act={{ key: `bz:${skinPick}:${round}`, cards: previewCards, skin: skinPick, every: 2 }}
-                  catalog={catalog}
-                  theme={boardPick}
-                  resetSignal={0}
-                  paused={!visible}
-                  tilt={0}
-                  still={reduced}
-                  playSignal={playSignal}
-                  onCast={card => setCasting(card)}
-                />
-              ) : (
-                <StillBoard theme={boardPick} />
-              )}
-              {!casting && <Sigil key={skinPick} skinId={skinPick} />}
-            </div>
-            <div className="bz-caption" aria-live="polite">
-              {live && casting ? (
-                <>
-                  <span className="bz-dot" style={{ '--p': skin.primary } as CSSProperties} />
-                  <span className="bz-cap-k">Sort en cours</span>
-                  <b>{CARDS[casting]?.name}</b>
-                  <span className="bz-cap-skin">skin {itemById(skinPick)?.name}</span>
-                  {reduced && (
-                    <button type="button" className="bz-cap-again" onClick={() => setPlaySignal(n => n + 1)}>
-                      Rejouer
-                    </button>
-                  )}
-                </>
-              ) : live && !reduced ? (
-                <>
-                  <span className="bz-dot idle" />
-                  <span>Le sort se prépare…</span>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="bz-cap-play"
-                  onClick={() => {
-                    setLive(true);
-                    setPlaySignal(n => n + 1);
-                  }}
-                >
-                  <span className="bz-dot" style={{ '--p': skin.primary } as CSSProperties} />
-                  Voir un sort avec <b>{itemById(skinPick)?.name}</b>
-                </button>
-              )}
-            </div>
-          </div>
-          {fiche()}
-        </div>
-      </section>
+        <section className="bz-rayons" id="rayons" aria-label="Rayons">
+          <RayonTabs rayon={rayon} counts={counts} onRayon={setRayon} mine={loggedIn ? mine : null} onMine={setMine} onSurprise={surprise} />
+          {rack()}
+        </section>
+        {phone && <div className="bz-act">{trialAction}</div>}
+      </div>
 
-      <section className="bz-packs" id="grimoires" aria-labelledby="grimoires-t">
-        <div className="bz-packs-head">
+      {/* Vitrine des collections (ordinateur) : inutile quand le rayon Collections est ouvert juste au-dessus */}
+      {rayon !== 'collections' && (
+        <section className="bz-colls" aria-labelledby="bz-colls-t">
           <PageHead
             as="h2"
-            place="Les grimoires"
-            aside={`${PACKS.length} collections`}
+            place="Les collections"
+            aside={`${PREMIUM_COLLECTIONS.length} panoplies`}
             title={
-              <span id="grimoires-t">
-                Tout le Bazar, <em>en une fois.</em>
+              <span id="bz-colls-t">
+                Tout assorti, <em>en un geste.</em>
               </span>
             }
-            lede="Les packs réunissent les skins et les plateaux premium à prix doux. Les skins à venir sont offerts aux détenteurs de la Collection légendaire."
+            lede="Un roi, un échiquier et des sorts qui vont ensemble, et le sceau de la collection à côté de votre pseudo : on ne le trouve nulle part ailleurs."
           />
-        </div>
-        <div className="bz-pack-grid">
-          {PACKS.map(p => {
-            const all = p.items.every(owned);
-            const some = !all && p.items.some(owned);
-            const save = p.compareAtCents ? p.compareAtCents - p.priceCents : 0;
-            return (
-              <article key={p.id} className={`bz-pack panel ${p.id === 'pack:all' ? 'is-best' : ''}`}>
-                <div className="bz-pack-top">
-                  <span className="bz-pack-k">{p.items.length} objets</span>
-                  {p.badge && <span className="badge gold">{p.badge}</span>}
-                </div>
-                <h3 className="bz-pack-name">{p.name}</h3>
-                <p className="bz-pack-desc">{p.description}</p>
-                <div className="bz-pack-items">
-                  {p.items.map(id => {
-                    const it = itemById(id)!;
-                    return (
-                      <span key={id} className={`bz-pack-chip ${owned(id) && me ? 'owned' : ''}`} title={it.name}>
-                        <Swatch item={it} small />
-                        <span>{it.name}</span>
-                      </span>
-                    );
-                  })}
-                </div>
-                <div className="bz-pack-foot">
-                  <div className="bz-price">
-                    <b>{formatPrice(p.priceCents)}</b>
-                    {p.compareAtCents && <s>{formatPrice(p.compareAtCents)}</s>}
-                    {save > 0 && <small>soit {formatPrice(save)} d’économie</small>}
-                  </div>
-                  {all && me ? (
-                    <span className="bz-state">Déjà dans votre collection</span>
-                  ) : (
-                    <button type="button" className="btn-gold sm" disabled={!sale} onClick={() => buy(p)}>
-                      {sale ? 'Acheter le pack' : 'Bientôt disponible'}
-                    </button>
-                  )}
-                </div>
-                {some && me && <small className="bz-pack-note">Vous possédez déjà une partie de ce pack.</small>}
-              </article>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="bz-promise" aria-label="Nos engagements">
-        <div>
-          <span className="bz-promise-k">Aucun avantage</span>
-          <p>Un skin change la façon dont vos sorts s’animent, jamais ce qu’ils font. Les parties classées restent équitables.</p>
-        </div>
-        <div>
-          <span className="bz-promise-k">Visible de tous</span>
-          <p>Votre skin et votre plateau sont montrés à vos adversaires, en ligne comme dans les parties en direct.</p>
-        </div>
-        <div>
-          <span className="bz-promise-k">Livré à l’instant</span>
-          <p>
-            Paiement sécurisé par Stripe, contenu ajouté à votre compte dès la confirmation. Prix TTC. <Link to="/cgv">Conditions de vente</Link>
-          </p>
-        </div>
-      </section>
-
-      {me && (
-        <p className="bz-collection-line">
-          <StarMark size={12} /> Votre collection : {ownedCount} sur {premiumCount} objets premium ·{' '}
-          <Link to="/compte?onglet=collection">Gérer ma collection</Link>
-        </p>
+          <div className="bz-colls-grid">
+            {PREMIUM_COLLECTIONS.map(c => (
+              <CollectionCard
+                key={c.id}
+                c={c}
+                large
+                owned={t.owned}
+                loggedIn={loggedIn}
+                sale={sale}
+                ready={ready}
+                trying={t.trial.king === c.king && t.trial.board === c.board && t.trial.skin === c.skin}
+                onTry={c2 => {
+                  tryCollection(c2);
+                  backToCabin();
+                }}
+                onBuy={buy}
+              />
+            ))}
+          </div>
+        </section>
       )}
+      {TRESOR && <TresorBanner product={TRESOR} owned={t.owned} loggedIn={loggedIn} sale={sale} ready={ready} onBuy={buy} />}
 
-      {buying && <CheckoutModal product={buying} demo={payments === 'demo'} onClose={() => setBuying(null)} />}
+      <ShopPromise />
+
+      <ShopDock anchor={anchor} trial={t.trial} quote={quote} action={action} busy={!!busy} waiting={!ready} onMain={onMain} onBack={backToCabin} />
+
+      {order && (
+        <CheckoutModal
+          order={order.order}
+          owned={t.owned}
+          demo={payments === 'demo'}
+          equipOwned={order.equipOwned}
+          onClose={() => setOrder(null)}
+        />
+      )}
     </PlacePage>
   );
+}
 
-  function stateLabel(id: string) {
-    if (me && equipped(id)) return 'Équipé';
-    if (me && owned(id)) return 'Possédé';
-    const it = itemById(id);
-    if (it?.free) return 'Offert';
-    const p = productOf(id);
-    return p ? formatPrice(p.priceCents) : '';
-  }
+function EmptyMine() {
+  return <p className="rack-empty">Rien de ce rayon dans votre collection pour l’instant. Touchez « Tout » pour tout essayer.</p>;
+}
 
-  function fiche() {
-    const product = productOf(item.id);
-    const has = owned(item.id);
-    const on = equipped(item.id);
-    const packs = packsWith(item.id);
-    const style =
-      item.kind === 'skin'
-        ? { '--p': item.skin!.primary, '--s': item.skin!.secondary, '--a': item.skin!.accent }
-        : { '--p': boardStyle(item.id).light, '--s': boardStyle(item.id).dark, '--a': '#fff' };
-    let action;
-    if (me && has && on) action = <span className="bz-state on">Équipé</span>;
-    else if (me && has)
-      action = (
-        <button type="button" className="btn-gold sm" onClick={() => void equip(item.id)} disabled={equipping === item.id}>
-          {equipping === item.id ? <Spinner /> : 'Équiper'}
-        </button>
-      );
-    else if (!me && item.free)
-      action = on ? (
-        <span className="bz-state">Par défaut</span>
-      ) : (
-        <Link to={`/inscription?retour=${encodeURIComponent(`/boutique?objet=${item.id}`)}`} className="btn btn-sm">
-          Créer un compte pour l’équiper
-        </Link>
-      );
-    else if (product)
-      action = (
-        <button type="button" className="btn-gold sm" disabled={!sale} onClick={() => buy(product)}>
-          {sale ? `Acheter · ${formatPrice(product.priceCents)}` : 'Bientôt disponible'}
-        </button>
-      );
-    return (
-      <div className="bz-fiche panel" style={style as CSSProperties} aria-live="polite">
-        <div className="bz-fiche-main">
-          <span className="bz-fiche-k">
-            {KIND_LABEL[item.kind]}
-            {product?.badge && <span className="badge gold">{product.badge}</span>}
-          </span>
-          <b className="bz-fiche-name">{item.name}</b>
-          <span className="bz-fiche-desc">{item.description}</span>
-          {packs.length > 0 && !has && (
-            <a className="bz-fiche-packs" href="#grimoires">
-              Aussi dans {packs.map(p => p.name).join(' et ')}
-            </a>
-          )}
-        </div>
-        <div className="bz-fiche-side">
-          <span className="bz-fiche-price">{has ? (item.free ? 'Offert' : 'Possédé') : product ? formatPrice(product.priceCents) : ''}</span>
-          {action}
-        </div>
-        {payments === 'demo' && !has && (
-          <p className="bz-demo">
-            <span className="badge cyan">Démo</span> Paiements simulés : rien n’est débité.
-          </p>
-        )}
-      </div>
-    );
+/** Message après équipement d'un objet. */
+function equippedMessage(id: string): string {
+  const it = itemById(id);
+  if (!it) return 'Équipé.';
+  if (it.kind === 'king') return `${it.name} équipé. Vos adversaires le verront dès votre prochaine partie.`;
+  if (it.kind === 'board') return `Échiquier ${it.name} équipé : il vous suit dans toutes vos parties.`;
+  return `Sorts ${it.name} équipés : vos adversaires les verront à chacun de vos sorts.`;
+}
+
+/** Une partie est-elle en cours (le roi est pris à l'assise : le nouveau vaut pour la suivante) ? */
+async function gameInProgress(): Promise<boolean> {
+  try {
+    const r = await api<{ games: { status: string }[] }>('/games/mine');
+    return r.games.some(g => g.status !== 'ended');
+  } catch {
+    return false;
   }
 }
 
-/** Échiquier immobile (avant que la scène des sorts soit prête), même position que l'aperçu. */
-function StillBoard({ theme }: { theme: string }) {
-  const pos = useMemo(() => fromFen(START_FEN).pos, []);
-  return <Board pos={pos} orientation="w" theme={theme} locked coords={false} />;
-}
-
-/** Sceau du skin, en CSS : l'aperçu s'anime tout de suite, avant le vrai sort. */
-function Sigil({ skinId }: { skinId: string }) {
-  const s = itemById(skinId)!.skin!;
-  return (
-    <span
-      className={`bz-sigil p-${s.particle} f-${s.flourish}`}
-      style={{ '--p': s.primary, '--s': s.secondary, '--a': s.accent } as CSSProperties}
-      aria-hidden="true"
-    >
-      <span className="bz-sigil-ring" />
-      <span className="bz-sigil-ring r2" />
-      <span className="bz-sigil-core" />
-      {Array.from({ length: 12 }, (_, i) => (
-        <i key={i} style={{ '--i': i } as CSSProperties} />
-      ))}
-    </span>
-  );
-}
-
-/** Sceau tournant « ZÉRO PAY-TO-WIN · STYLE UNIQUEMENT ». */
-function Seal() {
-  return (
-    <div className="bz-seal" aria-label="Zéro pay-to-win : style uniquement" role="img">
-      <svg viewBox="0 0 200 200" className="bz-seal-text" aria-hidden="true">
-        <defs>
-          <path id="bz-seal-c" d="M100 100 m-78 0 a78 78 0 1 1 156 0 a78 78 0 1 1 -156 0" />
-        </defs>
-        <text fontFamily="Cinzel" fontSize="13.2" letterSpacing="5.2" fill="#f3c969">
-          <textPath href="#bz-seal-c">ZÉRO PAY-TO-WIN · STYLE UNIQUEMENT · </textPath>
-        </text>
-      </svg>
-      <span className="bz-seal-core">
-        <StarMark size={22} />
-      </span>
-    </div>
-  );
-}
-
-/** Pastille d'un objet (aussi utilisée par la collection du compte). */
-export function Swatch({ item, small }: { item: Item; small?: boolean }) {
-  if (item.kind === 'king') {
-    const size = small ? 24 : 96;
-    return (
-      <span className={`swatch-skin swatch-king ${small ? 'small' : ''}`} style={{ '--p': kingStyle(item.id).gem } as CSSProperties}>
-        <span
-          style={{ width: size, height: size, backgroundImage: kingUrl('w', item.id), backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center' }}
-        />
-      </span>
-    );
+/** Livraison attendue au retour du paiement (gardée avant de partir payer). */
+function readDelivery(): Delivery {
+  try {
+    const d = JSON.parse(sessionStorage.getItem(DELIVERY_KEY) ?? '{}') as Partial<Delivery>;
+    return { items: d.items ?? [], equip: !!d.equip, equipOwned: d.equip ? (d.equipOwned ?? []) : [] };
+  } catch {
+    return { items: [], equip: false, equipOwned: [] };
   }
-  if (item.kind === 'board') {
-    const b = boardStyle(item.id);
-    return (
-      <span
-        className={`swatch-board tex-${b.texture} ${small ? 'small' : ''}`}
-        style={{ '--light': b.light, '--dark': b.dark, '--frame': b.frame } as CSSProperties}
-      >
-        {Array.from({ length: 16 }, (_, i) => (
-          <i key={i} className={(Math.floor(i / 4) + i) % 2 ? 'd' : 'l'} />
-        ))}
-      </span>
-    );
+}
+function clearDelivery() {
+  try {
+    sessionStorage.removeItem(DELIVERY_KEY);
+  } catch {
+    // stockage indisponible
   }
-  const s = item.skin!;
-  return (
-    <span className={`swatch-skin p-${s.particle} ${small ? 'small' : ''}`} style={{ '--p': s.primary, '--s': s.secondary, '--a': s.accent } as CSSProperties}>
-      <span className="orb" />
-      {!small && <span className="ring" />}
-      {!small && Array.from({ length: 10 }, (_, i) => <i key={i} style={{ '--i': i } as CSSProperties} />)}
-    </span>
-  );
 }
 
-function CheckoutModal({ product, demo, onClose }: { product: Product; demo: boolean; onClose: () => void }) {
-  const [waiver, setWaiver] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const firstRef = useRef<HTMLInputElement>(null);
-  useEffect(() => firstRef.current?.focus(), []);
-  const pay = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await api<{ url: string }>('/shop/checkout', { body: { productId: product.id, waiver } });
-      window.location.assign(r.url);
-    } catch (e) {
-      setError(errMsg(e));
-      setBusy(false);
-    }
-  };
-  const items = product.items.map(id => itemById(id)!).filter(Boolean);
-  return (
-    <Modal onClose={busy ? undefined : onClose}>
-      <div className="bz-co">
-        <p className="pg-kicker">
-          <span className="pg-num">
-            <StarMark size={12} />
-          </span>
-          <span>Récapitulatif</span>
-        </p>
-        <h2>{product.name}</h2>
-        <div className="bz-co-items">
-          {items.map(it => (
-            <span key={it.id} className="bz-pack-chip">
-              <Swatch item={it} small />
-              <span>{it.name}</span>
-            </span>
-          ))}
-        </div>
-        <div className="checkout-line">
-          <span>
-            <b>{product.name}</b>
-            <small className="muted">{product.description}</small>
-          </span>
-          <b>{formatPrice(product.priceCents)}</b>
-        </div>
-        {product.compareAtCents && (
-          <div className="checkout-line saving">
-            <span>Économie sur le prix des objets à l’unité</span>
-            <span>− {formatPrice(product.compareAtCents - product.priceCents)}</span>
-          </div>
-        )}
-        <div className="checkout-line total">
-          <span>Total TTC</span>
-          <b>{formatPrice(product.priceCents)}</b>
-        </div>
-        <label className="check bz-co-waiver">
-          <input ref={firstRef} type="checkbox" checked={waiver} onChange={e => setWaiver(e.target.checked)} />
-          <span>
-            Je demande l’accès immédiat à ce contenu numérique et je reconnais perdre mon droit de rétractation une fois l’achat livré (article L221-28 du Code
-            de la consommation). J’accepte les{' '}
-            <Link to="/cgv" target="_blank">
-              conditions générales de vente
-            </Link>
-            .
-          </span>
-        </label>
-        {error && <div className="form-error">{error}</div>}
-        <button type="button" className="btn-gold bz-co-pay" disabled={!waiver || busy} onClick={pay}>
-          <span className="btn-shine" />
-          <span className="btn-main">{busy ? 'Redirection…' : `Payer ${formatPrice(product.priceCents)}`}</span>
-          <span className="btn-sub">{demo ? 'Paiement simulé, rien n’est débité' : 'Carte bancaire, Apple Pay, Google Pay'}</span>
-          <svg className="btn-arrow" viewBox="0 0 20 20" aria-hidden="true">
-            <path d="M4 10h11m-4-4 4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-        <p className="bz-co-secure">
-          <LockIcon />{' '}
-          {demo
-            ? 'Mode démonstration : une page de paiement simulée remplace Stripe.'
-            : 'Vous allez être redirigé vers la page de paiement sécurisée de Stripe.'}
-        </p>
-        <button type="button" className="btn btn-ghost btn-block" onClick={onClose} disabled={busy}>
-          Continuer mes achats
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
-export function LockIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" className="pg-lock">
-      <rect x="3" y="7" width="10" height="7" rx="1.6" fill="none" stroke="currentColor" strokeWidth="1.2" />
-      <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" strokeWidth="1.2" />
-    </svg>
-  );
+/** Annonce de la zone aria-live : « Roi de braise en essai, 2,99 €. Essai : 2 skins à acheter, 4,98 €. » */
+function liveText(lastTried: string | null, q: ReturnType<typeof quoteTrial>, a: ReturnType<typeof mainAction>): string {
+  const t = actionTexts(q, a);
+  const it = lastTried ? itemById(lastTried) : undefined;
+  const first = it ? `${itemPhrase(it)} en essai${!it.free ? `, ${formatPrice(unitPrice(it.id))}` : ''}. ` : '';
+  const total = q.cart ? `, ${formatPrice(q.cart.totalCents)}` : '';
+  return `${first}${a.kind === 'none' ? 'Votre panoplie actuelle.' : `Essai : ${t.line}${total}.`}`;
 }

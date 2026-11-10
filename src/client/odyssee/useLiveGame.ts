@@ -634,8 +634,11 @@ export function useLiveGame({
   // Catalogue absent : ancienne sauvegarde (Duel) ; les nouvelles parties sont toujours aux Pouvoirs
   const catalog: Catalog = state.catalog ?? 'duel';
 
-  // Rois portés : contre l'Oracle, le roi équipé du visiteur et celui de l'Oracle ; en direct, ceux des sièges (en
-  // attendant la vue du serveur, le sien et le roi Arcane en face). Puis la préférence « Rois adverses classiques ».
+  // Rois portés : contre l'Oracle, le roi équipé du visiteur et celui de l'Oracle ; en direct, ceux des sièges. Écart
+  // accepté à « en ligne, le roi vient de view.seats » : entre l'appariement et la réponse de game:join (un aller-retour,
+  // pendant lequel la position est de toute façon remise par le serveur), le visiteur garde son roi et l'adversaire est
+  // en roi Arcane ; l'appariement (home:paired) ne dit pas le roi d'en face. Puis la préférence « Rois adverses
+  // classiques ».
   const worn: Kings = duel
     ? duelInfo?.kings ?? (duel.me === 'w' ? { w: normKing(king), b: DEFAULT_KING } : { w: DEFAULT_KING, b: normKing(king) })
     : { w: normKing(king), b: normKing(botKing) };

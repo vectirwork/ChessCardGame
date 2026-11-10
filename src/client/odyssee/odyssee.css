@@ -2359,7 +2359,22 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
 .ody .o-king:focus-visible .o-king-w {
   transform: translateY(-3px);
 }
-.ody .o-king.on::before {
+/* Roi choisi : un trait d'or sous ses pieds, au bord de l'étal (comme le cadre d'or de l'échiquier choisi) */
+.ody .o-king::after {
+  content: '';
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  bottom: 4px;
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, transparent, var(--gold) 14%, var(--gold-hi) 50%, var(--gold) 86%, transparent);
+  box-shadow: 0 0 6px 1px rgba(243, 201, 105, 0.55);
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+.ody .o-king.on::before,
+.ody .o-king.on::after {
   opacity: 1;
 }
 .ody .o-king.on .o-king-w {
@@ -2369,7 +2384,22 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
   transform: translateY(-4px);
 }
 
-/* Adversaire en direct (coque de la partie de l'accueil) : cimier de son roi de collection */
+/* Adversaire en direct (coque de la partie de l'accueil) : cimier de son roi de collection (même dessin que la pastille
+   de la page de partie, game.css : disque crème pour les Blancs, nuit et halo de la gemme pour les Noirs), sceau de
+   collection en badge en bas à gauche */
+.ody .o-opp-avatar {
+  position: relative;
+  flex: none;
+  display: flex;
+}
+.ody .o-opp-seal {
+  position: absolute;
+  left: -3px;
+  bottom: -3px;
+  box-shadow:
+    inset 0 0 0 1.5px #f3c969,
+    0 0 0 2px var(--ink);
+}
 .ody .o-opp-crest {
   flex: none;
   width: 40px;
@@ -2385,7 +2415,8 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
 .ody .o-opp-crest.b {
   background:
     var(--crest) center 42% / 84% no-repeat,
-    radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--gem) 46%, #e9e3f5), color-mix(in srgb, var(--gem) 30%, #4a4366) 80%);
+    radial-gradient(circle at 50% 36%, color-mix(in srgb, var(--gem) 45%, #3a3554) 0 22%, #0c0b18 72%);
+  border-color: color-mix(in srgb, var(--gold-hi), var(--gem));
 }
 .ody .gs.is-mobile .o-opp-crest {
   width: 30px;
@@ -2796,6 +2827,8 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
 .ody .o-hand-copy {
   display: grid;
   gap: 4px;
+  /* La colonne ne s'élargit jamais au-delà de l'écran (téléphone, Rituel en main : sa pastille passe à la ligne) */
+  min-width: 0;
 }
 .ody .o-hand-k {
   font-family: var(--caps);
@@ -2820,6 +2853,7 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
 }
 .ody .o-hand-names button {
   padding: 0;
+  text-align: left;
   transition: color 0.3s;
 }
 /* Un nom de carte ne se coupe pas (« Grande Marée ») ; la pastille du Rituel peut passer à la ligne */
@@ -3484,13 +3518,11 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
     display: none;
   }
 }
-@media (min-width: 821px) and (max-height: 760px) {
-  .ody .o-bazar-col .o-packs {
-    display: none;
-  }
-}
-/* Avec l'étagère des rois, la colonne tient toujours dans l'écran (mesuré : 794 px à 1440 × 900, 644 px à 1280 × 720,
-   contre 751 et 659 avant) : têtes d'étagère et cordons resserrés, prix des sorts dans la tête de l'étagère */
+/* Avec l'étagère des rois, la colonne tient dans l'écran, et chaque lanterne garde son nom et son prix (le nom et le
+   prix de l'objet choisi s'affichent en plus dans la tête de chaque étagère). La place se gagne sur les marges, les
+   cordons, le corps des lanternes et la hauteur de l'étal des rois. Mesuré, blocs révélés, visiteur anonyme : colonne de
+   783 px à 1440 × 900 (750 avant les rois), 713 px à 1280 × 800 avec les packs, 624 px à 1366 × 768 et 617 px à
+   1280 × 720 sans eux ; dans l'écran de 900 × 700 à 1920 × 1080. */
 @media (min-width: 821px) and (max-height: 1100px) {
   .ody .o-bazar-col .o-kicker {
     margin-bottom: 12px;
@@ -3502,44 +3534,114 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
     padding-bottom: 8px;
     margin-bottom: 10px;
   }
+  /* Cordons resserrés, toujours de trois longueurs ; le plus court tient la troisième lanterne (Néon 2084, seul nom
+     sur deux lignes) : la rangée ne prend pas plus de hauteur que la plus longue des autres */
   .ody .o-bazar-col .o-lantern-cord {
-    height: 10px;
+    height: 13px;
   }
   .ody .o-bazar-col .o-lantern:nth-child(2n) .o-lantern-cord {
-    height: 22px;
+    height: 18px;
   }
   .ody .o-bazar-col .o-lantern:nth-child(3n) .o-lantern-cord {
-    height: 16px;
+    height: 8px;
+  }
+  .ody .o-bazar-col .o-lantern-body {
+    height: 40px;
   }
   .ody .o-bazar-col .o-lantern-name {
-    margin-top: 9px;
+    margin-top: 8px;
+    line-height: 1.2;
   }
-  .ody .o-bazar-col .o-lantern-price,
+  .ody .o-bazar-col .o-lantern-price {
+    margin-top: 1px;
+    font-size: 11px;
+    line-height: 1.3;
+  }
   .ody .o-bazar-col .o-shelf-hint {
     display: none;
   }
   .ody .o-bazar-col .o-shelf-head .o-shelf-pick {
     display: inline;
   }
-  .ody .o-bazar-col .o-lantern-body {
+  .ody .o-bazar-col .o-king {
     height: 44px;
   }
-  .ody .o-bazar-col .o-king {
-    height: 48px;
+}
+/* Écrans de 800 px de haut ou moins (1280 × 800, 1366 × 768, 1280 × 720) : titre, sceau et marges resserrés ; sous
+   790 px, sans les packs (le lien « Entrer dans la boutique » et l'objet choisi restent) */
+@media (min-width: 821px) and (max-height: 790px) {
+  .ody .o-bazar-col .o-packs {
+    display: none;
   }
 }
-@media (min-width: 821px) and (max-height: 760px) {
-  .ody .o-bazar-col .o-lantern-name {
-    display: none;
+@media (min-width: 821px) and (max-height: 800px) {
+  /* Le sceau « Zéro pay-to-win » remonte et rapetisse : le texte, remonté avec le titre, ne passe pas dessous */
+  .ody .o-bazar-col .o-seal {
+    top: 30px;
+    width: 112px;
+    height: 112px;
+  }
+  .ody .o-bazar-col .o-h2 {
+    font-size: clamp(32px, 2.9vw, 42px);
+  }
+  .ody .o-bazar-col .o-kicker {
+    margin-bottom: 10px;
+  }
+  .ody .o-bazar-col .o-place-text {
+    margin-top: 10px;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .ody .o-bazar-col .o-shelf {
+    margin-top: 10px;
+  }
+  .ody .o-bazar-col .o-shelf-head {
+    padding-bottom: 6px;
+    margin-bottom: 8px;
+  }
+  .ody .o-bazar-col .o-pick {
+    margin-top: 10px;
+    padding-top: 9px;
+    padding-bottom: 9px;
   }
 }
 .ody .o-shelf-head .o-shelf-pick {
   display: none;
 }
-/* Téléphone : huit lanternes sur deux rangées de quatre (au lieu de trois rangées, la dernière à trous) */
+/* Téléphone : huit lanternes sur deux rangées de quatre (au lieu de trois rangées, la dernière à trous), et les rois
+   aussi, plus grands (le roi blanc à 56 px environ à 412 px de large) : la première rangée a sa propre planche */
 @media (max-width: 819px) {
   .ody .o-lantern {
     width: 22%;
+  }
+  .ody .o-kings {
+    grid-template-columns: repeat(4, 1fr);
+    row-gap: 18px;
+  }
+  .ody .o-king {
+    height: 60px;
+  }
+  .ody .o-king-w {
+    left: 2%;
+    width: 66%;
+  }
+  .ody .o-king-b {
+    left: 42%;
+    width: 54%;
+  }
+  .ody .o-kings::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    left: -8px;
+    right: -8px;
+    top: 54px;
+    height: 14px;
+    border-radius: 3px;
+    background: linear-gradient(180deg, #6a4527, #3a2111 60%, #22130a);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 220, 170, 0.35),
+      0 14px 24px -8px rgba(0, 0, 0, 0.7);
   }
 }
 @media (max-width: 819px) {

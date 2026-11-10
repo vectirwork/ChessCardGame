@@ -244,8 +244,9 @@
 .gp-presence.on {
   background: var(--success);
 }
-/* Roi de collection : la pastille montre son cimier (parts.tsx, Avatar), dans la couleur du joueur, sur un fond
-   teinté de la gemme du roi. Image fixe (data URI en cache), aucune animation. */
+/* Roi de collection : la pastille montre son cimier (parts.tsx, Avatar), dans la couleur du joueur. Le camp se lit
+   toujours au disque : crème pour les Blancs, nuit pour les Noirs, où le cimier noir se pose sur un halo de la gemme
+   qui s'éteint vers le bord. Image fixe (data URI en cache), aucune animation. */
 :is(.gs-opp-id, .gp-self-id) .gp-avatar.has-crest.w {
   background:
     var(--crest) center 42% / 84% no-repeat,
@@ -255,12 +256,23 @@
 :is(.gs-opp-id, .gp-self-id) .gp-avatar.has-crest.b {
   background:
     var(--crest) center 42% / 84% no-repeat,
-    radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--gem) 46%, #e9e3f5), color-mix(in srgb, var(--gem) 30%, #4a4366) 80%);
-  border-color: color-mix(in srgb, var(--gem) 55%, transparent);
+    radial-gradient(circle at 50% 36%, color-mix(in srgb, var(--gem) 45%, #3a3554) 0 22%, #0c0b18 72%);
+  border-color: color-mix(in srgb, var(--gold-hi), var(--gem));
 }
-/* Sceau de collection, entre la pastille et le pseudo (CollectionSeal, global.css) */
-:is(.gs-opp-id, .gp-self-id) .gp-seal {
-  align-self: center;
+/* Sceau de collection : badge en bas à gauche de la pastille, en miroir du point de présence (CollectionSeal,
+   global.css ; anneau d'or de 1,5 px, détaché de la pastille par un liseré de fond) */
+.gp-avatar-wrap {
+  position: relative;
+  flex: none;
+  display: flex;
+}
+.gp-avatar-wrap > .gp-seal {
+  position: absolute;
+  left: -3px;
+  bottom: -3px;
+  box-shadow:
+    inset 0 0 0 1.5px #f3c969,
+    0 0 0 2px var(--ink);
 }
 .gs.is-mobile .gs-opp-id .gp-avatar,
 .gp-self.is-mobile .gp-self-id .gp-avatar {

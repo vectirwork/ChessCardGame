@@ -35,7 +35,7 @@ import { CardDraft } from './CardDraft';
 import { deNom } from './names';
 import type { Casting } from './overlays';
 import {
-  Avatar, Captured, Clock, EmoteBubble, MoveList, SeatName, SeatSeal, catalogDescription, catalogTag, colorName, modeLabel,
+  Avatar, Captured, Clock, EmoteBubble, MoveList, SeatName, catalogDescription, catalogTag, colorName, modeLabel,
   seatSub, tcLabel,
 } from './parts';
 
@@ -681,8 +681,7 @@ export default function GamePage() {
         <Clock clock={view.clock} color={bottom} receivedAt={receivedAt} active={isActive(bottom)} compact={layout.mobile} />
       </div>
       <div className="gp-self-id">
-        <Avatar seat={selfSeat} color={bottom} />
-        <SeatSeal seat={selfSeat} size={layout.mobile ? 16 : 18} />
+        <Avatar seat={selfSeat} color={bottom} king={kings[bottom]} sealSize={layout.mobile ? 14 : 16} />
         <div>
           <b>
             <SeatName seat={selfSeat} />
@@ -780,12 +779,7 @@ export default function GamePage() {
           // Main visible, en éventail retourné en haut à droite (coque)
           hand: hasCards && view.status !== 'waiting' ? known(state.hands[top]) : [],
           handLabel: you ? 'Cartes de votre adversaire' : `Cartes ${oppSeat?.name ? deNom(oppSeat.name) : `des ${colorName(top)}`}`,
-          avatar: (
-            <>
-              <Avatar seat={oppSeat} color={top} />
-              <SeatSeal seat={oppSeat} size={layout.mobile ? 16 : 18} />
-            </>
-          ),
+          avatar: <Avatar seat={oppSeat} color={top} king={kings[top]} sealSize={layout.mobile ? 14 : 16} />,
           extra: (
             <>
               <div className={`gp-opp-extra ${isActive(top) ? 'is-turn' : ''}`}>

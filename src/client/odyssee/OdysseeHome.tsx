@@ -755,19 +755,20 @@ export default function OdysseeHome() {
     };
   }, [g.duel, g.result, mode, activity]);
   const oppLabel = g.duel ? 'Votre adversaire' : "L'Oracle";
-  // Adversaire en direct : le cimier de son roi s'il porte un roi de collection, et son sceau de collection
-  const oppKing = g.duel ? normKing(g.duelInfo?.kings[g.them]) : DEFAULT_KING;
+  // Adversaire en direct : le cimier du roi dessiné en face (préférence « Rois adverses classiques » comprise : roi
+  // Arcane, l'œil), et son sceau de collection en badge sur la pastille (comme sur la page de partie)
+  const oppKing = g.duel ? normKing(g.them === 'w' ? g.boardProps.kingW : g.boardProps.kingB) : DEFAULT_KING;
   const oppSeal = g.duel ? g.duelInfo?.seals[g.them] ?? null : null;
   const oppAvatar =
     oppKing !== DEFAULT_KING || oppSeal ? (
-      <>
+      <span className="o-opp-avatar">
         {oppKing !== DEFAULT_KING ? (
           <span className={`o-opp-crest ${g.them}`} style={{ '--crest': crestUrl(oppKing, g.them), '--gem': kingStyle(oppKing).gem } as CSSProperties} aria-hidden="true" />
         ) : (
           <OracleEye />
         )}
-        <CollectionSeal id={oppSeal} size={mobile ? 16 : 18} />
-      </>
+        <CollectionSeal id={oppSeal} size={mobile ? 14 : 16} className="o-opp-seal" />
+      </span>
     ) : undefined;
   const oppFrom = g.duel ? fromCountry(g.duel.country) : null;
   const oppCountry = g.duel?.country ? countryName(g.duel.country) : null;
@@ -995,7 +996,7 @@ export default function OdysseeHome() {
         <span className="o-live-dot" style={{ '--h': castDef.hue } as CSSProperties} />
         <span className="o-cap-k">Sort en cours</span>
         <b>{castDef.name}</b>
-        {placeDef.id === 'bazar' && <span className="o-cap-skin">skin {itemById(cast!.skin)?.name}</span>}
+        {placeDef.id === 'bazar' && <span className="o-cap-skin">Sorts {itemById(cast!.skin)?.name}</span>}
       </>
     );
   } else {
@@ -1244,8 +1245,14 @@ export default function OdysseeHome() {
                     h.card ? (
                       <button key={i} type="button" className={h.used ? 'is-used' : ''} onClick={() => heroCard(i)} title={CARDS[h.card].tagline}>
                         <span className="o-hand-n">{CARDS[h.card].name}</span>
-                        {/* Effet sur le tour (décision D1) : le Rituel, l'exception, le dit à côté de son nom */}
-                        {CARDS[h.card].ritual && <small className="o-hand-turn">remplace votre coup</small>}
+                        {/* Effet sur le tour (décision D1) : le Rituel, l'exception, le dit à côté de son nom. <wbr> : sur un
+                            téléphone, la pastille passe sous le nom plutôt que d'élargir la colonne au-delà de l'écran */}
+                        {CARDS[h.card].ritual && (
+                          <>
+                            <wbr />
+                            <small className="o-hand-turn">remplace votre coup</small>
+                          </>
+                        )}
                       </button>
                     ) : null,
                   )}
@@ -1415,7 +1422,8 @@ export default function OdysseeHome() {
                   </span>
                 </p>
               </header>
-              <Slot label="Essayez un roi, un échiquier, des sorts : l'échiquier les porte" />
+              {/* Une ligne à 412 px ; espace insécable : les deux-points ne passent jamais en tête de ligne */}
+              <Slot label={"Essayez-les\u00a0: l'échiquier les porte"} />
               <div className="o-shelf o-rv">
                 <div className="o-shelf-head">
                   <span>Rois</span>
@@ -1452,9 +1460,9 @@ export default function OdysseeHome() {
               <div className="o-shelf o-rv">
                 <div className="o-shelf-head">
                   <span>Sorts</span>
-                  {/* Écran d'ordinateur peu haut : le nom et le prix des sorts allumés remplacent la consigne et les prix
-                      sous les lanternes (odyssee.css), comme pour les rois et les échiquiers */}
-                  <small className="o-shelf-hint">Allumez une lanterne : l'échiquier lance un sort avec ce skin</small>
+                  {/* Écran d'ordinateur de hauteur ordinaire : le nom et le prix des sorts allumés remplacent la consigne,
+                      comme pour les rois et les échiquiers (odyssee.css) ; chaque lanterne garde son nom et son prix */}
+                  <small className="o-shelf-hint">Allumez une lanterne : l'échiquier lance un sort à ses couleurs</small>
                   <small className="o-shelf-pick">
                     {itemById(skinPick)?.name} · {owned(skinPick) && me ? 'Possédé' : priceOf(skinPick)}
                   </small>
@@ -1470,6 +1478,7 @@ export default function OdysseeHome() {
                         setPick(s.id);
                         setPulse(n => n + 1);
                       }}
+                      aria-label={`${s.name}, ${owned(s.id) && me ? 'possédé' : priceOf(s.id)}`}
                       aria-pressed={skinPick === s.id}
                     >
                       <span className="o-lantern-cord" />
@@ -1486,7 +1495,7 @@ export default function OdysseeHome() {
                 <div className="o-shelf-head">
                   <span>Échiquiers</span>
                   <small>
-                    {itemById(boardPick)?.name} · {priceOf(boardPick)}
+                    {itemById(boardPick)?.name} · {owned(boardPick) && me ? 'Possédé' : priceOf(boardPick)}
                   </small>
                 </div>
                 <div className="o-stall">
@@ -1500,7 +1509,7 @@ export default function OdysseeHome() {
                           setBoardPick(b.id);
                           setPick(b.id);
                         }}
-                        aria-label={`${b.name}, ${priceOf(b.id)}`}
+                        aria-label={`${b.name}, ${owned(b.id) && me ? 'possédé' : priceOf(b.id)}`}
                         aria-pressed={boardPick === b.id}
                       >
                         <span className="o-swatch-tile">

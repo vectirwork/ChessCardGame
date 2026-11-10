@@ -163,15 +163,17 @@ export function Captured({ state, color }: { state: GameState; color: Color }) {
 // Joueurs
 
 /**
- * Pastille d'un joueur : l'œil de l'Oracle pour l'IA ; pour un joueur, le cimier de son roi (crestUrl, dans sa couleur,
- * sur un fond teinté de la gemme du roi) s'il porte un roi de collection, sinon son initiale (roi Arcane). Image fixe :
- * une data URI en cache, aucune animation.
+ * Pastille d'un joueur : l'œil de l'Oracle pour l'IA ; pour un joueur, le cimier de son roi (crestUrl, dans sa couleur :
+ * disque clair pour les Blancs, sombre avec un halo de la gemme pour les Noirs) s'il porte un roi de collection, sinon
+ * son initiale (roi Arcane). `king` : le roi dessiné sur l'échiquier (préférence « Rois adverses classiques » comprise),
+ * sinon celui du siège. Son sceau de collection se pose en badge en bas à gauche, en miroir du point de présence. Images
+ * fixes : des data URI en cache, aucune animation.
  */
-export function Avatar({ seat, color }: { seat: SeatView | null; color: Color }) {
+export function Avatar({ seat, color, king: shown, sealSize = 16 }: { seat: SeatView | null; color: Color; king?: string; sealSize?: number }) {
   if (seat?.kind === 'bot') return <OracleEye />;
-  const king = normKing(seat?.king);
+  const king = normKing(shown ?? seat?.king);
   const crest = king !== DEFAULT_KING;
-  return (
+  const face = (
     <span
       className={`gp-avatar ${color} ${crest ? 'has-crest' : ''}`}
       style={crest ? ({ '--crest': crestUrl(king, color), '--gem': kingStyle(king).gem } as CSSProperties) : undefined}
@@ -181,12 +183,13 @@ export function Avatar({ seat, color }: { seat: SeatView | null; color: Color })
       {seat && <i className={`gp-presence ${seat.online ? 'on' : ''}`} />}
     </span>
   );
-}
-
-/** Sceau de collection du joueur (à côté de son pseudo), s'il a complété une collection premium. */
-export function SeatSeal({ seat, size = 18 }: { seat: SeatView | null; size?: number }) {
-  if (!seat?.seal || seat.kind === 'bot') return null;
-  return <CollectionSeal id={seat.seal} size={size} className="gp-seal" />;
+  if (!seat?.seal) return face;
+  return (
+    <span className="gp-avatar-wrap">
+      {face}
+      <CollectionSeal id={seat.seal} size={sealSize} className="gp-seal" />
+    </span>
+  );
 }
 
 export function SeatName({ seat }: { seat: SeatView | null }) {

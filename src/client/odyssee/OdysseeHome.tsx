@@ -9,22 +9,26 @@ import { Link, useNavigate } from 'react-router-dom';
 import gsap from 'gsap';
 import { CARDS, CATALOGS, offeredCatalog } from '../../shared/cards';
 import type { Catalog, CardId } from '../../shared/cards';
-import { DEFAULT_BOARD, DEFAULT_SKIN, FREE_ITEMS, itemById } from '../../shared/catalog';
+import { DEFAULT_KING, itemById, kingStyle, normKing } from '../../shared/catalog';
 import { RESULT_TEXT } from '../../shared/game';
 import type { MeUser } from '../../shared/protocol';
 import { api, errMsg } from '../api';
 import { Board } from '../components/Board';
+import { CollectionSeal } from '../components/CollectionSeal';
+import { crestUrl, kingUrl } from '../components/pieces';
 import { SpellCard } from '../components/SpellCard';
-import { getGuestName, setGuestName, useApp } from '../store';
+import { CLASSIC_KINGS_PREF } from '../features/history';
+import { equippedId, isEquipped, owns } from '../skins';
+import { getGuestName, setGuestName, useApp, usePref } from '../store';
 import { BOT_PROFILES } from '../ai';
 import type { BotLevel } from '../ai';
 import {
-  BOARDS, INTERLUDE, LEVELS, MODES, PACKS, PLACES, PLACE_COPY, SKINS, idleCasts, liveCatalog, placeCards, priceOf, principle,
+  BOARDS, INTERLUDE, KINGS, LEVELS, MODES, PACKS, PLACES, PLACE_COPY, SKINS, idleCasts, liveCatalog, placeCards, priceOf, principle,
 } from './data';
 import { Engine, isMobile } from './engine';
 import { Chapter, EQ, EqRing, Kicker, Lines, Mark, OrbitRings, Sheet, Slot } from './parts';
 import { SceneStack } from './scenery';
-import { GameShell, PowersPanel, PremoveNote, cardName, castMessage, castThisTurn, handNotes } from './shell';
+import { GameShell, OracleEye, PowersPanel, PremoveNote, cardName, castMessage, castThisTurn, handNotes } from './shell';
 import type { ShellAction } from './shell';
 import type { Act } from './StageBoard';
 import { useHomeLobby } from './useHomeLobby';
@@ -252,20 +256,25 @@ export default function OdysseeHome() {
   const catalog = useMemo(() => liveCatalog(), []);
   const storyCards = useMemo(() => placeCards(catalog), [catalog]);
 
-  // Bazar : aperçu d'un skin ou d'un plateau sur l'échiquier de démonstration
-  const [skinPick, setSkinPick] = useState('skin:inferno');
-  const [boardPick, setBoardPick] = useState('board:obsidian');
-  const [pick, setPick] = useState<string>('skin:inferno');
+  // Bazar : aperçu d'un roi, d'un échiquier ou de sorts sur l'échiquier de démonstration (au départ, la collection du
+  // lieu : Jardin de jade, dont le rose est celui du Bazar ; le Sablier montre déjà la Forge d'Inferno)
+  const [kingPick, setKingPick] = useState(PLACES[4].king);
+  const [skinPick, setSkinPick] = useState(PLACES[4].skin);
+  const [boardPick, setBoardPick] = useState(PLACES[4].theme);
+  const [pick, setPick] = useState<string>(PLACES[4].king);
   const [pulse, setPulse] = useState(0);
 
-  const mySkin = me?.equippedSkin ?? DEFAULT_SKIN;
-  const myBoard = me?.equippedBoard ?? DEFAULT_BOARD;
+  const mySkin = equippedId(me, 'skin');
+  const myBoard = equippedId(me, 'board');
+  const myKing = equippedId(me, 'king');
+  // Rois adverses classiques (réglage du compte) : l'Oracle et l'adversaire en direct en roi Arcane
+  const [classicKings] = usePref<boolean>(CLASSIC_KINGS_PREF, false);
   // Scène 3D de la partie (three.js et un contexte WebGL) : préparée seulement à la première intention de jouer
   // (survol d'une pièce jouable, toucher de l'échiquier, survol ou focus des cartes, bouton Jouer). Jamais à la simple
   // ouverture de la page (D6) : un visiteur qui ne fait que lire ne la télécharge pas.
   const [intent, setIntent] = useState(false);
   const wantPlay = useCallback(() => setIntent(true), []);
-  const g = useLiveGame({ skin: mySkin, theme: myBoard, active: mode === 'game', warm: intent });
+  const g = useLiveGame({ skin: mySkin, theme: myBoard, king: myKing, classicKings, active: mode === 'game', warm: intent });
   const gRef = useRef(g);
   gRef.current = g;
 
@@ -746,6 +755,21 @@ export default function OdysseeHome() {
     };
   }, [g.duel, g.result, mode, activity]);
   const oppLabel = g.duel ? 'Votre adversaire' : "L'Oracle";
+  // Adversaire en direct : le cimier du roi dessiné en face (préférence « Rois adverses classiques » comprise : roi
+  // Arcane, l'œil), et son sceau de collection en badge sur la pastille (comme sur la page de partie)
+  const oppKing = g.duel ? normKing(g.them === 'w' ? g.boardProps.kingW : g.boardProps.kingB) : DEFAULT_KING;
+  const oppSeal = g.duel ? g.duelInfo?.seals[g.them] ?? null : null;
+  const oppAvatar =
+    oppKing !== DEFAULT_KING || oppSeal ? (
+      <span className="o-opp-avatar">
+        {oppKing !== DEFAULT_KING ? (
+          <span className={`o-opp-crest ${g.them}`} style={{ '--crest': crestUrl(oppKing, g.them), '--gem': kingStyle(oppKing).gem } as CSSProperties} aria-hidden="true" />
+        ) : (
+          <OracleEye />
+        )}
+        <CollectionSeal id={oppSeal} size={mobile ? 14 : 16} className="o-opp-seal" />
+      </span>
+    ) : undefined;
   const oppFrom = g.duel ? fromCountry(g.duel.country) : null;
   const oppCountry = g.duel?.country ? countryName(g.duel.country) : null;
   // L'adversaire a quitté la page : réclamer la victoire (passé le délai), ou revenir à l'Oracle
@@ -885,6 +909,8 @@ export default function OdysseeHome() {
   }, [chapter, placeDef, skinPick, pulse, catalog]);
 
   const stageTheme = placeDef.id === 'bazar' ? boardPick : placeDef.theme;
+  // Les deux camps portent le roi du lieu (au Bazar, le roi choisi : ses deux palettes face à face)
+  const stageKing = placeDef.id === 'bazar' ? kingPick : placeDef.king;
   const castTilt = reduced ? 0 : mobile ? 0.62 : place === 5 ? 0.7 : 0.66;
   const onCast = useCallback((card: CardId, s: string) => setCast({ card, skin: s }), []);
   const onCanvas = useCallback((c: HTMLCanvasElement | null) => engineRef.current?.setCanvas(c), []);
@@ -895,8 +921,7 @@ export default function OdysseeHome() {
   // ------------------------------------------------------------------------------------------
   // Bazar : la vraie boutique
 
-  const owned = (id: string) => FREE_ITEMS.includes(id) || !!me?.items.includes(id);
-  const isEquipped = (id: string) => me?.equippedSkin === id || me?.equippedBoard === id;
+  const owned = (id: string) => owns(me, id);
   const equip = async (id: string) => {
     try {
       const r = await api<{ user: MeUser }>('/account/equip', { body: { itemId: id } });
@@ -971,7 +996,7 @@ export default function OdysseeHome() {
         <span className="o-live-dot" style={{ '--h': castDef.hue } as CSSProperties} />
         <span className="o-cap-k">Sort en cours</span>
         <b>{castDef.name}</b>
-        {placeDef.id === 'bazar' && <span className="o-cap-skin">skin {itemById(cast!.skin)?.name}</span>}
+        {placeDef.id === 'bazar' && <span className="o-cap-skin">Sorts {itemById(cast!.skin)?.name}</span>}
       </>
     );
   } else {
@@ -1068,6 +1093,8 @@ export default function OdysseeHome() {
                       playSignal={playSignal}
                       onCast={onCast}
                       onCanvas={onCanvas}
+                      kingW={stageKing}
+                      kingB={stageKing}
                     />
                   </Suspense>
                 )}
@@ -1218,8 +1245,14 @@ export default function OdysseeHome() {
                     h.card ? (
                       <button key={i} type="button" className={h.used ? 'is-used' : ''} onClick={() => heroCard(i)} title={CARDS[h.card].tagline}>
                         <span className="o-hand-n">{CARDS[h.card].name}</span>
-                        {/* Effet sur le tour (décision D1) : le Rituel, l'exception, le dit à côté de son nom */}
-                        {CARDS[h.card].ritual && <small className="o-hand-turn">remplace votre coup</small>}
+                        {/* Effet sur le tour (décision D1) : le Rituel, l'exception, le dit à côté de son nom. <wbr> : sur un
+                            téléphone, la pastille passe sous le nom plutôt que d'élargir la colonne au-delà de l'écran */}
+                        {CARDS[h.card].ritual && (
+                          <>
+                            <wbr />
+                            <small className="o-hand-turn">remplace votre coup</small>
+                          </>
+                        )}
                       </button>
                     ) : null,
                   )}
@@ -1382,18 +1415,57 @@ export default function OdysseeHome() {
                 <Kicker num="V" name="Le Bazar céleste" alt={PLACES[4].alt} />
                 <Lines className="o-h2" lines={['Du style.', <em key="e">Jamais d'avantage.</em>]} />
                 <p className="o-rv o-place-text">
-                  La boutique ne vend que de l'apparence : des skins d'animation pour vos sorts et des plateaux. Toutes les cartes, tous les modes et le classement restent gratuits.{' '}
+                  La boutique ne vend que de l'apparence : votre roi, votre échiquier et l'habillage de vos sorts. Toutes les cartes, tous les modes et le classement restent gratuits.{' '}
                   <span className="o-inline-more">
                     <Link to="/boutique">Entrer dans la boutique</Link>
                     {me && <Link to="/compte">Ma collection</Link>}
                   </span>
                 </p>
               </header>
-              <Slot label="Essayez un skin : l'échiquier le lance" />
+              {/* Une ligne à 412 px ; espace insécable : les deux-points ne passent jamais en tête de ligne */}
+              <Slot label={"Essayez-les\u00a0: l'échiquier les porte"} />
               <div className="o-shelf o-rv">
                 <div className="o-shelf-head">
-                  <span>Skins d'animation</span>
-                  <small>Allumez une lanterne : l'échiquier lance un sort avec ce skin</small>
+                  <span>Rois</span>
+                  <small>
+                    {itemById(kingPick)?.name} · {owned(kingPick) && me ? 'Possédé' : priceOf(kingPick)}
+                  </small>
+                </div>
+                {/* Vignettes figées : le roi blanc devant, le noir derrière (kingUrl, data URI en cache) ; le roi choisi
+                    passe sur l'échiquier de démonstration, dans les deux camps */}
+                <div className="o-stall o-throne">
+                  <div className="o-kings">
+                    {KINGS.map(k => (
+                      <button
+                        key={k.id}
+                        type="button"
+                        className={`o-king ${kingPick === k.id ? 'on' : ''}`}
+                        style={{ '--gem': kingStyle(k.id).gem } as CSSProperties}
+                        onClick={() => {
+                          setKingPick(k.id);
+                          setPick(k.id);
+                        }}
+                        aria-label={`${k.name}, ${owned(k.id) && me ? 'possédé' : priceOf(k.id)}`}
+                        aria-pressed={kingPick === k.id}
+                        title={k.name}
+                      >
+                        <span className="o-king-b" style={{ backgroundImage: kingUrl('b', k.id) }} />
+                        <span className="o-king-w" style={{ backgroundImage: kingUrl('w', k.id) }} />
+                      </button>
+                    ))}
+                  </div>
+                  <span className="o-stall-shelf" />
+                </div>
+              </div>
+              <div className="o-shelf o-rv">
+                <div className="o-shelf-head">
+                  <span>Sorts</span>
+                  {/* Écran d'ordinateur de hauteur ordinaire : le nom et le prix des sorts allumés remplacent la consigne,
+                      comme pour les rois et les échiquiers (odyssee.css) ; chaque lanterne garde son nom et son prix */}
+                  <small className="o-shelf-hint">Allumez une lanterne : l'échiquier lance un sort à ses couleurs</small>
+                  <small className="o-shelf-pick">
+                    {itemById(skinPick)?.name} · {owned(skinPick) && me ? 'Possédé' : priceOf(skinPick)}
+                  </small>
                 </div>
                 <div className="o-lanterns">
                   {SKINS.map((s, i) => (
@@ -1406,6 +1478,7 @@ export default function OdysseeHome() {
                         setPick(s.id);
                         setPulse(n => n + 1);
                       }}
+                      aria-label={`${s.name}, ${owned(s.id) && me ? 'possédé' : priceOf(s.id)}`}
                       aria-pressed={skinPick === s.id}
                     >
                       <span className="o-lantern-cord" />
@@ -1420,9 +1493,9 @@ export default function OdysseeHome() {
               </div>
               <div className="o-shelf o-rv">
                 <div className="o-shelf-head">
-                  <span>Plateaux</span>
+                  <span>Échiquiers</span>
                   <small>
-                    {itemById(boardPick)?.name} · {priceOf(boardPick)}
+                    {itemById(boardPick)?.name} · {owned(boardPick) && me ? 'Possédé' : priceOf(boardPick)}
                   </small>
                 </div>
                 <div className="o-stall">
@@ -1436,7 +1509,7 @@ export default function OdysseeHome() {
                           setBoardPick(b.id);
                           setPick(b.id);
                         }}
-                        aria-label={`${b.name}, ${priceOf(b.id)}`}
+                        aria-label={`${b.name}, ${owned(b.id) && me ? 'possédé' : priceOf(b.id)}`}
                         aria-pressed={boardPick === b.id}
                       >
                         <span className="o-swatch-tile">
@@ -1455,7 +1528,7 @@ export default function OdysseeHome() {
                     <span>{pickItem.description}</span>
                   </div>
                   {me && owned(pick) ? (
-                    isEquipped(pick) ? (
+                    isEquipped(me, pick) ? (
                       <span className="o-pick-state">Équipé</span>
                     ) : (
                       <button type="button" className="btn-gold sm" onClick={() => void equip(pick)}>
@@ -1610,6 +1683,7 @@ export default function OdysseeHome() {
             ? {
                 name: 'Votre adversaire',
                 sub: themRelayed ? 'L’IA joue à sa place en ce moment' : oppCountry ? `En direct · ${oppCountry}` : 'En direct, sur cette page',
+                avatar: oppAvatar,
                 hand: g.state.hands[g.them],
                 handLabel: 'Cartes de votre adversaire',
               }

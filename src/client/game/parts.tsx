@@ -11,7 +11,9 @@ import type { GameState, LogEntry } from '../../shared/game';
 import { describeCardPlay } from '../../shared/game';
 import type { ClockView, GameView, SeatView } from '../../shared/protocol';
 import { TIME_CONTROLS } from '../../shared/protocol';
-import { pieceUrl } from '../components/pieces';
+import { DEFAULT_KING, kingStyle, normKing } from '../../shared/catalog';
+import { CollectionSeal } from '../components/CollectionSeal';
+import { crestUrl, pieceUrl } from '../components/pieces';
 import { OracleEye } from '../odyssee/shell';
 import { playSound } from '../sound';
 
@@ -160,12 +162,32 @@ export function Captured({ state, color }: { state: GameState; color: Color }) {
 // ---------------------------------------------------------------------------------------------
 // Joueurs
 
-export function Avatar({ seat, color }: { seat: SeatView | null; color: Color }) {
+/**
+ * Pastille d'un joueur : l'œil de l'Oracle pour l'IA ; pour un joueur, le cimier de son roi (crestUrl, dans sa couleur :
+ * disque clair pour les Blancs, sombre avec un halo de la gemme pour les Noirs) s'il porte un roi de collection, sinon
+ * son initiale (roi Arcane). `king` : le roi dessiné sur l'échiquier (préférence « Rois adverses classiques » comprise),
+ * sinon celui du siège. Son sceau de collection se pose en badge en bas à gauche, en miroir du point de présence. Images
+ * fixes : des data URI en cache, aucune animation.
+ */
+export function Avatar({ seat, color, king: shown, sealSize = 16 }: { seat: SeatView | null; color: Color; king?: string; sealSize?: number }) {
   if (seat?.kind === 'bot') return <OracleEye />;
-  return (
-    <span className={`gp-avatar ${color}`} aria-hidden="true">
-      {(seat?.name ?? '·')[0]?.toUpperCase()}
+  const king = normKing(shown ?? seat?.king);
+  const crest = king !== DEFAULT_KING;
+  const face = (
+    <span
+      className={`gp-avatar ${color} ${crest ? 'has-crest' : ''}`}
+      style={crest ? ({ '--crest': crestUrl(king, color), '--gem': kingStyle(king).gem } as CSSProperties) : undefined}
+      aria-hidden="true"
+    >
+      {!crest && (seat?.name ?? '·')[0]?.toUpperCase()}
       {seat && <i className={`gp-presence ${seat.online ? 'on' : ''}`} />}
+    </span>
+  );
+  if (!seat?.seal) return face;
+  return (
+    <span className="gp-avatar-wrap">
+      {face}
+      <CollectionSeal id={seat.seal} size={sealSize} className="gp-seal" />
     </span>
   );
 }

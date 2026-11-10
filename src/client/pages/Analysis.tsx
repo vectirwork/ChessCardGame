@@ -10,7 +10,8 @@ import { useEngine, reviewStates, REVIEW_DEPTH } from '../features/engine';
 import type { Analysis as EngineAnalysis } from '../features/engine';
 import { EffectsLine, HandView } from '../features/CardHand';
 import { catalogLabel, formatDate, formatEval, frSan, outcomeFor, reasonText, scoreText } from '../features/format';
-import { localGame, rememberView } from '../features/history';
+import { CLASSIC_KINGS_PREF, localGame, rememberView, seatKings, shownKings } from '../features/history';
+import type { Kings } from '../features/history';
 import { MoveTree } from '../features/MoveTree';
 import { PositionEditor } from '../features/PositionEditor';
 import { JUDGEMENT_LABEL, JUDGEMENT_SIGN, judge } from '../features/review';
@@ -18,7 +19,7 @@ import type { Judgement } from '../features/review';
 import { useStored } from '../features/storage';
 import { Switch, useTitle } from '../features/ui';
 import { emitAck, getSocket } from '../socket';
-import { useApp } from '../store';
+import { useApp, usePref } from '../store';
 import { playSound } from '../sound';
 import type { Color, Move, PieceType } from '../../shared/chess';
 import { opposite } from '../../shared/chess';
@@ -44,6 +45,8 @@ interface GameInfo {
   you: Color | null;
   complete: boolean;
   local?: boolean;
+  /** Rois des deux camps (sièges de la partie, ou partie locale enregistrée avec eux) ; absent : Arcane. */
+  kings?: Kings;
 }
 
 type Tab = 'coups' | 'importer' | 'exporter';
@@ -79,6 +82,7 @@ function AnalysisBoard({ gameId, fen, imported }: { gameId?: string; fen: string
   const [mode, setMode] = useState<'analyse' | 'edit'>('analyse');
   const [tab, setTab] = useState<Tab>('coups');
   const [engineOn, setEngineOn] = useStored<boolean>('sm:analyse:moteur', true);
+  const [classicKings] = usePref<boolean>(CLASSIC_KINGS_PREF, false);
   const [game, setGame] = useState<GameInfo | null>(null);
   const [loading, setLoading] = useState(!!gameId);
   const [problem, setProblem] = useState<ReactNode>(init.error);
@@ -137,7 +141,7 @@ function AnalysisBoard({ gameId, fen, imported }: { gameId?: string; fen: string
       });
       setGame({
         id: g.id, white: g.white, black: g.black, whiteRating: null, blackRating: null, winner: g.winner ?? null, reason: g.reason ?? null,
-        catalog: g.catalog, tc: 'Sans limite', date: g.at, you: g.you, complete, local: true,
+        catalog: g.catalog, tc: 'Sans limite', date: g.at, you: g.you, complete, local: true, kings: g.kings,
       });
       setOrientation(g.you ?? 'w');
       startReview(r);
@@ -180,7 +184,7 @@ function AnalysisBoard({ gameId, fen, imported }: { gameId?: string; fen: string
         setGame({
           id: v.id, white: w?.name ?? 'Blancs', black: b?.name ?? 'Noirs', whiteRating: w?.rating ?? null, blackRating: b?.rating ?? null,
           winner: v.state.result ? v.state.result.winner ?? 'draw' : null, reason: v.state.result?.reason ?? null,
-          catalog: v.state.catalog ?? 'duel', tc, date: v.createdAt, you: v.you, complete,
+          catalog: v.state.catalog ?? 'duel', tc, date: v.createdAt, you: v.you, complete, kings: seatKings(v.seats),
         });
         setOrientation(v.you ?? 'w');
         if (v.you) rememberView(v);
@@ -354,6 +358,8 @@ function AnalysisBoard({ gameId, fen, imported }: { gameId?: string; fen: string
   const arrows: Arrow[] = engineOn && live.analysis?.best ? [{ from: live.analysis.best.from, to: live.analysis.best.to, tone: 'cyan' }] : [];
   const lastEntry = cur.entry;
   const lastMove = lastEntry?.k === 'move' && lastEntry.from >= 0 ? { from: lastEntry.from, to: lastEntry.to } : null;
+  // Rois de la partie relue (ceux des sièges) ; échiquier libre, import, position éditée : le roi Arcane
+  const kings = shownKings(game?.kings, game?.you ?? null, classicKings);
 
   if (mode === 'edit') {
     return (
@@ -380,6 +386,8 @@ function AnalysisBoard({ gameId, fen, imported }: { gameId?: string; fen: string
             onMove={onMove}
             lastMove={lastMove}
             arrows={arrows}
+            kingW={kings.w}
+            kingB={kings.b}
             aside={<EvalBar analysis={engineOn || review ? shown : null} orientation={orientation} idle={!engineOn} />}
             label="Échiquier d’analyse"
           />

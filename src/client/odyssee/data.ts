@@ -4,7 +4,7 @@
 // proposé nulle part.
 import { cardsOf, isCardId } from '../../shared/cards';
 import type { CardDef, CardId, Catalog } from '../../shared/cards';
-import { ITEMS, PRODUCTS, formatPrice } from '../../shared/catalog';
+import { ITEMS, PRODUCTS, formatPrice, itemById, unitPrice } from '../../shared/catalog';
 
 export type PoseKey = 'hero' | 'foret' | 'pics' | 'sablier' | 'bazar' | 'seuil';
 
@@ -14,20 +14,26 @@ export interface Place {
   name: string;
   /** Altitude affichée par l'altimètre en arrivant dans le lieu. */
   alt: number;
-  /** Plateau et skin de l'échiquier qui accompagne la descente. */
+  /**
+   * Plateau, sorts et roi de l'échiquier qui accompagne la descente : une collection par lieu (Pics : Néant ; Sablier :
+   * Forge d'Inferno ; Seuil : Voûte céleste). La Forêt garde l'apparence offerte (on y apprend les cartes du froid) ;
+   * au Bazar, le visiteur choisit. Le héros est la partie du visiteur (ses objets, l'Oracle en Roi éclipse).
+   */
   theme: string;
   skin: string;
+  /** Roi des deux camps (objet king:*). */
+  king: string;
   /** Teinte du lieu (r g b), reprise par le rideau du mode jeu. */
   tint: string;
 }
 
 export const PLACES: Place[] = [
-  { id: 'hero', num: 'I', name: "L'Observatoire", alt: 9120, theme: 'board:arcane', skin: 'skin:celestial', tint: '120 92 255' },
-  { id: 'foret', num: 'II', name: 'La Forêt de givre', alt: 6480, theme: 'board:slate', skin: 'skin:arcane', tint: '94 214 240' },
-  { id: 'pics', num: 'III', name: "Les Pics de l'orage", alt: 4210, theme: 'board:arcane', skin: 'skin:void', tint: '150 110 255' },
-  { id: 'sablier', num: 'IV', name: 'Le Sablier', alt: 1730, theme: 'board:obsidian', skin: 'skin:inferno', tint: '240 150 70' },
-  { id: 'bazar', num: 'V', name: 'Le Bazar céleste', alt: 640, theme: 'board:marble', skin: 'skin:neon', tint: '236 120 180' },
-  { id: 'seuil', num: 'VI', name: 'Le Seuil', alt: 0, theme: 'board:arcane', skin: 'skin:celestial', tint: '243 201 105' },
+  { id: 'hero', num: 'I', name: "L'Observatoire", alt: 9120, theme: 'board:arcane', skin: 'skin:celestial', king: 'king:arcane', tint: '120 92 255' },
+  { id: 'foret', num: 'II', name: 'La Forêt de givre', alt: 6480, theme: 'board:slate', skin: 'skin:arcane', king: 'king:arcane', tint: '94 214 240' },
+  { id: 'pics', num: 'III', name: "Les Pics de l'orage", alt: 4210, theme: 'board:horizon', skin: 'skin:void', king: 'king:eclipse', tint: '150 110 255' },
+  { id: 'sablier', num: 'IV', name: 'Le Sablier', alt: 1730, theme: 'board:obsidian', skin: 'skin:inferno', king: 'king:braise', tint: '240 150 70' },
+  { id: 'bazar', num: 'V', name: 'Le Bazar céleste', alt: 640, theme: 'board:jade', skin: 'skin:sakura', king: 'king:printemps', tint: '236 120 180' },
+  { id: 'seuil', num: 'VI', name: 'Le Seuil', alt: 0, theme: 'board:ciel', skin: 'skin:celestial', king: 'king:astral', tint: '243 201 105' },
 ];
 
 // ---------------------------------------------------------------------------------------------
@@ -178,16 +184,19 @@ export const LEVELS = [
 ];
 
 // ---------------------------------------------------------------------------------------------
-// Boutique
+// Boutique (Bazar de l'accueil) : les objets et les prix du catalogue, sans rien recalculer ici
 
+export const KINGS = ITEMS.filter(i => i.kind === 'king');
 export const SKINS = ITEMS.filter(i => i.kind === 'skin');
 export const BOARDS = ITEMS.filter(i => i.kind === 'board');
-export const PACKS = PRODUCTS.filter(p => p.id.startsWith('pack:'));
+/** Packs en vente (un pack retiré n'est pas dans PRODUCTS). */
+export const PACKS = PRODUCTS.filter(p => p.kind === 'pack');
 
-/** Prix lisible d'un objet de la boutique (« Offert » pour les objets gratuits). */
+/** Prix lisible d'un objet à l'unité (« Offert » pour les objets gratuits) : unitPrice du catalogue. */
 export function priceOf(itemId: string): string {
-  const item = ITEMS.find(i => i.id === itemId);
-  if (item?.free) return 'Offert';
-  const p = PRODUCTS.find(x => x.id === itemId) ?? PRODUCTS.find(x => x.items.length === 1 && x.items[0] === itemId);
-  return p ? formatPrice(p.priceCents) : '';
+  const item = itemById(itemId);
+  if (!item) return '';
+  if (item.free) return 'Offert';
+  const cents = unitPrice(itemId);
+  return cents ? formatPrice(cents) : '';
 }

@@ -103,7 +103,9 @@
         {"motif": "test/frequences.test.ts"},
         {"motif": "scripts/banc-ia.mjs"}
       ],
-      "partage": []
+      "partage": [
+        {"motif": "test/fixtures/v1/generer.ts", "note": "générateur des témoins seulement (signatures, ECARTS_VOULUS d'une correction décidée) ; témoins JSON figés, au lot 0a ; cédé au lot 3"}
+      ]
     },
     {
       "id": "2",
@@ -138,7 +140,10 @@
         {"motif": "test/echiquiers.mjs"},
         {"motif": "test/fixtures/rois/**"}
       ],
-      "partage": [{"motif": "test/kings.test.ts", "note": "cédé au lot 7 pour la partie lieux"}]
+      "partage": [
+        {"motif": "test/kings.test.ts", "note": "cédé au lot 7 pour la partie lieux"},
+        {"motif": "test/fixtures/v1/existantes.json", "note": "classement des captures existantes seulement (echiquiers, boutique : stables une fois les scripts reproductibles) ; cédé au lot 4"}
+      ]
     },
     {
       "id": "3",
@@ -175,7 +180,8 @@
       ],
       "partage": [
         {"motif": "src/server/games.ts", "note": "cédés au lot 9 pour le raccord SLOT_DEFS"},
-        {"motif": "src/server/auth.ts", "note": "cédés au lot 9 pour le raccord SLOT_DEFS"}
+        {"motif": "src/server/auth.ts", "note": "cédés au lot 9 pour le raccord SLOT_DEFS"},
+        {"motif": "test/fixtures/v1/generer.ts", "note": "reçu du lot 1 ; générateur des témoins seulement (vues des salles, ECARTS_VOULUS) ; témoins JSON figés ; cédé au lot 9"}
       ]
     },
     {
@@ -206,7 +212,9 @@
         {"motif": "test/cardfx.test.ts"},
         {"motif": "test/durees-css.test.ts"}
       ],
-      "partage": []
+      "partage": [
+        {"motif": "test/fixtures/v1/existantes.json", "note": "reçu du lot 2 ; classement des captures existantes seulement (sorts) ; cédé au lot 9"}
+      ]
     },
     {
       "id": "5",
@@ -336,11 +344,23 @@
         {"motif": "src/shared/text/regles.ts", "note": "remontée des phrases locales en double"},
         {"motif": "src/shared/protocol.ts", "note": "retrait des alias"},
         {"motif": "src/shared/game.ts", "note": "retrait des alias"},
-        {"motif": "src/client/odyssee/shell/cards.ts", "note": "retrait du repli sur le texte des refus"}
+        {"motif": "src/client/odyssee/shell/cards.ts", "note": "retrait du repli sur le texte des refus"},
+        {"motif": "test/fixtures/v1/generer.ts", "note": "reçu du lot 3 ; générateur des témoins seulement ; témoins JSON figés"},
+        {"motif": "test/fixtures/v1/existantes.json", "note": "reçu du lot 4 ; classement des captures existantes seulement"}
       ]
     }
   ],
   "passages": [
+    {
+      "fichiers": ["test/fixtures/v1/existantes.json"],
+      "ordre": ["0a", "2", "4", "9"],
+      "note": "classement stables / bruitées des captures existantes : un lot qui rend son script reproductible reprend la référence sur le code d'avant et passe ses images en « stables »"
+    },
+    {
+      "fichiers": ["test/fixtures/v1/generer.ts"],
+      "ordre": ["0a", "1", "3", "9"],
+      "note": "le générateur seul (adaptation aux signatures, écarts voulus déclarés) ; les témoins JSON et textes restent au lot 0a, figés"
+    },
     {
       "fichiers": ["src/shared/game.ts", "src/shared/cards.ts", "src/shared/bot.ts", "src/shared/rules.ts"],
       "ordre": ["0b", "1"],

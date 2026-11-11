@@ -1,4 +1,5 @@
 {
+  "note": "À lire avec l’horloge figée à valeur.savedAt (vi.setSystemTime) : loadSaved (useLiveGame.ts) rejette une sauvegarde de plus de 30 jours, et savedAt vaut le 15 janvier 2027.",
   "cle": "sm:odyssee:partie",
   "valeur": {
     "v": 1,

@@ -22,8 +22,8 @@
     "test:ranked": "node test/ranked.mjs",
     "local": "node scripts/local.mjs",
     "temoins": "vitest run -c test/fixtures/v1/vitest.config.ts",
-    "identite": "node test/identite.mjs",
-    "textes-pages": "node test/textes-pages.mjs",
+    "identite": "node test/identite.mjs --comparer",
+    "textes-pages": "node test/textes-pages.mjs --comparer",
     "verifier-lot": "node scripts/verifier-lot.mjs"
   },
   "dependencies": {

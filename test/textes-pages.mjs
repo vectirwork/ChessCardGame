@@ -2,13 +2,24 @@
 // 1280 × 720 et en 375 × 667, et d'une partie en ligne à quatre moments (attente d'une invitation, choix des cartes,
 // partie en cours, fin), vue par la joueuse des Blancs ; l'adversaire est un client socket (test/lib/client.mjs).
 //
-//   npm run build && node test/textes-pages.mjs                 écrit test/fixtures/v1/textes/*.txt (références)
-//   node test/textes-pages.mjs --comparer                       compare au dépôt ; écarts listés, code 1 s'il y en a
-//   node test/textes-pages.mjs [BASE] [--sortie=<dossier>] [--comparer[=<dossier de référence>]] [--seulement=pages|partie]
+//   npm run build && npm run textes-pages       compare au dépôt (test/fixtures/v1/textes) ; écarts listés, code 1
+//   node test/textes-pages.mjs [BASE] [--comparer=<dossier de référence>] [--sortie=<dossier>] [--seulement=pages|partie]
+//                              [--racine=<dossier contenant dist>] [--port=<n>] [--construire] [--hors-defaut]
+//   node test/textes-pages.mjs --ecrire [--ecraser] [--sortie=<dossier>]       (re)écrit des références
 //
-// Sans BASE (ni SPELLMATE_BASE), le script se relance de lui-même sous scripts/serveur-jetable.mjs (site construit,
-// base neuve) : lancez npm run build avant. En comparaison, les textes relevés sont écrits dans un dossier temporaire
-// (affiché) ou dans --sortie.
+// Sans option, le script COMPARE : les textes sont relevés dans un dossier temporaire (affiché) ou dans --sortie, puis
+// comparés à la référence. Il n'écrit dans la référence qu'avec --ecrire, et refuse si le dossier visé n'est pas vide,
+// sauf --ecraser (les références ne se réécrivent que sur le code d'avant la polymorphie, et sur décision).
+//
+// Sans BASE (ni SPELLMATE_BASE), le script se relance de lui-même sous scripts/serveur-jetable.mjs (site construit de
+// --racine, par défaut la copie du dépôt ; base neuve ; port --port, sinon un port libre). Avant, il vérifie :
+// - que le site construit est à jour : refus si un fichier de src/, public/, index.html, vite.config.ts ou
+//   scripts/build-server.mjs est plus récent que dist/ (--construire lance d'abord npm run build) ;
+// - que le serveur tournera au défaut : refus si SPELLMATE_TEST_RULES, une variable FEATURE_*, APP_NAME ou LEGAL_* est
+//   définie (le serveur jetable hérite de l'environnement), ou si la racine contient un fichier .env (le serveur le
+//   lirait). --hors-defaut passe outre pour regarder un autre réglage : la comparaison est alors marquée « hors défaut »
+//   et --ecrire est refusé.
+// Le rapport commence par le commit et l'état de la copie (git status). Avec BASE, le site servi n'est pas vérifié.
 //
 // Stabilisation (deux exécutions donnent les mêmes textes) :
 // - Math.random remplacé par mulberry32, même graine à chaque document ; stockage vidé au premier chargement ;
@@ -20,7 +31,7 @@
 //   ‹partie› ;
 // - chaque page est parcourue jusqu'en bas puis remise en haut avant le relevé (contenus chargés au défilement).
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -215,34 +226,168 @@ export async function scenarioPartie(browser, base, ecran, rappel, erreurs) {
   await ctx.close();
 }
 
-/** Lit les options communes : BASE, --sortie, --comparer[=réf], --seulement. */
+/**
+ * Lit les options communes : BASE, --ecrire, --ecraser, --sortie, --comparer[=réf], --seulement, --racine, --construire,
+ * --hors-defaut. Par défaut : comparaison (relevés dans un dossier temporaire créé par `preparerSortie`, ou --sortie).
+ * --ecrire : relevés écrits dans la référence (ou --sortie), sans comparaison.
+ */
 export function lireOptions(argv, defauts) {
   const opt = name => argv.find(a => a === `--${name}` || a.startsWith(`--${name}=`));
-  const val = name => opt(name)?.split('=').slice(1).join('=') || null;
+  // Valeur de la dernière occurrence « --nom=valeur » (« --comparer » seul, venu du script npm, n'en a pas).
+  const val = name => argv.filter(a => a.startsWith(`--${name}=`)).map(a => a.slice(name.length + 3)).pop() || null;
   const base = argv.find(a => !a.startsWith('--')) ?? process.env.SPELLMATE_BASE ?? null;
-  const comparer = !!opt('comparer');
+  const ecrire = !!opt('ecrire');
+  if (ecrire && opt('comparer')) {
+    console.error('--ecrire et --comparer s’excluent : --ecrire écrit des références sans comparer.');
+    process.exit(2);
+  }
   const ref = path.resolve(val('comparer') ?? defauts.ref);
-  const sortie = path.resolve(val('sortie') ?? (comparer ? mkdtempSync(path.join(os.tmpdir(), defauts.prefixe)) : defauts.ref));
+  const sortie = val('sortie') ? path.resolve(val('sortie')) : ecrire ? path.resolve(defauts.ref) : null;
   const seulement = (val('seulement') ?? defauts.tout).split(',');
-  return { base: base?.replace(/\/$/, '') ?? null, comparer, ref, sortie, seulement, opt, val };
+  const racine = path.resolve(val('racine') ?? DEPOT);
+  return {
+    base: base?.replace(/\/$/, '') ?? null,
+    ecrire,
+    comparer: !ecrire,
+    ecraser: !!opt('ecraser'),
+    horsDefaut: !!opt('hors-defaut'),
+    construire: !!opt('construire'),
+    /** Relancé par relancerSousServeurJetable : les contrôles préalables sont déjà faits. */
+    jetable: !!opt('jetable'),
+    ref,
+    sortie,
+    racine,
+    /** Port imposé au serveur jetable (plages de ports des agents), sinon un port libre. */
+    port: val('port'),
+    seulement,
+    opt,
+    val,
+    /** Dossier des relevés : --sortie, la référence (--ecrire), sinon un dossier temporaire créé à la demande. */
+    preparerSortie() {
+      this.sortie ??= mkdtempSync(path.join(os.tmpdir(), defauts.prefixe));
+      mkdirSync(this.sortie, { recursive: true });
+      return this.sortie;
+    },
+  };
 }
 
-/** Sans serveur indiqué : relance le script sous le serveur jetable (site construit). */
-export function relancerSousServeurJetable(script, argv) {
-  const r = spawnSync(process.execPath, [path.join(DEPOT, 'scripts/serveur-jetable.mjs'), '--', process.execPath, script, '{base}', ...argv], {
-    stdio: 'inherit',
-  });
+/** Variables qui changeraient le site relevé : réglages des tests, interrupteurs, marque, mentions légales. */
+const VARIABLES_HORS_DEFAUT = /^(SPELLMATE_TEST_RULES|FEATURE_.+|APP_NAME|LEGAL_.+)$/;
+
+/**
+ * Raisons pour lesquelles le serveur jetable ne tournerait pas au défaut : il hérite de l'environnement, et le serveur
+ * lit le fichier .env de son dossier (src/server/config.ts).
+ */
+export function ecartsAuDefaut(racine = DEPOT, env = process.env) {
+  const out = Object.keys(env).filter(k => VARIABLES_HORS_DEFAUT.test(k)).sort().map(k => `variable ${k} définie`);
+  if (existsSync(path.join(racine, '.env'))) out.push(`fichier ${path.join(racine, '.env')} (le serveur le lirait)`);
+  return out;
+}
+
+/** Ce dont dépend le site construit : un fichier plus récent que dist/ veut dire que dist/ est périmé. */
+const SOURCES_DU_SITE = ['src', 'public', 'index.html', 'vite.config.ts', 'scripts/build-server.mjs'];
+
+/** Fichiers des sources de `racine` plus récents que son dist/ (du plus récent au plus ancien). */
+export function sourcesPlusRecentes(racine = DEPOT) {
+  const cibles = ['dist/client/index.html', 'dist/server/index.js'].map(f => path.join(racine, f));
+  if (cibles.some(f => !existsSync(f))) return [`${path.join(racine, 'dist')} incomplet`];
+  const t = Math.min(...cibles.map(f => statSync(f).mtimeMs));
+  const plus = [];
+  const visiter = p => {
+    if (!existsSync(p)) return;
+    const st = statSync(p);
+    if (st.isDirectory()) {
+      for (const n of readdirSync(p)) visiter(path.join(p, n));
+    } else if (st.mtimeMs > t) plus.push([st.mtimeMs, path.relative(racine, p)]);
+  };
+  for (const s of SOURCES_DU_SITE) visiter(path.join(racine, s));
+  return plus.sort((a, b) => b[0] - a[0]).map(([, f]) => f);
+}
+
+/** Commit et état de la copie du dépôt (et du site construit relevé, s'il vient d'ailleurs), pour l'en-tête du rapport. */
+export function enteteCopie(racine = DEPOT) {
+  const brut = (...a) => spawnSync('git', a, { cwd: DEPOT, encoding: 'utf8' }).stdout ?? '';
+  const git = (...a) => brut(...a).trim();
+  const etat = brut('status', '--short').split('\n').filter(Boolean);
+  const lignes = [
+    `Copie ${DEPOT} : commit ${git('rev-parse', '--short=10', 'HEAD') || '?'} (${git('branch', '--show-current') || 'détachée'}), ${
+      etat.length ? `${etat.length} fichier(s) modifié(s) ou non suivi(s)` : 'propre'
+    }`,
+    ...etat.slice(0, 10).map(l => `  ${l}`),
+    ...(etat.length > 10 ? [`  … et ${etat.length - 10} autre(s)`] : []),
+  ];
+  if (racine !== DEPOT) {
+    const commit = existsSync(path.join(racine, 'COMMIT')) ? readFileSync(path.join(racine, 'COMMIT'), 'utf8').trim().slice(0, 10) : '?';
+    lignes.push(`Site construit relevé : ${racine} (commit ${commit})`);
+  }
+  return lignes.join('\n');
+}
+
+/**
+ * Contrôles avant un relevé (une seule fois, avant la relance sous le serveur jetable) : en-tête du rapport, réglages au
+ * défaut, fraîcheur du site construit, dossiers de référence non écrasés. Sort du processus (code 2) en cas de refus.
+ * `dossiers` : les dossiers que le relevé écrira (refus de --ecrire s'ils ne sont pas vides, sauf --ecraser).
+ */
+export function controlesPrealables(o, { avecServeur, dossiers }) {
+  console.log(enteteCopie(o.racine));
+  const refus = [];
+  if (avecServeur) {
+    const hors = ecartsAuDefaut(o.racine);
+    if (hors.length && !o.horsDefaut) {
+      refus.push(`le serveur ne tournerait pas au défaut : ${hors.join(', ')} (retirez-les, ou --hors-defaut pour regarder un autre réglage)`);
+    } else if (hors.length) {
+      console.log(`HORS DÉFAUT (--hors-defaut) : ${hors.join(', ')}. Ce relevé ne prouve pas l'identité au défaut.`);
+      if (o.ecrire) refus.push('--ecrire refusé avec --hors-defaut : une référence se prend au défaut');
+    }
+    if (o.base) {
+      console.log(`Serveur fourni (${o.base}) : le site qu'il sert n'est pas vérifié (fraîcheur, réglages).`);
+    } else {
+      if (o.construire && o.racine === DEPOT) {
+        console.log('npm run build…');
+        const r = spawnSync('npm', ['run', 'build'], { cwd: DEPOT, stdio: 'inherit' });
+        if (r.status !== 0) refus.push('npm run build a échoué');
+      }
+      const recents = sourcesPlusRecentes(o.racine);
+      if (recents.length) {
+        refus.push(`site construit périmé (${path.join(o.racine, 'dist')}) : ${recents.slice(0, 5).join(', ')}${recents.length > 5 ? `… (${recents.length})` : ''} plus récent(s) ; lancez npm run build, ou --construire`);
+      }
+    }
+  }
+  if (o.ecrire) {
+    for (const d of dossiers) {
+      if (existsSync(d) && readdirSync(d).length && !o.ecraser) {
+        refus.push(`${d} n'est pas vide : --ecrire ne remplace des références qu'avec --ecraser`);
+      }
+    }
+  }
+  if (refus.length) {
+    console.error(`Refusé :\n  ${refus.join('\n  ')}`);
+    process.exit(2);
+  }
+}
+
+/** Sans serveur indiqué : relance le script sous le serveur jetable (site construit de `racine`, `port` s'il est donné). */
+export function relancerSousServeurJetable(script, argv, racine = DEPOT, port = null) {
+  const r = spawnSync(
+    process.execPath,
+    [
+      path.join(DEPOT, 'scripts/serveur-jetable.mjs'), `--racine=${racine}`, ...(port ? [`--port=${port}`] : []),
+      '--', process.execPath, script, '{base}', ...argv, '--jetable',
+    ],
+    { stdio: 'inherit' },
+  );
   process.exit(r.status ?? 1);
 }
 
 /**
- * Compare deux dossiers de textes (.txt) : renvoie la liste des écarts lisibles. `seulementReleves` : seuls les textes
- * relevés cette fois sont comparés (ceux de la référence qui manquent ne sont pas signalés).
+ * Compare deux dossiers de textes (.txt, au caractère près) : renvoie la liste des écarts lisibles. `seulementReleves` :
+ * seuls les textes relevés cette fois sont comparés (ceux de la référence qui manquent ne sont pas signalés) ;
+ * `garder(nom)` : filtre des fichiers comparés.
  */
-export function comparerTextes(ref, sortie, { seulementReleves = false } = {}) {
+export function comparerTextes(ref, sortie, { seulementReleves = false, garder = () => true } = {}) {
   const ecarts = [];
   const deRef = seulementReleves || !existsSync(ref) ? [] : readdirSync(ref);
-  const noms = new Set([...deRef, ...readdirSync(sortie)].filter(n => n.endsWith('.txt')));
+  const noms = new Set([...deRef, ...readdirSync(sortie)].filter(n => n.endsWith('.txt') && garder(n)));
   for (const n of [...noms].sort()) {
     const a = path.join(ref, n);
     const b = path.join(sortie, n);
@@ -264,8 +409,11 @@ export function comparerTextes(ref, sortie, { seulementReleves = false } = {}) {
 async function main() {
   const argv = process.argv.slice(2);
   const o = lireOptions(argv, { ref: REF_TEXTES, prefixe: 'spellmate-textes-', tout: 'pages,partie' });
-  if (!o.base) relancerSousServeurJetable(fileURLToPath(import.meta.url), argv);
-  mkdirSync(o.sortie, { recursive: true });
+  if (!o.jetable) {
+    controlesPrealables(o, { avecServeur: true, dossiers: [o.sortie ?? o.ref].filter(() => o.ecrire) });
+    if (!o.base) relancerSousServeurJetable(fileURLToPath(import.meta.url), argv, o.racine, o.port);
+  }
+  o.preparerSortie();
   const erreurs = [];
   const browser = await lancerChromium();
   try {
@@ -287,12 +435,13 @@ async function main() {
   if (erreurs.length) console.error(`Erreurs de page (${erreurs.length}) :\n  ${erreurs.slice(0, 10).join('\n  ')}`);
   console.log(`Textes relevés dans ${o.sortie}`);
   if (!o.comparer) return;
-  const ecarts = comparerTextes(o.ref, o.sortie);
+  const ecarts = comparerTextes(o.ref, o.sortie, { seulementReleves: !!o.val('seulement') });
+  const hors = o.horsDefaut ? ' [HORS DÉFAUT]' : '';
   if (!ecarts.length) {
-    console.log(`Textes identiques à la référence (${o.ref}).`);
+    console.log(`Textes identiques à la référence (${o.ref})${hors}.`);
     return;
   }
-  console.log(`${ecarts.length} écart(s) avec la référence (${o.ref}) :`);
+  console.log(`${ecarts.length} écart(s) avec la référence (${o.ref})${hors} :`);
   for (const e of ecarts) console.log(`  ${e}`);
   process.exitCode = 1;
 }

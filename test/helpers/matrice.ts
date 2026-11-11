@@ -4,8 +4,11 @@
 // virgules) : « 1,3,5 » par défaut (rapide), « 1,2,3,4,5 » pour la matrice complète (lot 9).
 //   SPELLMATE_MATRICE=1,2,3,4,5 npm run test:matrice
 // Les autres axes sont fixes : cartes par tour {1, 2}, carte à la place du coup {non, oui}, délai du Présage {2, 4},
-// choix des cartes ou tirage. Les combinaisons impossibles (refusées par checkRules) sont écartées : plus de cartes
-// par tour que de cartes en main, carte à la place du coup avec plus d'une carte par tour.
+// choix des cartes ou tirage. `combinaisons()` ne garde que les combinaisons jouables ; les autres, que checkRules
+// (src/shared/rules.ts, lot 0b) doit refuser avec un message, sont dans `combinaisonsRefusees()`, chacune avec sa raison :
+// plus de cartes par tour que de cartes en main ; carte à la place du coup avec plus d'une carte par tour ; plus de
+// MAIN_MAX_TIRAGE cartes (R9 : la réserve des Pouvoirs n'a pas de main valide plus grande, et l'accueil tire toujours,
+// quel que soit le choix des cartes des autres contextes ; designDoc §2.5).
 //
 // Ce module ne dépend pas de src/shared/config (posé en parallèle par le lot 0b) : il décrit des réglages bruts que
 // les tests passent à setRulesOverride ou à createGame.
@@ -13,7 +16,10 @@
 /** Défaut de SPELLMATE_MATRICE. */
 export const MATRICE_DEFAUT = '1,3,5';
 
-/** Lit une liste de nombres de cartes par joueur (« 1,3,5 ») ; erreur claire si elle est invalide. */
+/**
+ * Lit une liste de nombres de cartes par joueur (« 1,3,5 ») ; erreur claire si elle est invalide. 6 est accepté pour
+ * les tests de refus : toutes ses combinaisons sont dans combinaisonsRefusees().
+ */
 export function lireMatrice(texte: string | undefined = MATRICE_DEFAUT): number[] {
   const brut = (texte ?? '').trim() || MATRICE_DEFAUT;
   const n = brut.split(',').map(s => s.trim()).filter(Boolean).map(Number);
@@ -52,14 +58,26 @@ export function nomCombinaison(c: Combinaison): string {
   ].join(', ');
 }
 
-/** Toutes les combinaisons jouables pour les nombres de cartes donnés (ordre stable). */
-export function combinaisons(cartes: readonly number[] = MATRICE): Combinaison[] {
+/**
+ * Plus grande main tirable aujourd'hui : maxValidHand(réserve des 8 Pouvoirs, DEAL.handLimits) vaut 5 (R9 : une
+ * légendaire, deux climats au plus). Au-delà, checkRules refuse (l'accueil tire toujours ses mains).
+ */
+export const MAIN_MAX_TIRAGE = 5;
+
+/** Raison pour laquelle checkRules doit refuser cette combinaison, ou null si elle est jouable. */
+export function raisonDuRefus(c: Combinaison): string | null {
+  if (c.cardsPerTurn > c.cardsPerPlayer) return `${c.cardsPerTurn} cartes par tour pour une main de ${c.cardsPerPlayer}`;
+  if (c.cardEndsTurn && c.cardsPerTurn > 1) return 'carte à la place du coup avec plus d’une carte par tour';
+  if (c.cardsPerPlayer > MAIN_MAX_TIRAGE) return `R9 : aucune main valide de ${c.cardsPerPlayer} cartes (au plus ${MAIN_MAX_TIRAGE})`;
+  return null;
+}
+
+/** Toutes les combinaisons des axes, jouables ou non (ordre stable). */
+function toutes(cartes: readonly number[]): Combinaison[] {
   const out: Combinaison[] = [];
   for (const cardsPerPlayer of cartes) {
     for (const cardsPerTurn of CARTES_PAR_TOUR) {
-      if (cardsPerTurn > cardsPerPlayer) continue;
       for (const cardEndsTurn of CARTE_A_LA_PLACE) {
-        if (cardEndsTurn && cardsPerTurn > 1) continue;
         for (const presageDelay of DELAIS_PRESAGE) {
           for (const draft of CHOIX) out.push({ cardsPerPlayer, cardsPerTurn, cardEndsTurn, presageDelay, draft });
         }
@@ -69,9 +87,22 @@ export function combinaisons(cartes: readonly number[] = MATRICE): Combinaison[]
   return out;
 }
 
-/** Règles du défaut actuel (V1), pour repérer la combinaison qui doit reproduire exactement aujourd'hui. */
+/** Les combinaisons jouables pour les nombres de cartes donnés (ordre stable). */
+export function combinaisons(cartes: readonly number[] = MATRICE): Combinaison[] {
+  return toutes(cartes).filter(c => raisonDuRefus(c) === null);
+}
+
+/** Les combinaisons que checkRules doit refuser, avec leur raison (tests du « refus explicite », designDoc §8.2). */
+export function combinaisonsRefusees(cartes: readonly number[] = MATRICE): (Combinaison & { raison: string })[] {
+  return toutes(cartes).flatMap(c => {
+    const raison = raisonDuRefus(c);
+    return raison === null ? [] : [{ ...c, raison }];
+  });
+}
+
+/** Règles et mise en place du défaut actuel (V1) : la seule combinaison qui doit reproduire exactement aujourd'hui. */
 export const DEFAUT: Combinaison = { cardsPerPlayer: 3, cardsPerTurn: 1, cardEndsTurn: false, presageDelay: 2, draft: true };
 
 export const estDefaut = (c: Combinaison) =>
   c.cardsPerPlayer === DEFAUT.cardsPerPlayer && c.cardsPerTurn === DEFAUT.cardsPerTurn &&
-  c.cardEndsTurn === DEFAUT.cardEndsTurn && c.presageDelay === DEFAUT.presageDelay;
+  c.cardEndsTurn === DEFAUT.cardEndsTurn && c.presageDelay === DEFAUT.presageDelay && c.draft === DEFAUT.draft;

@@ -8,7 +8,8 @@
 // - choix : CardDraft, réserve des 8 Pouvoirs, emplacements vides ; choix-partiel : deux cartes choisies ;
 //   choix-valide : choix validé, en attente de l'adversaire ;
 // - revelation : les deux mains révélées (CardDraft, après la fin du choix) ;
-// - mini : la mini-main de l'accueil (copie du balisage de OdysseeHome, classes et CSS réels).
+// - mini : la mini-main de l'accueil (copie du balisage de OdysseeHome, classes et CSS réels) : sert à regarder N ≠ 3 ;
+//   l'identité de la vraie (OdysseeHome, sur la page d'accueil) est relevée par test/identite.mjs, partie « main ».
 // N (window.__COQUE.n, ou ?n=) : nombre de cartes de chaque main, de 1 à 6 (3 aujourd'hui). La réserve du choix garde
 // ses 8 cartes ; seul le nombre à choisir suit N.
 //

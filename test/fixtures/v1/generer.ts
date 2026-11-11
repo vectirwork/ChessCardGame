@@ -2,12 +2,24 @@
 // d'intégration au commit 7148547, pour prouver l'identité au réglage par défaut lot après lot.
 //
 // Lancement (Vitest, pour l'horloge factice et les doublures de la base et du pool de l'IA, comme
-// test/server-draft.test.ts) :
+// test/server-draft.test.ts ; fuseau UTC imposé par test/fixtures/v1/vitest.config.ts) :
 //   npm run temoins                          compare les témoins recalculés par le code actuel aux fichiers du dépôt
-//                                            (aucune écriture ; échoue en listant les fichiers différents)
+//                                            (aucune écriture ; échoue en listant les écarts)
+//   TEMOINS_STRICT=1 npm run temoins         exige en plus les mêmes octets (aucun champ ajouté)
 //   TEMOINS_MODE=ecrire npm run temoins      réécrit les fichiers de test/fixtures/v1 (seulement sur décision)
 //   TEMOINS_MODE=ecrire TEMOINS_SORTIE=/tmp/x npm run temoins     écrit ailleurs (comparaison de deux exécutions)
 // (npm run temoins = vitest run -c test/fixtures/v1/vitest.config.ts)
+//
+// Comparaison (vérification) : les témoins sont figés, le code évolue lot après lot. Pour un fichier JSON, chaque chemin
+// du témoin doit exister dans le recalcul avec la même valeur (mêmes longueurs de tableaux). Un champ que le recalcul
+// ajoute est listé pour information, sans échec, dans les données et les vues (cartes, cartes-donnees, constantes,
+// layout, textes-moteur, salles/*.vues : nouveau champ d'une CardDef, d'une cadence, DraftView.totalMs…) ; ailleurs
+// (états des parties, salles enregistrées, tirages, sauvegardes : ce que la base et les navigateurs gardent), c'est un
+// écart. Un champ « rules » ou « cardsThisTurn » ajouté est toujours un écart (designDoc §8.4 : rien de tel n'est écrit
+// au défaut). Les autres fichiers (PGN) se comparent au caractère. Les 10 premiers chemins de chaque fichier s'affichent.
+// Un écart voulu (correction d'un défaut figé ici, décidée et faite par un lot) se déclare dans ECARTS_VOULUS avec sa
+// raison : il est alors affiché sans échec. Ce fichier passe aux lots 1, 3 et 9 pour cela (docs/polymorphie/LOTS.json) ;
+// les témoins eux-mêmes restent au lot 0a.
 //
 // Fichiers produits (tous déterministes : deux exécutions donnent les mêmes octets) :
 // - cartes.json : name, tagline, description, duration et prompts de chaque carte de CARDS (ordre de CARD_IDS) ;
@@ -76,10 +88,22 @@ const F: Any = formatNs;
 const ICI = path.dirname(fileURLToPath(import.meta.url));
 const MODE = process.env.TEMOINS_MODE === 'ecrire' ? 'ecrire' : 'verifier';
 const SORTIE = path.resolve(process.env.TEMOINS_SORTIE ?? ICI);
+const STRICT = process.env.TEMOINS_STRICT === '1';
+
+/**
+ * Écarts voulus : témoin (chemin relatif) → raison et lot. Seulement pour la correction décidée d'un défaut figé ici,
+ * par exemple, si le fondateur la décide (lot 1) : 'pgn/deflagration.relu.json' (« fxg4* » relu) ou
+ * 'pgn/sablier.relu.json' (Sablier fou d'une partie à pendule relu).
+ */
+const ECARTS_VOULUS: Record<string, string> = {};
+/** Témoins où un champ ajouté par le recalcul n'est pas un écart (données et vues). */
+const AJOUTS_PERMIS = [/^cartes(-donnees)?\.json$/, /^constantes\.json$/, /^layout\.json$/, /^textes-moteur\.json$/, /^salles\/[^/]+\.vues\.json$/];
+/** Champs qu'aucun témoin ne doit gagner au défaut. */
+const CHAMPS_INTERDITS = new Set(['rules', 'cardsThisTurn']);
 
 /** Heure figée des salles (la même que les tests du serveur). */
 const T0 = 1_800_000_000_000;
-/** Date des en-têtes PGN : midi UTC, même jour dans tous les fuseaux de −11 h à +11 h. */
+/** Date des en-têtes PGN : midi UTC (pgnDate lit l'heure locale : le fuseau est imposé à UTC par vitest.config.ts). */
 const DATE_PGN = Date.UTC(2026, 10, 11, 12, 0, 0);
 /** Skin passé au moteur pour les cartes jouées hors salle (il n'entre ni dans les clés ni dans les règles). */
 const SKIN = 'skin:arcane';
@@ -647,7 +671,13 @@ function temoinsAccueil() {
   }
   const r = G.playMove(s, sq('d7'), sq('d6'));
   if (r.ok) s = r.state;
-  ecrire('accueil-v1.json', { cle: 'sm:odyssee:partie', valeur: { v: 1, state: json(s), savedAt: Date.now() } });
+  ecrire('accueil-v1.json', {
+    note:
+      'À lire avec l’horloge figée à valeur.savedAt (vi.setSystemTime) : loadSaved (useLiveGame.ts) rejette une ' +
+      'sauvegarde de plus de 30 jours, et savedAt vaut le 15 janvier 2027.',
+    cle: 'sm:odyssee:partie',
+    valeur: { v: 1, state: json(s), savedAt: Date.now() },
+  });
   vi.useRealTimers();
 }
 
@@ -790,6 +820,55 @@ function temoinsPartieLocale(parties: Record<string, Any>, salles: Record<string
 }
 
 // ---------------------------------------------------------------------------------------------
+// Comparaison
+
+const montre = (v: unknown) => {
+  const t = JSON.stringify(v) ?? 'undefined';
+  return t.length > 60 ? `${t.slice(0, 57)}…` : t;
+};
+
+/**
+ * Écarts entre un témoin JSON et son recalcul : `differents` (chemin du témoin absent ou de valeur différente, longueur
+ * de tableau changée), `ajouts` (chemin présent seulement dans le recalcul).
+ */
+function ecartsJson(temoin: unknown, recalcul: unknown): { differents: string[]; ajouts: string[] } {
+  const differents: string[] = [];
+  const ajouts: string[] = [];
+  const objet = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
+  const visiter = (a: unknown, b: unknown, chemin: string) => {
+    if (Array.isArray(a) && Array.isArray(b)) {
+      if (a.length !== b.length) differents.push(`${chemin || '.'} : ${a.length} élément(s) → ${b.length}`);
+      for (let i = 0; i < Math.min(a.length, b.length); i++) visiter(a[i], b[i], `${chemin}[${i}]`);
+    } else if (objet(a) && objet(b)) {
+      for (const k of Object.keys(a)) {
+        if (!(k in b)) differents.push(`${chemin}.${k} : absent du recalcul (témoin ${montre(a[k])})`);
+        else visiter(a[k], b[k], `${chemin}.${k}`);
+      }
+      for (const k of Object.keys(b)) {
+        if (k in a) continue;
+        if (CHAMPS_INTERDITS.has(k)) differents.push(`${chemin}.${k} : champ interdit au défaut (${montre(b[k])})`);
+        else ajouts.push(`${chemin}.${k} = ${montre(b[k])}`);
+      }
+    } else if (JSON.stringify(a) !== JSON.stringify(b)) {
+      differents.push(`${chemin || '.'} : ${montre(a)} → ${montre(b)}`);
+    }
+  };
+  visiter(temoin, recalcul, '');
+  return { differents, ajouts };
+}
+
+/** Écarts entre deux textes : les premières lignes différentes. */
+function ecartsTexte(temoin: string, recalcul: string): { differents: string[]; ajouts: string[] } {
+  const a = temoin.split('\n');
+  const b = recalcul.split('\n');
+  const differents: string[] = [];
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if (a[i] !== b[i]) differents.push(`l.${i + 1} : ${montre(a[i] ?? null)} → ${montre(b[i] ?? null)}`);
+  }
+  return { differents, ajouts: [] };
+}
+
+// ---------------------------------------------------------------------------------------------
 
 afterEach(() => {
   vi.useRealTimers();
@@ -818,16 +897,35 @@ describe(`témoins v1 (${MODE === 'ecrire' ? `écriture dans ${SORTIE}` : 'véri
       return;
     }
     const ecarts: string[] = [];
+    const infos: string[] = [];
     for (const [rel, texte] of fichiers) {
       const f = path.join(SORTIE, rel);
-      if (!existsSync(f)) ecarts.push(`${rel} : absent du dépôt`);
-      else if (readFileSync(f, 'utf8') !== texte) ecarts.push(`${rel} : différent`);
+      if (!existsSync(f)) {
+        ecarts.push(`${rel} : absent du dépôt`);
+        continue;
+      }
+      const temoin = readFileSync(f, 'utf8');
+      if (temoin === texte) continue;
+      const d = rel.endsWith('.json') ? ecartsJson(JSON.parse(temoin), JSON.parse(texte)) : ecartsTexte(temoin, texte);
+      const voulu = ECARTS_VOULUS[rel];
+      if (voulu) {
+        infos.push(`${rel} : écart voulu (${voulu})\n    ${d.differents.slice(0, 10).join('\n    ')}`);
+      } else if (d.differents.length) {
+        ecarts.push(`${rel} : ${d.differents.length} chemin(s) différent(s)\n    ${d.differents.slice(0, 10).join('\n    ')}`);
+      } else if (STRICT || (d.ajouts.length && !AJOUTS_PERMIS.some(m => m.test(rel)))) {
+        const quoi = d.ajouts.length ? `${d.ajouts.length} champ(s) ajouté(s)\n    ${d.ajouts.slice(0, 10).join('\n    ')}` : 'mise en forme';
+        ecarts.push(`${rel} : différent${STRICT ? ' (TEMOINS_STRICT)' : ''} : ${quoi}`);
+      } else if (d.ajouts.length) {
+        infos.push(`${rel} : ${d.ajouts.length} champ(s) ajouté(s), valeurs du témoin inchangées\n    ${d.ajouts.slice(0, 10).join('\n    ')}`);
+      }
     }
     for (const dir of ['parties', 'salles', 'pgn']) {
       const d = path.join(SORTIE, dir);
       if (!existsSync(d)) continue;
       for (const n of readdirSync(d)) if (!fichiers.has(`${dir}/${n}`)) ecarts.push(`${dir}/${n} : plus produit`);
     }
+    if (infos.length) console.log(`Témoins v1, pour information (${infos.length}) :\n  ${infos.join('\n  ')}`);
+    if (ecarts.length) console.log(`Témoins v1, écarts (${ecarts.length}) :\n  ${ecarts.join('\n  ')}`);
     expect(ecarts, 'témoins v1 différents du code actuel').toEqual([]);
   });
 });

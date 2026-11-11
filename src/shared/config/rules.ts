@@ -81,17 +81,24 @@ export const RULES_CONTEXTS: readonly RulesContext[] = ['classee', 'amicale', 'i
 /** Version de la forme de `Rules`. */
 export const RULES_SCHEMA = 1;
 
-/** Gèle un objet et tout ce qu'il contient (les règles sont partagées : personne ne doit pouvoir les modifier). */
-export function deepFreeze<T>(o: T): T {
-  if (o && typeof o === 'object' && !Object.isFrozen(o)) {
-    Object.freeze(o);
-    for (const v of Object.values(o as Record<string, unknown>)) deepFreeze(v);
+/**
+ * Gèle un objet et tout ce qu'il contient (les règles sont partagées : personne ne doit pouvoir les modifier). Un
+ * objet déjà gelé en surface est parcouru quand même : ses enfants sont gelés à leur tour.
+ */
+export function deepFreeze<T>(o: T, vus: WeakSet<object> = new WeakSet()): T {
+  if (o && typeof o === 'object' && !vus.has(o)) {
+    vus.add(o);
+    if (!Object.isFrozen(o)) Object.freeze(o);
+    for (const v of Object.values(o as Record<string, unknown>)) deepFreeze(v, vus);
   }
   return o;
 }
 
 // ---------------------------------------------------------------------------------------------
 // LES RÉGLAGES
+//
+// Les littéraux sont écrits avec `satisfies` : une clé mal orthographiée (« cardPerTurn », « drafMs », « climats »)
+// est une erreur de compilation, au lieu d'un réglage ignoré sans un mot.
 
 /**
  * ← RÈGLES DES NOUVELLES PARTIES. Les parties en cours, les relectures et les sauvegardes gardent les leurs.
@@ -106,13 +113,16 @@ export const GAME_RULES: GameRulesSettings = /* @__PURE__ */ Object.freeze({
   fiftyHalfmoves: 100,
   repetitions: 3,
   startFen: null,
-});
+} satisfies GameRulesSettings);
 
 /**
  * Essayer une variante dans un seul contexte, par exemple `amicale: { cardsPerPlayer: 5 }`. Vide : les mêmes
- * règles partout.
+ * règles partout. Un nom de contexte ou de réglage mal écrit est refusé par TypeScript (`satisfies`) et par
+ * checkRules.
  */
-export const RULES_BY_CONTEXT: Readonly<Partial<Record<RulesContext, Partial<GameRulesSettings>>>> = /* @__PURE__ */ Object.freeze({});
+export const RULES_BY_CONTEXT: Readonly<Partial<Record<RulesContext, Partial<GameRulesSettings>>>> = /* @__PURE__ */ Object.freeze(
+  {} satisfies Partial<Record<RulesContext, Partial<GameRulesSettings>>>,
+);
 
 /** ← MISE EN PLACE des nouvelles parties : lue à la création seulement (le résultat est stocké). */
 export const DEAL: Readonly<DealSettings> = /* @__PURE__ */ deepFreeze({
@@ -122,7 +132,7 @@ export const DEAL: Readonly<DealSettings> = /* @__PURE__ */ deepFreeze({
   limitsInDraft: false,
   rarityWeight: { commune: 4, rare: 3, épique: 2, légendaire: 1 },
   redrawAttempts: 64,
-});
+} satisfies DealSettings);
 
 /**
  * Cartes retirées des nouvelles réserves (tirage, choix, IA) sans annuler les parties en cours : pour suspendre

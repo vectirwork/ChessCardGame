@@ -3,7 +3,9 @@
 // PageScene, chiffres romains en liste, 'fr-FR' écrit en dur).
 //
 // Orthographe traditionnelle des nombres : « vingt et un », « soixante et onze », « quatre-vingts »,
-// « quatre-vingt-un ». Pas d'espace insécable : le site n'en écrit nulle part aujourd'hui.
+// « quatre-vingt-un ». Espaces insécables : les aides de grammaire n'en écrivent pas (le site n'en écrit qu'une à la
+// main, avant un deux-points : OdysseeHome.tsx, « Essayez-les\u00a0: l'échiquier les porte ») ; prix() et nombre()
+// en produisent par Intl (« 2,99 € » avec U+00A0, « 9 120 » avec l'espace fine U+202F).
 
 /** Langue et région des formats (nombres, dates, prix). */
 export const LOCALE = 'fr-FR';

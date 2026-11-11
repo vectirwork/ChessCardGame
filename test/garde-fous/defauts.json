@@ -1,0 +1,386 @@
+{
+  "//": "Valeurs par défaut de tous les réglages (test/garde-fous/defauts.test.ts). Un changement voulu d'un réglage se reporte ici, à la main ; un écart non voulu se corrige dans le fichier du réglage.",
+  "regles": {
+    "GAME_RULES": {
+      "cardsPerPlayer": 3,
+      "cardsPerTurn": 1,
+      "cardEndsTurn": false,
+      "handsVisible": true,
+      "presageDelay": 2,
+      "fiftyHalfmoves": 100,
+      "repetitions": 3,
+      "startFen": null
+    },
+    "RULES_BY_CONTEXT": {},
+    "BOUNDS": {
+      "cardsPerPlayer": [
+        1,
+        6
+      ],
+      "cardsPerTurn": [
+        1,
+        3
+      ],
+      "presageDelay": [
+        2,
+        6
+      ]
+    }
+  },
+  "miseEnPlace": {
+    "DEAL": {
+      "draft": true,
+      "draftMs": 45000,
+      "handLimits": {
+        "maxPerRarity": {
+          "légendaire": 1
+        },
+        "maxPerFamily": {
+          "climat": 2
+        }
+      },
+      "limitsInDraft": false,
+      "rarityWeight": {
+        "commune": 4,
+        "rare": 3,
+        "épique": 2,
+        "légendaire": 1
+      },
+      "redrawAttempts": 64
+    },
+    "SUSPENDED_CARDS": []
+  },
+  "equilibrage": {
+    "CARDS": {
+      "hourglass": {
+        "coups": 6,
+        "clockRate": 2
+      },
+      "truce": {
+        "coups": 3
+      },
+      "blood_moon": {
+        "coups": 3
+      },
+      "ice_age": {
+        "coups": 4
+      },
+      "blast": {
+        "coups": 4
+      },
+      "ice_wall": {
+        "ranks": [
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      "rift": {
+        "coups": 4,
+        "ranks": [
+          3,
+          4
+        ]
+      },
+      "tide": {
+        "ranks": [
+          1,
+          2,
+          3,
+          4
+        ]
+      }
+    }
+  },
+  "cadences": {
+    "TIME_CONTROLS": [
+      {
+        "id": "1+0",
+        "label": "1 + 0",
+        "short": "1 min",
+        "tc": {
+          "initial": 60,
+          "increment": 0
+        },
+        "family": "Bullet"
+      },
+      {
+        "id": "3+2",
+        "label": "3 + 2",
+        "short": "3 + 2",
+        "tc": {
+          "initial": 180,
+          "increment": 2
+        },
+        "family": "Blitz",
+        "quick": true
+      },
+      {
+        "id": "5+0",
+        "label": "5 + 0",
+        "short": "5 min",
+        "tc": {
+          "initial": 300,
+          "increment": 0
+        },
+        "family": "Blitz",
+        "quick": true,
+        "invite": true
+      },
+      {
+        "id": "10+0",
+        "label": "10 + 0",
+        "short": "10 min",
+        "tc": {
+          "initial": 600,
+          "increment": 0
+        },
+        "family": "Rapide",
+        "quick": true,
+        "invite": true
+      },
+      {
+        "id": "15+10",
+        "label": "15 + 10",
+        "short": "15 + 10",
+        "tc": {
+          "initial": 900,
+          "increment": 10
+        },
+        "family": "Rapide",
+        "quick": true,
+        "invite": true
+      },
+      {
+        "id": "none",
+        "label": "Sans limite",
+        "short": "Sans limite",
+        "tc": null,
+        "family": "Libre",
+        "invite": true
+      }
+    ],
+    "QUICK_CONTROLS": [
+      "3+2",
+      "5+0",
+      "10+0",
+      "15+10"
+    ],
+    "INVITE_CONTROLS": [
+      "5+0",
+      "10+0",
+      "15+10",
+      "none"
+    ],
+    "DEFAULT_QUICK": "10+0"
+  },
+  "ia": {
+    "BOT_LEVELS": [
+      1,
+      2,
+      3
+    ],
+    "DEFAULT_BOT_LEVEL": 2,
+    "BOT_PROFILES": {
+      "1": {
+        "name": "Apprenti",
+        "rating": 800,
+        "depth": 1,
+        "noise": 70,
+        "cardThreshold": 60,
+        "thinkMs": 350
+      },
+      "2": {
+        "name": "Sorcier",
+        "rating": 1300,
+        "depth": 2,
+        "noise": 18,
+        "cardThreshold": 90,
+        "thinkMs": 700
+      },
+      "3": {
+        "name": "Archimage",
+        "rating": 1800,
+        "depth": 5,
+        "noise": 0,
+        "cardThreshold": 70,
+        "thinkMs": 1500
+      }
+    }
+  },
+  "accueil": {
+    "HOME": {
+      "catalog": "climats",
+      "timed": false,
+      "vsBot": true,
+      "playerColor": "w",
+      "botLevel": 2,
+      "pairWindowMs": 30000,
+      "readyMaxPly": 4,
+      "guestName": "Visiteur",
+      "saveVersion": 1,
+      "saveMaxAgeMs": 2592000000,
+      "oracleThinkMs": 520,
+      "oracleThinkJitterMs": 380,
+      "oracleAfterCastMs": 380,
+      "idleMs": 30000,
+      "activityPingMs": 3000,
+      "duelAbortReturnMs": 2500
+    }
+  },
+  "interrupteurs": {
+    "FEATURES": {
+      "ranked": true,
+      "friendlyQueue": true,
+      "invites": true,
+      "botGames": true,
+      "guestPlay": true,
+      "live": true,
+      "homeDuel": true,
+      "homeRelay": true,
+      "puzzles": true,
+      "learn": true,
+      "analysis": true,
+      "shop": true,
+      "newGames": true
+    }
+  },
+  "marque": {
+    "BRAND": {
+      "name": "Spellmate",
+      "nameCaps": "SPELLMATE",
+      "shortName": "Spellmate",
+      "tagline": "Les échecs ont appris la magie",
+      "footerTagline": "Les échecs, avec un peu de magie.",
+      "titleSeparator": " · ",
+      "themeColor": "#04050f",
+      "backgroundColor": "#04050f",
+      "pgnVariant": "Spellmate",
+      "storagePrefix": "sm:"
+    }
+  },
+  "pseudos": {
+    "GUEST_NAME": {
+      "min": 2,
+      "max": 20,
+      "chars": "/^[\\p{L}\\p{N} _.-]+$/u",
+      "full": "/^[\\p{L}\\p{N} _.-]{2,20}$/u",
+      "invalid": "Choisissez un pseudo de 2 à 20 caractères.",
+      "invalidDetail": "Choisissez un pseudo de 2 à 20 caractères (lettres, chiffres, espaces, . _ -)."
+    },
+    "USERNAME": {
+      "min": 3,
+      "max": 20,
+      "chars": "/^[A-Za-z0-9_-]+$/",
+      "reserved": [
+        "admin",
+        "administrateur",
+        "moderateur",
+        "support",
+        "bot",
+        "ia",
+        "spellmate",
+        "anonyme",
+        "invite"
+      ],
+      "reservedPattern": "/^(admin|administrateur|moderateur|support|bot|ia|spellmate|anonyme|invite)$/i",
+      "tooShort": "Le pseudo doit faire au moins 3 caractères.",
+      "tooLong": "Le pseudo doit faire au plus 20 caractères.",
+      "badChars": "Lettres, chiffres, tirets et soulignés uniquement.",
+      "isReserved": "Ce pseudo est réservé.",
+      "hint": "3 à 20 caractères : lettres, chiffres, - et _"
+    },
+    "PASSWORD": {
+      "min": 8,
+      "max": 200,
+      "tooShort": "Le mot de passe doit faire au moins 8 caractères.",
+      "hint": "8 caractères minimum."
+    }
+  },
+  "durees": {
+    "CINEMATIC_MS": 1200,
+    "BOT_CARD_PAUSE_MS": 2300,
+    "BOT_TIMEOUT_MS": 20000
+  },
+  "serveur": {
+    "TIMINGS": {
+      "firstMoveMs": 45000,
+      "claimAfterMs": 60000,
+      "botIdleMs": 1800000,
+      "untimedIdleMs": 259200000,
+      "inviteTtlMs": 259200000,
+      "endedRoomEvictMs": 600000,
+      "housekeepingMs": 60000,
+      "rematchTtlMs": null,
+      "saveDebounceMs": 250,
+      "flagMarginMs": 30,
+      "minPlyToStart": 2,
+      "cinematicMs": 1200
+    },
+    "RATING": {
+      "initial": 1200,
+      "kProvisional": 40,
+      "kEstablished": 20,
+      "provisionalGames": 30,
+      "scale": 400,
+      "floor": 100
+    },
+    "MATCHMAKING": {
+      "baseTolerance": 250,
+      "tolerancePerSecond": 25,
+      "entryTtlMs": 600000,
+      "sweepMs": 30000,
+      "splitByCatalog": true,
+      "anonymousPrefix": "Anonyme-",
+      "anonymousMin": 1000,
+      "anonymousMax": 9999
+    },
+    "RELAY": {
+      "firstMoveMs": 10000,
+      "idleMs": 30000,
+      "abandonMs": 30000,
+      "delayMinMs": 900,
+      "delayJitterMs": 700,
+      "level": 2
+    },
+    "BOT_RUNTIME": {
+      "pauseMinMs": 500,
+      "pauseJitterMs": 500,
+      "cardPauseMs": 2300,
+      "retryMs": 50,
+      "maxFailures": 3,
+      "maxThreads": 4,
+      "timeoutMs": 20000
+    },
+    "LIMITS": {
+      "maxOpenRooms": 8,
+      "socketBurst": 20,
+      "socketPerSecond": 8,
+      "createPerWindow": 40,
+      "createWindowMs": 600000,
+      "authPerWindow": 30,
+      "authPerWindowDev": 1000,
+      "authWindowMs": 600000,
+      "checkoutPerMinute": 15,
+      "jsonBody": "100kb",
+      "webhookBody": "1mb",
+      "pingIntervalMs": 10000,
+      "pingTimeoutMs": 8000,
+      "liveList": 40,
+      "recentGames": 30,
+      "leaderboard": 100,
+      "profileGames": 20,
+      "purchases": 100,
+      "adminUsers": 50,
+      "adminPurchases": 15,
+      "adminDays": 30
+    },
+    "ACCOUNT": {
+      "sessionDays": 30,
+      "guestCookieDays": 365,
+      "verifyTokenMs": 259200000,
+      "resetTokenMs": 3600000
+    }
+  }
+}

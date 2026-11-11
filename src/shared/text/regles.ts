@@ -9,6 +9,8 @@
 // - les fragments commencent par une minuscule ; `majuscule = true` les met en tête de phrase ;
 // - les phrases complètes (consignes, refus) ont leur majuscule et leur point ;
 // - apostrophe courbe (’) ; une page qui écrit l'apostrophe droite passe la phrase par apostrophes(s, 'droite') ;
+// - aucune espace insécable dans ces phrases (le site n'en écrit qu'une à la main, hors règles : OdysseeHome.tsx,
+//   « Essayez-les\u00a0: » ; prix() et nombre() de fr.ts en produisent par Intl) ;
 // - rien n'est calculé dans un rendu fréquent : les pages calculent leurs phrases au niveau du module, la partie et
 //   l'accueil les mémorisent par objet de règles.
 //
@@ -174,10 +176,13 @@ export function dejaLance(r: Regles<'cardsPerTurn'>): string {
   return k === 1 ? 'Un seul sort par tour : vous en avez déjà lancé un.' : `${cap(enLettres(k))} sorts par tour : vous les avez déjà lancés.`;
 }
 
-/** « votre prochain tour » (délai du Présage 2) ; 4 : « votre deuxième tour » ; 6 : « votre troisième tour ». */
+/**
+ * « votre prochain tour » (délai du Présage 2) ; 4 : « votre deuxième tour à venir » ; 6 : « votre troisième tour à
+ * venir » (« à venir » : compté depuis l'annonce, pas depuis le début de la partie).
+ */
 export function prochainTour(delay: number): string {
   const k = Math.max(1, Math.round(delay / 2));
-  return k === 1 ? 'votre prochain tour' : `votre ${ordinalLettres(k)} tour`;
+  return k === 1 ? 'votre prochain tour' : `votre ${ordinalLettres(k)} tour à venir`;
 }
 
 /**

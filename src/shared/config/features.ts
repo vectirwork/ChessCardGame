@@ -67,9 +67,10 @@ export function featureEnvName(k: FeatureKey): string {
 export function mergeFeatures(base: Readonly<Features>, x: unknown): Readonly<Features> {
   if (!x || typeof x !== 'object') return base;
   let out: Features | null = null;
-  for (const k of FEATURE_KEYS) {
+  // Clés de `base` (celles de FEATURES) : pas de FEATURE_KEYS ici, pour ne pas l'ajouter au paquet principal.
+  for (const k in base) {
     const v = (x as Record<string, unknown>)[k];
-    if (typeof v === 'boolean' && v !== base[k]) (out ??= { ...base })[k] = v;
+    if (typeof v === 'boolean' && v !== base[k as FeatureKey]) (out ??= { ...base })[k as FeatureKey] = v;
   }
   return out ?? base;
 }

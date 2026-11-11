@@ -3,7 +3,7 @@
 // account.ts, index.ts et bot-pool.ts par ces constantes). Les durées couplées au client sont dans
 // src/shared/config/timings.ts, les règles du jeu dans src/shared/config/rules.ts.
 
-import { HOME } from '../shared/config/home';
+import type { BotLevel } from '../shared/bot';
 import { FEATURES as FEATURE_DEFAULTS, FEATURE_KEYS, featureEnvName } from '../shared/config/features';
 import type { Features } from '../shared/config/features';
 import { BOT_CARD_PAUSE_MS, BOT_TIMEOUT_MS, CINEMATIC_MS } from '../shared/config/timings';
@@ -83,8 +83,8 @@ export const RELAY = Object.freeze({
   /** Temps de jeu de l'IA pour un joueur relayé : minimum, plus un aléa. */
   delayMinMs: 900,
   delayJitterMs: 700,
-  /** Niveau de l'IA qui joue en relais. */
-  level: HOME.botLevel,
+  /** Niveau de l'IA qui joue en relais (games.ts : RELAY_LEVEL). Indépendant du niveau de l'Oracle (HOME.botLevel). */
+  level: 2 as BotLevel,
 });
 
 /** L'IA du serveur. */
@@ -151,11 +151,18 @@ export const ACCOUNT = Object.freeze({
 
 /**
  * Interrupteurs lus dans l'environnement : FEATURE_<NOM>=0 (ou false, off, non) coupe, 1 (ou true, on, oui) ouvre.
- * Une valeur illisible est signalée dans `errors` et laisse le défaut. Exemple : FEATURE_SHOP=0, FEATURE_HOME_DUEL=0.
+ * Une valeur illisible, ou une variable FEATURE_* qui ne désigne aucun interrupteur (faute de frappe :
+ * FEATURE_SHOPP=0), est signalée dans `errors` et laisse le défaut. Exemple : FEATURE_SHOP=0, FEATURE_HOME_DUEL=0.
  */
 export function readFeatures(env: Record<string, string | undefined>): { features: Readonly<Features>; errors: string[] } {
   const features: Features = { ...FEATURE_DEFAULTS };
   const errors: string[] = [];
+  const names = FEATURE_KEYS.map(featureEnvName);
+  for (const name of Object.keys(env).sort()) {
+    if (name.startsWith('FEATURE_') && !names.includes(name)) {
+      errors.push(`${name} : interrupteur inconnu (interrupteurs : ${names.join(', ')}).`);
+    }
+  }
   for (const k of FEATURE_KEYS) {
     const name = featureEnvName(k);
     const raw = env[name];

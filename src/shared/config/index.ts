@@ -3,6 +3,9 @@
 // Une ligne par réglage : où il se règle, sa valeur par défaut, ce qui suit tout seul. Les valeurs vivent dans les
 // fichiers cités ; ce module les réexporte. Après tout changement : `npx tsc --noEmit -p .`, `npm test` et
 // `npm run build` (une configuration impossible fait échouer la construction, avec une phrase qui dit quoi changer).
+// Un nom de réglage mal écrit est refusé par TypeScript et par checkRules. `npm test` signale chaque valeur par défaut
+// changée (test/garde-fous/defauts.test.ts) : si le changement est voulu, mettez à jour test/garde-fous/defauts.json ;
+// s'il touche cartes, cadences ou règles, le garde de protocole demande aussi de monter PROTOCOL_VERSION.
 // Les parties en cours, les relectures et les sauvegardes gardent leurs règles : seules les nouvelles parties suivent.
 //
 // ── Règles des nouvelles parties (config/rules.ts) ──────────────────────────────────────────────────────────────
@@ -38,7 +41,9 @@
 //                             demi-coup 4, « Visiteur », sauvegarde v1 30 jours, Oracle 520 + 380 ms, repos 30 s
 //
 // ── Fonctions activables (config/features.ts) ───────────────────────────────────────────────────────────────────
-// FEATURES                    tout ouvert ; en production : FEATURE_SHOP=0, FEATURE_RANKED=0, FEATURE_NEW_GAMES=0…
+// FEATURES                    tout ouvert ; pour couper une fonction en production, sans reconstruire : variable
+//                             d'environnement du serveur FEATURE_SHOP=0, FEATURE_RANKED=0, FEATURE_NEW_GAMES=0…
+//                             (un nom inconnu est signalé au démarrage)
 //
 // ── Marque (config/brand.ts) ────────────────────────────────────────────────────────────────────────────────────
 // BRAND                       Spellmate, accroches, couleur #04050f ; jamais les identifiants techniques (sm:, sm_session…)
@@ -51,6 +56,7 @@
 //
 // ── Serveur (src/server/settings.ts) ────────────────────────────────────────────────────────────────────────────
 // TIMINGS (délais), RATING (Elo), MATCHMAKING (file), RELAY (accueil), BOT_RUNTIME (IA), LIMITS, ACCOUNT
+// RELAY.level                 2      niveau de l'IA qui joue pour un visiteur parti (indépendant de HOME.botLevel)
 //
 // ── Client (src/client/storageKeys.ts) ──────────────────────────────────────────────────────────────────────────
 // KEYS                        clés du stockage du navigateur : ne jamais les renommer

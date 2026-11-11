@@ -6,7 +6,8 @@
 import type { Color, PieceType } from './chess';
 import type { CardId } from './cards';
 import type { Features } from './config/features';
-import type { CardInfo, GameState, MoveInfo } from './game';
+import type { CardInfo, GameState, MoveInfo, RefusalCode } from './game';
+import { LOCALE } from './text/fr';
 
 /**
  * Version du protocole. Le client l'envoie à la connexion du socket (`io({ auth: { v: PROTOCOL_VERSION } })`) et
@@ -59,7 +60,7 @@ export const INVITE_CONTROLS: string[] = /* @__PURE__ */ TIME_CONTROLS.filter(t 
 /** Cadences proposées à la création d'une partie (Jouer, invitation, IA) : toutes sauf les archivées. */
 export const OFFERED_CONTROLS: string[] = /* @__PURE__ */ TIME_CONTROLS.filter(t => !t.archived).map(t => t.id);
 
-/** Cadence choisie par défaut (Jouer, « Défier un ami ») ; repli : la première cadence rapide. */
+/** Cadence choisie par défaut (Jouer, « Défier un ami ») : une cadence de QUICK_CONTROLS (vérifié par test/socle.test.ts). */
 export const DEFAULT_QUICK = '10+0';
 
 /** Pendule d'une cadence (archivées comprises) ; null : sans pendule ; undefined : cadence inconnue. */
@@ -77,7 +78,7 @@ export function tcDef(x: string | TimeControl | null): TimeControlDef | undefine
 /** Minutes d'une pendule : entières telles quelles (« 10 »), sinon au format du site (« 1,5 »). */
 function minutes(initial: number): string {
   const m = initial / 60;
-  return Number.isInteger(m) ? String(m) : m.toLocaleString('fr-FR', { maximumFractionDigits: 2 });
+  return Number.isInteger(m) ? String(m) : m.toLocaleString(LOCALE, { maximumFractionDigits: 2 });
 }
 
 /**
@@ -259,19 +260,22 @@ export interface JoinReply {
   ok: boolean;
   error?: string;
   /** Nature du refus (voir Ack.code). */
-  code?: string;
+  code?: AckCode;
   needName?: boolean;
   view?: GameView;
 }
 
+/**
+ * Nature d'un refus, pour que le client réagisse sans lire le texte : code de refus du moteur (RefusalCode, game.ts),
+ * 'feature-off' (fonction coupée par un interrupteur), 'outdated' (version du protocole), 'rate-limited'.
+ */
+export type AckCode = RefusalCode | 'feature-off' | 'outdated' | 'rate-limited';
+
 export interface Ack {
   ok: boolean;
   error?: string;
-  /**
-   * Nature du refus, pour que le client réagisse sans lire le texte : code de refus du moteur (RefusalCode, game.ts),
-   * 'feature-off' (fonction coupée par un interrupteur), 'outdated' (version du protocole), 'rate-limited'.
-   */
-  code?: string;
+  /** Nature du refus (AckCode). */
+  code?: AckCode;
 }
 
 /** Données d'authentification du socket (`io({ auth })`) : la version du protocole du client. */

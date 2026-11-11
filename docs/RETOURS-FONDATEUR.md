@@ -382,3 +382,25 @@ dessinés et décors d'échiquier sur l'accueil).
 À valider par le fondateur : la grille de prix (aucun prix existant ne monte), les nouveaux sorts et échiquiers offerts
 aux acheteurs du Grimoire complet (pas les rois), l'Oracle en Roi éclipse, les cases d'Obsidienne éclaircies.
 Plus tard : jeux de pièces complets, cadres et dos des cartes, particule « feuille » pour Laurier.
+
+## 11 novembre : idées notées, rien à faire pour l'instant
+
+> « j'ai des idées de nouveau pouvoir, note juste comme ça […] pour l'instant ne fait rien mais note juste »
+
+- [ ] **Carte « Clairvoyance »** (nom provisoire) : la barre d'évaluation est affichée aux deux joueurs pendant les
+  2 prochains coups. À trancher avant de la faire :
+  - le site n'embarque pas Stockfish aujourd'hui. Il faudrait l'ajouter (version WebAssembly, licence GPL à vérifier)
+    ou se servir de notre propre IA ;
+  - Stockfish ne connaît pas les pouvoirs : pendant un Mur de glace ou une Grande Marée, sa note serait fausse. Notre
+    IA les connaît, mais elle est moins forte.
+- [ ] **Carte « Second souffle »** (nom provisoire) : les pions peuvent de nouveau avancer de deux cases d'un coup,
+  même s'ils ont déjà bougé. À trancher :
+  - la durée ;
+  - les deux camps ou le lanceur seul (les huit pouvoirs touchent les deux camps) ;
+  - si la prise en passant reste possible derrière ce double pas ;
+  - si un pion peut ainsi sauter jusqu'à la promotion.
+- [ ] **Clarifier « coup » et « tour »** : il est difficile d'anticiper quand un sort se lance et quand il se termine.
+  Définir les deux mots une fois pour toutes, les employer partout de la même façon (cartes, règles, bulle en partie),
+  et rendre visible en partie le moment où chaque sort arrive et finit (par exemple « s'arrête après le coup des
+  Noirs »). La passe « polymorphe » en cours regroupe les durées et les textes qui les décrivent ; ce chantier sera
+  plus simple ensuite.

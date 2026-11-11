@@ -1,0 +1,100 @@
+{
+  "RESULT_TEXT": {
+    "checkmate": "Échec et mat",
+    "stalemate": "Pat",
+    "resign": "Abandon",
+    "timeout": "Temps écoulé",
+    "repetition": "Triple répétition",
+    "fifty": "Règle des 50 coups",
+    "insufficient": "Matériel insuffisant",
+    "agreement": "Nulle par accord",
+    "abandon": "Adversaire parti",
+    "aborted": "Partie annulée"
+  },
+  "reasonText": {
+    "checkmate": "Échec et mat",
+    "stalemate": "Pat",
+    "resign": "Abandon",
+    "timeout": "Temps écoulé",
+    "repetition": "Triple répétition",
+    "fifty": "Règle des 50 coups",
+    "insufficient": "Matériel insuffisant",
+    "agreement": "Nulle par accord",
+    "abandon": "Adversaire parti",
+    "aborted": "Partie annulée"
+  },
+  "draftRefusal": [
+    {"nom":"3 cartes valides","cards":["ice_wall","rift","tide"],"partial":false,"message":null},
+    {"nom":"trois Climats","cards":["truce","blood_moon","blast"],"partial":false,"message":null},
+    {"nom":"2 cartes","cards":["ice_wall","rift"],"partial":false,"message":"Choisissez 3 cartes."},
+    {"nom":"4 cartes","cards":["ice_wall","rift","tide","truce"],"partial":false,"message":"Choisissez 3 cartes."},
+    {
+      "nom": "doublon",
+      "cards": ["ice_wall","ice_wall","tide"],
+      "partial": false,
+      "message": "Choisissez des cartes différentes."
+    },
+    {
+      "nom": "carte du Duel",
+      "cards": ["ice_wall","rift","freeze"],
+      "partial": false,
+      "message": "Cette carte n’est pas proposée dans cette partie."
+    },
+    {
+      "nom": "__proto__",
+      "cards": ["ice_wall","rift","__proto__"],
+      "partial": false,
+      "message": "Cette carte n’est pas proposée dans cette partie."
+    },
+    {
+      "nom": "nombre",
+      "cards": ["ice_wall","rift",42],
+      "partial": false,
+      "message": "Cette carte n’est pas proposée dans cette partie."
+    },
+    {"nom":"pas un tableau","cards":"tide","partial":false,"message":"Choix de cartes invalide."},
+    {"nom":"provisoire vide","cards":[],"partial":true,"message":null},
+    {"nom":"provisoire 1","cards":["tide"],"partial":true,"message":null},
+    {"nom":"provisoire doublon","cards":["tide","tide"],"partial":true,"message":"Choisissez des cartes différentes."},
+    {"nom":"provisoire 4","cards":["ice_wall","rift","tide","truce"],"partial":true,"message":"Choisissez 3 cartes."}
+  ],
+  "playMove": {
+    "coup illégal": "Coup illégal.",
+    "partie terminée": "La partie est terminée.",
+    "promotion invalide": "Promotion invalide."
+  },
+  "cardRefusal": {
+    "pas votre tour": "Ce n'est pas votre tour.",
+    "carte inconnue": "Carte inconnue.",
+    "cible manquante": "Cible manquante.",
+    "cible invalide": "Cible invalide.",
+    "deuxième carte du tour": "Une seule carte par tour.",
+    "carte déjà utilisée": "Carte déjà utilisée."
+  },
+  "refusRencontres": {
+    "Aucun coup adverse à annuler.": {"partie":"23-duel-pendule","demiCoup":0,"carte":"rewind"},
+    "Ce rituel laisserait votre roi en échec.": {"partie":"12-pouvoirs-pendule","demiCoup":5,"carte":"tide"},
+    "Un Climat est déjà annoncé.": {"partie":"02-pouvoirs-pendule","demiCoup":1,"carte":"truce"}
+  },
+  "describeCardPlay": {
+    "hourglass": "Sablier fou",
+    "truce": "Trêve",
+    "blood_moon": "Lune de sang",
+    "ice_age": "Ère glaciaire",
+    "blast": "Déflagration",
+    "ice_wall": "Mur de glace e4",
+    "rift": "Faille, rangée 4",
+    "tide": "Grande Marée",
+    "time_warp": "Distorsion temporelle",
+    "gravity": "Gravité",
+    "freeze": "Cryogénie e4",
+    "shield": "Égide e4",
+    "swap": "Permutation e4⇄d5",
+    "rewind": "Retour arrière (a1-a1)",
+    "revive": "Résurrection e4",
+    "knight_leap": "Saut du cavalier e4",
+    "lightning": "Foudre e4",
+    "phase": "Passe-muraille e4",
+    "carte retirée (crown)": "crown"
+  }
+}

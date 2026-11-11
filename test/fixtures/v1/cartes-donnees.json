@@ -1,0 +1,151 @@
+{
+  "hourglass": {
+    "id": "hourglass",
+    "catalogs": ["climats"],
+    "family": "climat",
+    "targets": 0,
+    "rarity": "rare",
+    "hue": 192,
+    "timedOnly": true,
+    "humanOnly": true,
+    "presage": true,
+    "coups": 6,
+    "catalog": "climats"
+  },
+  "truce": {
+    "id": "truce",
+    "catalogs": ["climats"],
+    "family": "climat",
+    "targets": 0,
+    "rarity": "commune",
+    "hue": 85,
+    "presage": true,
+    "coups": 3,
+    "catalog": "climats"
+  },
+  "blood_moon": {
+    "id": "blood_moon",
+    "catalogs": ["climats"],
+    "family": "climat",
+    "targets": 0,
+    "rarity": "épique",
+    "hue": 0,
+    "presage": true,
+    "coups": 3,
+    "catalog": "climats"
+  },
+  "ice_age": {
+    "id": "ice_age",
+    "catalogs": ["climats"],
+    "family": "climat",
+    "targets": 0,
+    "rarity": "rare",
+    "hue": 222,
+    "presage": true,
+    "coups": 4,
+    "catalog": "climats"
+  },
+  "blast": {
+    "id": "blast",
+    "catalogs": ["climats"],
+    "family": "climat",
+    "targets": 0,
+    "rarity": "épique",
+    "hue": 25,
+    "presage": true,
+    "coups": 4,
+    "catalog": "climats"
+  },
+  "ice_wall": {
+    "id": "ice_wall",
+    "catalogs": ["climats","duel"],
+    "family": "terrain",
+    "targets": 1,
+    "rarity": "commune",
+    "hue": 200,
+    "permanent": true,
+    "turns": 3,
+    "countsOnOpponent": true,
+    "catalog": "climats"
+  },
+  "rift": {
+    "id": "rift",
+    "catalogs": ["climats"],
+    "family": "terrain",
+    "targets": 1,
+    "rarity": "commune",
+    "hue": 285,
+    "coups": 4,
+    "catalog": "climats"
+  },
+  "tide": {
+    "id": "tide",
+    "catalogs": ["climats"],
+    "family": "evenement",
+    "targets": 0,
+    "rarity": "rare",
+    "hue": 172,
+    "ritual": true,
+    "catalog": "climats"
+  },
+  "time_warp": {
+    "id": "time_warp",
+    "catalogs": ["duel"],
+    "family": "duel",
+    "targets": 0,
+    "rarity": "rare",
+    "hue": 192,
+    "timedOnly": true,
+    "turns": 3,
+    "countsOnOpponent": true,
+    "catalog": "duel"
+  },
+  "gravity": {
+    "id": "gravity",
+    "catalogs": ["duel"],
+    "family": "duel",
+    "targets": 0,
+    "rarity": "rare",
+    "hue": 268,
+    "turns": 3,
+    "countsOnOpponent": true,
+    "catalog": "duel"
+  },
+  "freeze": {
+    "id": "freeze",
+    "catalogs": ["duel"],
+    "family": "duel",
+    "targets": 1,
+    "rarity": "commune",
+    "hue": 185,
+    "turns": 2,
+    "countsOnOpponent": true,
+    "catalog": "duel"
+  },
+  "shield": {
+    "id": "shield",
+    "catalogs": ["duel"],
+    "family": "duel",
+    "targets": 1,
+    "rarity": "commune",
+    "hue": 44,
+    "turns": 2,
+    "countsOnOpponent": true,
+    "catalog": "duel"
+  },
+  "swap": {"id":"swap","catalogs":["duel"],"family":"duel","targets":2,"rarity":"rare","hue":300,"catalog":"duel"},
+  "rewind": {"id":"rewind","catalogs":["duel"],"family":"duel","targets":0,"rarity":"légendaire","hue":334,"catalog":"duel"},
+  "revive": {"id":"revive","catalogs":["duel"],"family":"duel","targets":1,"rarity":"épique","hue":140,"catalog":"duel"},
+  "knight_leap": {
+    "id": "knight_leap",
+    "catalogs": ["duel"],
+    "family": "duel",
+    "targets": 1,
+    "rarity": "commune",
+    "hue": 28,
+    "turns": 1,
+    "catalog": "duel"
+  },
+  "lightning": {"id":"lightning","catalogs":["duel"],"family":"duel","targets":1,"rarity":"rare","hue":52,"catalog":"duel"},
+  "phase": {"id":"phase","catalogs":["duel"],"family":"duel","targets":1,"rarity":"rare","hue":250,"turns":1,"catalog":"duel"}
+}

@@ -1,0 +1,125 @@
+{
+  "constantes": {
+    "MOBILE_MAX": 820,
+    "MOBILE_BOARD_TOP": 118,
+    "MOBILE_BELOW": 256,
+    "OPP_FAN_SPAN": 2.97,
+    "DESKTOP_OPP_ROOM": 259,
+    "FAN": [{"r":-7,"y":14},{"r":0,"y":0},{"r":7,"y":14}],
+    "ARRIVEE": [-28,0,28]
+  },
+  "tailles": [
+    {
+      "vw": 320,
+      "vh": 568,
+      "mobile": true,
+      "gameLayout": {"G":200,"x":160,"y":218,"mobile":true},
+      "desktopHandRight": 405.2,
+      "oppCardWidth": 34
+    },
+    {
+      "vw": 360,
+      "vh": 640,
+      "mobile": true,
+      "gameLayout": {"G":266,"x":180,"y":251,"mobile":true},
+      "desktopHandRight": 405.2,
+      "oppCardWidth": 34
+    },
+    {
+      "vw": 375,
+      "vh": 667,
+      "mobile": true,
+      "gameLayout": {"G":293,"x":187.5,"y":264.5,"mobile":true},
+      "desktopHandRight": 405.2,
+      "oppCardWidth": 34
+    },
+    {
+      "vw": 412,
+      "vh": 915,
+      "mobile": true,
+      "gameLayout": {"G":396,"x":206,"y":316,"mobile":true},
+      "desktopHandRight": 405.2,
+      "oppCardWidth": 34
+    },
+    {
+      "vw": 768,
+      "vh": 1024,
+      "mobile": true,
+      "gameLayout": {"G":512,"x":384,"y":374,"mobile":true},
+      "desktopHandRight": 405.2,
+      "oppCardWidth": 34
+    },
+    {
+      "vw": 820,
+      "vh": 1180,
+      "mobile": false,
+      "gameLayout": {"G":270,"x":535,"y":571,"mobile":false},
+      "desktopHandRight": 405.2,
+      "oppCardWidth": 44
+    },
+    {
+      "vw": 1024,
+      "vh": 768,
+      "mobile": false,
+      "gameLayout": {"G":474,"x":637,"y":365,"mobile":false},
+      "desktopHandRight": 405.2,
+      "oppCardWidth": 44
+    },
+    {
+      "vw": 1180,
+      "vh": 820,
+      "mobile": false,
+      "gameLayout": {"G":630,"x":720.2,"y":391,"mobile":false},
+      "desktopHandRight": 405.2,
+      "oppCardWidth": 44
+    },
+    {
+      "vw": 1280,
+      "vh": 720,
+      "mobile": false,
+      "gameLayout": {"G":570,"x":736,"y":341,"mobile":false},
+      "desktopHandRight": 415.11999999999995,
+      "oppCardWidth": 66
+    },
+    {
+      "vw": 1366,
+      "vh": 768,
+      "mobile": false,
+      "gameLayout": {"G":618,"x":798,"y":365,"mobile":false},
+      "desktopHandRight": 439.114,
+      "oppCardWidth": 66
+    },
+    {
+      "vw": 1440,
+      "vh": 900,
+      "mobile": false,
+      "gameLayout": {"G":721.24,"x":820.38,"y":431,"mobile":false},
+      "desktopHandRight": 459.76,
+      "oppCardWidth": 66
+    },
+    {
+      "vw": 1536,
+      "vh": 864,
+      "mobile": false,
+      "gameLayout": {"G":714,"x":913.92,"y":413,"mobile":false},
+      "desktopHandRight": 485.8,
+      "oppCardWidth": 68
+    },
+    {
+      "vw": 1920,
+      "vh": 1080,
+      "mobile": false,
+      "gameLayout": {"G":930,"x":1142.4,"y":521,"mobile":false},
+      "desktopHandRight": 485.8,
+      "oppCardWidth": 76
+    },
+    {
+      "vw": 2560,
+      "vh": 1440,
+      "mobile": false,
+      "gameLayout": {"G":1290,"x":1523.2,"y":701,"mobile":false},
+      "desktopHandRight": 485.8,
+      "oppCardWidth": 76
+    }
+  ]
+}

@@ -1,0 +1,403 @@
+{
+  "maintenant": 1800000041200,
+  "w": {
+    "id": "TMNPOUVOIR",
+    "mode": "invite",
+    "rated": false,
+    "status": "active",
+    "seats": {
+      "w": {
+        "kind": "guest",
+        "name": "Aurore",
+        "username": null,
+        "rating": null,
+        "skin": "skin:arcane",
+        "king": "king:arcane",
+        "seal": null,
+        "online": false
+      },
+      "b": {
+        "kind": "guest",
+        "name": "Basile",
+        "username": null,
+        "rating": null,
+        "skin": "skin:arcane",
+        "king": "king:arcane",
+        "seal": null,
+        "online": false
+      }
+    },
+    "you": "w",
+    "state": {
+      "pos": {
+        "board": [
+          {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+          {"id":9,"t":"k","c":"w"},null,null,{"id":15,"t":"r","c":"w"},{"id":2,"t":"p","c":"w"},
+          {"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},{"id":8,"t":"p","c":"w"},null,{"id":12,"t":"p","c":"w"},
+          {"id":14,"t":"p","c":"w"},{"id":16,"t":"p","c":"w"},null,null,null,null,null,{"id":13,"t":"n","c":"w"},null,
+          null,null,null,{"id":11,"t":"b","c":"w"},null,{"id":10,"t":"p","c":"w"},null,null,null,null,null,null,null,
+          {"id":25,"t":"p","c":"b"},null,null,null,null,null,{"id":20,"t":"n","c":"b"},null,null,null,null,null,
+          {"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},{"id":21,"t":"p","c":"b"},{"id":23,"t":"p","c":"b"},
+          null,{"id":27,"t":"p","c":"b"},{"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},
+          {"id":18,"t":"r","c":"b"},null,{"id":22,"t":"b","c":"b"},{"id":24,"t":"q","c":"b"},
+          {"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},{"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+        ],
+        "turn": "b",
+        "castling": 15,
+        "ep": -1,
+        "halfmove": 3,
+        "fullmove": 3
+      },
+      "effects": [
+        {
+          "id": 1,
+          "card": "ice_wall",
+          "caster": "w",
+          "countsOn": "w",
+          "remaining": 0,
+          "total": 0,
+          "skin": "skin:arcane",
+          "global": true,
+          "permanent": true,
+          "square": 40
+        },
+        {
+          "id": 2,
+          "card": "rift",
+          "caster": "b",
+          "countsOn": "b",
+          "remaining": 2,
+          "total": 4,
+          "skin": "skin:arcane",
+          "global": true,
+          "squares": [32,33,34,35,37,38,39]
+        },
+        {
+          "id": 3,
+          "card": "blast",
+          "caster": "w",
+          "countsOn": "w",
+          "remaining": 4,
+          "total": 4,
+          "skin": "skin:arcane",
+          "global": true,
+          "pending": true,
+          "delay": 1
+        }
+      ],
+      "hands": {
+        "w": [{"card":"ice_wall","used":true},{"card":"blast","used":true},{"card":"tide","used":false}],
+        "b": [{"card":"rift","used":true},{"card":"truce","used":false},{"card":"blood_moon","used":false}]
+      },
+      "cardPlayed": false,
+      "captured": {"w":[],"b":[]},
+      "nextPieceId": 33,
+      "nextEffectId": 4,
+      "ply": 5,
+      "log": [
+        {"k":"move","c":"w","san":"e4","from":12,"to":28},
+        {"k":"move","c":"b","san":"e5","from":52,"to":36},
+        {"k":"card","c":"w","card":"ice_wall","targets":[40]},
+        {"k":"move","c":"w","san":"Nf3","from":6,"to":21},
+        {"k":"card","c":"b","card":"rift","targets":[32]},
+        {"k":"move","c":"b","san":"Nc6","from":57,"to":42},
+        {"k":"card","c":"w","card":"blast","targets":[]},
+        {"k":"move","c":"w","san":"Bc4","from":5,"to":26}
+      ],
+      "keys": [],
+      "snaps": [],
+      "forbidden": null,
+      "timed": true,
+      "catalog": "climats",
+      "result": null
+    },
+    "clock": {
+      "initial": 300,
+      "increment": 0,
+      "w": 289700,
+      "b": 292700,
+      "running": "b",
+      "serverNow": 1800000041200,
+      "rate": {"w":1,"b":1},
+      "noIncrement": false
+    },
+    "drawOffer": null,
+    "rematch": {"w":false,"b":false,"next":null},
+    "ratingDiff": null,
+    "firstMoveDeadline": null,
+    "away": {"w":null,"b":null},
+    "claimAfterMs": 60000,
+    "createdAt": 1800000000000,
+    "mirror": false,
+    "started": true,
+    "draft": null,
+    "standIn": null
+  },
+  "b": {
+    "id": "TMNPOUVOIR",
+    "mode": "invite",
+    "rated": false,
+    "status": "active",
+    "seats": {
+      "w": {
+        "kind": "guest",
+        "name": "Aurore",
+        "username": null,
+        "rating": null,
+        "skin": "skin:arcane",
+        "king": "king:arcane",
+        "seal": null,
+        "online": false
+      },
+      "b": {
+        "kind": "guest",
+        "name": "Basile",
+        "username": null,
+        "rating": null,
+        "skin": "skin:arcane",
+        "king": "king:arcane",
+        "seal": null,
+        "online": false
+      }
+    },
+    "you": "b",
+    "state": {
+      "pos": {
+        "board": [
+          {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+          {"id":9,"t":"k","c":"w"},null,null,{"id":15,"t":"r","c":"w"},{"id":2,"t":"p","c":"w"},
+          {"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},{"id":8,"t":"p","c":"w"},null,{"id":12,"t":"p","c":"w"},
+          {"id":14,"t":"p","c":"w"},{"id":16,"t":"p","c":"w"},null,null,null,null,null,{"id":13,"t":"n","c":"w"},null,
+          null,null,null,{"id":11,"t":"b","c":"w"},null,{"id":10,"t":"p","c":"w"},null,null,null,null,null,null,null,
+          {"id":25,"t":"p","c":"b"},null,null,null,null,null,{"id":20,"t":"n","c":"b"},null,null,null,null,null,
+          {"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},{"id":21,"t":"p","c":"b"},{"id":23,"t":"p","c":"b"},
+          null,{"id":27,"t":"p","c":"b"},{"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},
+          {"id":18,"t":"r","c":"b"},null,{"id":22,"t":"b","c":"b"},{"id":24,"t":"q","c":"b"},
+          {"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},{"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+        ],
+        "turn": "b",
+        "castling": 15,
+        "ep": -1,
+        "halfmove": 3,
+        "fullmove": 3
+      },
+      "effects": [
+        {
+          "id": 1,
+          "card": "ice_wall",
+          "caster": "w",
+          "countsOn": "w",
+          "remaining": 0,
+          "total": 0,
+          "skin": "skin:arcane",
+          "global": true,
+          "permanent": true,
+          "square": 40
+        },
+        {
+          "id": 2,
+          "card": "rift",
+          "caster": "b",
+          "countsOn": "b",
+          "remaining": 2,
+          "total": 4,
+          "skin": "skin:arcane",
+          "global": true,
+          "squares": [32,33,34,35,37,38,39]
+        },
+        {
+          "id": 3,
+          "card": "blast",
+          "caster": "w",
+          "countsOn": "w",
+          "remaining": 4,
+          "total": 4,
+          "skin": "skin:arcane",
+          "global": true,
+          "pending": true,
+          "delay": 1
+        }
+      ],
+      "hands": {
+        "w": [{"card":"ice_wall","used":true},{"card":"blast","used":true},{"card":"tide","used":false}],
+        "b": [{"card":"rift","used":true},{"card":"truce","used":false},{"card":"blood_moon","used":false}]
+      },
+      "cardPlayed": false,
+      "captured": {"w":[],"b":[]},
+      "nextPieceId": 33,
+      "nextEffectId": 4,
+      "ply": 5,
+      "log": [
+        {"k":"move","c":"w","san":"e4","from":12,"to":28},
+        {"k":"move","c":"b","san":"e5","from":52,"to":36},
+        {"k":"card","c":"w","card":"ice_wall","targets":[40]},
+        {"k":"move","c":"w","san":"Nf3","from":6,"to":21},
+        {"k":"card","c":"b","card":"rift","targets":[32]},
+        {"k":"move","c":"b","san":"Nc6","from":57,"to":42},
+        {"k":"card","c":"w","card":"blast","targets":[]},
+        {"k":"move","c":"w","san":"Bc4","from":5,"to":26}
+      ],
+      "keys": [],
+      "snaps": [],
+      "forbidden": null,
+      "timed": true,
+      "catalog": "climats",
+      "result": null
+    },
+    "clock": {
+      "initial": 300,
+      "increment": 0,
+      "w": 289700,
+      "b": 292700,
+      "running": "b",
+      "serverNow": 1800000041200,
+      "rate": {"w":1,"b":1},
+      "noIncrement": false
+    },
+    "drawOffer": null,
+    "rematch": {"w":false,"b":false,"next":null},
+    "ratingDiff": null,
+    "firstMoveDeadline": null,
+    "away": {"w":null,"b":null},
+    "claimAfterMs": 60000,
+    "createdAt": 1800000000000,
+    "mirror": false,
+    "started": true,
+    "draft": null,
+    "standIn": null
+  },
+  "spectateur": {
+    "id": "TMNPOUVOIR",
+    "mode": "invite",
+    "rated": false,
+    "status": "active",
+    "seats": {
+      "w": {
+        "kind": "guest",
+        "name": "Aurore",
+        "username": null,
+        "rating": null,
+        "skin": "skin:arcane",
+        "king": "king:arcane",
+        "seal": null,
+        "online": false
+      },
+      "b": {
+        "kind": "guest",
+        "name": "Basile",
+        "username": null,
+        "rating": null,
+        "skin": "skin:arcane",
+        "king": "king:arcane",
+        "seal": null,
+        "online": false
+      }
+    },
+    "you": null,
+    "state": {
+      "pos": {
+        "board": [
+          {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+          {"id":9,"t":"k","c":"w"},null,null,{"id":15,"t":"r","c":"w"},{"id":2,"t":"p","c":"w"},
+          {"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},{"id":8,"t":"p","c":"w"},null,{"id":12,"t":"p","c":"w"},
+          {"id":14,"t":"p","c":"w"},{"id":16,"t":"p","c":"w"},null,null,null,null,null,{"id":13,"t":"n","c":"w"},null,
+          null,null,null,{"id":11,"t":"b","c":"w"},null,{"id":10,"t":"p","c":"w"},null,null,null,null,null,null,null,
+          {"id":25,"t":"p","c":"b"},null,null,null,null,null,{"id":20,"t":"n","c":"b"},null,null,null,null,null,
+          {"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},{"id":21,"t":"p","c":"b"},{"id":23,"t":"p","c":"b"},
+          null,{"id":27,"t":"p","c":"b"},{"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},
+          {"id":18,"t":"r","c":"b"},null,{"id":22,"t":"b","c":"b"},{"id":24,"t":"q","c":"b"},
+          {"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},{"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+        ],
+        "turn": "b",
+        "castling": 15,
+        "ep": -1,
+        "halfmove": 3,
+        "fullmove": 3
+      },
+      "effects": [
+        {
+          "id": 1,
+          "card": "ice_wall",
+          "caster": "w",
+          "countsOn": "w",
+          "remaining": 0,
+          "total": 0,
+          "skin": "skin:arcane",
+          "global": true,
+          "permanent": true,
+          "square": 40
+        },
+        {
+          "id": 2,
+          "card": "rift",
+          "caster": "b",
+          "countsOn": "b",
+          "remaining": 2,
+          "total": 4,
+          "skin": "skin:arcane",
+          "global": true,
+          "squares": [32,33,34,35,37,38,39]
+        },
+        {
+          "id": 3,
+          "card": "blast",
+          "caster": "w",
+          "countsOn": "w",
+          "remaining": 4,
+          "total": 4,
+          "skin": "skin:arcane",
+          "global": true,
+          "pending": true,
+          "delay": 1
+        }
+      ],
+      "hands": {
+        "w": [{"card":"ice_wall","used":true},{"card":"blast","used":true},{"card":"tide","used":false}],
+        "b": [{"card":"rift","used":true},{"card":"truce","used":false},{"card":"blood_moon","used":false}]
+      },
+      "cardPlayed": false,
+      "captured": {"w":[],"b":[]},
+      "nextPieceId": 33,
+      "nextEffectId": 4,
+      "ply": 5,
+      "log": [
+        {"k":"move","c":"w","san":"e4","from":12,"to":28},
+        {"k":"move","c":"b","san":"e5","from":52,"to":36},
+        {"k":"card","c":"w","card":"ice_wall","targets":[40]},
+        {"k":"move","c":"w","san":"Nf3","from":6,"to":21},
+        {"k":"card","c":"b","card":"rift","targets":[32]},
+        {"k":"move","c":"b","san":"Nc6","from":57,"to":42},
+        {"k":"card","c":"w","card":"blast","targets":[]},
+        {"k":"move","c":"w","san":"Bc4","from":5,"to":26}
+      ],
+      "keys": [],
+      "snaps": [],
+      "forbidden": null,
+      "timed": true,
+      "catalog": "climats",
+      "result": null
+    },
+    "clock": {
+      "initial": 300,
+      "increment": 0,
+      "w": 289700,
+      "b": 292700,
+      "running": "b",
+      "serverNow": 1800000041200,
+      "rate": {"w":1,"b":1},
+      "noIncrement": false
+    },
+    "drawOffer": null,
+    "rematch": {"w":false,"b":false,"next":null},
+    "ratingDiff": null,
+    "firstMoveDeadline": null,
+    "away": {"w":null,"b":null},
+    "claimAfterMs": 60000,
+    "createdAt": 1800000000000,
+    "mirror": false,
+    "started": true,
+    "draft": null,
+    "standIn": null
+  },
+  "draftView": {"w":null,"b":null,"spectateur":null}
+}

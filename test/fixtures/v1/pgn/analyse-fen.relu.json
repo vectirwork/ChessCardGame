@@ -1,0 +1,27 @@
+{
+  "entetes": {
+    "Event": "Analyse",
+    "Site": "Spellmate",
+    "Date": "2026.11.11",
+    "Round": "-",
+    "White": "?",
+    "Black": "?",
+    "Result": "*",
+    "SetUp": "1",
+    "FEN": "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3"
+  },
+  "resultat": "*",
+  "catalogue": "aucune",
+  "cles": [
+    "RNBQKB.RPPPP.PPP.....N......P.......p.....n.....pppp.pppr.bqkbnrw15:-1|",
+    "RNBQK..RPPPP.PPP.....N......P....B..p.....n.....pppp.pppr.bqkbnrb15:-1|",
+    "RNBQK..RPPPP.PPP.....N......P....B..p...p.n......ppp.pppr.bqkbnrw15:-1|",
+    "RNBQK..RPPPP.PPP.....N..B...P.......p...p.n......ppp.pppr.bqkbnrb15:-1|"
+  ],
+  "journal": [
+    {"k":"move","c":"w","san":"Bb5","from":5,"to":33},
+    {"k":"move","c":"b","san":"a6","from":48,"to":40},
+    {"k":"move","c":"w","san":"Ba4","from":33,"to":24}
+  ],
+  "reecritureIdentique": true
+}

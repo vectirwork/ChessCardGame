@@ -1,0 +1,13 @@
+[Event "Partie classée Spellmate"]
+[Site "https://chess-powers.com/partie/TMNFINIE01"]
+[Date "2026.11.11"]
+[Round "-"]
+[White "aurore"]
+[Black "basile"]
+[Result "0-1"]
+[WhiteElo "1512"]
+[BlackElo "1433"]
+[TimeControl "180+2"]
+[Termination "Échec et mat"]
+
+1. f3 e5 2. g4 Qh4# 0-1

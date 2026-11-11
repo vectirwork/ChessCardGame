@@ -1,0 +1,39 @@
+{
+  "entetes": {
+    "Event": "Partie Spellmate (locale)",
+    "Site": "Spellmate",
+    "Date": "2026.11.11",
+    "Round": "-",
+    "White": "Vous",
+    "Black": "L’Oracle",
+    "Result": "1-0",
+    "Variant": "Spellmate",
+    "Catalog": "climats"
+  },
+  "resultat": "1-0",
+  "catalogue": "climats",
+  "cles": [
+    "RNBQKBNRPPPPPPPP................................pppppppprnbqkbnrw15:-1|",
+    "RNBQKBNRPPPP.PPP............P...................pppppppprnbqkbnrb15:20|",
+    "RNBQKBNRPPPP.PPP............P.......p...........pppp.ppprnbqkbnrw15:44|",
+    "RNBQKBNRPPPP.PPP............P.......p...........pppp.ppprnbqkbnrw15:44|ice_wallw0:16:|1",
+    "RNB.KBNRPPPP.PPP............P.......p..Q........pppp.ppprnbqkbnrb15:-1|ice_wallw0:16:|1",
+    "RNB.KBNRPPPP.PPP............P.......p..Q........pppp.ppprnbqkbnrb15:-1|ice_wallw0:16:|riftb4::s32,33,34,35,37,38|11",
+    "RNB.KBNRPPPP.PPP............P.......p..Q..n.....pppp.pppr.bqkbnrw15:-1|ice_wallw0:16:|riftb3::s32,33,34,35,37,38|11",
+    "RNB.K.NRPPPP.PPP..........B.P.......p..Q..n.....pppp.pppr.bqkbnrb15:-1|ice_wallw0:16:|riftb2::s32,33,34,35,37,38|11",
+    "RNB.K.NRPPPP.PPP..........B.P.......p..Q..n..n..pppp.pppr.bqkb.rw15:-1|ice_wallw0:16:|riftb1::s32,33,34,35,37,38|11",
+    "RNB.K.NRPPPP.PPP..........B.P.......p.....n..n..pppp.Qppr.bqkb.rb15:-1|ice_wallw0:16:|11"
+  ],
+  "journal": [
+    {"k":"move","c":"w","san":"e4","from":12,"to":28},
+    {"k":"move","c":"b","san":"e5","from":52,"to":36},
+    {"k":"card","c":"w","card":"ice_wall","targets":[16]},
+    {"k":"move","c":"w","san":"Qh5","from":3,"to":39},
+    {"k":"card","c":"b","card":"rift","targets":[32]},
+    {"k":"move","c":"b","san":"Nc6","from":57,"to":42},
+    {"k":"move","c":"w","san":"Bc4","from":5,"to":26},
+    {"k":"move","c":"b","san":"Nf6","from":62,"to":45},
+    {"k":"move","c":"w","san":"Qxf7#","from":39,"to":53}
+  ],
+  "reecritureIdentique": true
+}

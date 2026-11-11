@@ -1,0 +1,308 @@
+{
+  "maintenant": 1800000006000,
+  "w": {
+    "id": "TMNIACHOIX",
+    "mode": "bot",
+    "rated": false,
+    "status": "active",
+    "seats": {
+      "w": {
+        "kind": "guest",
+        "name": "Aurore",
+        "username": null,
+        "rating": null,
+        "skin": "skin:arcane",
+        "king": "king:arcane",
+        "seal": null,
+        "online": false
+      },
+      "b": {
+        "kind": "bot",
+        "name": "IA Sorcier",
+        "username": null,
+        "rating": 1300,
+        "skin": "skin:inferno",
+        "king": "king:braise",
+        "seal": null,
+        "online": true,
+        "level": 2
+      }
+    },
+    "you": "w",
+    "state": {
+      "pos": {
+        "board": [
+          {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+          {"id":9,"t":"k","c":"w"},{"id":11,"t":"b","c":"w"},{"id":13,"t":"n","c":"w"},{"id":15,"t":"r","c":"w"},
+          {"id":2,"t":"p","c":"w"},{"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},{"id":8,"t":"p","c":"w"},
+          {"id":10,"t":"p","c":"w"},{"id":12,"t":"p","c":"w"},{"id":14,"t":"p","c":"w"},{"id":16,"t":"p","c":"w"},
+          null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,
+          null,null,null,null,null,null,null,null,null,null,null,{"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},
+          {"id":21,"t":"p","c":"b"},{"id":23,"t":"p","c":"b"},{"id":25,"t":"p","c":"b"},{"id":27,"t":"p","c":"b"},
+          {"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},{"id":18,"t":"r","c":"b"},{"id":20,"t":"n","c":"b"},
+          {"id":22,"t":"b","c":"b"},{"id":24,"t":"q","c":"b"},{"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},
+          {"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+        ],
+        "turn": "w",
+        "castling": 15,
+        "ep": -1,
+        "halfmove": 0,
+        "fullmove": 1
+      },
+      "effects": [],
+      "hands": {"w":[],"b":[]},
+      "cardPlayed": false,
+      "captured": {"w":[],"b":[]},
+      "nextPieceId": 33,
+      "nextEffectId": 1,
+      "ply": 0,
+      "log": [],
+      "keys": [],
+      "snaps": [],
+      "forbidden": null,
+      "timed": true,
+      "catalog": "climats",
+      "result": null
+    },
+    "clock": {
+      "initial": 600,
+      "increment": 0,
+      "w": 600000,
+      "b": 600000,
+      "running": null,
+      "serverNow": 1800000006000,
+      "rate": {"w":1,"b":1},
+      "noIncrement": false
+    },
+    "drawOffer": null,
+    "rematch": {"w":false,"b":false,"next":null},
+    "ratingDiff": null,
+    "firstMoveDeadline": null,
+    "away": {"w":null,"b":null},
+    "claimAfterMs": 60000,
+    "createdAt": 1800000000000,
+    "mirror": false,
+    "started": false,
+    "draft": {
+      "pool": ["truce","blood_moon","ice_age","blast","ice_wall","rift","tide"],
+      "count": 3,
+      "deadline": 1800000045000,
+      "msLeft": 39000,
+      "chosen": {"w":false,"b":true},
+      "mine": []
+    },
+    "standIn": null
+  },
+  "b": {
+    "id": "TMNIACHOIX",
+    "mode": "bot",
+    "rated": false,
+    "status": "active",
+    "seats": {
+      "w": {
+        "kind": "guest",
+        "name": "Aurore",
+        "username": null,
+        "rating": null,
+        "skin": "skin:arcane",
+        "king": "king:arcane",
+        "seal": null,
+        "online": false
+      },
+      "b": {
+        "kind": "bot",
+        "name": "IA Sorcier",
+        "username": null,
+        "rating": 1300,
+        "skin": "skin:inferno",
+        "king": "king:braise",
+        "seal": null,
+        "online": true,
+        "level": 2
+      }
+    },
+    "you": "b",
+    "state": {
+      "pos": {
+        "board": [
+          {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+          {"id":9,"t":"k","c":"w"},{"id":11,"t":"b","c":"w"},{"id":13,"t":"n","c":"w"},{"id":15,"t":"r","c":"w"},
+          {"id":2,"t":"p","c":"w"},{"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},{"id":8,"t":"p","c":"w"},
+          {"id":10,"t":"p","c":"w"},{"id":12,"t":"p","c":"w"},{"id":14,"t":"p","c":"w"},{"id":16,"t":"p","c":"w"},
+          null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,
+          null,null,null,null,null,null,null,null,null,null,null,{"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},
+          {"id":21,"t":"p","c":"b"},{"id":23,"t":"p","c":"b"},{"id":25,"t":"p","c":"b"},{"id":27,"t":"p","c":"b"},
+          {"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},{"id":18,"t":"r","c":"b"},{"id":20,"t":"n","c":"b"},
+          {"id":22,"t":"b","c":"b"},{"id":24,"t":"q","c":"b"},{"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},
+          {"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+        ],
+        "turn": "w",
+        "castling": 15,
+        "ep": -1,
+        "halfmove": 0,
+        "fullmove": 1
+      },
+      "effects": [],
+      "hands": {"w":[],"b":[]},
+      "cardPlayed": false,
+      "captured": {"w":[],"b":[]},
+      "nextPieceId": 33,
+      "nextEffectId": 1,
+      "ply": 0,
+      "log": [],
+      "keys": [],
+      "snaps": [],
+      "forbidden": null,
+      "timed": true,
+      "catalog": "climats",
+      "result": null
+    },
+    "clock": {
+      "initial": 600,
+      "increment": 0,
+      "w": 600000,
+      "b": 600000,
+      "running": null,
+      "serverNow": 1800000006000,
+      "rate": {"w":1,"b":1},
+      "noIncrement": false
+    },
+    "drawOffer": null,
+    "rematch": {"w":false,"b":false,"next":null},
+    "ratingDiff": null,
+    "firstMoveDeadline": null,
+    "away": {"w":null,"b":null},
+    "claimAfterMs": 60000,
+    "createdAt": 1800000000000,
+    "mirror": false,
+    "started": false,
+    "draft": {
+      "pool": ["truce","blood_moon","ice_age","blast","ice_wall","rift","tide"],
+      "count": 3,
+      "deadline": 1800000045000,
+      "msLeft": 39000,
+      "chosen": {"w":false,"b":true},
+      "mine": ["blood_moon","truce","ice_wall"]
+    },
+    "standIn": null
+  },
+  "spectateur": {
+    "id": "TMNIACHOIX",
+    "mode": "bot",
+    "rated": false,
+    "status": "active",
+    "seats": {
+      "w": {
+        "kind": "guest",
+        "name": "Aurore",
+        "username": null,
+        "rating": null,
+        "skin": "skin:arcane",
+        "king": "king:arcane",
+        "seal": null,
+        "online": false
+      },
+      "b": {
+        "kind": "bot",
+        "name": "IA Sorcier",
+        "username": null,
+        "rating": 1300,
+        "skin": "skin:inferno",
+        "king": "king:braise",
+        "seal": null,
+        "online": true,
+        "level": 2
+      }
+    },
+    "you": null,
+    "state": {
+      "pos": {
+        "board": [
+          {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+          {"id":9,"t":"k","c":"w"},{"id":11,"t":"b","c":"w"},{"id":13,"t":"n","c":"w"},{"id":15,"t":"r","c":"w"},
+          {"id":2,"t":"p","c":"w"},{"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},{"id":8,"t":"p","c":"w"},
+          {"id":10,"t":"p","c":"w"},{"id":12,"t":"p","c":"w"},{"id":14,"t":"p","c":"w"},{"id":16,"t":"p","c":"w"},
+          null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,
+          null,null,null,null,null,null,null,null,null,null,null,{"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},
+          {"id":21,"t":"p","c":"b"},{"id":23,"t":"p","c":"b"},{"id":25,"t":"p","c":"b"},{"id":27,"t":"p","c":"b"},
+          {"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},{"id":18,"t":"r","c":"b"},{"id":20,"t":"n","c":"b"},
+          {"id":22,"t":"b","c":"b"},{"id":24,"t":"q","c":"b"},{"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},
+          {"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+        ],
+        "turn": "w",
+        "castling": 15,
+        "ep": -1,
+        "halfmove": 0,
+        "fullmove": 1
+      },
+      "effects": [],
+      "hands": {"w":[],"b":[]},
+      "cardPlayed": false,
+      "captured": {"w":[],"b":[]},
+      "nextPieceId": 33,
+      "nextEffectId": 1,
+      "ply": 0,
+      "log": [],
+      "keys": [],
+      "snaps": [],
+      "forbidden": null,
+      "timed": true,
+      "catalog": "climats",
+      "result": null
+    },
+    "clock": {
+      "initial": 600,
+      "increment": 0,
+      "w": 600000,
+      "b": 600000,
+      "running": null,
+      "serverNow": 1800000006000,
+      "rate": {"w":1,"b":1},
+      "noIncrement": false
+    },
+    "drawOffer": null,
+    "rematch": {"w":false,"b":false,"next":null},
+    "ratingDiff": null,
+    "firstMoveDeadline": null,
+    "away": {"w":null,"b":null},
+    "claimAfterMs": 60000,
+    "createdAt": 1800000000000,
+    "mirror": false,
+    "started": false,
+    "draft": {
+      "pool": ["truce","blood_moon","ice_age","blast","ice_wall","rift","tide"],
+      "count": 3,
+      "deadline": 1800000045000,
+      "msLeft": 39000,
+      "chosen": {"w":false,"b":true},
+      "mine": []
+    },
+    "standIn": null
+  },
+  "draftView": {
+    "w": {
+      "pool": ["truce","blood_moon","ice_age","blast","ice_wall","rift","tide"],
+      "count": 3,
+      "deadline": 1800000045000,
+      "msLeft": 39000,
+      "chosen": {"w":false,"b":true},
+      "mine": []
+    },
+    "b": {
+      "pool": ["truce","blood_moon","ice_age","blast","ice_wall","rift","tide"],
+      "count": 3,
+      "deadline": 1800000045000,
+      "msLeft": 39000,
+      "chosen": {"w":false,"b":true},
+      "mine": ["blood_moon","truce","ice_wall"]
+    },
+    "spectateur": {
+      "pool": ["truce","blood_moon","ice_age","blast","ice_wall","rift","tide"],
+      "count": 3,
+      "deadline": 1800000045000,
+      "msLeft": 39000,
+      "chosen": {"w":false,"b":true},
+      "mine": []
+    }
+  }
+}

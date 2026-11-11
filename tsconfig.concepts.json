@@ -1,0 +1,7 @@
+{
+  "//": "Maquettes du dossier concepts/ : vérifiées à part (npm run typecheck:concepts), hors de la vérification principale.",
+  "extends": "./tsconfig.json",
+  "include": [
+    "concepts"
+  ]
+}

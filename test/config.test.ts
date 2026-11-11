@@ -256,6 +256,9 @@ describe('configurations impossibles', () => {
     const e = checkRules({ suspended: ['blast', 'truce', 'rift', 'tide', 'ice_wall'] });
     expect(e.some(m => m.includes("la réserve n'a que 2 cartes"))).toBe(true);
   });
+  it('une valeur absente d’un contexte ne remplace rien', () => {
+    expect(checkRules({ byContext: { ia: { cardsPerPlayer: undefined } } })).toEqual([]);
+  });
   it('la surcharge de test est vérifiée comme le reste', () => {
     setRulesOverride({ presageDelay: 5 });
     expect(checkRules()).toEqual([

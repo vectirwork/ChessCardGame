@@ -57,9 +57,16 @@ const CARD_TUNING: Readonly<Partial<Record<CardId, CardTuning>>> = deepFreeze(
 );
 const NO_TUNING: CardTuning = Object.freeze({});
 
+/** Superpose des réglages partiels ; une valeur `undefined` ne remplace rien. */
+function overlay(base: GameRulesSettings, ...parts: (Readonly<Partial<GameRulesSettings>> | null | undefined)[]): GameRulesSettings {
+  const out = { ...base } as Record<string, unknown>;
+  for (const p of parts) for (const [k, v] of Object.entries(p ?? {})) if (v !== undefined) out[k] = v;
+  return out as unknown as GameRulesSettings;
+}
+
 /** Réglages effectifs d'un contexte : GAME_RULES, puis RULES_BY_CONTEXT[ctx], puis la surcharge de test. */
 export function settingsFor(ctx: RulesContext): GameRulesSettings {
-  return { ...GAME_RULES, ...RULES_BY_CONTEXT[ctx], ...override };
+  return overlay(GAME_RULES, RULES_BY_CONTEXT[ctx], override);
 }
 
 /** Règles d'une nouvelle partie créée dans ce contexte. Gelées et mémorisées : le même objet à chaque appel. */
@@ -360,9 +367,10 @@ export function checkRules(cfg: RulesConfig = {}): string[] {
 
   for (const ctx of RULES_CONTEXTS) {
     const own = byContext[ctx] ?? {};
-    const s: GameRulesSettings = { ...game, ...own, ...ov };
+    const s = overlay(game, own, ov);
+    const has = (o: Readonly<Partial<GameRulesSettings>> | null, k: keyof GameRulesSettings) => !!o && o[k] !== undefined;
     const where = (k: keyof GameRulesSettings) =>
-      ov && k in ov ? `SPELLMATE_TEST_RULES.${k}` : k in own ? `RULES_BY_CONTEXT.${ctx}.${k}` : `GAME_RULES.${k}`;
+      has(ov, k) ? `SPELLMATE_TEST_RULES.${k}` : has(own, k) ? `RULES_BY_CONTEXT.${ctx}.${k}` : `GAME_RULES.${k}`;
     // Le nombre de cartes vient-il du contexte lui-même ? Sinon, on propose aussi de le régler pour ce contexte.
     const fix = where('cardsPerPlayer').startsWith('GAME_RULES') ? `, ou réglez RULES_BY_CONTEXT.${ctx}` : '';
 

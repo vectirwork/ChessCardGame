@@ -14,7 +14,8 @@
 //   --n=… ajoute d'autres nombres de cartes (revue des lots suivants). Comparaison : pixels, tolérance 0 ;
 // - pages : /regles, /jouer, /apprendre, /problemes, /cartes, /boutique, /compte (invité), /mentions-legales, en
 //   1280 × 720 et 375 × 667 (page entière) ; comparaison : boîtes et textes ;
-// - accueil : 8 hauteurs de défilement, mêmes écrans ; comparaison : boîtes et textes ;
+// - accueil : 8 hauteurs de défilement, mêmes écrans ; comparaison : boîtes (celles de l'écran, sans l'échiquier-astre
+//   que le moteur anime) et textes ;
 // - partie : les quatre moments de test/textes-pages.mjs (attente, choix, en cours, fin) ; boîtes et textes.
 // Les captures des pages, de l'accueil et de la partie se relisent à l'œil (animations figées à 4 s, canevas WebGL
 // masqués) ; seules celles des bancs sont comparées au pixel.
@@ -76,29 +77,33 @@ async function relancer(page) {
   })).catch(() => undefined);
 }
 
-/** Boîtes des éléments clés, arrondies au dixième de pixel. */
-async function boites(page) {
-  return page.evaluate(selecteurs => {
+/**
+ * Boîtes des éléments clés, arrondies au dixième de pixel. `visibles` : seulement celles qui croisent l'écran ;
+ * `horsDe` : sans les éléments contenus dans ce sélecteur.
+ */
+async function boites(page, { visibles = false, horsDe = null } = {}) {
+  return page.evaluate(([selecteurs, visibles, horsDe]) => {
     const r1 = x => Math.round(x * 10) / 10;
     const out = [];
     for (const s of selecteurs) {
-      const els = [...document.querySelectorAll(s)].slice(0, 40);
+      const els = [...document.querySelectorAll(s)].filter(el => !horsDe || !el.closest(horsDe)).slice(0, 40);
       els.forEach((el, i) => {
         const b = el.getBoundingClientRect();
+        if (visibles && (b.bottom <= 0 || b.top >= innerHeight || b.right <= 0 || b.left >= innerWidth)) return;
         const t = (el.innerText ?? el.getAttribute('alt') ?? '').trim().replace(/\s+/g, ' ').slice(0, 24);
         out.push({ s, i, x: r1(b.x), y: r1(b.y), w: r1(b.width), h: r1(b.height), t });
       });
     }
     return out;
-  }, SELECTEURS);
+  }, [SELECTEURS, visibles, horsDe]);
 }
 
 /** Capture, boîtes et texte d'un écran : <dossier>/<nom>.png, .json, .txt. */
-async function relever(page, dossier, nom, { pleine = false, contexte = {} } = {}) {
+async function relever(page, dossier, nom, { pleine = false, contexte = {}, filtre = {} } = {}) {
   mkdirSync(dossier, { recursive: true });
   await figer(page);
   await page.screenshot({ path: path.join(dossier, `${nom}.png`), fullPage: pleine });
-  writeFileSync(path.join(dossier, `${nom}.json`), `${JSON.stringify(await boites(page))}\n`);
+  writeFileSync(path.join(dossier, `${nom}.json`), `${JSON.stringify(await boites(page, filtre))}\n`);
   writeFileSync(path.join(dossier, `${nom}.txt`), await lireTexte(page, contexte));
   await relancer(page);
 }
@@ -197,7 +202,11 @@ async function accueil(browser, base, sortie, erreurs) {
         }
       }, y);
       await sleep(1500);
-      await relever(page, path.join(sortie, 'accueil'), `${ecran}-${String(i++).padStart(2, '0')}`, { contexte: { base } });
+      // Boîtes : seulement celles de l'écran (les chapitres déjà passés changent de hauteur selon le moment où le
+      // défilement les a quittés), sans l'échiquier-astre, que le moteur déplace encore pendant le relevé.
+      await relever(page, path.join(sortie, 'accueil'), `${ecran}-${String(i++).padStart(2, '0')}`, {
+        contexte: { base }, filtre: { visibles: true, horsDe: '.board' },
+      });
     }
     await ctx.close();
   }

@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import react from '@vitejs/plugin-react';
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -49,6 +50,10 @@ function precompress(): Plugin {
   };
 }
 
+/** Tests lents (projet « lent ») et paramétrés par les réglages (projet « matrice ») ; le reste est « rapide ». */
+const TESTS_LENTS = ['test/bot.test.ts'];
+const TESTS_MATRICE = ['test/regles-matrice.test.ts', 'test/**/*.matrice.test.ts'];
+
 export default defineConfig({
   plugins: [react(), precompress()],
   build: {
@@ -59,5 +64,17 @@ export default defineConfig({
     // dist/client/.vite/manifest.json : le serveur y lit le code et le CSS de chaque page pour les précharger dès le
     // HTML (src/server/site.ts). Jamais servi (dossier caché).
     manifest: true,
+  },
+  // Tests (Vitest) : trois projets. npm test les lance tous ; npm run test:rapide pendant le travail.
+  // - rapide : toute la suite, sauf ce qui suit ;
+  // - matrice : tests paramétrés par les réglages (SPELLMATE_MATRICE, test/helpers/matrice.ts) ;
+  // - lent : l'IA à pleine profondeur (bot.test.ts).
+  // Les témoins (test/fixtures/v1/generer.ts) ont leur propre configuration : npm run temoins.
+  test: {
+    projects: [
+      { extends: true, test: { name: 'rapide', include: ['test/**/*.test.ts'], exclude: [...TESTS_LENTS, ...TESTS_MATRICE] } },
+      { extends: true, test: { name: 'matrice', include: TESTS_MATRICE } },
+      { extends: true, test: { name: 'lent', include: TESTS_LENTS } },
+    ],
   },
 });

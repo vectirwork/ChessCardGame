@@ -1,0 +1,88 @@
+{
+  "id": "TMNRELAIS1",
+  "mode": "quick",
+  "rated": false,
+  "status": "active",
+  "tc": "none",
+  "mirror": false,
+  "catalog": "climats",
+  "creator": "g:visiteur1",
+  "seats": {
+    "w": {
+      "kind": "guest",
+      "key": "g:visiteur1",
+      "userId": null,
+      "name": "Visiteur",
+      "username": null,
+      "rating": null,
+      "gamesPlayed": 0,
+      "skin": "skin:arcane",
+      "king": "king:arcane",
+      "seal": null
+    },
+    "b": {
+      "kind": "guest",
+      "key": "g:visiteur2",
+      "userId": null,
+      "name": "Visiteur",
+      "username": null,
+      "rating": null,
+      "gamesPlayed": 0,
+      "skin": "skin:arcane",
+      "king": "king:arcane",
+      "seal": null
+    }
+  },
+  "state": {
+    "pos": {
+      "board": [
+        {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+        {"id":9,"t":"k","c":"w"},{"id":11,"t":"b","c":"w"},{"id":13,"t":"n","c":"w"},{"id":15,"t":"r","c":"w"},
+        {"id":2,"t":"p","c":"w"},{"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},null,{"id":10,"t":"p","c":"w"},
+        {"id":12,"t":"p","c":"w"},{"id":14,"t":"p","c":"w"},{"id":16,"t":"p","c":"w"},null,null,null,null,null,null,
+        null,null,null,null,null,{"id":8,"t":"p","c":"w"},null,null,null,null,null,null,null,null,null,null,null,null,
+        null,null,null,null,null,null,null,null,{"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},
+        {"id":21,"t":"p","c":"b"},{"id":23,"t":"p","c":"b"},{"id":25,"t":"p","c":"b"},{"id":27,"t":"p","c":"b"},
+        {"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},{"id":18,"t":"r","c":"b"},{"id":20,"t":"n","c":"b"},
+        {"id":22,"t":"b","c":"b"},{"id":24,"t":"q","c":"b"},{"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},
+        {"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+      ],
+      "turn": "b",
+      "castling": 15,
+      "ep": 19,
+      "halfmove": 0,
+      "fullmove": 1
+    },
+    "effects": [],
+    "hands": {
+      "w": [{"card":"ice_wall","used":false},{"card":"truce","used":false},{"card":"rift","used":false}],
+      "b": [{"card":"truce","used":false},{"card":"blood_moon","used":false},{"card":"rift","used":false}]
+    },
+    "cardPlayed": false,
+    "captured": {"w":[],"b":[]},
+    "nextPieceId": 33,
+    "nextEffectId": 1,
+    "ply": 1,
+    "log": [{"k":"move","c":"w","san":"d4","from":11,"to":27}],
+    "keys": [
+      "RNBQKBNRPPPPPPPP................................pppppppprnbqkbnrw15:-1|000000",
+      "RNBQKBNRPPP.PPPP...........P....................pppppppprnbqkbnrb15:19|000000"
+    ],
+    "snaps": [],
+    "forbidden": null,
+    "timed": false,
+    "catalog": "climats",
+    "result": null
+  },
+  "draft": null,
+  "clock": null,
+  "drawOffer": null,
+  "rematch": {"w":false,"b":false,"next":null},
+  "ratingDiff": null,
+  "firstMoveDeadline": null,
+  "createdAt": 1800000000000,
+  "started": false,
+  "lastActivity": 1800000004000,
+  "relay": true,
+  "standIn": {"w":false,"b":false}
+}

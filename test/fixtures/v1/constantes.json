@@ -1,0 +1,74 @@
+{
+  "CARDS_PER_PLAYER": 3,
+  "DRAFT_MS": 45000,
+  "CINEMATIC_MS": 1200,
+  "HOME_WINDOW_MS": 30000,
+  "TIME_CONTROLS": [
+    {"id":"1+0","label":"1 + 0","tc":{"initial":60,"increment":0},"family":"Bullet"},
+    {"id":"3+2","label":"3 + 2","tc":{"initial":180,"increment":2},"family":"Blitz"},
+    {"id":"5+0","label":"5 + 0","tc":{"initial":300,"increment":0},"family":"Blitz"},
+    {"id":"10+0","label":"10 + 0","tc":{"initial":600,"increment":0},"family":"Rapide"},
+    {"id":"15+10","label":"15 + 10","tc":{"initial":900,"increment":10},"family":"Rapide"},
+    {"id":"none","label":"Sans limite","tc":null,"family":"Libre"}
+  ],
+  "QUICK_CONTROLS": ["3+2","5+0","10+0","15+10"],
+  "tcFromId": {
+    "3+2": {"initial":180,"increment":2},
+    "5+0": {"initial":300,"increment":0},
+    "10+0": {"initial":600,"increment":0},
+    "15+10": {"initial":900,"increment":10},
+    "none": "undefined",
+    "1+0": {"initial":60,"increment":0},
+    "inconnue": "undefined"
+  },
+  "EMOTES": {"gg":"Bien joué !","wow":"Waouh !","oops":"Oups…","hi":"Salut !","thanks":"Merci !","luck":"Bonne chance !"},
+  "BOT_PROFILES": {
+    "1": {"name":"Apprenti","rating":800,"depth":1,"noise":70,"cardThreshold":60,"thinkMs":350},
+    "2": {"name":"Sorcier","rating":1300,"depth":2,"noise":18,"cardThreshold":90,"thinkMs":700},
+    "3": {"name":"Archimage","rating":1800,"depth":5,"noise":0,"cardThreshold":70,"thinkMs":1500}
+  },
+  "BOT_LOOK": {
+    "1": {"skin":"skin:arcane","king":"king:arcane"},
+    "2": {"skin":"skin:inferno","king":"king:braise"},
+    "3": {"skin":"skin:void","king":"king:eclipse"}
+  },
+  "ORACLE_LOOK": {"skin":"skin:void","king":"king:eclipse"},
+  "DEFAULT_SKIN": "skin:arcane",
+  "DEFAULT_KING": "king:arcane",
+  "DEFAULT_BOARD": "board:arcane",
+  "RARITY_WEIGHT": {"commune":4,"rare":3,"épique":2,"légendaire":1},
+  "RARITY_LABEL": {"commune":"Commune","rare":"Rare","épique":"Épique","légendaire":"Légendaire"},
+  "FAMILY_LABEL": {"climat":"Climat","terrain":"Terrain","evenement":"Événement","duel":"Duel"},
+  "CATALOGS": [
+    {
+      "id": "climats",
+      "label": "Pouvoirs",
+      "description": "Huit pouvoirs, visibles des deux joueurs, qui changent la partie pour les deux camps."
+    },
+    {"id":"aucune","label":"Sans cartes","description":"Les échecs classiques, rien d’autre."}
+  ],
+  "CARD_IDS": [
+    "hourglass","truce","blood_moon","ice_age","blast","ice_wall","rift","tide","time_warp","gravity","freeze",
+    "shield","swap","rewind","revive","knight_leap","lightning","phase"
+  ],
+  "cardsOf": {
+    "climats": ["hourglass","truce","blood_moon","ice_age","blast","ice_wall","rift","tide"],
+    "duel": ["ice_wall","time_warp","gravity","freeze","shield","swap","rewind","revive","knight_leap","lightning","phase"],
+    "aucune": []
+  },
+  "cardPool": {
+    "climats|pendule|humain": ["hourglass","truce","blood_moon","ice_age","blast","ice_wall","rift","tide"],
+    "climats|pendule|ia": ["truce","blood_moon","ice_age","blast","ice_wall","rift","tide"],
+    "climats|sans-pendule|humain": ["truce","blood_moon","ice_age","blast","ice_wall","rift","tide"],
+    "climats|sans-pendule|ia": ["truce","blood_moon","ice_age","blast","ice_wall","rift","tide"],
+    "duel|pendule|humain": ["ice_wall","time_warp","gravity","freeze","shield","swap","rewind","revive","knight_leap","lightning","phase"],
+    "duel|pendule|ia": ["ice_wall","time_warp","gravity","freeze","shield","swap","rewind","revive","knight_leap","lightning","phase"],
+    "duel|sans-pendule|humain": ["ice_wall","gravity","freeze","shield","swap","rewind","revive","knight_leap","lightning","phase"],
+    "duel|sans-pendule|ia": ["ice_wall","gravity","freeze","shield","swap","rewind","revive","knight_leap","lightning","phase"],
+    "aucune|pendule|humain": [],
+    "aucune|pendule|ia": [],
+    "aucune|sans-pendule|humain": [],
+    "aucune|sans-pendule|ia": []
+  },
+  "offeredCatalog": {"climats":"climats","duel":"climats","aucune":"aucune","inconnu":"climats","(vide)":"climats"}
+}

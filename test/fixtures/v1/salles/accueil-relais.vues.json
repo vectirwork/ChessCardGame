@@ -1,0 +1,241 @@
+{
+  "maintenant": 1800000007000,
+  "w": {
+    "id": "TMNRELAIS1",
+    "mode": "quick",
+    "rated": false,
+    "status": "active",
+    "seats": {
+      "w": {
+        "kind": "guest",
+        "name": "Visiteur",
+        "username": null,
+        "rating": null,
+        "skin": "skin:arcane",
+        "king": "king:arcane",
+        "seal": null,
+        "online": false
+      },
+      "b": {
+        "kind": "guest",
+        "name": "Visiteur",
+        "username": null,
+        "rating": null,
+        "skin": "skin:arcane",
+        "king": "king:arcane",
+        "seal": null,
+        "online": false
+      }
+    },
+    "you": "w",
+    "state": {
+      "pos": {
+        "board": [
+          {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+          {"id":9,"t":"k","c":"w"},{"id":11,"t":"b","c":"w"},{"id":13,"t":"n","c":"w"},{"id":15,"t":"r","c":"w"},
+          {"id":2,"t":"p","c":"w"},{"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},null,{"id":10,"t":"p","c":"w"},
+          {"id":12,"t":"p","c":"w"},{"id":14,"t":"p","c":"w"},{"id":16,"t":"p","c":"w"},null,null,null,null,null,null,
+          null,null,null,null,null,{"id":8,"t":"p","c":"w"},null,null,null,null,null,null,null,null,null,null,null,
+          null,null,null,null,null,null,null,null,null,{"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},
+          {"id":21,"t":"p","c":"b"},{"id":23,"t":"p","c":"b"},{"id":25,"t":"p","c":"b"},{"id":27,"t":"p","c":"b"},
+          {"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},{"id":18,"t":"r","c":"b"},{"id":20,"t":"n","c":"b"},
+          {"id":22,"t":"b","c":"b"},{"id":24,"t":"q","c":"b"},{"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},
+          {"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+        ],
+        "turn": "b",
+        "castling": 15,
+        "ep": 19,
+        "halfmove": 0,
+        "fullmove": 1
+      },
+      "effects": [],
+      "hands": {
+        "w": [{"card":"ice_wall","used":false},{"card":"truce","used":false},{"card":"rift","used":false}],
+        "b": [{"card":"truce","used":false},{"card":"blood_moon","used":false},{"card":"rift","used":false}]
+      },
+      "cardPlayed": false,
+      "captured": {"w":[],"b":[]},
+      "nextPieceId": 33,
+      "nextEffectId": 1,
+      "ply": 1,
+      "log": [{"k":"move","c":"w","san":"d4","from":11,"to":27}],
+      "keys": [],
+      "snaps": [],
+      "forbidden": null,
+      "timed": false,
+      "catalog": "climats",
+      "result": null
+    },
+    "clock": null,
+    "drawOffer": null,
+    "rematch": {"w":false,"b":false,"next":null},
+    "ratingDiff": null,
+    "firstMoveDeadline": null,
+    "away": {"w":null,"b":null},
+    "claimAfterMs": 60000,
+    "createdAt": 1800000000000,
+    "mirror": false,
+    "started": false,
+    "draft": null,
+    "standIn": {"w":false,"b":false}
+  },
+  "b": {
+    "id": "TMNRELAIS1",
+    "mode": "quick",
+    "rated": false,
+    "status": "active",
+    "seats": {
+      "w": {
+        "kind": "guest",
+        "name": "Visiteur",
+        "username": null,
+        "rating": null,
+        "skin": "skin:arcane",
+        "king": "king:arcane",
+        "seal": null,
+        "online": false
+      },
+      "b": {
+        "kind": "guest",
+        "name": "Visiteur",
+        "username": null,
+        "rating": null,
+        "skin": "skin:arcane",
+        "king": "king:arcane",
+        "seal": null,
+        "online": false
+      }
+    },
+    "you": "b",
+    "state": {
+      "pos": {
+        "board": [
+          {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+          {"id":9,"t":"k","c":"w"},{"id":11,"t":"b","c":"w"},{"id":13,"t":"n","c":"w"},{"id":15,"t":"r","c":"w"},
+          {"id":2,"t":"p","c":"w"},{"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},null,{"id":10,"t":"p","c":"w"},
+          {"id":12,"t":"p","c":"w"},{"id":14,"t":"p","c":"w"},{"id":16,"t":"p","c":"w"},null,null,null,null,null,null,
+          null,null,null,null,null,{"id":8,"t":"p","c":"w"},null,null,null,null,null,null,null,null,null,null,null,
+          null,null,null,null,null,null,null,null,null,{"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},
+          {"id":21,"t":"p","c":"b"},{"id":23,"t":"p","c":"b"},{"id":25,"t":"p","c":"b"},{"id":27,"t":"p","c":"b"},
+          {"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},{"id":18,"t":"r","c":"b"},{"id":20,"t":"n","c":"b"},
+          {"id":22,"t":"b","c":"b"},{"id":24,"t":"q","c":"b"},{"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},
+          {"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+        ],
+        "turn": "b",
+        "castling": 15,
+        "ep": 19,
+        "halfmove": 0,
+        "fullmove": 1
+      },
+      "effects": [],
+      "hands": {
+        "w": [{"card":"ice_wall","used":false},{"card":"truce","used":false},{"card":"rift","used":false}],
+        "b": [{"card":"truce","used":false},{"card":"blood_moon","used":false},{"card":"rift","used":false}]
+      },
+      "cardPlayed": false,
+      "captured": {"w":[],"b":[]},
+      "nextPieceId": 33,
+      "nextEffectId": 1,
+      "ply": 1,
+      "log": [{"k":"move","c":"w","san":"d4","from":11,"to":27}],
+      "keys": [],
+      "snaps": [],
+      "forbidden": null,
+      "timed": false,
+      "catalog": "climats",
+      "result": null
+    },
+    "clock": null,
+    "drawOffer": null,
+    "rematch": {"w":false,"b":false,"next":null},
+    "ratingDiff": null,
+    "firstMoveDeadline": null,
+    "away": {"w":null,"b":null},
+    "claimAfterMs": 60000,
+    "createdAt": 1800000000000,
+    "mirror": false,
+    "started": false,
+    "draft": null,
+    "standIn": {"w":false,"b":false}
+  },
+  "spectateur": {
+    "id": "TMNRELAIS1",
+    "mode": "quick",
+    "rated": false,
+    "status": "active",
+    "seats": {
+      "w": {
+        "kind": "guest",
+        "name": "Visiteur",
+        "username": null,
+        "rating": null,
+        "skin": "skin:arcane",
+        "king": "king:arcane",
+        "seal": null,
+        "online": false
+      },
+      "b": {
+        "kind": "guest",
+        "name": "Visiteur",
+        "username": null,
+        "rating": null,
+        "skin": "skin:arcane",
+        "king": "king:arcane",
+        "seal": null,
+        "online": false
+      }
+    },
+    "you": null,
+    "state": {
+      "pos": {
+        "board": [
+          {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+          {"id":9,"t":"k","c":"w"},{"id":11,"t":"b","c":"w"},{"id":13,"t":"n","c":"w"},{"id":15,"t":"r","c":"w"},
+          {"id":2,"t":"p","c":"w"},{"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},null,{"id":10,"t":"p","c":"w"},
+          {"id":12,"t":"p","c":"w"},{"id":14,"t":"p","c":"w"},{"id":16,"t":"p","c":"w"},null,null,null,null,null,null,
+          null,null,null,null,null,{"id":8,"t":"p","c":"w"},null,null,null,null,null,null,null,null,null,null,null,
+          null,null,null,null,null,null,null,null,null,{"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},
+          {"id":21,"t":"p","c":"b"},{"id":23,"t":"p","c":"b"},{"id":25,"t":"p","c":"b"},{"id":27,"t":"p","c":"b"},
+          {"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},{"id":18,"t":"r","c":"b"},{"id":20,"t":"n","c":"b"},
+          {"id":22,"t":"b","c":"b"},{"id":24,"t":"q","c":"b"},{"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},
+          {"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+        ],
+        "turn": "b",
+        "castling": 15,
+        "ep": 19,
+        "halfmove": 0,
+        "fullmove": 1
+      },
+      "effects": [],
+      "hands": {
+        "w": [{"card":"ice_wall","used":false},{"card":"truce","used":false},{"card":"rift","used":false}],
+        "b": [{"card":"truce","used":false},{"card":"blood_moon","used":false},{"card":"rift","used":false}]
+      },
+      "cardPlayed": false,
+      "captured": {"w":[],"b":[]},
+      "nextPieceId": 33,
+      "nextEffectId": 1,
+      "ply": 1,
+      "log": [{"k":"move","c":"w","san":"d4","from":11,"to":27}],
+      "keys": [],
+      "snaps": [],
+      "forbidden": null,
+      "timed": false,
+      "catalog": "climats",
+      "result": null
+    },
+    "clock": null,
+    "drawOffer": null,
+    "rematch": {"w":false,"b":false,"next":null},
+    "ratingDiff": null,
+    "firstMoveDeadline": null,
+    "away": {"w":null,"b":null},
+    "claimAfterMs": 60000,
+    "createdAt": 1800000000000,
+    "mirror": false,
+    "started": false,
+    "draft": null,
+    "standIn": {"w":false,"b":false}
+  },
+  "draftView": {"w":null,"b":null,"spectateur":null}
+}

@@ -1,0 +1,32 @@
+{
+  "cle": "sm:parties",
+  "partie": {
+    "id": "local-mwc2h6o0",
+    "at": 1794398400000,
+    "you": "w",
+    "white": "Vous",
+    "black": "L’Oracle",
+    "winner": "w",
+    "reason": "checkmate",
+    "catalog": "climats",
+    "plies": 7,
+    "vsBot": true,
+    "kings": {"w":"king:arcane","b":"king:eclipse"},
+    "local": {
+      "log": [
+        {"k":"move","c":"w","san":"e4","from":12,"to":28},
+        {"k":"move","c":"b","san":"e5","from":52,"to":36},
+        {"k":"card","c":"w","card":"ice_wall","targets":[16]},
+        {"k":"move","c":"w","san":"Qh5","from":3,"to":39},
+        {"k":"card","c":"b","card":"rift","targets":[32]},
+        {"k":"move","c":"b","san":"Nc6","from":57,"to":42},
+        {"k":"move","c":"w","san":"Bc4","from":5,"to":26},
+        {"k":"move","c":"b","san":"Nf6","from":62,"to":45},
+        {"k":"move","c":"w","san":"Qxf7#","from":39,"to":53}
+      ],
+      "hands": {"w":["truce","ice_wall","tide"],"b":["blood_moon","rift","ice_age"]},
+      "timed": false,
+      "catalog": "climats"
+    }
+  }
+}

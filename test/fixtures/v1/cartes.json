@@ -1,0 +1,128 @@
+{
+  "hourglass": {
+    "name": "Sablier fou",
+    "tagline": "Le temps s’emballe pour tout le monde.",
+    "description": "Annoncé, il arrive au début de votre prochain tour. Pendant 6 coups, les deux pendules s’écoulent deux fois plus vite et les coups ne rapportent plus d’incrément.",
+    "duration": "6 coups (3 chacun)",
+    "prompts": []
+  },
+  "truce": {
+    "name": "Trêve",
+    "tagline": "Les armes se taisent.",
+    "description": "Annoncée, elle arrive au début de votre prochain tour. Pendant 3 coups, aucune capture n’est permise (prise en passant comprise), sauf pour sortir d’un échec. L’adversaire reprend les captures le premier.",
+    "duration": "3 coups (vous, lui, vous)",
+    "prompts": []
+  },
+  "blood_moon": {
+    "name": "Lune de sang",
+    "tagline": "Qui peut prendre, doit prendre.",
+    "description": "Annoncée, elle arrive au début de votre prochain tour. Pendant 3 coups, un joueur qui peut capturer doit capturer ; il choisit la capture (prise en passant comprise). L’adversaire retrouve le premier sa liberté.",
+    "duration": "3 coups (vous, lui, vous)",
+    "prompts": []
+  },
+  "ice_age": {
+    "name": "Ère glaciaire",
+    "tagline": "Le front se fige.",
+    "description": "Annoncée, elle arrive au début de votre prochain tour. Pendant 4 coups, tous les pions des deux camps sont gelés : ils ne bougent ni ne capturent. Un roi ne peut toujours pas se placer sur une case qu’attaque un pion adverse.",
+    "duration": "4 coups (2 chacun)",
+    "prompts": []
+  },
+  "blast": {
+    "name": "Déflagration",
+    "tagline": "Chaque prise est un sacrifice.",
+    "description": "Annoncée, elle arrive au début de votre prochain tour. Pendant 4 coups, toute prise fait exploser la pièce qui prend avec sa victime : les deux disparaissent. Les pièces voisines ne craignent rien. Un roi prend normalement.",
+    "duration": "4 coups (2 chacun)",
+    "prompts": []
+  },
+  "ice_wall": {
+    "name": "Mur de glace",
+    "tagline": "Ici, plus personne ne passe.",
+    "description": "Une case vide entre la 3e et la 6e rangée devient infranchissable pour les deux camps, jusqu’à la fin de la partie : aucune pièce ne peut s’y arrêter ni la traverser. Un cavalier peut sauter par-dessus.",
+    "duration": "Jusqu’à la fin de la partie",
+    "prompts": ["Choisissez une case vide entre la 3e et la 6e rangée"]
+  },
+  "rift": {
+    "name": "Faille",
+    "tagline": "Le plateau se fend en deux.",
+    "description": "Choisissez la 4e ou la 5e rangée. Pendant 4 coups, toutes ses cases vides deviennent un gouffre : aucune pièce ne peut s’y arrêter ni le traverser. Les cavaliers passent par-dessus.",
+    "duration": "4 coups (2 chacun)",
+    "prompts": ["Choisissez la 4e ou la 5e rangée (une case de la rangée)"]
+  },
+  "tide": {
+    "name": "Grande Marée",
+    "tagline": "La mer avance pour tout le monde.",
+    "description": "Rituel : la carte remplace votre coup. Tous les pions des deux camps qui sont sur leurs 2e à 5e rangées avancent d’une case, si elle est libre. C’est ensuite à l’adversaire de jouer.",
+    "duration": "Instantané",
+    "prompts": []
+  },
+  "time_warp": {
+    "name": "Distorsion temporelle",
+    "tagline": "Le temps file entre ses doigts.",
+    "description": "La pendule adverse s'écoule deux fois plus vite pendant ses 3 prochains coups.",
+    "duration": "3 coups adverses",
+    "prompts": []
+  },
+  "gravity": {
+    "name": "Gravité",
+    "tagline": "Chaque pas pèse une tonne.",
+    "description": "La portée des tours, fous et dames adverses est divisée par deux : 3 cases au plus.",
+    "duration": "3 coups adverses",
+    "prompts": []
+  },
+  "freeze": {
+    "name": "Cryogénie",
+    "tagline": "Figée dans la glace éternelle.",
+    "description": "Gèle une pièce adverse (sauf le roi) : elle ne peut ni bouger, ni capturer, ni protéger.",
+    "duration": "2 coups adverses",
+    "prompts": ["Choisissez une pièce adverse à geler"]
+  },
+  "shield": {
+    "name": "Égide",
+    "tagline": "Intouchable.",
+    "description": "Une de vos pièces (sauf le roi) devient imprenable et insensible aux cartes adverses.",
+    "duration": "2 coups adverses",
+    "prompts": ["Choisissez une de vos pièces à protéger"]
+  },
+  "swap": {
+    "name": "Permutation",
+    "tagline": "Deux âmes, deux places.",
+    "description": "Échange instantanément la place de deux de vos pièces (sauf le roi). Un pion ne peut pas arriver sur la première ou la dernière rangée.",
+    "duration": "Instantané",
+    "prompts": ["Choisissez la première pièce","Choisissez la pièce avec laquelle échanger"]
+  },
+  "rewind": {
+    "name": "Retour arrière",
+    "tagline": "Ce coup-là ? Il n’a jamais existé.",
+    "description": "Annule le dernier coup adverse. Votre adversaire doit rejouer, et pas le même coup.",
+    "duration": "Instantané",
+    "prompts": []
+  },
+  "revive": {
+    "name": "Résurrection",
+    "tagline": "Les héros ne meurent jamais vraiment.",
+    "description": "Ramène votre meilleure pièce capturée (tour, puis fou, puis cavalier) sur une case vide de votre première rangée, ou un pion sur votre deuxième rangée.",
+    "duration": "Instantané",
+    "prompts": ["Choisissez où faire renaître votre pièce"]
+  },
+  "knight_leap": {
+    "name": "Saut du cavalier",
+    "tagline": "L'élan d'un destrier.",
+    "description": "Pour ce tour, une de vos tours, fous ou dames peut aussi se déplacer comme un cavalier.",
+    "duration": "Ce tour",
+    "prompts": ["Choisissez la pièce qui pourra sauter"]
+  },
+  "lightning": {
+    "name": "Foudre",
+    "tagline": "Le ciel a tranché.",
+    "description": "Pulvérise un pion adverse, où qu’il soit sur l’échiquier.",
+    "duration": "Instantané",
+    "prompts": ["Choisissez le pion adverse à foudroyer"]
+  },
+  "phase": {
+    "name": "Passe-muraille",
+    "tagline": "Vos rangs s’écartent comme de la brume.",
+    "description": "Pour ce tour, une de vos tours, fous ou dames traverse vos propres pièces. Une pièce adverse l’arrête toujours.",
+    "duration": "Ce tour",
+    "prompts": ["Choisissez la pièce qui deviendra spectrale"]
+  }
+}

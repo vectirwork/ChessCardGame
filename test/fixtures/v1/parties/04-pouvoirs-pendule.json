@@ -1,0 +1,4983 @@
+{
+  "id": "04-pouvoirs-pendule",
+  "graine": 32676,
+  "generateur": {"maxActions":260,"pCard":0.3,"pCapture":0.6,"skin":"skin:arcane"},
+  "catalog": "climats",
+  "timed": true,
+  "mains": {"w":["hourglass","rift","blast"],"b":["rift","tide","ice_wall"]},
+  "depart": {
+    "pos": {
+      "board": [
+        {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+        {"id":9,"t":"k","c":"w"},{"id":11,"t":"b","c":"w"},{"id":13,"t":"n","c":"w"},{"id":15,"t":"r","c":"w"},
+        {"id":2,"t":"p","c":"w"},{"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},{"id":8,"t":"p","c":"w"},
+        {"id":10,"t":"p","c":"w"},{"id":12,"t":"p","c":"w"},{"id":14,"t":"p","c":"w"},{"id":16,"t":"p","c":"w"},null,
+        null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,
+        null,null,null,null,null,null,null,null,null,{"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},
+        {"id":21,"t":"p","c":"b"},{"id":23,"t":"p","c":"b"},{"id":25,"t":"p","c":"b"},{"id":27,"t":"p","c":"b"},
+        {"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},{"id":18,"t":"r","c":"b"},{"id":20,"t":"n","c":"b"},
+        {"id":22,"t":"b","c":"b"},{"id":24,"t":"q","c":"b"},{"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},
+        {"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+      ],
+      "turn": "w",
+      "castling": 15,
+      "ep": -1,
+      "halfmove": 0,
+      "fullmove": 1
+    },
+    "effects": [],
+    "hands": {
+      "w": [{"card":"hourglass","used":false},{"card":"rift","used":false},{"card":"blast","used":false}],
+      "b": [{"card":"rift","used":false},{"card":"tide","used":false},{"card":"ice_wall","used":false}]
+    },
+    "cardPlayed": false,
+    "captured": {"w":[],"b":[]},
+    "nextPieceId": 33,
+    "nextEffectId": 1,
+    "ply": 0,
+    "log": [],
+    "keys": ["RNBQKBNRPPPPPPPP................................pppppppprnbqkbnrw15:-1|000000"],
+    "snaps": [],
+    "forbidden": null,
+    "timed": true,
+    "catalog": "climats",
+    "result": null
+  },
+  "actions": [
+    {
+      "k": "move",
+      "c": "w",
+      "from": 12,
+      "to": 20,
+      "info": {
+        "san": "e3",
+        "move": {"from":12,"to":20,"flags":0},
+        "pieceId": 10,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "RNBQKBNRPPPP.PPP....P...........................pppppppprnbqkbnrb15:-1|000000"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 54,
+      "to": 46,
+      "info": {
+        "san": "g6",
+        "move": {"from":54,"to":46,"flags":0},
+        "pieceId": 29,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "RNBQKBNRPPPP.PPP....P.........................p.pppppp.prnbqkbnrw15:-1|000000"
+    },
+    {
+      "k": "card",
+      "c": "w",
+      "index": 0,
+      "card": "hourglass",
+      "targets": [],
+      "info": {"card":"hourglass","caster":"w","targets":[],"pieces":[],"skin":"skin:arcane","effectId":1},
+      "cle": "RNBQKBNRPPPP.PPP....P.........................p.pppppp.prnbqkbnrw15:-1|hourglassw6::d2|100000"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 1,
+      "to": 18,
+      "info": {
+        "san": "Nc3",
+        "move": {"from":1,"to":18,"flags":0},
+        "pieceId": 3,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.BQKBNRPPPP.PPP..N.P.........................p.pppppp.prnbqkbnrb15:-1|hourglassw6::d1|100000"
+    },
+    {
+      "k": "card",
+      "c": "b",
+      "index": 2,
+      "card": "ice_wall",
+      "targets": [25],
+      "info": {"card":"ice_wall","caster":"b","targets":[25],"pieces":[],"skin":"skin:arcane","effectId":2},
+      "cle": "R.BQKBNRPPPP.PPP..N.P.........................p.pppppp.prnbqkbnrb15:-1|hourglassw6::d1|ice_wallb0:25:|100001"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 55,
+      "to": 47,
+      "info": {
+        "san": "h6",
+        "move": {"from":55,"to":47,"flags":0},
+        "pieceId": 31,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [1],
+        "expired": []
+      },
+      "cle": "R.BQKBNRPPPP.PPP..N.P.........................pppppppp..rnbqkbnrw15:-1|hourglassw6::|ice_wallb0:25:|100001"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 14,
+      "to": 30,
+      "info": {
+        "san": "g4",
+        "move": {"from":14,"to":30,"flags":4},
+        "pieceId": 14,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.BQKBNRPPPP.P.P..N.P.........P...............pppppppp..rnbqkbnrb15:22|hourglassw5::|ice_wallb0:25:|100001"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 46,
+      "to": 38,
+      "info": {
+        "san": "g5",
+        "move": {"from":46,"to":38,"flags":0},
+        "pieceId": 29,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.BQKBNRPPPP.P.P..N.P.........P.......p........ppppppp..rnbqkbnrw15:-1|hourglassw4::|ice_wallb0:25:|100001"
+    },
+    {
+      "k": "card",
+      "c": "w",
+      "index": 1,
+      "card": "rift",
+      "targets": [25],
+      "info": {"card":"rift","caster":"w","targets":[25],"pieces":[],"skin":"skin:arcane","effectId":3},
+      "cle": "R.BQKBNRPPPP.P.P..N.P.........P.......p........ppppppp..rnbqkbnrw15:-1|hourglassw4::|ice_wallb0:25:|riftw4::s24,26,27,28,29,31|110001"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 8,
+      "to": 16,
+      "info": {
+        "san": "a3",
+        "move": {"from":8,"to":16,"flags":0},
+        "pieceId": 2,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.BQKBNR.PPP.P.PP.N.P.........P.......p........ppppppp..rnbqkbnrb15:-1|hourglassw3::|ice_wallb0:25:|riftw3::s24,26,27,28,29,31|110001"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 48,
+      "to": 32,
+      "info": {
+        "san": "a5",
+        "move": {"from":48,"to":32,"flags":4},
+        "pieceId": 17,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.BQKBNR.PPP.P.PP.N.P.........P.p.....p........p.ppppp..rnbqkbnrw15:40|hourglassw2::|ice_wallb0:25:|riftw2::s24,26,27,28,29,31|110001"
+    },
+    {
+      "k": "card",
+      "c": "w",
+      "index": 2,
+      "card": "blast",
+      "targets": [],
+      "info": {"card":"blast","caster":"w","targets":[],"pieces":[],"skin":"skin:arcane","effectId":4},
+      "cle": "R.BQKBNR.PPP.P.PP.N.P.........P.p.....p........p.ppppp..rnbqkbnrw15:40|hourglassw2::|ice_wallb0:25:|riftw2::s24,26,27,28,29,31|blastw4::d2|111001"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 3,
+      "to": 21,
+      "info": {
+        "san": "Qf3",
+        "move": {"from":3,"to":21,"flags":0},
+        "pieceId": 7,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.B.KBNR.PPP.P.PP.N.PQ........P.p.....p........p.ppppp..rnbqkbnrb15:-1|hourglassw1::|ice_wallb0:25:|riftw1::s24,26,27,28,29,31|blastw4::d1|111001"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 56,
+      "to": 40,
+      "info": {
+        "san": "Ra6",
+        "move": {"from":56,"to":40,"flags":0},
+        "pieceId": 18,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [4],
+        "expired": [1,3]
+      },
+      "cle": "R.B.KBNR.PPP.P.PP.N.PQ........P.p.....p.r......p.ppppp...nbqkbnrw7:-1|ice_wallb0:25:|blastw4::|111001"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 5,
+      "to": 40,
+      "info": {
+        "san": "Bxa6*",
+        "move": {"from":5,"to":40,"flags":257},
+        "pieceId": 11,
+        "capturedId": 18,
+        "check": false,
+        "checkKind": null,
+        "blasted": [11],
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.B.K.NR.PPP.P.PP.N.PQ........P.p.....p........p.ppppp...nbqkbnrb7:-1|ice_wallb0:25:|blastw3::|111001"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 53,
+      "to": 37,
+      "info": {
+        "san": "f5",
+        "move": {"from":53,"to":37,"flags":4},
+        "pieceId": 27,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.B.K.NR.PPP.P.PP.N.PQ........P.p....pp........p.pppp....nbqkbnrw7:45|ice_wallb0:25:|blastw2::|111001"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 18,
+      "to": 24,
+      "info": {
+        "san": "Na4",
+        "move": {"from":18,"to":24,"flags":0},
+        "pieceId": 3,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.B.K.NR.PPP.P.PP...PQ..N.....P.p....pp........p.pppp....nbqkbnrb7:-1|ice_wallb0:25:|blastw1::|111001"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 37,
+      "to": 30,
+      "info": {
+        "san": "fxg4*",
+        "move": {"from":37,"to":30,"flags":257},
+        "pieceId": 27,
+        "capturedId": 14,
+        "check": false,
+        "checkKind": null,
+        "blasted": [27],
+        "arrived": [],
+        "expired": [4]
+      },
+      "cle": "R.B.K.NR.PPP.P.PP...PQ..N.......p.....p........p.pppp....nbqkbnrw7:-1|ice_wallb0:25:|111001"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 21,
+      "to": 28,
+      "info": {
+        "san": "Qe4",
+        "move": {"from":21,"to":28,"flags":0},
+        "pieceId": 7,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.B.K.NR.PPP.P.PP...P...N...Q...p.....p........p.pppp....nbqkbnrb7:-1|ice_wallb0:25:|111001"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 47,
+      "to": 39,
+      "info": {
+        "san": "h5",
+        "move": {"from":47,"to":39,"flags":0},
+        "pieceId": 31,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.B.K.NR.PPP.P.PP...P...N...Q...p.....pp.........pppp....nbqkbnrw7:-1|ice_wallb0:25:|111001"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 28,
+      "to": 49,
+      "info": {
+        "san": "Qxb7",
+        "move": {"from":28,"to":49,"flags":1},
+        "pieceId": 7,
+        "capturedId": 19,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.B.K.NR.PPP.P.PP...P...N.......p.....pp.........Qppp....nbqkbnrb7:-1|ice_wallb0:25:|111001"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 58,
+      "to": 49,
+      "info": {
+        "san": "Bxb7",
+        "move": {"from":58,"to":49,"flags":1},
+        "pieceId": 22,
+        "capturedId": 7,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.B.K.NR.PPP.P.PP...P...N.......p.....pp.........bppp....n.qkbnrw7:-1|ice_wallb0:25:|111001"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 10,
+      "to": 26,
+      "info": {
+        "san": "c4",
+        "move": {"from":10,"to":26,"flags":4},
+        "pieceId": 6,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.B.K.NR.P.P.P.PP...P...N.P.....p.....pp.........bppp....n.qkbnrb7:18|ice_wallb0:25:|111001"
+    },
+    {
+      "k": "card",
+      "c": "b",
+      "index": 0,
+      "card": "rift",
+      "targets": [30],
+      "info": {"card":"rift","caster":"b","targets":[30],"pieces":[],"skin":"skin:arcane","effectId":5},
+      "cle": "R.B.K.NR.P.P.P.PP...P...N.P.....p.....pp.........bppp....n.qkbnrb7:18|ice_wallb0:25:|riftb4::s27,28,29,30,31|111101"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 51,
+      "to": 35,
+      "info": {
+        "san": "d5",
+        "move": {"from":51,"to":35,"flags":4},
+        "pieceId": 23,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.B.K.NR.P.P.P.PP...P...N.P.....p..p..pp.........bp.p....n.qkbnrw7:43|ice_wallb0:25:|riftb3::s27,28,29,30,31|111101"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 26,
+      "to": 35,
+      "info": {
+        "san": "cxd5",
+        "move": {"from":26,"to":35,"flags":1},
+        "pieceId": 6,
+        "capturedId": 23,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.B.K.NR.P.P.P.PP...P...N.......p..P..pp.........bp.p....n.qkbnrb7:-1|ice_wallb0:25:|riftb2::s27,28,29,30,31|111101"
+    },
+    {
+      "k": "card",
+      "c": "b",
+      "index": 1,
+      "card": "tide",
+      "targets": [],
+      "info": {
+        "card": "tide",
+        "caster": "b",
+        "targets": [],
+        "pieces": [4,8,12,16,6,21,25],
+        "skin": "skin:arcane",
+        "moves": [
+          {"from":9,"to":17},{"from":11,"to":19},{"from":13,"to":21},{"from":15,"to":23},{"from":35,"to":43},
+          {"from":50,"to":42},{"from":52,"to":44}
+        ],
+        "ritual": true,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.B.K.NR........PP.PPP.PN.......p.....pp..pPp....b.......n.qkbnrw7:-1|ice_wallb0:25:|riftb1::s27,28,29,30,31|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 4,
+      "to": 3,
+      "info": {
+        "san": "Kd1",
+        "move": {"from":4,"to":3,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": [5]
+      },
+      "cle": "R.BK..NR........PP.PPP.PN.......p.....pp..pPp....b.......n.qkbnrb4:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 61,
+      "to": 43,
+      "info": {
+        "san": "Bxd6",
+        "move": {"from":61,"to":43,"flags":1},
+        "pieceId": 28,
+        "capturedId": 6,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.BK..NR........PP.PPP.PN.......p.....pp..pbp....b.......n.qk.nrw4:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 21,
+      "to": 29,
+      "info": {
+        "san": "f4",
+        "move": {"from":21,"to":29,"flags":0},
+        "pieceId": 12,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.BK..NR........PP.PP..PN....P..p.....pp..pbp....b.......n.qk.nrb4:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 59,
+      "to": 45,
+      "info": {
+        "san": "Qf6",
+        "move": {"from":59,"to":45,"flags":0},
+        "pieceId": 24,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.BK..NR........PP.PP..PN....P..p.....pp..pbpq...b.......n..k.nrw4:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 29,
+      "to": 38,
+      "info": {
+        "san": "fxg5",
+        "move": {"from":29,"to":38,"flags":1},
+        "pieceId": 12,
+        "capturedId": 29,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.BK..NR........PP.PP..PN.......p.....Pp..pbpq...b.......n..k.nrb4:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 63,
+      "to": 55,
+      "info": {
+        "san": "Rh7",
+        "move": {"from":63,"to":55,"flags":0},
+        "pieceId": 32,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.BK..NR........PP.PP..PN.......p.....Pp..pbpq...b.....r.n..k.n.w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 38,
+      "to": 45,
+      "info": {
+        "san": "gxf6",
+        "move": {"from":38,"to":45,"flags":1},
+        "pieceId": 12,
+        "capturedId": 24,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.BK..NR........PP.PP..PN.......p......p..pbpP...b.....r.n..k.n.b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 62,
+      "to": 45,
+      "info": {
+        "san": "Nxf6",
+        "move": {"from":62,"to":45,"flags":1},
+        "pieceId": 30,
+        "capturedId": 12,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.BK..NR........PP.PP..PN.......p......p..pbpn...b.....r.n..k...w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 20,
+      "to": 28,
+      "info": {
+        "san": "e4",
+        "move": {"from":20,"to":28,"flags":0},
+        "pieceId": 10,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.BK..NR........PP.P...PN...P...p......p..pbpn...b.....r.n..k...b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 45,
+      "to": 28,
+      "info": {
+        "san": "Nxe4",
+        "move": {"from":45,"to":28,"flags":1},
+        "pieceId": 30,
+        "capturedId": 10,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.BK..NR........PP.P...PN...n...p......p..pbp....b.....r.n..k...w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 19,
+      "to": 28,
+      "info": {
+        "san": "dxe4",
+        "move": {"from":19,"to":28,"flags":1},
+        "pieceId": 8,
+        "capturedId": 30,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.BK..NR........PP.....PN...P...p......p..pbp....b.....r.n..k...b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 43,
+      "to": 50,
+      "info": {
+        "san": "Bc7",
+        "move": {"from":43,"to":50,"flags":0},
+        "pieceId": 28,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.BK..NR........PP.....PN...P...p......p..p.p....bb....r.n..k...w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 2,
+      "to": 38,
+      "info": {
+        "san": "Bg5",
+        "move": {"from":2,"to":38,"flags":0},
+        "pieceId": 5,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R..K..NR........PP.....PN...P...p.....Bp..p.p....bb....r.n..k...b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 49,
+      "to": 40,
+      "info": {
+        "san": "Ba6",
+        "move": {"from":49,"to":40,"flags":0},
+        "pieceId": 22,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R..K..NR........PP.....PN...P...p.....Bpb.p.p.....b....r.n..k...w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 7,
+      "to": 15,
+      "info": {
+        "san": "Rh2",
+        "move": {"from":7,"to":15,"flags":0},
+        "pieceId": 15,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R..K..N........RPP.....PN...P...p.....Bpb.p.p.....b....r.n..k...b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 50,
+      "to": 22,
+      "info": {
+        "san": "Bg3",
+        "move": {"from":50,"to":22,"flags":0},
+        "pieceId": 28,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R..K..N........RPP....bPN...P...p.....Bpb.p.p..........r.n..k...w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 15,
+      "to": 8,
+      "info": {
+        "san": "Rha2",
+        "move": {"from":15,"to":8,"flags":0},
+        "pieceId": 15,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R..K..N.R.......PP....bPN...P...p.....Bpb.p.p..........r.n..k...b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 22,
+      "to": 50,
+      "info": {
+        "san": "Bc7",
+        "move": {"from":22,"to":50,"flags":0},
+        "pieceId": 28,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R..K..N.R.......PP.....PN...P...p.....Bpb.p.p.....b....r.n..k...w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 6,
+      "to": 12,
+      "info": {
+        "san": "Ne2",
+        "move": {"from":6,"to":12,"flags":0},
+        "pieceId": 13,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R..K....R...N...PP.....PN...P...p.....Bpb.p.p.....b....r.n..k...b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 40,
+      "to": 12,
+      "info": {
+        "san": "Bxe2",
+        "move": {"from":40,"to":12,"flags":1},
+        "pieceId": 22,
+        "capturedId": 13,
+        "check": true,
+        "checkKind": "now",
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R..K....R...b...PP.....PN...P...p.....Bp..p.p.....b....r.n..k...w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 8,
+      "to": 12,
+      "info": {
+        "san": "Rxe2",
+        "move": {"from":8,"to":12,"flags":1},
+        "pieceId": 15,
+        "capturedId": 22,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R..K........R...PP.....PN...P...p.....Bp..p.p.....b....r.n..k...b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 60,
+      "to": 61,
+      "info": {
+        "san": "Kf8",
+        "move": {"from":60,"to":61,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R..K........R...PP.....PN...P...p.....Bp..p.p.....b....r.n...k..w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 3,
+      "to": 4,
+      "info": {
+        "san": "Ke1",
+        "move": {"from":3,"to":4,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R...K.......R...PP.....PN...P...p.....Bp..p.p.....b....r.n...k..b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 57,
+      "to": 51,
+      "info": {
+        "san": "Nd7",
+        "move": {"from":57,"to":51,"flags":0},
+        "pieceId": 20,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R...K.......R...PP.....PN...P...p.....Bp..p.p.....bn...r.....k..w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 12,
+      "to": 14,
+      "info": {
+        "san": "Rg2",
+        "move": {"from":12,"to":14,"flags":0},
+        "pieceId": 15,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R...K.........R.PP.....PN...P...p.....Bp..p.p.....bn...r.....k..b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 51,
+      "to": 45,
+      "info": {
+        "san": "Nf6",
+        "move": {"from":51,"to":45,"flags":0},
+        "pieceId": 20,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R...K.........R.PP.....PN...P...p.....Bp..p.pn....b....r.....k..w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 38,
+      "to": 45,
+      "info": {
+        "san": "Bxf6",
+        "move": {"from":38,"to":45,"flags":1},
+        "pieceId": 5,
+        "capturedId": 20,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R...K.........R.PP.....PN...P...p......p..p.pB....b....r.....k..b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 55,
+      "to": 51,
+      "info": {
+        "san": "Rd7",
+        "move": {"from":55,"to":51,"flags":0},
+        "pieceId": 32,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R...K.........R.PP.....PN...P...p......p..p.pB....br.........k..w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 14,
+      "to": 11,
+      "info": {
+        "san": "Rd2",
+        "move": {"from":14,"to":11,"flags":0},
+        "pieceId": 15,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R...K......R....PP.....PN...P...p......p..p.pB....br.........k..b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 50,
+      "to": 57,
+      "info": {
+        "san": "Bb8",
+        "move": {"from":50,"to":57,"flags":0},
+        "pieceId": 28,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R...K......R....PP.....PN...P...p......p..p.pB.....r.....b...k..w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 11,
+      "to": 10,
+      "info": {
+        "san": "Rc2",
+        "move": {"from":11,"to":10,"flags":0},
+        "pieceId": 15,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R...K.....R.....PP.....PN...P...p......p..p.pB.....r.....b...k..b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 57,
+      "to": 48,
+      "info": {
+        "san": "Ba7",
+        "move": {"from":57,"to":48,"flags":0},
+        "pieceId": 28,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R...K.....R.....PP.....PN...P...p......p..p.pB..b..r.........k..w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 10,
+      "to": 42,
+      "info": {
+        "san": "Rxc6",
+        "move": {"from":10,"to":42,"flags":1},
+        "pieceId": 15,
+        "capturedId": 21,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R...K...........PP.....PN...P...p......p..R.pB..b..r.........k..b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 48,
+      "to": 13,
+      "info": {
+        "san": "Bf2",
+        "move": {"from":48,"to":13,"flags":0},
+        "pieceId": 28,
+        "capturedId": null,
+        "check": true,
+        "checkKind": "now",
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R...K........b..PP.....PN...P...p......p..R.pB.....r.........k..w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 4,
+      "to": 13,
+      "info": {
+        "san": "Kxf2",
+        "move": {"from":4,"to":13,"flags":1},
+        "pieceId": 9,
+        "capturedId": 28,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R............K..PP.....PN...P...p......p..R.pB.....r.........k..b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 51,
+      "to": 59,
+      "info": {
+        "san": "Rd8",
+        "move": {"from":51,"to":59,"flags":0},
+        "pieceId": 32,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R............K..PP.....PN...P...p......p..R.pB.............r.k..w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 45,
+      "to": 38,
+      "info": {
+        "san": "Bg5",
+        "move": {"from":45,"to":38,"flags":0},
+        "pieceId": 5,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R............K..PP.....PN...P...p.....Bp..R.p..............r.k..b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 59,
+      "to": 3,
+      "info": {
+        "san": "Rd1",
+        "move": {"from":59,"to":3,"flags":0},
+        "pieceId": 32,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R..r.........K..PP.....PN...P...p.....Bp..R.p................k..w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 28,
+      "to": 36,
+      "info": {
+        "san": "e5",
+        "move": {"from":28,"to":36,"flags":0},
+        "pieceId": 8,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R..r.........K..PP.....PN.......p...P.Bp..R.p................k..b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 3,
+      "to": 0,
+      "info": {
+        "san": "Rxa1",
+        "move": {"from":3,"to":0,"flags":1},
+        "pieceId": 32,
+        "capturedId": 1,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "r............K..PP.....PN.......p...P.Bp..R.p................k..w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 42,
+      "to": 44,
+      "info": {
+        "san": "Rxe6",
+        "move": {"from":42,"to":44,"flags":1},
+        "pieceId": 15,
+        "capturedId": 25,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "r............K..PP.....PN.......p...P.Bp....R................k..b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 0,
+      "to": 16,
+      "info": {
+        "san": "Rxa3",
+        "move": {"from":0,"to":16,"flags":1},
+        "pieceId": 32,
+        "capturedId": 2,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............K..rP.....PN.......p...P.Bp....R................k..w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 38,
+      "to": 20,
+      "info": {
+        "san": "Be3",
+        "move": {"from":38,"to":20,"flags":0},
+        "pieceId": 5,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............K..rP..B..PN.......p...P..p....R................k..b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 16,
+      "to": 24,
+      "info": {
+        "san": "Rxa4",
+        "move": {"from":16,"to":24,"flags":1},
+        "pieceId": 32,
+        "capturedId": 3,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............K...P..B..Pr.......p...P..p....R................k..w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 17,
+      "to": 24,
+      "info": {
+        "san": "bxa4",
+        "move": {"from":17,"to":24,"flags":1},
+        "pieceId": 4,
+        "capturedId": 32,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............K......B..PP.......p...P..p....R................k..b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 61,
+      "to": 53,
+      "info": {
+        "san": "Kf7",
+        "move": {"from":61,"to":53,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............K......B..PP.......p...P..p....R........k..........w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 20,
+      "to": 48,
+      "info": {
+        "san": "Ba7",
+        "move": {"from":20,"to":48,"flags":0},
+        "pieceId": 5,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............K.........PP.......p...P..p....R...B....k..........b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 53,
+      "to": 54,
+      "info": {
+        "san": "Kg7",
+        "move": {"from":53,"to":54,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............K.........PP.......p...P..p....R...B.....k.........w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 13,
+      "to": 4,
+      "info": {
+        "san": "Ke1",
+        "move": {"from":13,"to":4,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "....K..................PP.......p...P..p....R...B.....k.........b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 54,
+      "to": 62,
+      "info": {
+        "san": "Kg8",
+        "move": {"from":54,"to":62,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "....K..................PP.......p...P..p....R...B.............k.w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 48,
+      "to": 41,
+      "info": {
+        "san": "Bb6",
+        "move": {"from":48,"to":41,"flags":0},
+        "pieceId": 5,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "....K..................PP.......p...P..p.B..R.................k.b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 62,
+      "to": 61,
+      "info": {
+        "san": "Kf8",
+        "move": {"from":62,"to":61,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "....K..................PP.......p...P..p.B..R................k..w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 41,
+      "to": 32,
+      "info": {
+        "san": "Bxa5",
+        "move": {"from":41,"to":32,"flags":1},
+        "pieceId": 5,
+        "capturedId": 17,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "....K..................PP.......B...P..p....R................k..b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 61,
+      "to": 53,
+      "info": {
+        "san": "Kf7",
+        "move": {"from":61,"to":53,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "....K..................PP.......B...P..p....R........k..........w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 44,
+      "to": 52,
+      "info": {
+        "san": "Re7",
+        "move": {"from":44,"to":52,"flags":0},
+        "pieceId": 15,
+        "capturedId": null,
+        "check": true,
+        "checkKind": "now",
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "....K..................PP.......B...P..p............Rk..........b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 53,
+      "to": 52,
+      "info": {
+        "san": "Kxe7",
+        "move": {"from":53,"to":52,"flags":1},
+        "pieceId": 26,
+        "capturedId": 15,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "....K..................PP.......B...P..p............k...........w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 4,
+      "to": 11,
+      "info": {
+        "san": "Kd2",
+        "move": {"from":4,"to":11,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...........K...........PP.......B...P..p............k...........b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 52,
+      "to": 60,
+      "info": {
+        "san": "Ke8",
+        "move": {"from":52,"to":60,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...........K...........PP.......B...P..p....................k...w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 11,
+      "to": 2,
+      "info": {
+        "san": "Kc1",
+        "move": {"from":11,"to":2,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..K....................PP.......B...P..p....................k...b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 60,
+      "to": 53,
+      "info": {
+        "san": "Kf7",
+        "move": {"from":60,"to":53,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..K....................PP.......B...P..p.............k..........w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 23,
+      "to": 31,
+      "info": {
+        "san": "h4",
+        "move": {"from":23,"to":31,"flags":0},
+        "pieceId": 16,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..K.....................P......PB...P..p.............k..........b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 53,
+      "to": 62,
+      "info": {
+        "san": "Kg8",
+        "move": {"from":53,"to":62,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..K.....................P......PB...P..p......................k.w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 2,
+      "to": 9,
+      "info": {
+        "san": "Kb2",
+        "move": {"from":2,"to":9,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".........K..............P......PB...P..p......................k.b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 62,
+      "to": 54,
+      "info": {
+        "san": "Kg7",
+        "move": {"from":62,"to":54,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".........K..............P......PB...P..p..............k.........w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 9,
+      "to": 10,
+      "info": {
+        "san": "Kc2",
+        "move": {"from":9,"to":10,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........K.............P......PB...P..p..............k.........b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 54,
+      "to": 47,
+      "info": {
+        "san": "Kh6",
+        "move": {"from":54,"to":47,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........K.............P......PB...P..p.......k................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 10,
+      "to": 18,
+      "info": {
+        "san": "Kc3",
+        "move": {"from":10,"to":18,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..................K.....P......PB...P..p.......k................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 47,
+      "to": 46,
+      "info": {
+        "san": "Kg6",
+        "move": {"from":47,"to":46,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..................K.....P......PB...P..p......k.................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 18,
+      "to": 10,
+      "info": {
+        "san": "Kc2",
+        "move": {"from":18,"to":10,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........K.............P......PB...P..p......k.................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 46,
+      "to": 54,
+      "info": {
+        "san": "Kg7",
+        "move": {"from":46,"to":54,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........K.............P......PB...P..p..............k.........w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 36,
+      "to": 44,
+      "info": {
+        "san": "e6",
+        "move": {"from":36,"to":44,"flags":0},
+        "pieceId": 8,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........K.............P......PB......p....P.........k.........b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 54,
+      "to": 45,
+      "info": {
+        "san": "Kf6",
+        "move": {"from":54,"to":45,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........K.............P......PB......p....Pk..................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 10,
+      "to": 3,
+      "info": {
+        "san": "Kd1",
+        "move": {"from":10,"to":3,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...K....................P......PB......p....Pk..................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 45,
+      "to": 44,
+      "info": {
+        "san": "Kxe6",
+        "move": {"from":45,"to":44,"flags":1},
+        "pieceId": 26,
+        "capturedId": 8,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...K....................P......PB......p....k...................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 32,
+      "to": 59,
+      "info": {
+        "san": "Bd8",
+        "move": {"from":32,"to":59,"flags":0},
+        "pieceId": 5,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...K....................P......P.......p....k..............B....b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 44,
+      "to": 37,
+      "info": {
+        "san": "Kf5",
+        "move": {"from":44,"to":37,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...K....................P......P.....k.p...................B....w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 59,
+      "to": 38,
+      "info": {
+        "san": "Bg5",
+        "move": {"from":59,"to":38,"flags":0},
+        "pieceId": 5,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...K....................P......P.....kBp........................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 37,
+      "to": 46,
+      "info": {
+        "san": "Kg6",
+        "move": {"from":37,"to":46,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...K....................P......P......Bp......k.................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 24,
+      "to": 32,
+      "info": {
+        "san": "a5",
+        "move": {"from":24,"to":32,"flags":0},
+        "pieceId": 4,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...K...........................PP.....Bp......k.................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 46,
+      "to": 54,
+      "info": {
+        "san": "Kg7",
+        "move": {"from":46,"to":54,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...K...........................PP.....Bp..............k.........w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 38,
+      "to": 2,
+      "info": {
+        "san": "Bc1",
+        "move": {"from":38,"to":2,"flags":0},
+        "pieceId": 5,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..BK...........................PP......p..............k.........b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 54,
+      "to": 61,
+      "info": {
+        "san": "Kf8",
+        "move": {"from":54,"to":61,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..BK...........................PP......p.....................k..w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 2,
+      "to": 47,
+      "info": {
+        "san": "Bh6",
+        "move": {"from":2,"to":47,"flags":0},
+        "pieceId": 5,
+        "capturedId": null,
+        "check": true,
+        "checkKind": "now",
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...K...........................PP......p.......B.............k..b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 61,
+      "to": 60,
+      "info": {
+        "san": "Ke8",
+        "move": {"from":61,"to":60,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...K...........................PP......p.......B............k...w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 47,
+      "to": 11,
+      "info": {
+        "san": "Bd2",
+        "move": {"from":47,"to":11,"flags":0},
+        "pieceId": 5,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...K.......B...................PP......p....................k...b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 60,
+      "to": 53,
+      "info": {
+        "san": "Kf7",
+        "move": {"from":60,"to":53,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...K.......B...................PP......p.............k..........w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 3,
+      "to": 2,
+      "info": {
+        "san": "Kc1",
+        "move": {"from":3,"to":2,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..K........B...................PP......p.............k..........b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 53,
+      "to": 61,
+      "info": {
+        "san": "Kf8",
+        "move": {"from":53,"to":61,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..K........B...................PP......p.....................k..w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 11,
+      "to": 38,
+      "info": {
+        "san": "Bg5",
+        "move": {"from":11,"to":38,"flags":0},
+        "pieceId": 5,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..K............................PP.....Bp.....................k..b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 61,
+      "to": 53,
+      "info": {
+        "san": "Kf7",
+        "move": {"from":61,"to":53,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..K............................PP.....Bp.............k..........w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 38,
+      "to": 52,
+      "info": {
+        "san": "Be7",
+        "move": {"from":38,"to":52,"flags":0},
+        "pieceId": 5,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..K............................PP......p............Bk..........b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 53,
+      "to": 52,
+      "info": {
+        "san": "Kxe7",
+        "move": {"from":53,"to":52,"flags":1},
+        "pieceId": 26,
+        "capturedId": 5,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..K............................PP......p............k...........w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 32,
+      "to": 40,
+      "info": {
+        "san": "a6",
+        "move": {"from":32,"to":40,"flags":0},
+        "pieceId": 4,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..K............................P.......pP...........k...........b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 52,
+      "to": 53,
+      "info": {
+        "san": "Kf7",
+        "move": {"from":52,"to":53,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..K............................P.......pP............k..........w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 2,
+      "to": 3,
+      "info": {
+        "san": "Kd1",
+        "move": {"from":2,"to":3,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...K...........................P.......pP............k..........b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 53,
+      "to": 45,
+      "info": {
+        "san": "Kf6",
+        "move": {"from":53,"to":45,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...K...........................P.......pP....k..................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 3,
+      "to": 11,
+      "info": {
+        "san": "Kd2",
+        "move": {"from":3,"to":11,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...........K...................P.......pP....k..................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 45,
+      "to": 46,
+      "info": {
+        "san": "Kg6",
+        "move": {"from":45,"to":46,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...........K...................P.......pP.....k.................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 11,
+      "to": 20,
+      "info": {
+        "san": "Ke3",
+        "move": {"from":11,"to":20,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "....................K..........P.......pP.....k.................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 46,
+      "to": 54,
+      "info": {
+        "san": "Kg7",
+        "move": {"from":46,"to":54,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "....................K..........P.......pP.............k.........w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 20,
+      "to": 13,
+      "info": {
+        "san": "Kf2",
+        "move": {"from":20,"to":13,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............K.................P.......pP.............k.........b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 54,
+      "to": 62,
+      "info": {
+        "san": "Kg8",
+        "move": {"from":54,"to":62,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............K.................P.......pP.....................k.w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 13,
+      "to": 22,
+      "info": {
+        "san": "Kg3",
+        "move": {"from":13,"to":22,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "......................K........P.......pP.....................k.b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 62,
+      "to": 63,
+      "info": {
+        "san": "Kh8",
+        "move": {"from":62,"to":63,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "......................K........P.......pP......................kw0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 22,
+      "to": 13,
+      "info": {
+        "san": "Kf2",
+        "move": {"from":22,"to":13,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............K.................P.......pP......................kb0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 63,
+      "to": 55,
+      "info": {
+        "san": "Kh7",
+        "move": {"from":63,"to":55,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............K.................P.......pP..............k........w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 13,
+      "to": 6,
+      "info": {
+        "san": "Kg1",
+        "move": {"from":13,"to":6,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "......K........................P.......pP..............k........b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 55,
+      "to": 54,
+      "info": {
+        "san": "Kg7",
+        "move": {"from":55,"to":54,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "......K........................P.......pP.............k.........w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 6,
+      "to": 13,
+      "info": {
+        "san": "Kf2",
+        "move": {"from":6,"to":13,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............K.................P.......pP.............k.........b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 54,
+      "to": 53,
+      "info": {
+        "san": "Kf7",
+        "move": {"from":54,"to":53,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............K.................P.......pP............k..........w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 13,
+      "to": 21,
+      "info": {
+        "san": "Kf3",
+        "move": {"from":13,"to":21,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".....................K.........P.......pP............k..........b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 53,
+      "to": 60,
+      "info": {
+        "san": "Ke8",
+        "move": {"from":53,"to":60,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".....................K.........P.......pP...................k...w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 21,
+      "to": 29,
+      "info": {
+        "san": "Kf4",
+        "move": {"from":21,"to":29,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............................K.P.......pP...................k...b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 60,
+      "to": 52,
+      "info": {
+        "san": "Ke7",
+        "move": {"from":60,"to":52,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............................K.P.......pP...........k...........w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 29,
+      "to": 28,
+      "info": {
+        "san": "Ke4",
+        "move": {"from":29,"to":28,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "............................K..P.......pP...........k...........b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 52,
+      "to": 44,
+      "info": {
+        "san": "Ke6",
+        "move": {"from":52,"to":44,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "............................K..P.......pP...k...................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 28,
+      "to": 27,
+      "info": {
+        "san": "Kd4",
+        "move": {"from":28,"to":27,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...........................K...P.......pP...k...................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 44,
+      "to": 51,
+      "info": {
+        "san": "Kd7",
+        "move": {"from":44,"to":51,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...........................K...P.......pP..........k............w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 27,
+      "to": 28,
+      "info": {
+        "san": "Ke4",
+        "move": {"from":27,"to":28,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "............................K..P.......pP..........k............b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 51,
+      "to": 58,
+      "info": {
+        "san": "Kc8",
+        "move": {"from":51,"to":58,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "............................K..P.......pP.................k.....w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 28,
+      "to": 37,
+      "info": {
+        "san": "Kf5",
+        "move": {"from":28,"to":37,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P.....K.pP.................k.....b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 58,
+      "to": 59,
+      "info": {
+        "san": "Kd8",
+        "move": {"from":58,"to":59,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P.....K.pP..................k....w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 37,
+      "to": 29,
+      "info": {
+        "san": "Kf4",
+        "move": {"from":37,"to":29,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............................K.P.......pP..................k....b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 59,
+      "to": 58,
+      "info": {
+        "san": "Kc8",
+        "move": {"from":59,"to":58,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............................K.P.......pP.................k.....w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 29,
+      "to": 36,
+      "info": {
+        "san": "Ke5",
+        "move": {"from":29,"to":36,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P....K..pP.................k.....b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 58,
+      "to": 50,
+      "info": {
+        "san": "Kc7",
+        "move": {"from":58,"to":50,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P....K..pP.........k.............w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 36,
+      "to": 29,
+      "info": {
+        "san": "Kf4",
+        "move": {"from":36,"to":29,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............................K.P.......pP.........k.............b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 50,
+      "to": 57,
+      "info": {
+        "san": "Kb8",
+        "move": {"from":50,"to":57,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............................K.P.......pP................k......w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 29,
+      "to": 20,
+      "info": {
+        "san": "Ke3",
+        "move": {"from":29,"to":20,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "....................K..........P.......pP................k......b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 57,
+      "to": 48,
+      "info": {
+        "san": "Ka7",
+        "move": {"from":57,"to":48,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "....................K..........P.......pP.......k...............w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 20,
+      "to": 28,
+      "info": {
+        "san": "Ke4",
+        "move": {"from":20,"to":28,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "............................K..P.......pP.......k...............b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 48,
+      "to": 40,
+      "info": {
+        "san": "Kxa6",
+        "move": {"from":48,"to":40,"flags":1},
+        "pieceId": 26,
+        "capturedId": 4,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "............................K..P.......pk.......................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 28,
+      "to": 36,
+      "info": {
+        "san": "Ke5",
+        "move": {"from":28,"to":36,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P....K..pk.......................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 40,
+      "to": 49,
+      "info": {
+        "san": "Kb7",
+        "move": {"from":40,"to":49,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P....K..p.........k..............w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 36,
+      "to": 44,
+      "info": {
+        "san": "Ke6",
+        "move": {"from":36,"to":44,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P.......p....K....k..............b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 49,
+      "to": 41,
+      "info": {
+        "san": "Kb6",
+        "move": {"from":49,"to":41,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P.......p.k..K...................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 44,
+      "to": 35,
+      "info": {
+        "san": "Kd5",
+        "move": {"from":44,"to":35,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P...K...p.k......................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 41,
+      "to": 32,
+      "info": {
+        "san": "Ka5",
+        "move": {"from":41,"to":32,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................Pk..K...p........................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 35,
+      "to": 26,
+      "info": {
+        "san": "Kc4",
+        "move": {"from":35,"to":26,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........................K....Pk......p........................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 32,
+      "to": 40,
+      "info": {
+        "san": "Ka6",
+        "move": {"from":32,"to":40,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........................K....P.......pk.......................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 26,
+      "to": 34,
+      "info": {
+        "san": "Kc5",
+        "move": {"from":26,"to":34,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P..K....pk.......................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 40,
+      "to": 49,
+      "info": {
+        "san": "Kb7",
+        "move": {"from":40,"to":49,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P..K....p.........k..............w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 34,
+      "to": 33,
+      "info": {
+        "san": "Kb5",
+        "move": {"from":34,"to":33,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P.K.....p.........k..............b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 49,
+      "to": 56,
+      "info": {
+        "san": "Ka8",
+        "move": {"from":49,"to":56,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P.K.....p................k.......w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 33,
+      "to": 26,
+      "info": {
+        "san": "Kc4",
+        "move": {"from":33,"to":26,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........................K....P.......p................k.......b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 56,
+      "to": 48,
+      "info": {
+        "san": "Ka7",
+        "move": {"from":56,"to":48,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........................K....P.......p........k...............w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 26,
+      "to": 35,
+      "info": {
+        "san": "Kd5",
+        "move": {"from":26,"to":35,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P...K...p........k...............b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 48,
+      "to": 40,
+      "info": {
+        "san": "Ka6",
+        "move": {"from":48,"to":40,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P...K...pk.......................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 35,
+      "to": 43,
+      "info": {
+        "san": "Kd6",
+        "move": {"from":35,"to":43,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P.......pk..K....................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 40,
+      "to": 33,
+      "info": {
+        "san": "Kb5",
+        "move": {"from":40,"to":33,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P.k.....p...K....................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 43,
+      "to": 35,
+      "info": {
+        "san": "Kd5",
+        "move": {"from":43,"to":35,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P.k.K...p........................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 33,
+      "to": 32,
+      "info": {
+        "san": "Ka5",
+        "move": {"from":33,"to":32,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................Pk..K...p........................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 35,
+      "to": 26,
+      "info": {
+        "san": "Kc4",
+        "move": {"from":35,"to":26,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........................K....Pk......p........................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 32,
+      "to": 40,
+      "info": {
+        "san": "Ka6",
+        "move": {"from":32,"to":40,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........................K....P.......pk.......................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 26,
+      "to": 34,
+      "info": {
+        "san": "Kc5",
+        "move": {"from":26,"to":34,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P..K....pk.......................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 40,
+      "to": 48,
+      "info": {
+        "san": "Ka7",
+        "move": {"from":40,"to":48,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P..K....p........k...............w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 34,
+      "to": 43,
+      "info": {
+        "san": "Kd6",
+        "move": {"from":34,"to":43,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P.......p...K....k...............b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 48,
+      "to": 41,
+      "info": {
+        "san": "Kb6",
+        "move": {"from":48,"to":41,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P.......p.k.K....................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 43,
+      "to": 52,
+      "info": {
+        "san": "Ke7",
+        "move": {"from":43,"to":52,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P.......p.k..........K...........b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 41,
+      "to": 32,
+      "info": {
+        "san": "Ka5",
+        "move": {"from":41,"to":32,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................Pk......p............K...........w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 52,
+      "to": 44,
+      "info": {
+        "san": "Ke6",
+        "move": {"from":52,"to":44,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................Pk......p....K...................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 32,
+      "to": 33,
+      "info": {
+        "san": "Kb5",
+        "move": {"from":32,"to":33,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P.k.....p....K...................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 44,
+      "to": 36,
+      "info": {
+        "san": "Ke5",
+        "move": {"from":44,"to":36,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P.k..K..p........................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 33,
+      "to": 41,
+      "info": {
+        "san": "Kb6",
+        "move": {"from":33,"to":41,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P....K..p.k......................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 36,
+      "to": 27,
+      "info": {
+        "san": "Kd4",
+        "move": {"from":36,"to":27,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...........................K...P.......p.k......................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 41,
+      "to": 49,
+      "info": {
+        "san": "Kb7",
+        "move": {"from":41,"to":49,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...........................K...P.......p.........k..............w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 27,
+      "to": 26,
+      "info": {
+        "san": "Kc4",
+        "move": {"from":27,"to":26,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........................K....P.......p.........k..............b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 49,
+      "to": 48,
+      "info": {
+        "san": "Ka7",
+        "move": {"from":49,"to":48,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........................K....P.......p........k...............w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 26,
+      "to": 17,
+      "info": {
+        "san": "Kb3",
+        "move": {"from":26,"to":17,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".................K.............P.......p........k...............b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 48,
+      "to": 40,
+      "info": {
+        "san": "Ka6",
+        "move": {"from":48,"to":40,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".................K.............P.......pk.......................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 17,
+      "to": 10,
+      "info": {
+        "san": "Kc2",
+        "move": {"from":17,"to":10,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........K....................P.......pk.......................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 40,
+      "to": 33,
+      "info": {
+        "san": "Kb5",
+        "move": {"from":40,"to":33,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........K....................P.k.....p........................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 10,
+      "to": 17,
+      "info": {
+        "san": "Kb3",
+        "move": {"from":10,"to":17,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".................K.............P.k.....p........................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 33,
+      "to": 41,
+      "info": {
+        "san": "Kb6",
+        "move": {"from":33,"to":41,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".................K.............P.......p.k......................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 17,
+      "to": 26,
+      "info": {
+        "san": "Kc4",
+        "move": {"from":17,"to":26,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........................K....P.......p.k......................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 41,
+      "to": 42,
+      "info": {
+        "san": "Kc6",
+        "move": {"from":41,"to":42,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........................K....P.......p..k.....................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 26,
+      "to": 19,
+      "info": {
+        "san": "Kd3",
+        "move": {"from":26,"to":19,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...................K...........P.......p..k.....................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 42,
+      "to": 50,
+      "info": {
+        "san": "Kc7",
+        "move": {"from":42,"to":50,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...................K...........P.......p..........k.............w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 19,
+      "to": 26,
+      "info": {
+        "san": "Kc4",
+        "move": {"from":19,"to":26,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........................K....P.......p..........k.............b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 50,
+      "to": 41,
+      "info": {
+        "san": "Kb6",
+        "move": {"from":50,"to":41,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........................K....P.......p.k......................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 26,
+      "to": 17,
+      "info": {
+        "san": "Kb3",
+        "move": {"from":26,"to":17,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".................K.............P.......p.k......................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 41,
+      "to": 40,
+      "info": {
+        "san": "Ka6",
+        "move": {"from":41,"to":40,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".................K.............P.......pk.......................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 17,
+      "to": 24,
+      "info": {
+        "san": "Ka4",
+        "move": {"from":17,"to":24,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "........................K......P.......pk.......................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 40,
+      "to": 41,
+      "info": {
+        "san": "Kb6",
+        "move": {"from":40,"to":41,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "........................K......P.......p.k......................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 24,
+      "to": 16,
+      "info": {
+        "san": "Ka3",
+        "move": {"from":24,"to":16,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "................K..............P.......p.k......................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 41,
+      "to": 48,
+      "info": {
+        "san": "Ka7",
+        "move": {"from":41,"to":48,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "................K..............P.......p........k...............w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 16,
+      "to": 9,
+      "info": {
+        "san": "Kb2",
+        "move": {"from":16,"to":9,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".........K.....................P.......p........k...............b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 48,
+      "to": 57,
+      "info": {
+        "san": "Kb8",
+        "move": {"from":48,"to":57,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".........K.....................P.......p.................k......w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 9,
+      "to": 18,
+      "info": {
+        "san": "Kc3",
+        "move": {"from":9,"to":18,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..................K............P.......p.................k......b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 57,
+      "to": 56,
+      "info": {
+        "san": "Ka8",
+        "move": {"from":57,"to":56,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..................K............P.......p................k.......w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 18,
+      "to": 9,
+      "info": {
+        "san": "Kb2",
+        "move": {"from":18,"to":9,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".........K.....................P.......p................k.......b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 56,
+      "to": 48,
+      "info": {
+        "san": "Ka7",
+        "move": {"from":56,"to":48,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".........K.....................P.......p........k...............w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 9,
+      "to": 16,
+      "info": {
+        "san": "Ka3",
+        "move": {"from":9,"to":16,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "................K..............P.......p........k...............b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 48,
+      "to": 49,
+      "info": {
+        "san": "Kb7",
+        "move": {"from":48,"to":49,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "................K..............P.......p.........k..............w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 16,
+      "to": 9,
+      "info": {
+        "san": "Kb2",
+        "move": {"from":16,"to":9,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".........K.....................P.......p.........k..............b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 49,
+      "to": 58,
+      "info": {
+        "san": "Kc8",
+        "move": {"from":49,"to":58,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".........K.....................P.......p..................k.....w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 9,
+      "to": 2,
+      "info": {
+        "san": "Kc1",
+        "move": {"from":9,"to":2,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..K............................P.......p..................k.....b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 58,
+      "to": 59,
+      "info": {
+        "san": "Kd8",
+        "move": {"from":58,"to":59,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..K............................P.......p...................k....w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 2,
+      "to": 10,
+      "info": {
+        "san": "Kc2",
+        "move": {"from":2,"to":10,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........K....................P.......p...................k....b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 59,
+      "to": 52,
+      "info": {
+        "san": "Ke7",
+        "move": {"from":59,"to":52,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........K....................P.......p............k...........w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 10,
+      "to": 18,
+      "info": {
+        "san": "Kc3",
+        "move": {"from":10,"to":18,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..................K............P.......p............k...........b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 52,
+      "to": 53,
+      "info": {
+        "san": "Kf7",
+        "move": {"from":52,"to":53,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..................K............P.......p.............k..........w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 18,
+      "to": 27,
+      "info": {
+        "san": "Kd4",
+        "move": {"from":18,"to":27,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...........................K...P.......p.............k..........b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 53,
+      "to": 46,
+      "info": {
+        "san": "Kg6",
+        "move": {"from":53,"to":46,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...........................K...P.......p......k.................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 27,
+      "to": 28,
+      "info": {
+        "san": "Ke4",
+        "move": {"from":27,"to":28,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "............................K..P.......p......k.................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 46,
+      "to": 45,
+      "info": {
+        "san": "Kf6",
+        "move": {"from":46,"to":45,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "............................K..P.......p.....k..................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 28,
+      "to": 21,
+      "info": {
+        "san": "Kf3",
+        "move": {"from":28,"to":21,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".....................K.........P.......p.....k..................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 45,
+      "to": 46,
+      "info": {
+        "san": "Kg6",
+        "move": {"from":45,"to":46,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".....................K.........P.......p......k.................w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 21,
+      "to": 29,
+      "info": {
+        "san": "Kf4",
+        "move": {"from":21,"to":29,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............................K.P.......p......k.................b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 46,
+      "to": 53,
+      "info": {
+        "san": "Kf7",
+        "move": {"from":46,"to":53,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............................K.P.......p.............k..........w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 29,
+      "to": 22,
+      "info": {
+        "san": "Kg3",
+        "move": {"from":29,"to":22,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "......................K........P.......p.............k..........b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 53,
+      "to": 61,
+      "info": {
+        "san": "Kf8",
+        "move": {"from":53,"to":61,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "......................K........P.......p.....................k..w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 22,
+      "to": 14,
+      "info": {
+        "san": "Kg2",
+        "move": {"from":22,"to":14,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..............K................P.......p.....................k..b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 61,
+      "to": 62,
+      "info": {
+        "san": "Kg8",
+        "move": {"from":61,"to":62,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..............K................P.......p......................k.w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 14,
+      "to": 15,
+      "info": {
+        "san": "Kh2",
+        "move": {"from":14,"to":15,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............K...............P.......p......................k.b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 62,
+      "to": 61,
+      "info": {
+        "san": "Kf8",
+        "move": {"from":62,"to":61,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............K...............P.......p.....................k..w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 15,
+      "to": 22,
+      "info": {
+        "san": "Kg3",
+        "move": {"from":15,"to":22,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "......................K........P.......p.....................k..b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 61,
+      "to": 62,
+      "info": {
+        "san": "Kg8",
+        "move": {"from":61,"to":62,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "......................K........P.......p......................k.w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 22,
+      "to": 29,
+      "info": {
+        "san": "Kf4",
+        "move": {"from":22,"to":29,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............................K.P.......p......................k.b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 62,
+      "to": 63,
+      "info": {
+        "san": "Kh8",
+        "move": {"from":62,"to":63,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".............................K.P.......p.......................kw0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 29,
+      "to": 21,
+      "info": {
+        "san": "Kf3",
+        "move": {"from":29,"to":21,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".....................K.........P.......p.......................kb0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 63,
+      "to": 62,
+      "info": {
+        "san": "Kg8",
+        "move": {"from":63,"to":62,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": ".....................K.........P.......p......................k.w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 21,
+      "to": 20,
+      "info": {
+        "san": "Ke3",
+        "move": {"from":21,"to":20,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "....................K..........P.......p......................k.b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 62,
+      "to": 53,
+      "info": {
+        "san": "Kf7",
+        "move": {"from":62,"to":53,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "....................K..........P.......p.............k..........w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 20,
+      "to": 28,
+      "info": {
+        "san": "Ke4",
+        "move": {"from":20,"to":28,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "............................K..P.......p.............k..........b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 53,
+      "to": 60,
+      "info": {
+        "san": "Ke8",
+        "move": {"from":53,"to":60,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "............................K..P.......p....................k...w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 28,
+      "to": 35,
+      "info": {
+        "san": "Kd5",
+        "move": {"from":28,"to":35,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P...K...p....................k...b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 60,
+      "to": 51,
+      "info": {
+        "san": "Kd7",
+        "move": {"from":60,"to":51,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...............................P...K...p...........k............w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 35,
+      "to": 26,
+      "info": {
+        "san": "Kc4",
+        "move": {"from":35,"to":26,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........................K....P.......p...........k............b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 51,
+      "to": 50,
+      "info": {
+        "san": "Kc7",
+        "move": {"from":51,"to":50,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "..........................K....P.......p..........k.............w0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 26,
+      "to": 27,
+      "info": {
+        "san": "Kd4",
+        "move": {"from":26,"to":27,"flags":0},
+        "pieceId": 9,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...........................K...P.......p..........k.............b0:-1|ice_wallb0:25:|111111"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 50,
+      "to": 51,
+      "info": {
+        "san": "Kd7",
+        "move": {"from":50,"to":51,"flags":0},
+        "pieceId": 26,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "...........................K...P.......p...........k............w0:-1|ice_wallb0:25:|111111"
+    }
+  ],
+  "resultat": {"winner":null,"reason":"fifty"},
+  "etat_final": {
+    "pos": {
+      "board": [
+        null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,
+        null,null,null,null,null,{"id":9,"t":"k","c":"w"},null,null,null,{"id":16,"t":"p","c":"w"},null,null,null,
+        null,null,null,null,{"id":31,"t":"p","c":"b"},null,null,null,null,null,null,null,null,null,null,null,
+        {"id":26,"t":"k","c":"b"},null,null,null,null,null,null,null,null,null,null,null,null
+      ],
+      "turn": "w",
+      "castling": 0,
+      "ep": -1,
+      "halfmove": 100,
+      "fullmove": 128
+    },
+    "effects": [
+      {
+        "id": 2,
+        "card": "ice_wall",
+        "caster": "b",
+        "countsOn": "b",
+        "remaining": 0,
+        "total": 0,
+        "skin": "skin:arcane",
+        "global": true,
+        "permanent": true,
+        "square": 25
+      }
+    ],
+    "hands": {
+      "w": [{"card":"hourglass","used":true},{"card":"rift","used":true},{"card":"blast","used":true}],
+      "b": [{"card":"rift","used":true},{"card":"tide","used":true},{"card":"ice_wall","used":true}]
+    },
+    "cardPlayed": false,
+    "captured": {
+      "w": ["b","p","q","p","p","p","n","r","p","n","r","p","b","p"],
+      "b": ["r","p","p","p","p","q","n","b","n","p","b","p","r","p"]
+    },
+    "nextPieceId": 33,
+    "nextEffectId": 6,
+    "ply": 254,
+    "log": [
+      {"k":"move","c":"w","san":"e3","from":12,"to":20},
+      {"k":"move","c":"b","san":"g6","from":54,"to":46},
+      {"k":"card","c":"w","card":"hourglass","targets":[]},
+      {"k":"move","c":"w","san":"Nc3","from":1,"to":18},
+      {"k":"card","c":"b","card":"ice_wall","targets":[25]},
+      {"k":"move","c":"b","san":"h6","from":55,"to":47},
+      {"k":"move","c":"w","san":"g4","from":14,"to":30},
+      {"k":"move","c":"b","san":"g5","from":46,"to":38},
+      {"k":"card","c":"w","card":"rift","targets":[25]},
+      {"k":"move","c":"w","san":"a3","from":8,"to":16},
+      {"k":"move","c":"b","san":"a5","from":48,"to":32},
+      {"k":"card","c":"w","card":"blast","targets":[]},
+      {"k":"move","c":"w","san":"Qf3","from":3,"to":21},
+      {"k":"move","c":"b","san":"Ra6","from":56,"to":40},
+      {"k":"move","c":"w","san":"Bxa6*","from":5,"to":40},
+      {"k":"move","c":"b","san":"f5","from":53,"to":37},
+      {"k":"move","c":"w","san":"Na4","from":18,"to":24},
+      {"k":"move","c":"b","san":"fxg4*","from":37,"to":30},
+      {"k":"move","c":"w","san":"Qe4","from":21,"to":28},
+      {"k":"move","c":"b","san":"h5","from":47,"to":39},
+      {"k":"move","c":"w","san":"Qxb7","from":28,"to":49},
+      {"k":"move","c":"b","san":"Bxb7","from":58,"to":49},
+      {"k":"move","c":"w","san":"c4","from":10,"to":26},
+      {"k":"card","c":"b","card":"rift","targets":[30]},
+      {"k":"move","c":"b","san":"d5","from":51,"to":35},
+      {"k":"move","c":"w","san":"cxd5","from":26,"to":35},
+      {"k":"card","c":"b","card":"tide","targets":[]},
+      {"k":"move","c":"w","san":"Kd1","from":4,"to":3},
+      {"k":"move","c":"b","san":"Bxd6","from":61,"to":43},
+      {"k":"move","c":"w","san":"f4","from":21,"to":29},
+      {"k":"move","c":"b","san":"Qf6","from":59,"to":45},
+      {"k":"move","c":"w","san":"fxg5","from":29,"to":38},
+      {"k":"move","c":"b","san":"Rh7","from":63,"to":55},
+      {"k":"move","c":"w","san":"gxf6","from":38,"to":45},
+      {"k":"move","c":"b","san":"Nxf6","from":62,"to":45},
+      {"k":"move","c":"w","san":"e4","from":20,"to":28},
+      {"k":"move","c":"b","san":"Nxe4","from":45,"to":28},
+      {"k":"move","c":"w","san":"dxe4","from":19,"to":28},
+      {"k":"move","c":"b","san":"Bc7","from":43,"to":50},
+      {"k":"move","c":"w","san":"Bg5","from":2,"to":38},
+      {"k":"move","c":"b","san":"Ba6","from":49,"to":40},
+      {"k":"move","c":"w","san":"Rh2","from":7,"to":15},
+      {"k":"move","c":"b","san":"Bg3","from":50,"to":22},
+      {"k":"move","c":"w","san":"Rha2","from":15,"to":8},
+      {"k":"move","c":"b","san":"Bc7","from":22,"to":50},
+      {"k":"move","c":"w","san":"Ne2","from":6,"to":12},
+      {"k":"move","c":"b","san":"Bxe2+","from":40,"to":12},
+      {"k":"move","c":"w","san":"Rxe2","from":8,"to":12},
+      {"k":"move","c":"b","san":"Kf8","from":60,"to":61},
+      {"k":"move","c":"w","san":"Ke1","from":3,"to":4},
+      {"k":"move","c":"b","san":"Nd7","from":57,"to":51},
+      {"k":"move","c":"w","san":"Rg2","from":12,"to":14},
+      {"k":"move","c":"b","san":"Nf6","from":51,"to":45},
+      {"k":"move","c":"w","san":"Bxf6","from":38,"to":45},
+      {"k":"move","c":"b","san":"Rd7","from":55,"to":51},
+      {"k":"move","c":"w","san":"Rd2","from":14,"to":11},
+      {"k":"move","c":"b","san":"Bb8","from":50,"to":57},
+      {"k":"move","c":"w","san":"Rc2","from":11,"to":10},
+      {"k":"move","c":"b","san":"Ba7","from":57,"to":48},
+      {"k":"move","c":"w","san":"Rxc6","from":10,"to":42},
+      {"k":"move","c":"b","san":"Bf2+","from":48,"to":13},
+      {"k":"move","c":"w","san":"Kxf2","from":4,"to":13},
+      {"k":"move","c":"b","san":"Rd8","from":51,"to":59},
+      {"k":"move","c":"w","san":"Bg5","from":45,"to":38},
+      {"k":"move","c":"b","san":"Rd1","from":59,"to":3},
+      {"k":"move","c":"w","san":"e5","from":28,"to":36},
+      {"k":"move","c":"b","san":"Rxa1","from":3,"to":0},
+      {"k":"move","c":"w","san":"Rxe6","from":42,"to":44},
+      {"k":"move","c":"b","san":"Rxa3","from":0,"to":16},
+      {"k":"move","c":"w","san":"Be3","from":38,"to":20},
+      {"k":"move","c":"b","san":"Rxa4","from":16,"to":24},
+      {"k":"move","c":"w","san":"bxa4","from":17,"to":24},
+      {"k":"move","c":"b","san":"Kf7","from":61,"to":53},
+      {"k":"move","c":"w","san":"Ba7","from":20,"to":48},
+      {"k":"move","c":"b","san":"Kg7","from":53,"to":54},
+      {"k":"move","c":"w","san":"Ke1","from":13,"to":4},
+      {"k":"move","c":"b","san":"Kg8","from":54,"to":62},
+      {"k":"move","c":"w","san":"Bb6","from":48,"to":41},
+      {"k":"move","c":"b","san":"Kf8","from":62,"to":61},
+      {"k":"move","c":"w","san":"Bxa5","from":41,"to":32},
+      {"k":"move","c":"b","san":"Kf7","from":61,"to":53},
+      {"k":"move","c":"w","san":"Re7+","from":44,"to":52},
+      {"k":"move","c":"b","san":"Kxe7","from":53,"to":52},
+      {"k":"move","c":"w","san":"Kd2","from":4,"to":11},
+      {"k":"move","c":"b","san":"Ke8","from":52,"to":60},
+      {"k":"move","c":"w","san":"Kc1","from":11,"to":2},
+      {"k":"move","c":"b","san":"Kf7","from":60,"to":53},
+      {"k":"move","c":"w","san":"h4","from":23,"to":31},
+      {"k":"move","c":"b","san":"Kg8","from":53,"to":62},
+      {"k":"move","c":"w","san":"Kb2","from":2,"to":9},
+      {"k":"move","c":"b","san":"Kg7","from":62,"to":54},
+      {"k":"move","c":"w","san":"Kc2","from":9,"to":10},
+      {"k":"move","c":"b","san":"Kh6","from":54,"to":47},
+      {"k":"move","c":"w","san":"Kc3","from":10,"to":18},
+      {"k":"move","c":"b","san":"Kg6","from":47,"to":46},
+      {"k":"move","c":"w","san":"Kc2","from":18,"to":10},
+      {"k":"move","c":"b","san":"Kg7","from":46,"to":54},
+      {"k":"move","c":"w","san":"e6","from":36,"to":44},
+      {"k":"move","c":"b","san":"Kf6","from":54,"to":45},
+      {"k":"move","c":"w","san":"Kd1","from":10,"to":3},
+      {"k":"move","c":"b","san":"Kxe6","from":45,"to":44},
+      {"k":"move","c":"w","san":"Bd8","from":32,"to":59},
+      {"k":"move","c":"b","san":"Kf5","from":44,"to":37},
+      {"k":"move","c":"w","san":"Bg5","from":59,"to":38},
+      {"k":"move","c":"b","san":"Kg6","from":37,"to":46},
+      {"k":"move","c":"w","san":"a5","from":24,"to":32},
+      {"k":"move","c":"b","san":"Kg7","from":46,"to":54},
+      {"k":"move","c":"w","san":"Bc1","from":38,"to":2},
+      {"k":"move","c":"b","san":"Kf8","from":54,"to":61},
+      {"k":"move","c":"w","san":"Bh6+","from":2,"to":47},
+      {"k":"move","c":"b","san":"Ke8","from":61,"to":60},
+      {"k":"move","c":"w","san":"Bd2","from":47,"to":11},
+      {"k":"move","c":"b","san":"Kf7","from":60,"to":53},
+      {"k":"move","c":"w","san":"Kc1","from":3,"to":2},
+      {"k":"move","c":"b","san":"Kf8","from":53,"to":61},
+      {"k":"move","c":"w","san":"Bg5","from":11,"to":38},
+      {"k":"move","c":"b","san":"Kf7","from":61,"to":53},
+      {"k":"move","c":"w","san":"Be7","from":38,"to":52},
+      {"k":"move","c":"b","san":"Kxe7","from":53,"to":52},
+      {"k":"move","c":"w","san":"a6","from":32,"to":40},
+      {"k":"move","c":"b","san":"Kf7","from":52,"to":53},
+      {"k":"move","c":"w","san":"Kd1","from":2,"to":3},
+      {"k":"move","c":"b","san":"Kf6","from":53,"to":45},
+      {"k":"move","c":"w","san":"Kd2","from":3,"to":11},
+      {"k":"move","c":"b","san":"Kg6","from":45,"to":46},
+      {"k":"move","c":"w","san":"Ke3","from":11,"to":20},
+      {"k":"move","c":"b","san":"Kg7","from":46,"to":54},
+      {"k":"move","c":"w","san":"Kf2","from":20,"to":13},
+      {"k":"move","c":"b","san":"Kg8","from":54,"to":62},
+      {"k":"move","c":"w","san":"Kg3","from":13,"to":22},
+      {"k":"move","c":"b","san":"Kh8","from":62,"to":63},
+      {"k":"move","c":"w","san":"Kf2","from":22,"to":13},
+      {"k":"move","c":"b","san":"Kh7","from":63,"to":55},
+      {"k":"move","c":"w","san":"Kg1","from":13,"to":6},
+      {"k":"move","c":"b","san":"Kg7","from":55,"to":54},
+      {"k":"move","c":"w","san":"Kf2","from":6,"to":13},
+      {"k":"move","c":"b","san":"Kf7","from":54,"to":53},
+      {"k":"move","c":"w","san":"Kf3","from":13,"to":21},
+      {"k":"move","c":"b","san":"Ke8","from":53,"to":60},
+      {"k":"move","c":"w","san":"Kf4","from":21,"to":29},
+      {"k":"move","c":"b","san":"Ke7","from":60,"to":52},
+      {"k":"move","c":"w","san":"Ke4","from":29,"to":28},
+      {"k":"move","c":"b","san":"Ke6","from":52,"to":44},
+      {"k":"move","c":"w","san":"Kd4","from":28,"to":27},
+      {"k":"move","c":"b","san":"Kd7","from":44,"to":51},
+      {"k":"move","c":"w","san":"Ke4","from":27,"to":28},
+      {"k":"move","c":"b","san":"Kc8","from":51,"to":58},
+      {"k":"move","c":"w","san":"Kf5","from":28,"to":37},
+      {"k":"move","c":"b","san":"Kd8","from":58,"to":59},
+      {"k":"move","c":"w","san":"Kf4","from":37,"to":29},
+      {"k":"move","c":"b","san":"Kc8","from":59,"to":58},
+      {"k":"move","c":"w","san":"Ke5","from":29,"to":36},
+      {"k":"move","c":"b","san":"Kc7","from":58,"to":50},
+      {"k":"move","c":"w","san":"Kf4","from":36,"to":29},
+      {"k":"move","c":"b","san":"Kb8","from":50,"to":57},
+      {"k":"move","c":"w","san":"Ke3","from":29,"to":20},
+      {"k":"move","c":"b","san":"Ka7","from":57,"to":48},
+      {"k":"move","c":"w","san":"Ke4","from":20,"to":28},
+      {"k":"move","c":"b","san":"Kxa6","from":48,"to":40},
+      {"k":"move","c":"w","san":"Ke5","from":28,"to":36},
+      {"k":"move","c":"b","san":"Kb7","from":40,"to":49},
+      {"k":"move","c":"w","san":"Ke6","from":36,"to":44},
+      {"k":"move","c":"b","san":"Kb6","from":49,"to":41},
+      {"k":"move","c":"w","san":"Kd5","from":44,"to":35},
+      {"k":"move","c":"b","san":"Ka5","from":41,"to":32},
+      {"k":"move","c":"w","san":"Kc4","from":35,"to":26},
+      {"k":"move","c":"b","san":"Ka6","from":32,"to":40},
+      {"k":"move","c":"w","san":"Kc5","from":26,"to":34},
+      {"k":"move","c":"b","san":"Kb7","from":40,"to":49},
+      {"k":"move","c":"w","san":"Kb5","from":34,"to":33},
+      {"k":"move","c":"b","san":"Ka8","from":49,"to":56},
+      {"k":"move","c":"w","san":"Kc4","from":33,"to":26},
+      {"k":"move","c":"b","san":"Ka7","from":56,"to":48},
+      {"k":"move","c":"w","san":"Kd5","from":26,"to":35},
+      {"k":"move","c":"b","san":"Ka6","from":48,"to":40},
+      {"k":"move","c":"w","san":"Kd6","from":35,"to":43},
+      {"k":"move","c":"b","san":"Kb5","from":40,"to":33},
+      {"k":"move","c":"w","san":"Kd5","from":43,"to":35},
+      {"k":"move","c":"b","san":"Ka5","from":33,"to":32},
+      {"k":"move","c":"w","san":"Kc4","from":35,"to":26},
+      {"k":"move","c":"b","san":"Ka6","from":32,"to":40},
+      {"k":"move","c":"w","san":"Kc5","from":26,"to":34},
+      {"k":"move","c":"b","san":"Ka7","from":40,"to":48},
+      {"k":"move","c":"w","san":"Kd6","from":34,"to":43},
+      {"k":"move","c":"b","san":"Kb6","from":48,"to":41},
+      {"k":"move","c":"w","san":"Ke7","from":43,"to":52},
+      {"k":"move","c":"b","san":"Ka5","from":41,"to":32},
+      {"k":"move","c":"w","san":"Ke6","from":52,"to":44},
+      {"k":"move","c":"b","san":"Kb5","from":32,"to":33},
+      {"k":"move","c":"w","san":"Ke5","from":44,"to":36},
+      {"k":"move","c":"b","san":"Kb6","from":33,"to":41},
+      {"k":"move","c":"w","san":"Kd4","from":36,"to":27},
+      {"k":"move","c":"b","san":"Kb7","from":41,"to":49},
+      {"k":"move","c":"w","san":"Kc4","from":27,"to":26},
+      {"k":"move","c":"b","san":"Ka7","from":49,"to":48},
+      {"k":"move","c":"w","san":"Kb3","from":26,"to":17},
+      {"k":"move","c":"b","san":"Ka6","from":48,"to":40},
+      {"k":"move","c":"w","san":"Kc2","from":17,"to":10},
+      {"k":"move","c":"b","san":"Kb5","from":40,"to":33},
+      {"k":"move","c":"w","san":"Kb3","from":10,"to":17},
+      {"k":"move","c":"b","san":"Kb6","from":33,"to":41},
+      {"k":"move","c":"w","san":"Kc4","from":17,"to":26},
+      {"k":"move","c":"b","san":"Kc6","from":41,"to":42},
+      {"k":"move","c":"w","san":"Kd3","from":26,"to":19},
+      {"k":"move","c":"b","san":"Kc7","from":42,"to":50},
+      {"k":"move","c":"w","san":"Kc4","from":19,"to":26},
+      {"k":"move","c":"b","san":"Kb6","from":50,"to":41},
+      {"k":"move","c":"w","san":"Kb3","from":26,"to":17},
+      {"k":"move","c":"b","san":"Ka6","from":41,"to":40},
+      {"k":"move","c":"w","san":"Ka4","from":17,"to":24},
+      {"k":"move","c":"b","san":"Kb6","from":40,"to":41},
+      {"k":"move","c":"w","san":"Ka3","from":24,"to":16},
+      {"k":"move","c":"b","san":"Ka7","from":41,"to":48},
+      {"k":"move","c":"w","san":"Kb2","from":16,"to":9},
+      {"k":"move","c":"b","san":"Kb8","from":48,"to":57},
+      {"k":"move","c":"w","san":"Kc3","from":9,"to":18},
+      {"k":"move","c":"b","san":"Ka8","from":57,"to":56},
+      {"k":"move","c":"w","san":"Kb2","from":18,"to":9},
+      {"k":"move","c":"b","san":"Ka7","from":56,"to":48},
+      {"k":"move","c":"w","san":"Ka3","from":9,"to":16},
+      {"k":"move","c":"b","san":"Kb7","from":48,"to":49},
+      {"k":"move","c":"w","san":"Kb2","from":16,"to":9},
+      {"k":"move","c":"b","san":"Kc8","from":49,"to":58},
+      {"k":"move","c":"w","san":"Kc1","from":9,"to":2},
+      {"k":"move","c":"b","san":"Kd8","from":58,"to":59},
+      {"k":"move","c":"w","san":"Kc2","from":2,"to":10},
+      {"k":"move","c":"b","san":"Ke7","from":59,"to":52},
+      {"k":"move","c":"w","san":"Kc3","from":10,"to":18},
+      {"k":"move","c":"b","san":"Kf7","from":52,"to":53},
+      {"k":"move","c":"w","san":"Kd4","from":18,"to":27},
+      {"k":"move","c":"b","san":"Kg6","from":53,"to":46},
+      {"k":"move","c":"w","san":"Ke4","from":27,"to":28},
+      {"k":"move","c":"b","san":"Kf6","from":46,"to":45},
+      {"k":"move","c":"w","san":"Kf3","from":28,"to":21},
+      {"k":"move","c":"b","san":"Kg6","from":45,"to":46},
+      {"k":"move","c":"w","san":"Kf4","from":21,"to":29},
+      {"k":"move","c":"b","san":"Kf7","from":46,"to":53},
+      {"k":"move","c":"w","san":"Kg3","from":29,"to":22},
+      {"k":"move","c":"b","san":"Kf8","from":53,"to":61},
+      {"k":"move","c":"w","san":"Kg2","from":22,"to":14},
+      {"k":"move","c":"b","san":"Kg8","from":61,"to":62},
+      {"k":"move","c":"w","san":"Kh2","from":14,"to":15},
+      {"k":"move","c":"b","san":"Kf8","from":62,"to":61},
+      {"k":"move","c":"w","san":"Kg3","from":15,"to":22},
+      {"k":"move","c":"b","san":"Kg8","from":61,"to":62},
+      {"k":"move","c":"w","san":"Kf4","from":22,"to":29},
+      {"k":"move","c":"b","san":"Kh8","from":62,"to":63},
+      {"k":"move","c":"w","san":"Kf3","from":29,"to":21},
+      {"k":"move","c":"b","san":"Kg8","from":63,"to":62},
+      {"k":"move","c":"w","san":"Ke3","from":21,"to":20},
+      {"k":"move","c":"b","san":"Kf7","from":62,"to":53},
+      {"k":"move","c":"w","san":"Ke4","from":20,"to":28},
+      {"k":"move","c":"b","san":"Ke8","from":53,"to":60},
+      {"k":"move","c":"w","san":"Kd5","from":28,"to":35},
+      {"k":"move","c":"b","san":"Kd7","from":60,"to":51},
+      {"k":"move","c":"w","san":"Kc4","from":35,"to":26},
+      {"k":"move","c":"b","san":"Kc7","from":51,"to":50},
+      {"k":"move","c":"w","san":"Kd4","from":26,"to":27},
+      {"k":"move","c":"b","san":"Kd7","from":50,"to":51}
+    ],
+    "keys": [
+      "RNBQKBNRPPPPPPPP................................pppppppprnbqkbnrw15:-1|000000",
+      "RNBQKBNRPPPP.PPP....P...........................pppppppprnbqkbnrb15:-1|000000",
+      "RNBQKBNRPPPP.PPP....P.........................p.pppppp.prnbqkbnrw15:-1|000000",
+      "R.BQKBNRPPPP.PPP..N.P.........................p.pppppp.prnbqkbnrb15:-1|hourglassw6::d1|100000",
+      "R.BQKBNRPPPP.PPP..N.P.........................pppppppp..rnbqkbnrw15:-1|hourglassw6::|ice_wallb0:25:|100001",
+      "R.BQKBNRPPPP.P.P..N.P.........P...............pppppppp..rnbqkbnrb15:22|hourglassw5::|ice_wallb0:25:|100001",
+      "R.BQKBNRPPPP.P.P..N.P.........P.......p........ppppppp..rnbqkbnrw15:-1|hourglassw4::|ice_wallb0:25:|100001",
+      "R.BQKBNR.PPP.P.PP.N.P.........P.......p........ppppppp..rnbqkbnrb15:-1|hourglassw3::|ice_wallb0:25:|riftw3::s24,26,27,28,29,31|110001",
+      "R.BQKBNR.PPP.P.PP.N.P.........P.p.....p........p.ppppp..rnbqkbnrw15:40|hourglassw2::|ice_wallb0:25:|riftw2::s24,26,27,28,29,31|110001",
+      "R.B.KBNR.PPP.P.PP.N.PQ........P.p.....p........p.ppppp..rnbqkbnrb15:-1|hourglassw1::|ice_wallb0:25:|riftw1::s24,26,27,28,29,31|blastw4::d1|111001",
+      "R.B.KBNR.PPP.P.PP.N.PQ........P.p.....p.r......p.ppppp...nbqkbnrw7:-1|ice_wallb0:25:|blastw4::|111001",
+      "R.B.K.NR.PPP.P.PP.N.PQ........P.p.....p........p.ppppp...nbqkbnrb7:-1|ice_wallb0:25:|blastw3::|111001",
+      "R.B.K.NR.PPP.P.PP.N.PQ........P.p....pp........p.pppp....nbqkbnrw7:45|ice_wallb0:25:|blastw2::|111001",
+      "R.B.K.NR.PPP.P.PP...PQ..N.....P.p....pp........p.pppp....nbqkbnrb7:-1|ice_wallb0:25:|blastw1::|111001",
+      "R.B.K.NR.PPP.P.PP...PQ..N.......p.....p........p.pppp....nbqkbnrw7:-1|ice_wallb0:25:|111001",
+      "R.B.K.NR.PPP.P.PP...P...N...Q...p.....p........p.pppp....nbqkbnrb7:-1|ice_wallb0:25:|111001",
+      "R.B.K.NR.PPP.P.PP...P...N...Q...p.....pp.........pppp....nbqkbnrw7:-1|ice_wallb0:25:|111001",
+      "R.B.K.NR.PPP.P.PP...P...N.......p.....pp.........Qppp....nbqkbnrb7:-1|ice_wallb0:25:|111001",
+      "R.B.K.NR.PPP.P.PP...P...N.......p.....pp.........bppp....n.qkbnrw7:-1|ice_wallb0:25:|111001",
+      "R.B.K.NR.P.P.P.PP...P...N.P.....p.....pp.........bppp....n.qkbnrb7:18|ice_wallb0:25:|111001",
+      "R.B.K.NR.P.P.P.PP...P...N.P.....p..p..pp.........bp.p....n.qkbnrw7:43|ice_wallb0:25:|riftb3::s27,28,29,30,31|111101",
+      "R.B.K.NR.P.P.P.PP...P...N.......p..P..pp.........bp.p....n.qkbnrb7:-1|ice_wallb0:25:|riftb2::s27,28,29,30,31|111101",
+      "R.B.K.NR........PP.PPP.PN.......p.....pp..pPp....b.......n.qkbnrw7:-1|ice_wallb0:25:|riftb1::s27,28,29,30,31|111111",
+      "R.BK..NR........PP.PPP.PN.......p.....pp..pPp....b.......n.qkbnrb4:-1|ice_wallb0:25:|111111",
+      "R.BK..NR........PP.PPP.PN.......p.....pp..pbp....b.......n.qk.nrw4:-1|ice_wallb0:25:|111111",
+      "R.BK..NR........PP.PP..PN....P..p.....pp..pbp....b.......n.qk.nrb4:-1|ice_wallb0:25:|111111",
+      "R.BK..NR........PP.PP..PN....P..p.....pp..pbpq...b.......n..k.nrw4:-1|ice_wallb0:25:|111111",
+      "R.BK..NR........PP.PP..PN.......p.....Pp..pbpq...b.......n..k.nrb4:-1|ice_wallb0:25:|111111",
+      "R.BK..NR........PP.PP..PN.......p.....Pp..pbpq...b.....r.n..k.n.w0:-1|ice_wallb0:25:|111111",
+      "R.BK..NR........PP.PP..PN.......p......p..pbpP...b.....r.n..k.n.b0:-1|ice_wallb0:25:|111111",
+      "R.BK..NR........PP.PP..PN.......p......p..pbpn...b.....r.n..k...w0:-1|ice_wallb0:25:|111111",
+      "R.BK..NR........PP.P...PN...P...p......p..pbpn...b.....r.n..k...b0:-1|ice_wallb0:25:|111111",
+      "R.BK..NR........PP.P...PN...n...p......p..pbp....b.....r.n..k...w0:-1|ice_wallb0:25:|111111",
+      "R.BK..NR........PP.....PN...P...p......p..pbp....b.....r.n..k...b0:-1|ice_wallb0:25:|111111",
+      "R.BK..NR........PP.....PN...P...p......p..p.p....bb....r.n..k...w0:-1|ice_wallb0:25:|111111",
+      "R..K..NR........PP.....PN...P...p.....Bp..p.p....bb....r.n..k...b0:-1|ice_wallb0:25:|111111",
+      "R..K..NR........PP.....PN...P...p.....Bpb.p.p.....b....r.n..k...w0:-1|ice_wallb0:25:|111111",
+      "R..K..N........RPP.....PN...P...p.....Bpb.p.p.....b....r.n..k...b0:-1|ice_wallb0:25:|111111",
+      "R..K..N........RPP....bPN...P...p.....Bpb.p.p..........r.n..k...w0:-1|ice_wallb0:25:|111111",
+      "R..K..N.R.......PP....bPN...P...p.....Bpb.p.p..........r.n..k...b0:-1|ice_wallb0:25:|111111",
+      "R..K..N.R.......PP.....PN...P...p.....Bpb.p.p.....b....r.n..k...w0:-1|ice_wallb0:25:|111111",
+      "R..K....R...N...PP.....PN...P...p.....Bpb.p.p.....b....r.n..k...b0:-1|ice_wallb0:25:|111111",
+      "R..K....R...b...PP.....PN...P...p.....Bp..p.p.....b....r.n..k...w0:-1|ice_wallb0:25:|111111",
+      "R..K........R...PP.....PN...P...p.....Bp..p.p.....b....r.n..k...b0:-1|ice_wallb0:25:|111111",
+      "R..K........R...PP.....PN...P...p.....Bp..p.p.....b....r.n...k..w0:-1|ice_wallb0:25:|111111",
+      "R...K.......R...PP.....PN...P...p.....Bp..p.p.....b....r.n...k..b0:-1|ice_wallb0:25:|111111",
+      "R...K.......R...PP.....PN...P...p.....Bp..p.p.....bn...r.....k..w0:-1|ice_wallb0:25:|111111",
+      "R...K.........R.PP.....PN...P...p.....Bp..p.p.....bn...r.....k..b0:-1|ice_wallb0:25:|111111",
+      "R...K.........R.PP.....PN...P...p.....Bp..p.pn....b....r.....k..w0:-1|ice_wallb0:25:|111111",
+      "R...K.........R.PP.....PN...P...p......p..p.pB....b....r.....k..b0:-1|ice_wallb0:25:|111111",
+      "R...K.........R.PP.....PN...P...p......p..p.pB....br.........k..w0:-1|ice_wallb0:25:|111111",
+      "R...K......R....PP.....PN...P...p......p..p.pB....br.........k..b0:-1|ice_wallb0:25:|111111",
+      "R...K......R....PP.....PN...P...p......p..p.pB.....r.....b...k..w0:-1|ice_wallb0:25:|111111",
+      "R...K.....R.....PP.....PN...P...p......p..p.pB.....r.....b...k..b0:-1|ice_wallb0:25:|111111",
+      "R...K.....R.....PP.....PN...P...p......p..p.pB..b..r.........k..w0:-1|ice_wallb0:25:|111111",
+      "R...K...........PP.....PN...P...p......p..R.pB..b..r.........k..b0:-1|ice_wallb0:25:|111111",
+      "R...K........b..PP.....PN...P...p......p..R.pB.....r.........k..w0:-1|ice_wallb0:25:|111111",
+      "R............K..PP.....PN...P...p......p..R.pB.....r.........k..b0:-1|ice_wallb0:25:|111111",
+      "R............K..PP.....PN...P...p......p..R.pB.............r.k..w0:-1|ice_wallb0:25:|111111",
+      "R............K..PP.....PN...P...p.....Bp..R.p..............r.k..b0:-1|ice_wallb0:25:|111111",
+      "R..r.........K..PP.....PN...P...p.....Bp..R.p................k..w0:-1|ice_wallb0:25:|111111",
+      "R..r.........K..PP.....PN.......p...P.Bp..R.p................k..b0:-1|ice_wallb0:25:|111111",
+      "r............K..PP.....PN.......p...P.Bp..R.p................k..w0:-1|ice_wallb0:25:|111111",
+      "r............K..PP.....PN.......p...P.Bp....R................k..b0:-1|ice_wallb0:25:|111111",
+      ".............K..rP.....PN.......p...P.Bp....R................k..w0:-1|ice_wallb0:25:|111111",
+      ".............K..rP..B..PN.......p...P..p....R................k..b0:-1|ice_wallb0:25:|111111",
+      ".............K...P..B..Pr.......p...P..p....R................k..w0:-1|ice_wallb0:25:|111111",
+      ".............K......B..PP.......p...P..p....R................k..b0:-1|ice_wallb0:25:|111111",
+      ".............K......B..PP.......p...P..p....R........k..........w0:-1|ice_wallb0:25:|111111",
+      ".............K.........PP.......p...P..p....R...B....k..........b0:-1|ice_wallb0:25:|111111",
+      ".............K.........PP.......p...P..p....R...B.....k.........w0:-1|ice_wallb0:25:|111111",
+      "....K..................PP.......p...P..p....R...B.....k.........b0:-1|ice_wallb0:25:|111111",
+      "....K..................PP.......p...P..p....R...B.............k.w0:-1|ice_wallb0:25:|111111",
+      "....K..................PP.......p...P..p.B..R.................k.b0:-1|ice_wallb0:25:|111111",
+      "....K..................PP.......p...P..p.B..R................k..w0:-1|ice_wallb0:25:|111111",
+      "....K..................PP.......B...P..p....R................k..b0:-1|ice_wallb0:25:|111111",
+      "....K..................PP.......B...P..p....R........k..........w0:-1|ice_wallb0:25:|111111",
+      "....K..................PP.......B...P..p............Rk..........b0:-1|ice_wallb0:25:|111111",
+      "....K..................PP.......B...P..p............k...........w0:-1|ice_wallb0:25:|111111",
+      "...........K...........PP.......B...P..p............k...........b0:-1|ice_wallb0:25:|111111",
+      "...........K...........PP.......B...P..p....................k...w0:-1|ice_wallb0:25:|111111",
+      "..K....................PP.......B...P..p....................k...b0:-1|ice_wallb0:25:|111111",
+      "..K....................PP.......B...P..p.............k..........w0:-1|ice_wallb0:25:|111111",
+      "..K.....................P......PB...P..p.............k..........b0:-1|ice_wallb0:25:|111111",
+      "..K.....................P......PB...P..p......................k.w0:-1|ice_wallb0:25:|111111",
+      ".........K..............P......PB...P..p......................k.b0:-1|ice_wallb0:25:|111111",
+      ".........K..............P......PB...P..p..............k.........w0:-1|ice_wallb0:25:|111111",
+      "..........K.............P......PB...P..p..............k.........b0:-1|ice_wallb0:25:|111111",
+      "..........K.............P......PB...P..p.......k................w0:-1|ice_wallb0:25:|111111",
+      "..................K.....P......PB...P..p.......k................b0:-1|ice_wallb0:25:|111111",
+      "..................K.....P......PB...P..p......k.................w0:-1|ice_wallb0:25:|111111",
+      "..........K.............P......PB...P..p......k.................b0:-1|ice_wallb0:25:|111111",
+      "..........K.............P......PB...P..p..............k.........w0:-1|ice_wallb0:25:|111111",
+      "..........K.............P......PB......p....P.........k.........b0:-1|ice_wallb0:25:|111111",
+      "..........K.............P......PB......p....Pk..................w0:-1|ice_wallb0:25:|111111",
+      "...K....................P......PB......p....Pk..................b0:-1|ice_wallb0:25:|111111",
+      "...K....................P......PB......p....k...................w0:-1|ice_wallb0:25:|111111",
+      "...K....................P......P.......p....k..............B....b0:-1|ice_wallb0:25:|111111",
+      "...K....................P......P.....k.p...................B....w0:-1|ice_wallb0:25:|111111",
+      "...K....................P......P.....kBp........................b0:-1|ice_wallb0:25:|111111",
+      "...K....................P......P......Bp......k.................w0:-1|ice_wallb0:25:|111111",
+      "...K...........................PP.....Bp......k.................b0:-1|ice_wallb0:25:|111111",
+      "...K...........................PP.....Bp..............k.........w0:-1|ice_wallb0:25:|111111",
+      "..BK...........................PP......p..............k.........b0:-1|ice_wallb0:25:|111111",
+      "..BK...........................PP......p.....................k..w0:-1|ice_wallb0:25:|111111",
+      "...K...........................PP......p.......B.............k..b0:-1|ice_wallb0:25:|111111",
+      "...K...........................PP......p.......B............k...w0:-1|ice_wallb0:25:|111111",
+      "...K.......B...................PP......p....................k...b0:-1|ice_wallb0:25:|111111",
+      "...K.......B...................PP......p.............k..........w0:-1|ice_wallb0:25:|111111",
+      "..K........B...................PP......p.............k..........b0:-1|ice_wallb0:25:|111111",
+      "..K........B...................PP......p.....................k..w0:-1|ice_wallb0:25:|111111",
+      "..K............................PP.....Bp.....................k..b0:-1|ice_wallb0:25:|111111",
+      "..K............................PP.....Bp.............k..........w0:-1|ice_wallb0:25:|111111",
+      "..K............................PP......p............Bk..........b0:-1|ice_wallb0:25:|111111",
+      "..K............................PP......p............k...........w0:-1|ice_wallb0:25:|111111",
+      "..K............................P.......pP...........k...........b0:-1|ice_wallb0:25:|111111",
+      "..K............................P.......pP............k..........w0:-1|ice_wallb0:25:|111111",
+      "...K...........................P.......pP............k..........b0:-1|ice_wallb0:25:|111111",
+      "...K...........................P.......pP....k..................w0:-1|ice_wallb0:25:|111111",
+      "...........K...................P.......pP....k..................b0:-1|ice_wallb0:25:|111111",
+      "...........K...................P.......pP.....k.................w0:-1|ice_wallb0:25:|111111",
+      "....................K..........P.......pP.....k.................b0:-1|ice_wallb0:25:|111111",
+      "....................K..........P.......pP.............k.........w0:-1|ice_wallb0:25:|111111",
+      ".............K.................P.......pP.............k.........b0:-1|ice_wallb0:25:|111111",
+      ".............K.................P.......pP.....................k.w0:-1|ice_wallb0:25:|111111",
+      "......................K........P.......pP.....................k.b0:-1|ice_wallb0:25:|111111",
+      "......................K........P.......pP......................kw0:-1|ice_wallb0:25:|111111",
+      ".............K.................P.......pP......................kb0:-1|ice_wallb0:25:|111111",
+      ".............K.................P.......pP..............k........w0:-1|ice_wallb0:25:|111111",
+      "......K........................P.......pP..............k........b0:-1|ice_wallb0:25:|111111",
+      "......K........................P.......pP.............k.........w0:-1|ice_wallb0:25:|111111",
+      ".............K.................P.......pP.............k.........b0:-1|ice_wallb0:25:|111111",
+      ".............K.................P.......pP............k..........w0:-1|ice_wallb0:25:|111111",
+      ".....................K.........P.......pP............k..........b0:-1|ice_wallb0:25:|111111",
+      ".....................K.........P.......pP...................k...w0:-1|ice_wallb0:25:|111111",
+      ".............................K.P.......pP...................k...b0:-1|ice_wallb0:25:|111111",
+      ".............................K.P.......pP...........k...........w0:-1|ice_wallb0:25:|111111",
+      "............................K..P.......pP...........k...........b0:-1|ice_wallb0:25:|111111",
+      "............................K..P.......pP...k...................w0:-1|ice_wallb0:25:|111111",
+      "...........................K...P.......pP...k...................b0:-1|ice_wallb0:25:|111111",
+      "...........................K...P.......pP..........k............w0:-1|ice_wallb0:25:|111111",
+      "............................K..P.......pP..........k............b0:-1|ice_wallb0:25:|111111",
+      "............................K..P.......pP.................k.....w0:-1|ice_wallb0:25:|111111",
+      "...............................P.....K.pP.................k.....b0:-1|ice_wallb0:25:|111111",
+      "...............................P.....K.pP..................k....w0:-1|ice_wallb0:25:|111111",
+      ".............................K.P.......pP..................k....b0:-1|ice_wallb0:25:|111111",
+      ".............................K.P.......pP.................k.....w0:-1|ice_wallb0:25:|111111",
+      "...............................P....K..pP.................k.....b0:-1|ice_wallb0:25:|111111",
+      "...............................P....K..pP.........k.............w0:-1|ice_wallb0:25:|111111",
+      ".............................K.P.......pP.........k.............b0:-1|ice_wallb0:25:|111111",
+      ".............................K.P.......pP................k......w0:-1|ice_wallb0:25:|111111",
+      "....................K..........P.......pP................k......b0:-1|ice_wallb0:25:|111111",
+      "....................K..........P.......pP.......k...............w0:-1|ice_wallb0:25:|111111",
+      "............................K..P.......pP.......k...............b0:-1|ice_wallb0:25:|111111",
+      "............................K..P.......pk.......................w0:-1|ice_wallb0:25:|111111",
+      "...............................P....K..pk.......................b0:-1|ice_wallb0:25:|111111",
+      "...............................P....K..p.........k..............w0:-1|ice_wallb0:25:|111111",
+      "...............................P.......p....K....k..............b0:-1|ice_wallb0:25:|111111",
+      "...............................P.......p.k..K...................w0:-1|ice_wallb0:25:|111111",
+      "...............................P...K...p.k......................b0:-1|ice_wallb0:25:|111111",
+      "...............................Pk..K...p........................w0:-1|ice_wallb0:25:|111111",
+      "..........................K....Pk......p........................b0:-1|ice_wallb0:25:|111111",
+      "..........................K....P.......pk.......................w0:-1|ice_wallb0:25:|111111",
+      "...............................P..K....pk.......................b0:-1|ice_wallb0:25:|111111",
+      "...............................P..K....p.........k..............w0:-1|ice_wallb0:25:|111111",
+      "...............................P.K.....p.........k..............b0:-1|ice_wallb0:25:|111111",
+      "...............................P.K.....p................k.......w0:-1|ice_wallb0:25:|111111",
+      "..........................K....P.......p................k.......b0:-1|ice_wallb0:25:|111111",
+      "..........................K....P.......p........k...............w0:-1|ice_wallb0:25:|111111",
+      "...............................P...K...p........k...............b0:-1|ice_wallb0:25:|111111",
+      "...............................P...K...pk.......................w0:-1|ice_wallb0:25:|111111",
+      "...............................P.......pk..K....................b0:-1|ice_wallb0:25:|111111",
+      "...............................P.k.....p...K....................w0:-1|ice_wallb0:25:|111111",
+      "...............................P.k.K...p........................b0:-1|ice_wallb0:25:|111111",
+      "...............................Pk..K...p........................w0:-1|ice_wallb0:25:|111111",
+      "..........................K....Pk......p........................b0:-1|ice_wallb0:25:|111111",
+      "..........................K....P.......pk.......................w0:-1|ice_wallb0:25:|111111",
+      "...............................P..K....pk.......................b0:-1|ice_wallb0:25:|111111",
+      "...............................P..K....p........k...............w0:-1|ice_wallb0:25:|111111",
+      "...............................P.......p...K....k...............b0:-1|ice_wallb0:25:|111111",
+      "...............................P.......p.k.K....................w0:-1|ice_wallb0:25:|111111",
+      "...............................P.......p.k..........K...........b0:-1|ice_wallb0:25:|111111",
+      "...............................Pk......p............K...........w0:-1|ice_wallb0:25:|111111",
+      "...............................Pk......p....K...................b0:-1|ice_wallb0:25:|111111",
+      "...............................P.k.....p....K...................w0:-1|ice_wallb0:25:|111111",
+      "...............................P.k..K..p........................b0:-1|ice_wallb0:25:|111111",
+      "...............................P....K..p.k......................w0:-1|ice_wallb0:25:|111111",
+      "...........................K...P.......p.k......................b0:-1|ice_wallb0:25:|111111",
+      "...........................K...P.......p.........k..............w0:-1|ice_wallb0:25:|111111",
+      "..........................K....P.......p.........k..............b0:-1|ice_wallb0:25:|111111",
+      "..........................K....P.......p........k...............w0:-1|ice_wallb0:25:|111111",
+      ".................K.............P.......p........k...............b0:-1|ice_wallb0:25:|111111",
+      ".................K.............P.......pk.......................w0:-1|ice_wallb0:25:|111111",
+      "..........K....................P.......pk.......................b0:-1|ice_wallb0:25:|111111",
+      "..........K....................P.k.....p........................w0:-1|ice_wallb0:25:|111111",
+      ".................K.............P.k.....p........................b0:-1|ice_wallb0:25:|111111",
+      ".................K.............P.......p.k......................w0:-1|ice_wallb0:25:|111111",
+      "..........................K....P.......p.k......................b0:-1|ice_wallb0:25:|111111",
+      "..........................K....P.......p..k.....................w0:-1|ice_wallb0:25:|111111",
+      "...................K...........P.......p..k.....................b0:-1|ice_wallb0:25:|111111",
+      "...................K...........P.......p..........k.............w0:-1|ice_wallb0:25:|111111",
+      "..........................K....P.......p..........k.............b0:-1|ice_wallb0:25:|111111",
+      "..........................K....P.......p.k......................w0:-1|ice_wallb0:25:|111111",
+      ".................K.............P.......p.k......................b0:-1|ice_wallb0:25:|111111",
+      ".................K.............P.......pk.......................w0:-1|ice_wallb0:25:|111111",
+      "........................K......P.......pk.......................b0:-1|ice_wallb0:25:|111111",
+      "........................K......P.......p.k......................w0:-1|ice_wallb0:25:|111111",
+      "................K..............P.......p.k......................b0:-1|ice_wallb0:25:|111111",
+      "................K..............P.......p........k...............w0:-1|ice_wallb0:25:|111111",
+      ".........K.....................P.......p........k...............b0:-1|ice_wallb0:25:|111111",
+      ".........K.....................P.......p.................k......w0:-1|ice_wallb0:25:|111111",
+      "..................K............P.......p.................k......b0:-1|ice_wallb0:25:|111111",
+      "..................K............P.......p................k.......w0:-1|ice_wallb0:25:|111111",
+      ".........K.....................P.......p................k.......b0:-1|ice_wallb0:25:|111111",
+      ".........K.....................P.......p........k...............w0:-1|ice_wallb0:25:|111111",
+      "................K..............P.......p........k...............b0:-1|ice_wallb0:25:|111111",
+      "................K..............P.......p.........k..............w0:-1|ice_wallb0:25:|111111",
+      ".........K.....................P.......p.........k..............b0:-1|ice_wallb0:25:|111111",
+      ".........K.....................P.......p..................k.....w0:-1|ice_wallb0:25:|111111",
+      "..K............................P.......p..................k.....b0:-1|ice_wallb0:25:|111111",
+      "..K............................P.......p...................k....w0:-1|ice_wallb0:25:|111111",
+      "..........K....................P.......p...................k....b0:-1|ice_wallb0:25:|111111",
+      "..........K....................P.......p............k...........w0:-1|ice_wallb0:25:|111111",
+      "..................K............P.......p............k...........b0:-1|ice_wallb0:25:|111111",
+      "..................K............P.......p.............k..........w0:-1|ice_wallb0:25:|111111",
+      "...........................K...P.......p.............k..........b0:-1|ice_wallb0:25:|111111",
+      "...........................K...P.......p......k.................w0:-1|ice_wallb0:25:|111111",
+      "............................K..P.......p......k.................b0:-1|ice_wallb0:25:|111111",
+      "............................K..P.......p.....k..................w0:-1|ice_wallb0:25:|111111",
+      ".....................K.........P.......p.....k..................b0:-1|ice_wallb0:25:|111111",
+      ".....................K.........P.......p......k.................w0:-1|ice_wallb0:25:|111111",
+      ".............................K.P.......p......k.................b0:-1|ice_wallb0:25:|111111",
+      ".............................K.P.......p.............k..........w0:-1|ice_wallb0:25:|111111",
+      "......................K........P.......p.............k..........b0:-1|ice_wallb0:25:|111111",
+      "......................K........P.......p.....................k..w0:-1|ice_wallb0:25:|111111",
+      "..............K................P.......p.....................k..b0:-1|ice_wallb0:25:|111111",
+      "..............K................P.......p......................k.w0:-1|ice_wallb0:25:|111111",
+      "...............K...............P.......p......................k.b0:-1|ice_wallb0:25:|111111",
+      "...............K...............P.......p.....................k..w0:-1|ice_wallb0:25:|111111",
+      "......................K........P.......p.....................k..b0:-1|ice_wallb0:25:|111111",
+      "......................K........P.......p......................k.w0:-1|ice_wallb0:25:|111111",
+      ".............................K.P.......p......................k.b0:-1|ice_wallb0:25:|111111",
+      ".............................K.P.......p.......................kw0:-1|ice_wallb0:25:|111111",
+      ".....................K.........P.......p.......................kb0:-1|ice_wallb0:25:|111111",
+      ".....................K.........P.......p......................k.w0:-1|ice_wallb0:25:|111111",
+      "....................K..........P.......p......................k.b0:-1|ice_wallb0:25:|111111",
+      "....................K..........P.......p.............k..........w0:-1|ice_wallb0:25:|111111",
+      "............................K..P.......p.............k..........b0:-1|ice_wallb0:25:|111111",
+      "............................K..P.......p....................k...w0:-1|ice_wallb0:25:|111111",
+      "...............................P...K...p....................k...b0:-1|ice_wallb0:25:|111111",
+      "...............................P...K...p...........k............w0:-1|ice_wallb0:25:|111111",
+      "..........................K....P.......p...........k............b0:-1|ice_wallb0:25:|111111",
+      "..........................K....P.......p..........k.............w0:-1|ice_wallb0:25:|111111",
+      "...........................K...P.......p..........k.............b0:-1|ice_wallb0:25:|111111",
+      "...........................K...P.......p...........k............w0:-1|ice_wallb0:25:|111111"
+    ],
+    "snaps": [],
+    "forbidden": null,
+    "timed": true,
+    "catalog": "climats",
+    "result": {"winner":null,"reason":"fifty"}
+  }
+}

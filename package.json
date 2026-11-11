@@ -12,11 +12,19 @@
     "build": "vite build && node scripts/build-server.mjs",
     "start": "node dist/server/index.js",
     "typecheck": "tsc --noEmit -p .",
+    "typecheck:concepts": "tsc --noEmit -p tsconfig.concepts.json || echo \"(vérification des concepts : non bloquante)\"",
     "test": "vitest run",
+    "test:rapide": "vitest run --project rapide",
+    "test:matrice": "vitest run --project matrice --passWithNoTests",
+    "test:lent": "vitest run --project lent",
     "migrate": "node dist/server/index.js --migrate-only",
     "test:integration": "node test/integration.mjs",
     "test:ranked": "node test/ranked.mjs",
-    "local": "node scripts/local.mjs"
+    "local": "node scripts/local.mjs",
+    "temoins": "vitest run -c test/fixtures/v1/vitest.config.ts",
+    "identite": "node test/identite.mjs --comparer",
+    "textes-pages": "node test/textes-pages.mjs --comparer",
+    "verifier-lot": "node scripts/verifier-lot.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.13",

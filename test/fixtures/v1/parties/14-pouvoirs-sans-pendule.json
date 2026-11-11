@@ -1,0 +1,274 @@
+{
+  "id": "14-pouvoirs-sans-pendule",
+  "graine": 111866,
+  "generateur": {"maxActions":260,"pCard":0.3,"pCapture":0.6,"skin":"skin:arcane"},
+  "catalog": "climats",
+  "timed": false,
+  "mains": {"w":["ice_wall","rift","tide"],"b":["truce","blood_moon","tide"]},
+  "depart": {
+    "pos": {
+      "board": [
+        {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+        {"id":9,"t":"k","c":"w"},{"id":11,"t":"b","c":"w"},{"id":13,"t":"n","c":"w"},{"id":15,"t":"r","c":"w"},
+        {"id":2,"t":"p","c":"w"},{"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},{"id":8,"t":"p","c":"w"},
+        {"id":10,"t":"p","c":"w"},{"id":12,"t":"p","c":"w"},{"id":14,"t":"p","c":"w"},{"id":16,"t":"p","c":"w"},null,
+        null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,
+        null,null,null,null,null,null,null,null,null,{"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},
+        {"id":21,"t":"p","c":"b"},{"id":23,"t":"p","c":"b"},{"id":25,"t":"p","c":"b"},{"id":27,"t":"p","c":"b"},
+        {"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},{"id":18,"t":"r","c":"b"},{"id":20,"t":"n","c":"b"},
+        {"id":22,"t":"b","c":"b"},{"id":24,"t":"q","c":"b"},{"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},
+        {"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+      ],
+      "turn": "w",
+      "castling": 15,
+      "ep": -1,
+      "halfmove": 0,
+      "fullmove": 1
+    },
+    "effects": [],
+    "hands": {
+      "w": [{"card":"ice_wall","used":false},{"card":"rift","used":false},{"card":"tide","used":false}],
+      "b": [{"card":"truce","used":false},{"card":"blood_moon","used":false},{"card":"tide","used":false}]
+    },
+    "cardPlayed": false,
+    "captured": {"w":[],"b":[]},
+    "nextPieceId": 33,
+    "nextEffectId": 1,
+    "ply": 0,
+    "log": [],
+    "keys": ["RNBQKBNRPPPPPPPP................................pppppppprnbqkbnrw15:-1|000000"],
+    "snaps": [],
+    "forbidden": null,
+    "timed": false,
+    "catalog": "climats",
+    "result": null
+  },
+  "actions": [
+    {
+      "k": "move",
+      "c": "w",
+      "from": 15,
+      "to": 31,
+      "info": {
+        "san": "h4",
+        "move": {"from":15,"to":31,"flags":4},
+        "pieceId": 16,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "RNBQKBNRPPPPPPP................P................pppppppprnbqkbnrb15:23|000000"
+    },
+    {
+      "k": "card",
+      "c": "b",
+      "index": 1,
+      "card": "blood_moon",
+      "targets": [],
+      "info": {"card":"blood_moon","caster":"b","targets":[],"pieces":[],"skin":"skin:arcane","effectId":1},
+      "cle": "RNBQKBNRPPPPPPP................P................pppppppprnbqkbnrb15:23|blood_moonb3::d2|000010"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 50,
+      "to": 42,
+      "info": {
+        "san": "c6",
+        "move": {"from":50,"to":42,"flags":0},
+        "pieceId": 21,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "RNBQKBNRPPPPPPP................P..........p.....pp.ppppprnbqkbnrw15:-1|blood_moonb3::d1|000010"
+    },
+    {
+      "k": "card",
+      "c": "w",
+      "index": 0,
+      "card": "ice_wall",
+      "targets": [44],
+      "info": {"card":"ice_wall","caster":"w","targets":[44],"pieces":[],"skin":"skin:arcane","effectId":2},
+      "cle": "RNBQKBNRPPPPPPP................P..........p.....pp.ppppprnbqkbnrw15:-1|blood_moonb3::d1|ice_wallw0:44:|100010"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 1,
+      "to": 16,
+      "info": {
+        "san": "Na3",
+        "move": {"from":1,"to":16,"flags":0},
+        "pieceId": 3,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [1],
+        "expired": []
+      },
+      "cle": "R.BQKBNRPPPPPPP.N..............P..........p.....pp.ppppprnbqkbnrb15:-1|blood_moonb3::|ice_wallw0:44:|100010"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 59,
+      "to": 50,
+      "info": {
+        "san": "Qc7",
+        "move": {"from":59,"to":50,"flags":0},
+        "pieceId": 24,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.BQKBNRPPPPPPP.N..............P..........p.....ppqppppprnb.kbnrw15:-1|blood_moonb2::|ice_wallw0:44:|100010"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 7,
+      "to": 15,
+      "info": {
+        "san": "Rh2",
+        "move": {"from":7,"to":15,"flags":0},
+        "pieceId": 15,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.BQKBN.PPPPPPPRN..............P..........p.....ppqppppprnb.kbnrb14:-1|blood_moonb1::|ice_wallw0:44:|100010"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 50,
+      "to": 15,
+      "info": {
+        "san": "Qxh2",
+        "move": {"from":50,"to":15,"flags":1},
+        "pieceId": 24,
+        "capturedId": 15,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": [1]
+      },
+      "cle": "R.BQKBN.PPPPPPPqN..............P..........p.....pp.ppppprnb.kbnrw14:-1|ice_wallw0:44:|100010"
+    },
+    {
+      "k": "move",
+      "c": "w",
+      "from": 13,
+      "to": 29,
+      "info": {
+        "san": "f4",
+        "move": {"from":13,"to":29,"flags":4},
+        "pieceId": 12,
+        "capturedId": null,
+        "check": false,
+        "checkKind": null,
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.BQKBN.PPPPP.PqN............P.P..........p.....pp.ppppprnb.kbnrb14:21|ice_wallw0:44:|100010"
+    },
+    {
+      "k": "move",
+      "c": "b",
+      "from": 15,
+      "to": 22,
+      "info": {
+        "san": "Qg3",
+        "move": {"from":15,"to":22,"flags":0},
+        "pieceId": 24,
+        "capturedId": null,
+        "check": true,
+        "checkKind": "now",
+        "arrived": [],
+        "expired": []
+      },
+      "cle": "R.BQKBN.PPPPP.P.N.....q......P.P..........p.....pp.ppppprnb.kbnrw14:-1|ice_wallw0:44:|100010"
+    }
+  ],
+  "resultat": {"winner":"b","reason":"checkmate"},
+  "etat_final": {
+    "pos": {
+      "board": [
+        {"id":1,"t":"r","c":"w"},null,{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},{"id":9,"t":"k","c":"w"},
+        {"id":11,"t":"b","c":"w"},{"id":13,"t":"n","c":"w"},null,{"id":2,"t":"p","c":"w"},{"id":4,"t":"p","c":"w"},
+        {"id":6,"t":"p","c":"w"},{"id":8,"t":"p","c":"w"},{"id":10,"t":"p","c":"w"},null,{"id":14,"t":"p","c":"w"},
+        null,{"id":3,"t":"n","c":"w"},null,null,null,null,null,{"id":24,"t":"q","c":"b"},null,null,null,null,null,
+        null,{"id":12,"t":"p","c":"w"},null,{"id":16,"t":"p","c":"w"},null,null,null,null,null,null,null,null,null,
+        null,{"id":21,"t":"p","c":"b"},null,null,null,null,null,{"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},
+        null,{"id":23,"t":"p","c":"b"},{"id":25,"t":"p","c":"b"},{"id":27,"t":"p","c":"b"},{"id":29,"t":"p","c":"b"},
+        {"id":31,"t":"p","c":"b"},{"id":18,"t":"r","c":"b"},{"id":20,"t":"n","c":"b"},{"id":22,"t":"b","c":"b"},null,
+        {"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},{"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+      ],
+      "turn": "w",
+      "castling": 14,
+      "ep": -1,
+      "halfmove": 1,
+      "fullmove": 5
+    },
+    "effects": [
+      {
+        "id": 2,
+        "card": "ice_wall",
+        "caster": "w",
+        "countsOn": "w",
+        "remaining": 0,
+        "total": 0,
+        "skin": "skin:arcane",
+        "global": true,
+        "permanent": true,
+        "square": 44
+      }
+    ],
+    "hands": {
+      "w": [{"card":"ice_wall","used":true},{"card":"rift","used":false},{"card":"tide","used":false}],
+      "b": [{"card":"truce","used":false},{"card":"blood_moon","used":true},{"card":"tide","used":false}]
+    },
+    "cardPlayed": false,
+    "captured": {"w":["r"],"b":[]},
+    "nextPieceId": 33,
+    "nextEffectId": 3,
+    "ply": 8,
+    "log": [
+      {"k":"move","c":"w","san":"h4","from":15,"to":31},
+      {"k":"card","c":"b","card":"blood_moon","targets":[]},
+      {"k":"move","c":"b","san":"c6","from":50,"to":42},
+      {"k":"card","c":"w","card":"ice_wall","targets":[44]},
+      {"k":"move","c":"w","san":"Na3","from":1,"to":16},
+      {"k":"move","c":"b","san":"Qc7","from":59,"to":50},
+      {"k":"move","c":"w","san":"Rh2","from":7,"to":15},
+      {"k":"move","c":"b","san":"Qxh2","from":50,"to":15},
+      {"k":"move","c":"w","san":"f4","from":13,"to":29},
+      {"k":"move","c":"b","san":"Qg3#","from":15,"to":22}
+    ],
+    "keys": [
+      "RNBQKBNRPPPPPPPP................................pppppppprnbqkbnrw15:-1|000000",
+      "RNBQKBNRPPPPPPP................P................pppppppprnbqkbnrb15:23|000000",
+      "RNBQKBNRPPPPPPP................P..........p.....pp.ppppprnbqkbnrw15:-1|blood_moonb3::d1|000010",
+      "R.BQKBNRPPPPPPP.N..............P..........p.....pp.ppppprnbqkbnrb15:-1|blood_moonb3::|ice_wallw0:44:|100010",
+      "R.BQKBNRPPPPPPP.N..............P..........p.....ppqppppprnb.kbnrw15:-1|blood_moonb2::|ice_wallw0:44:|100010",
+      "R.BQKBN.PPPPPPPRN..............P..........p.....ppqppppprnb.kbnrb14:-1|blood_moonb1::|ice_wallw0:44:|100010",
+      "R.BQKBN.PPPPPPPqN..............P..........p.....pp.ppppprnb.kbnrw14:-1|ice_wallw0:44:|100010",
+      "R.BQKBN.PPPPP.PqN............P.P..........p.....pp.ppppprnb.kbnrb14:21|ice_wallw0:44:|100010",
+      "R.BQKBN.PPPPP.P.N.....q......P.P..........p.....pp.ppppprnb.kbnrw14:-1|ice_wallw0:44:|100010"
+    ],
+    "snaps": [],
+    "forbidden": null,
+    "timed": false,
+    "catalog": "climats",
+    "result": {"winner":"b","reason":"checkmate"}
+  }
+}

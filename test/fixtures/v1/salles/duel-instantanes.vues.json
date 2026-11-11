@@ -1,0 +1,457 @@
+{
+  "maintenant": 1800000011000,
+  "w": {
+    "id": "TMNDUEL001",
+    "mode": "invite",
+    "rated": false,
+    "status": "active",
+    "seats": {
+      "w": {
+        "kind": "guest",
+        "name": "Aurore",
+        "username": null,
+        "rating": null,
+        "skin": "skin:arcane",
+        "king": "king:arcane",
+        "seal": null,
+        "online": false
+      },
+      "b": {
+        "kind": "guest",
+        "name": "Basile",
+        "username": null,
+        "rating": null,
+        "skin": "skin:arcane",
+        "king": "king:arcane",
+        "seal": null,
+        "online": false
+      }
+    },
+    "you": "w",
+    "state": {
+      "pos": {
+        "board": [
+          {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+          {"id":9,"t":"k","c":"w"},{"id":11,"t":"b","c":"w"},null,{"id":15,"t":"r","c":"w"},{"id":2,"t":"p","c":"w"},
+          {"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},{"id":8,"t":"p","c":"w"},null,{"id":12,"t":"p","c":"w"},
+          {"id":14,"t":"p","c":"w"},{"id":16,"t":"p","c":"w"},null,null,null,null,null,{"id":13,"t":"n","c":"w"},null,
+          null,null,null,null,null,{"id":10,"t":"p","c":"w"},null,null,null,null,null,null,null,
+          {"id":25,"t":"p","c":"b"},null,null,null,null,null,{"id":20,"t":"n","c":"b"},null,null,null,null,null,
+          {"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},{"id":21,"t":"p","c":"b"},{"id":23,"t":"p","c":"b"},
+          null,{"id":27,"t":"p","c":"b"},{"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},
+          {"id":18,"t":"r","c":"b"},null,{"id":22,"t":"b","c":"b"},{"id":24,"t":"q","c":"b"},
+          {"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},{"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+        ],
+        "turn": "w",
+        "castling": 15,
+        "ep": -1,
+        "halfmove": 2,
+        "fullmove": 3
+      },
+      "effects": [{"id":1,"card":"freeze","caster":"w","countsOn":"b","remaining":2,"total":2,"skin":"skin:arcane","pieceId":25}],
+      "hands": {
+        "w": [{"card":"freeze","used":true},{"card":"rewind","used":false},{"card":"shield","used":false}],
+        "b": [{"card":"lightning","used":false},{"card":"swap","used":false},{"card":"gravity","used":false}]
+      },
+      "cardPlayed": true,
+      "captured": {"w":[],"b":[]},
+      "nextPieceId": 33,
+      "nextEffectId": 2,
+      "ply": 4,
+      "log": [
+        {"k":"move","c":"w","san":"e4","from":12,"to":28},
+        {"k":"move","c":"b","san":"e5","from":52,"to":36},
+        {"k":"move","c":"w","san":"Nf3","from":6,"to":21},
+        {"k":"move","c":"b","san":"Nc6","from":57,"to":42},
+        {"k":"card","c":"w","card":"freeze","targets":[36]}
+      ],
+      "keys": [],
+      "snaps": [
+        {
+          "pos": {
+            "board": [
+              {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+              {"id":9,"t":"k","c":"w"},{"id":11,"t":"b","c":"w"},{"id":13,"t":"n","c":"w"},{"id":15,"t":"r","c":"w"},
+              {"id":2,"t":"p","c":"w"},{"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},{"id":8,"t":"p","c":"w"},
+              null,{"id":12,"t":"p","c":"w"},{"id":14,"t":"p","c":"w"},{"id":16,"t":"p","c":"w"},null,null,null,null,
+              null,null,null,null,null,null,null,null,{"id":10,"t":"p","c":"w"},null,null,null,null,null,null,null,
+              {"id":25,"t":"p","c":"b"},null,null,null,null,null,null,null,null,null,null,null,
+              {"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},{"id":21,"t":"p","c":"b"},{"id":23,"t":"p","c":"b"},
+              null,{"id":27,"t":"p","c":"b"},{"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},
+              {"id":18,"t":"r","c":"b"},{"id":20,"t":"n","c":"b"},{"id":22,"t":"b","c":"b"},{"id":24,"t":"q","c":"b"},
+              {"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},{"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+            ],
+            "turn": "w",
+            "castling": 15,
+            "ep": 44,
+            "halfmove": 0,
+            "fullmove": 2
+          },
+          "effects": [],
+          "captured": {"w":[],"b":[]},
+          "cardPlayed": false,
+          "ply": 2,
+          "keysLen": 3,
+          "forbidden": null,
+          "next": {"from":6,"to":21,"log":2}
+        },
+        {
+          "pos": {
+            "board": [
+              {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+              {"id":9,"t":"k","c":"w"},{"id":11,"t":"b","c":"w"},null,{"id":15,"t":"r","c":"w"},
+              {"id":2,"t":"p","c":"w"},{"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},{"id":8,"t":"p","c":"w"},
+              null,{"id":12,"t":"p","c":"w"},{"id":14,"t":"p","c":"w"},{"id":16,"t":"p","c":"w"},null,null,null,null,
+              null,{"id":13,"t":"n","c":"w"},null,null,null,null,null,null,{"id":10,"t":"p","c":"w"},null,null,null,
+              null,null,null,null,{"id":25,"t":"p","c":"b"},null,null,null,null,null,null,null,null,null,null,null,
+              {"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},{"id":21,"t":"p","c":"b"},{"id":23,"t":"p","c":"b"},
+              null,{"id":27,"t":"p","c":"b"},{"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},
+              {"id":18,"t":"r","c":"b"},{"id":20,"t":"n","c":"b"},{"id":22,"t":"b","c":"b"},{"id":24,"t":"q","c":"b"},
+              {"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},{"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+            ],
+            "turn": "b",
+            "castling": 15,
+            "ep": -1,
+            "halfmove": 1,
+            "fullmove": 2
+          },
+          "effects": [],
+          "captured": {"w":[],"b":[]},
+          "cardPlayed": false,
+          "ply": 3,
+          "keysLen": 4,
+          "forbidden": null,
+          "next": {"from":57,"to":42,"log":3}
+        }
+      ],
+      "forbidden": null,
+      "timed": true,
+      "catalog": "duel",
+      "result": null
+    },
+    "clock": {
+      "initial": 300,
+      "increment": 0,
+      "w": 295000,
+      "b": 298000,
+      "running": "w",
+      "serverNow": 1800000011000,
+      "rate": {"w":1,"b":1},
+      "noIncrement": false
+    },
+    "drawOffer": null,
+    "rematch": {"w":false,"b":false,"next":null},
+    "ratingDiff": null,
+    "firstMoveDeadline": null,
+    "away": {"w":null,"b":null},
+    "claimAfterMs": 60000,
+    "createdAt": 1800000000000,
+    "mirror": false,
+    "started": true,
+    "draft": null,
+    "standIn": null
+  },
+  "b": {
+    "id": "TMNDUEL001",
+    "mode": "invite",
+    "rated": false,
+    "status": "active",
+    "seats": {
+      "w": {
+        "kind": "guest",
+        "name": "Aurore",
+        "username": null,
+        "rating": null,
+        "skin": "skin:arcane",
+        "king": "king:arcane",
+        "seal": null,
+        "online": false
+      },
+      "b": {
+        "kind": "guest",
+        "name": "Basile",
+        "username": null,
+        "rating": null,
+        "skin": "skin:arcane",
+        "king": "king:arcane",
+        "seal": null,
+        "online": false
+      }
+    },
+    "you": "b",
+    "state": {
+      "pos": {
+        "board": [
+          {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+          {"id":9,"t":"k","c":"w"},{"id":11,"t":"b","c":"w"},null,{"id":15,"t":"r","c":"w"},{"id":2,"t":"p","c":"w"},
+          {"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},{"id":8,"t":"p","c":"w"},null,{"id":12,"t":"p","c":"w"},
+          {"id":14,"t":"p","c":"w"},{"id":16,"t":"p","c":"w"},null,null,null,null,null,{"id":13,"t":"n","c":"w"},null,
+          null,null,null,null,null,{"id":10,"t":"p","c":"w"},null,null,null,null,null,null,null,
+          {"id":25,"t":"p","c":"b"},null,null,null,null,null,{"id":20,"t":"n","c":"b"},null,null,null,null,null,
+          {"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},{"id":21,"t":"p","c":"b"},{"id":23,"t":"p","c":"b"},
+          null,{"id":27,"t":"p","c":"b"},{"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},
+          {"id":18,"t":"r","c":"b"},null,{"id":22,"t":"b","c":"b"},{"id":24,"t":"q","c":"b"},
+          {"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},{"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+        ],
+        "turn": "w",
+        "castling": 15,
+        "ep": -1,
+        "halfmove": 2,
+        "fullmove": 3
+      },
+      "effects": [{"id":1,"card":"freeze","caster":"w","countsOn":"b","remaining":2,"total":2,"skin":"skin:arcane","pieceId":25}],
+      "hands": {
+        "w": [{"card":"freeze","used":true},{"card":"rewind","used":false},{"card":"shield","used":false}],
+        "b": [{"card":"lightning","used":false},{"card":"swap","used":false},{"card":"gravity","used":false}]
+      },
+      "cardPlayed": true,
+      "captured": {"w":[],"b":[]},
+      "nextPieceId": 33,
+      "nextEffectId": 2,
+      "ply": 4,
+      "log": [
+        {"k":"move","c":"w","san":"e4","from":12,"to":28},
+        {"k":"move","c":"b","san":"e5","from":52,"to":36},
+        {"k":"move","c":"w","san":"Nf3","from":6,"to":21},
+        {"k":"move","c":"b","san":"Nc6","from":57,"to":42},
+        {"k":"card","c":"w","card":"freeze","targets":[36]}
+      ],
+      "keys": [],
+      "snaps": [
+        {
+          "pos": {
+            "board": [
+              {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+              {"id":9,"t":"k","c":"w"},{"id":11,"t":"b","c":"w"},{"id":13,"t":"n","c":"w"},{"id":15,"t":"r","c":"w"},
+              {"id":2,"t":"p","c":"w"},{"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},{"id":8,"t":"p","c":"w"},
+              null,{"id":12,"t":"p","c":"w"},{"id":14,"t":"p","c":"w"},{"id":16,"t":"p","c":"w"},null,null,null,null,
+              null,null,null,null,null,null,null,null,{"id":10,"t":"p","c":"w"},null,null,null,null,null,null,null,
+              {"id":25,"t":"p","c":"b"},null,null,null,null,null,null,null,null,null,null,null,
+              {"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},{"id":21,"t":"p","c":"b"},{"id":23,"t":"p","c":"b"},
+              null,{"id":27,"t":"p","c":"b"},{"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},
+              {"id":18,"t":"r","c":"b"},{"id":20,"t":"n","c":"b"},{"id":22,"t":"b","c":"b"},{"id":24,"t":"q","c":"b"},
+              {"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},{"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+            ],
+            "turn": "w",
+            "castling": 15,
+            "ep": 44,
+            "halfmove": 0,
+            "fullmove": 2
+          },
+          "effects": [],
+          "captured": {"w":[],"b":[]},
+          "cardPlayed": false,
+          "ply": 2,
+          "keysLen": 3,
+          "forbidden": null,
+          "next": {"from":6,"to":21,"log":2}
+        },
+        {
+          "pos": {
+            "board": [
+              {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+              {"id":9,"t":"k","c":"w"},{"id":11,"t":"b","c":"w"},null,{"id":15,"t":"r","c":"w"},
+              {"id":2,"t":"p","c":"w"},{"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},{"id":8,"t":"p","c":"w"},
+              null,{"id":12,"t":"p","c":"w"},{"id":14,"t":"p","c":"w"},{"id":16,"t":"p","c":"w"},null,null,null,null,
+              null,{"id":13,"t":"n","c":"w"},null,null,null,null,null,null,{"id":10,"t":"p","c":"w"},null,null,null,
+              null,null,null,null,{"id":25,"t":"p","c":"b"},null,null,null,null,null,null,null,null,null,null,null,
+              {"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},{"id":21,"t":"p","c":"b"},{"id":23,"t":"p","c":"b"},
+              null,{"id":27,"t":"p","c":"b"},{"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},
+              {"id":18,"t":"r","c":"b"},{"id":20,"t":"n","c":"b"},{"id":22,"t":"b","c":"b"},{"id":24,"t":"q","c":"b"},
+              {"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},{"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+            ],
+            "turn": "b",
+            "castling": 15,
+            "ep": -1,
+            "halfmove": 1,
+            "fullmove": 2
+          },
+          "effects": [],
+          "captured": {"w":[],"b":[]},
+          "cardPlayed": false,
+          "ply": 3,
+          "keysLen": 4,
+          "forbidden": null,
+          "next": {"from":57,"to":42,"log":3}
+        }
+      ],
+      "forbidden": null,
+      "timed": true,
+      "catalog": "duel",
+      "result": null
+    },
+    "clock": {
+      "initial": 300,
+      "increment": 0,
+      "w": 295000,
+      "b": 298000,
+      "running": "w",
+      "serverNow": 1800000011000,
+      "rate": {"w":1,"b":1},
+      "noIncrement": false
+    },
+    "drawOffer": null,
+    "rematch": {"w":false,"b":false,"next":null},
+    "ratingDiff": null,
+    "firstMoveDeadline": null,
+    "away": {"w":null,"b":null},
+    "claimAfterMs": 60000,
+    "createdAt": 1800000000000,
+    "mirror": false,
+    "started": true,
+    "draft": null,
+    "standIn": null
+  },
+  "spectateur": {
+    "id": "TMNDUEL001",
+    "mode": "invite",
+    "rated": false,
+    "status": "active",
+    "seats": {
+      "w": {
+        "kind": "guest",
+        "name": "Aurore",
+        "username": null,
+        "rating": null,
+        "skin": "skin:arcane",
+        "king": "king:arcane",
+        "seal": null,
+        "online": false
+      },
+      "b": {
+        "kind": "guest",
+        "name": "Basile",
+        "username": null,
+        "rating": null,
+        "skin": "skin:arcane",
+        "king": "king:arcane",
+        "seal": null,
+        "online": false
+      }
+    },
+    "you": null,
+    "state": {
+      "pos": {
+        "board": [
+          {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+          {"id":9,"t":"k","c":"w"},{"id":11,"t":"b","c":"w"},null,{"id":15,"t":"r","c":"w"},{"id":2,"t":"p","c":"w"},
+          {"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},{"id":8,"t":"p","c":"w"},null,{"id":12,"t":"p","c":"w"},
+          {"id":14,"t":"p","c":"w"},{"id":16,"t":"p","c":"w"},null,null,null,null,null,{"id":13,"t":"n","c":"w"},null,
+          null,null,null,null,null,{"id":10,"t":"p","c":"w"},null,null,null,null,null,null,null,
+          {"id":25,"t":"p","c":"b"},null,null,null,null,null,{"id":20,"t":"n","c":"b"},null,null,null,null,null,
+          {"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},{"id":21,"t":"p","c":"b"},{"id":23,"t":"p","c":"b"},
+          null,{"id":27,"t":"p","c":"b"},{"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},
+          {"id":18,"t":"r","c":"b"},null,{"id":22,"t":"b","c":"b"},{"id":24,"t":"q","c":"b"},
+          {"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},{"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+        ],
+        "turn": "w",
+        "castling": 15,
+        "ep": -1,
+        "halfmove": 2,
+        "fullmove": 3
+      },
+      "effects": [{"id":1,"card":"freeze","caster":"w","countsOn":"b","remaining":2,"total":2,"skin":"skin:arcane","pieceId":25}],
+      "hands": {
+        "w": [{"card":"freeze","used":true},{"card":"rewind","used":false},{"card":"shield","used":false}],
+        "b": [{"card":"lightning","used":false},{"card":"swap","used":false},{"card":"gravity","used":false}]
+      },
+      "cardPlayed": true,
+      "captured": {"w":[],"b":[]},
+      "nextPieceId": 33,
+      "nextEffectId": 2,
+      "ply": 4,
+      "log": [
+        {"k":"move","c":"w","san":"e4","from":12,"to":28},
+        {"k":"move","c":"b","san":"e5","from":52,"to":36},
+        {"k":"move","c":"w","san":"Nf3","from":6,"to":21},
+        {"k":"move","c":"b","san":"Nc6","from":57,"to":42},
+        {"k":"card","c":"w","card":"freeze","targets":[36]}
+      ],
+      "keys": [],
+      "snaps": [
+        {
+          "pos": {
+            "board": [
+              {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+              {"id":9,"t":"k","c":"w"},{"id":11,"t":"b","c":"w"},{"id":13,"t":"n","c":"w"},{"id":15,"t":"r","c":"w"},
+              {"id":2,"t":"p","c":"w"},{"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},{"id":8,"t":"p","c":"w"},
+              null,{"id":12,"t":"p","c":"w"},{"id":14,"t":"p","c":"w"},{"id":16,"t":"p","c":"w"},null,null,null,null,
+              null,null,null,null,null,null,null,null,{"id":10,"t":"p","c":"w"},null,null,null,null,null,null,null,
+              {"id":25,"t":"p","c":"b"},null,null,null,null,null,null,null,null,null,null,null,
+              {"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},{"id":21,"t":"p","c":"b"},{"id":23,"t":"p","c":"b"},
+              null,{"id":27,"t":"p","c":"b"},{"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},
+              {"id":18,"t":"r","c":"b"},{"id":20,"t":"n","c":"b"},{"id":22,"t":"b","c":"b"},{"id":24,"t":"q","c":"b"},
+              {"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},{"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+            ],
+            "turn": "w",
+            "castling": 15,
+            "ep": 44,
+            "halfmove": 0,
+            "fullmove": 2
+          },
+          "effects": [],
+          "captured": {"w":[],"b":[]},
+          "cardPlayed": false,
+          "ply": 2,
+          "keysLen": 3,
+          "forbidden": null,
+          "next": {"from":6,"to":21,"log":2}
+        },
+        {
+          "pos": {
+            "board": [
+              {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+              {"id":9,"t":"k","c":"w"},{"id":11,"t":"b","c":"w"},null,{"id":15,"t":"r","c":"w"},
+              {"id":2,"t":"p","c":"w"},{"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},{"id":8,"t":"p","c":"w"},
+              null,{"id":12,"t":"p","c":"w"},{"id":14,"t":"p","c":"w"},{"id":16,"t":"p","c":"w"},null,null,null,null,
+              null,{"id":13,"t":"n","c":"w"},null,null,null,null,null,null,{"id":10,"t":"p","c":"w"},null,null,null,
+              null,null,null,null,{"id":25,"t":"p","c":"b"},null,null,null,null,null,null,null,null,null,null,null,
+              {"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},{"id":21,"t":"p","c":"b"},{"id":23,"t":"p","c":"b"},
+              null,{"id":27,"t":"p","c":"b"},{"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},
+              {"id":18,"t":"r","c":"b"},{"id":20,"t":"n","c":"b"},{"id":22,"t":"b","c":"b"},{"id":24,"t":"q","c":"b"},
+              {"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},{"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+            ],
+            "turn": "b",
+            "castling": 15,
+            "ep": -1,
+            "halfmove": 1,
+            "fullmove": 2
+          },
+          "effects": [],
+          "captured": {"w":[],"b":[]},
+          "cardPlayed": false,
+          "ply": 3,
+          "keysLen": 4,
+          "forbidden": null,
+          "next": {"from":57,"to":42,"log":3}
+        }
+      ],
+      "forbidden": null,
+      "timed": true,
+      "catalog": "duel",
+      "result": null
+    },
+    "clock": {
+      "initial": 300,
+      "increment": 0,
+      "w": 295000,
+      "b": 298000,
+      "running": "w",
+      "serverNow": 1800000011000,
+      "rate": {"w":1,"b":1},
+      "noIncrement": false
+    },
+    "drawOffer": null,
+    "rematch": {"w":false,"b":false,"next":null},
+    "ratingDiff": null,
+    "firstMoveDeadline": null,
+    "away": {"w":null,"b":null},
+    "claimAfterMs": 60000,
+    "createdAt": 1800000000000,
+    "mirror": false,
+    "started": true,
+    "draft": null,
+    "standIn": null
+  },
+  "draftView": {"w":null,"b":null,"spectateur":null}
+}

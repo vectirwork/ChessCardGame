@@ -1,0 +1,71 @@
+{
+  "note": "À lire avec l’horloge figée à valeur.savedAt (vi.setSystemTime) : loadSaved (useLiveGame.ts) rejette une sauvegarde de plus de 30 jours, et savedAt vaut le 15 janvier 2027.",
+  "cle": "sm:odyssee:partie",
+  "valeur": {
+    "v": 1,
+    "state": {
+      "pos": {
+        "board": [
+          {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+          {"id":9,"t":"k","c":"w"},{"id":11,"t":"b","c":"w"},null,{"id":15,"t":"r","c":"w"},{"id":2,"t":"p","c":"w"},
+          {"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},{"id":8,"t":"p","c":"w"},null,{"id":12,"t":"p","c":"w"},
+          {"id":14,"t":"p","c":"w"},{"id":16,"t":"p","c":"w"},null,null,null,null,null,{"id":13,"t":"n","c":"w"},null,
+          null,null,null,null,null,{"id":10,"t":"p","c":"w"},null,null,null,null,null,{"id":21,"t":"p","c":"b"},null,
+          null,null,null,null,null,null,null,{"id":23,"t":"p","c":"b"},null,null,null,null,{"id":17,"t":"p","c":"b"},
+          {"id":19,"t":"p","c":"b"},null,null,{"id":25,"t":"p","c":"b"},{"id":27,"t":"p","c":"b"},
+          {"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},{"id":18,"t":"r","c":"b"},{"id":20,"t":"n","c":"b"},
+          {"id":22,"t":"b","c":"b"},{"id":24,"t":"q","c":"b"},{"id":26,"t":"k","c":"b"},{"id":28,"t":"b","c":"b"},
+          {"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+        ],
+        "turn": "w",
+        "castling": 15,
+        "ep": -1,
+        "halfmove": 0,
+        "fullmove": 3
+      },
+      "effects": [
+        {
+          "id": 1,
+          "card": "truce",
+          "caster": "b",
+          "countsOn": "b",
+          "remaining": 3,
+          "total": 3,
+          "skin": "skin:void",
+          "global": true,
+          "pending": true,
+          "delay": 1
+        }
+      ],
+      "hands": {
+        "w": [{"card":"ice_wall","used":false},{"card":"ice_age","used":false},{"card":"rift","used":false}],
+        "b": [{"card":"truce","used":true},{"card":"ice_wall","used":false},{"card":"tide","used":false}]
+      },
+      "cardPlayed": false,
+      "captured": {"w":[],"b":[]},
+      "nextPieceId": 33,
+      "nextEffectId": 2,
+      "ply": 4,
+      "log": [
+        {"k":"move","c":"w","san":"e4","from":12,"to":28},
+        {"k":"move","c":"b","san":"c5","from":50,"to":34},
+        {"k":"move","c":"w","san":"Nf3","from":6,"to":21},
+        {"k":"card","c":"b","card":"truce","targets":[]},
+        {"k":"move","c":"b","san":"d6","from":51,"to":43}
+      ],
+      "keys": [
+        "RNBQKBNRPPPPPPPP................................pppppppprnbqkbnrw15:-1|000000",
+        "RNBQKBNRPPPP.PPP............P...................pppppppprnbqkbnrb15:20|000000",
+        "RNBQKBNRPPPP.PPP............P.....p.............pp.ppppprnbqkbnrw15:42|000000",
+        "RNBQKB.RPPPP.PPP.....N......P.....p.............pp.ppppprnbqkbnrb15:-1|000000",
+        "RNBQKB.RPPPP.PPP.....N......P.....p........p....pp..pppprnbqkbnrw15:-1|truceb3::d1|000100"
+      ],
+      "snaps": [],
+      "forbidden": null,
+      "timed": false,
+      "catalog": "climats",
+      "result": null
+    },
+    "savedAt": 1800000000000
+  }
+}

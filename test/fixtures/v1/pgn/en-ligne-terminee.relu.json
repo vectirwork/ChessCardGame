@@ -1,0 +1,31 @@
+{
+  "entetes": {
+    "Event": "Partie classée Spellmate",
+    "Site": "https://chess-powers.com/partie/TMNFINIE01",
+    "Date": "2026.11.11",
+    "Round": "-",
+    "White": "aurore",
+    "Black": "basile",
+    "Result": "0-1",
+    "WhiteElo": "1512",
+    "BlackElo": "1433",
+    "TimeControl": "180+2",
+    "Termination": "Échec et mat"
+  },
+  "resultat": "0-1",
+  "catalogue": "aucune",
+  "cles": [
+    "RNBQKBNRPPPPPPPP................................pppppppprnbqkbnrw15:-1|",
+    "RNBQKBNRPPPPP.PP.....P..........................pppppppprnbqkbnrb15:-1|",
+    "RNBQKBNRPPPPP.PP.....P..............p...........pppp.ppprnbqkbnrw15:44|",
+    "RNBQKBNRPPPPP..P.....P........P.....p...........pppp.ppprnbqkbnrb15:22|",
+    "RNBQKBNRPPPPP..P.....P........Pq....p...........pppp.ppprnb.kbnrw15:-1|"
+  ],
+  "journal": [
+    {"k":"move","c":"w","san":"f3","from":13,"to":21},
+    {"k":"move","c":"b","san":"e5","from":52,"to":36},
+    {"k":"move","c":"w","san":"g4","from":14,"to":30},
+    {"k":"move","c":"b","san":"Qh4#","from":59,"to":31}
+  ],
+  "reecritureIdentique": true
+}

@@ -1,0 +1,26 @@
+[Event "Témoin 03-pouvoirs-pendule"]
+[Site "Spellmate"]
+[Date "2026.11.11"]
+[Round "-"]
+[White "Blancs"]
+[Black "Noirs"]
+[Result "1/2-1/2"]
+[Variant "Spellmate"]
+[Catalog "climats"]
+
+1. d3 {[%spell ice_wall a4]} 1... a5 2. c4 b5 3. cxb5 g6 4. Qd2 c5 5. Qxa5
+{[%spell rift c4]} 5... Qxa5 6. Nf3 {[%spell blood_moon]} 6... Qxb5 7. Be3 Qxd3
+8. Bxc5 Qxb1+ 9. Rxb1 e6 10. Bxf8 Kd8 {[%spell ice_age]} 11. Ng1 Ba6 12. Nf3
+Bxe2 13. Kxe2 Nh6 14. Ne1 Na6 15. Bxh6 Kc8 16. Rd1 Rd8 17. Rxd7 Kxd7 18. Kf3 f5
+19. Bxa6 Kc7 20. h3 Rxa6 {[%spell hourglass]} 21. Bg5 Rc6 22. Bf4+ Kc8 23. Be3
+Rd5 24. Bd2 Rd7 25. a3 Rxd2 26. g3 Rdc2 27. Nxc2 Rxc2 {[%spell tide]} 28. --
+Rxf2+ 29. Kxf2 gxh4 30. Kf3 Kd8 31. Rh2 Kd7 32. Ra2 Kc8 33. Rf2 Kd7 34. g5 hxg5
+35. Rb2 h3 36. Ra2 Kc8 37. Kg4 f3 38. Kxf3 g4+ 39. Kxg4 e4 40. Kxh3 Kd7 41. Rb2
+Ke6 42. Ra2 Kd7 43. Ra1 Kc8 44. Kh4 Kd8 45. Rd1+ Ke8 46. Rd8+ Kf7 47. Re8 Kxe8
+48. b4 Kf7 49. Kg4 Kg8 50. Kg3 Kh7 51. Kg4 e3 52. Kf3 e2 53. Kxe2 Kh6 54. Kf2
+Kg5 55. b5 Kh4 56. b6 Kg5 57. Kf3 Kg6 58. Kg4 Kf7 59. Kf4 Kg7 60. Kf3 Kf8 61.
+Kg2 Ke7 62. Kf2 Kd8 63. Kg1 Ke7 64. Kf1 Ke8 65. Kg2 Ke7 66. Kh1 Kd8 67. b7 Ke8
+68. b8=R+ Ke7 69. Rb1 Ke8 70. Rc1 Kf8 71. Ra1 Kf7 72. Rf1+ Ke7 73. Rg1 Kf6 74.
+Rg7 Kxg7 75. Kg2 Kf8 76. Kf3 Ke8 77. Kg4 Kd8 78. Kg3 Kc8 79. Kf3 Kd7 80. Kf4 Kc7
+81. Kg3 Kc8 82. Kf3 Kb8 83. Ke3 Ka7 84. Kf4 Ka6 85. Kf3 Ka7 86. Ke4 Ka8 87. Kf5
+Kb8 88. Kf4 Kb7 89. Kg4 Ka7 90. Kf3 Kb8 91. Ke3 Kc8 92. Kd4 Kb8 93. Ke3 1/2-1/2

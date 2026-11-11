@@ -1,0 +1,95 @@
+{
+  "id": "TMNFINIE01",
+  "mode": "quick",
+  "rated": true,
+  "status": "ended",
+  "tc": "3+2",
+  "mirror": false,
+  "catalog": "climats",
+  "creator": "u:00000000-0000-4000-8000-000000000001",
+  "seats": {
+    "w": {
+      "kind": "user",
+      "key": "u:00000000-0000-4000-8000-000000000001",
+      "userId": "00000000-0000-4000-8000-000000000001",
+      "name": "aurore",
+      "username": "aurore",
+      "rating": 1512,
+      "gamesPlayed": 42,
+      "skin": "skin:void",
+      "king": "king:eclipse",
+      "seal": null
+    },
+    "b": {
+      "kind": "user",
+      "key": "u:00000000-0000-4000-8000-000000000002",
+      "userId": "00000000-0000-4000-8000-000000000002",
+      "name": "basile",
+      "username": "basile",
+      "rating": 1433,
+      "gamesPlayed": 12,
+      "skin": "skin:arcane",
+      "king": "king:arcane",
+      "seal": null
+    }
+  },
+  "state": {
+    "pos": {
+      "board": [
+        {"id":1,"t":"r","c":"w"},{"id":3,"t":"n","c":"w"},{"id":5,"t":"b","c":"w"},{"id":7,"t":"q","c":"w"},
+        {"id":9,"t":"k","c":"w"},{"id":11,"t":"b","c":"w"},{"id":13,"t":"n","c":"w"},{"id":15,"t":"r","c":"w"},
+        {"id":2,"t":"p","c":"w"},{"id":4,"t":"p","c":"w"},{"id":6,"t":"p","c":"w"},{"id":8,"t":"p","c":"w"},
+        {"id":10,"t":"p","c":"w"},null,null,{"id":16,"t":"p","c":"w"},null,null,null,null,null,
+        {"id":12,"t":"p","c":"w"},null,null,null,null,null,null,null,null,{"id":14,"t":"p","c":"w"},
+        {"id":24,"t":"q","c":"b"},null,null,null,null,{"id":25,"t":"p","c":"b"},null,null,null,null,null,null,null,
+        null,null,null,null,{"id":17,"t":"p","c":"b"},{"id":19,"t":"p","c":"b"},{"id":21,"t":"p","c":"b"},
+        {"id":23,"t":"p","c":"b"},null,{"id":27,"t":"p","c":"b"},{"id":29,"t":"p","c":"b"},{"id":31,"t":"p","c":"b"},
+        {"id":18,"t":"r","c":"b"},{"id":20,"t":"n","c":"b"},{"id":22,"t":"b","c":"b"},null,{"id":26,"t":"k","c":"b"},
+        {"id":28,"t":"b","c":"b"},{"id":30,"t":"n","c":"b"},{"id":32,"t":"r","c":"b"}
+      ],
+      "turn": "w",
+      "castling": 15,
+      "ep": -1,
+      "halfmove": 1,
+      "fullmove": 3
+    },
+    "effects": [],
+    "hands": {
+      "w": [{"card":"truce","used":false},{"card":"blood_moon","used":false},{"card":"tide","used":false}],
+      "b": [{"card":"ice_wall","used":false},{"card":"blast","used":false},{"card":"rift","used":false}]
+    },
+    "cardPlayed": false,
+    "captured": {"w":[],"b":[]},
+    "nextPieceId": 33,
+    "nextEffectId": 1,
+    "ply": 4,
+    "log": [
+      {"k":"move","c":"w","san":"f3","from":13,"to":21},
+      {"k":"move","c":"b","san":"e5","from":52,"to":36},
+      {"k":"move","c":"w","san":"g4","from":14,"to":30},
+      {"k":"move","c":"b","san":"Qh4#","from":59,"to":31}
+    ],
+    "keys": [
+      "RNBQKBNRPPPPPPPP................................pppppppprnbqkbnrw15:-1|000000",
+      "RNBQKBNRPPPPP.PP.....P..........................pppppppprnbqkbnrb15:-1|000000",
+      "RNBQKBNRPPPPP.PP.....P..............p...........pppp.ppprnbqkbnrw15:44|000000",
+      "RNBQKBNRPPPPP..P.....P........P.....p...........pppp.ppprnbqkbnrb15:22|000000",
+      "RNBQKBNRPPPPP..P.....P........Pq....p...........pppp.ppprnb.kbnrw15:-1|000000"
+    ],
+    "snaps": [],
+    "forbidden": null,
+    "timed": true,
+    "catalog": "climats",
+    "result": {"winner":"b","reason":"checkmate"}
+  },
+  "draft": null,
+  "clock": {"initial":180,"increment":2,"w":179000,"b":179000,"running":null,"since":1800000016000},
+  "drawOffer": null,
+  "rematch": {"w":false,"b":false,"next":null},
+  "ratingDiff": {"w":-12,"b":24},
+  "firstMoveDeadline": null,
+  "createdAt": 1800000000000,
+  "started": true,
+  "lastActivity": 1800000016000,
+  "savedAt": 1800000016000
+}

@@ -1,0 +1,398 @@
+{
+  "note": "Carte de possession des fichiers de la passe « polymorphe » (plan : designDoc §7). Un fichier appartient à un seul lot à la fois ; un fichier « partagé » est touché par un lot puis cédé au suivant, toujours dans des vagues différentes (« passages »). Les motifs suivent la syntaxe des globs : * (un segment), ** (plusieurs). Vérification : node scripts/verifier-lot.mjs <lot>.",
+  "brancheIntegration": "claude/peaceful-hamilton-qr9cmc",
+  "base": "7148547",
+  "brancheDuLot": "polymorphie/<lot>",
+  "vagues": [["0a", "0b"], ["1", "2"], ["3", "4"], ["5", "6"], ["7", "8"], ["9"]],
+  "lots": [
+    {
+      "id": "0a",
+      "titre": "Socle (1/2) : témoins et outillage",
+      "vague": 0,
+      "dependances": [],
+      "possede": [
+        {"motif": "test/helpers/rng.ts"},
+        {"motif": "test/helpers/sq.ts"},
+        {"motif": "test/helpers/sieges.ts"},
+        {"motif": "test/helpers/matrice.ts"},
+        {"motif": "test/lib/playwright.mjs"},
+        {"motif": "test/lib/client.mjs"},
+        {"motif": "test/fixtures/v1/**"},
+        {"motif": "test/textes-pages.mjs"},
+        {"motif": "test/identite.mjs"},
+        {"motif": "test/coque.html"},
+        {"motif": "test/coque.tsx"},
+        {"motif": "scripts/serveur-jetable.mjs"},
+        {"motif": "scripts/verifier-lot.mjs"},
+        {"motif": "docs/polymorphie/LOTS.json"}
+      ],
+      "partage": [
+        {"motif": "vite.config.ts", "note": "bloc test seulement ; cédé au lot 6"},
+        {"motif": "package.json", "note": "scripts seulement ; cédé au lot 9"}
+      ]
+    },
+    {
+      "id": "0b",
+      "titre": "Socle (2/2) : contrats, tableau de bord des réglages, aides de texte",
+      "vague": 0,
+      "dependances": [],
+      "possede": [
+        {"motif": "src/shared/config/index.ts"},
+        {"motif": "src/shared/config/rules.ts"},
+        {"motif": "src/shared/config/features.ts"},
+        {"motif": "src/shared/config/brand.ts"},
+        {"motif": "src/shared/config/limits.ts"},
+        {"motif": "src/shared/config/timings.ts"},
+        {"motif": "src/shared/config/home.ts"},
+        {"motif": "src/shared/rules.ts"},
+        {"motif": "src/shared/text/fr.ts"},
+        {"motif": "src/shared/text/regles.ts"},
+        {"motif": "src/shared/text/libelles.ts"},
+        {"motif": "src/shared/botProtocol.ts"},
+        {"motif": "src/server/settings.ts"},
+        {"motif": "src/client/storageKeys.ts"},
+        {"motif": "src/client/components/boardGeometry.ts"},
+        {"motif": "tsconfig.json"},
+        {"motif": "tsconfig.concepts.json"},
+        {"motif": "test/fr.test.ts"},
+        {"motif": "test/textes-regles.test.ts"},
+        {"motif": "test/config.test.ts"},
+        {"motif": "test/socle.test.ts"},
+        {"motif": "test/board-geometry.test.ts"},
+        {"motif": "test/garde-fous/**"},
+        {"motif": "test/fixtures/protocole.json"},
+        {"motif": "test/fixtures/rules-v1.json"}
+      ],
+      "partage": [
+        {"motif": "src/shared/protocol.ts", "note": "puis gelé jusqu'au lot 9"},
+        {"motif": "src/shared/game.ts", "note": "types et alias seulement ; cédé au lot 1"},
+        {
+          "motif": "src/shared/cards.ts",
+          "note": "champs de données ranks, clockRate, genre, CATALOG_IDS ; cédé au lot 1"
+        },
+        {"motif": "src/shared/bot.ts", "note": "BOT_LEVELS, DEFAULT_BOT_LEVEL, botLevelOr ; cédé au lot 1"},
+        {"motif": "src/shared/catalog.ts", "note": "BOT_LOOK typé Record<BotLevel> ; cédé au lot 2"},
+        {"motif": "src/client/store.tsx", "note": "useFeature ; cédé au lot 6"}
+      ]
+    },
+    {
+      "id": "1",
+      "titre": "Moteur, cartes et IA",
+      "vague": 1,
+      "dependances": ["0a", "0b"],
+      "possede": [
+        {"motif": "src/shared/game.ts"},
+        {"motif": "src/shared/cards.ts"},
+        {"motif": "src/shared/bot.ts"},
+        {"motif": "src/shared/pgn.ts"},
+        {"motif": "src/shared/chess.ts", "note": "aucune lecture de réglage"},
+        {"motif": "src/shared/rules.ts"},
+        {"motif": "src/server/bot-worker.ts"},
+        {"motif": "src/server/bot-worker-dev.mjs"},
+        {"motif": "src/client/ai/**"},
+        {"motif": "test/game.test.ts"},
+        {"motif": "test/chess.test.ts"},
+        {"motif": "test/climats.test.ts"},
+        {"motif": "test/climats-random.test.ts"},
+        {"motif": "test/climats-adverse.test.ts"},
+        {"motif": "test/pouvoirs-adverse.test.ts"},
+        {"motif": "test/bot.test.ts"},
+        {"motif": "test/pgn.test.ts"},
+        {"motif": "test/regles-matrice.test.ts"},
+        {"motif": "test/compat-parties.test.ts"},
+        {"motif": "test/frequences.test.ts"},
+        {"motif": "scripts/banc-ia.mjs"}
+      ],
+      "partage": [
+        {"motif": "test/fixtures/v1/generer.ts", "note": "générateur des témoins seulement (signatures, ECARTS_VOULUS d'une correction décidée) ; témoins JSON figés, au lot 0a ; cédé au lot 3"}
+      ]
+    },
+    {
+      "id": "2",
+      "titre": "Boutique et équipement",
+      "vague": 1,
+      "dependances": ["0a", "0b"],
+      "possede": [
+        {"motif": "src/shared/catalog.ts"},
+        {"motif": "src/shared/skins/**"},
+        {"motif": "src/client/skins.ts"},
+        {"motif": "src/client/components/CollectionSeal.tsx"},
+        {"motif": "src/client/components/boardTheme.ts"},
+        {"motif": "src/client/pages/Shop.tsx"},
+        {"motif": "src/client/pages/Account.tsx"},
+        {"motif": "src/client/pages/DemoCheckout.tsx"},
+        {"motif": "src/client/pages/Profile.tsx"},
+        {"motif": "src/client/pages/Admin.tsx"},
+        {"motif": "src/client/pages/shop/**"},
+        {"motif": "src/server/shop.ts"},
+        {"motif": "src/server/admin.ts"},
+        {"motif": "src/server/account.ts"},
+        {"motif": "src/server/mail.ts"},
+        {"motif": "test/catalog.test.ts"},
+        {"motif": "test/server-shop.test.ts"},
+        {"motif": "test/server-refund.test.ts"},
+        {"motif": "test/trial.test.ts"},
+        {"motif": "test/boards.test.ts"},
+        {"motif": "test/shop-promises.mjs"},
+        {"motif": "test/stripe-webhook.mjs"},
+        {"motif": "test/boutique.mjs"},
+        {"motif": "test/rois.mjs"},
+        {"motif": "test/echiquiers.mjs"},
+        {"motif": "test/fixtures/rois/**"}
+      ],
+      "partage": [
+        {"motif": "test/kings.test.ts", "note": "cédé au lot 7 pour la partie lieux"},
+        {"motif": "test/fixtures/v1/existantes.json", "note": "classement des captures existantes seulement (echiquiers, boutique : stables une fois les scripts reproductibles) ; cédé au lot 4"}
+      ]
+    },
+    {
+      "id": "3",
+      "titre": "Serveur : règles par partie, réglages nommés, concurrence, robustesse, interrupteurs",
+      "vague": 2,
+      "dependances": ["0a", "0b", "1"],
+      "possede": [
+        {"motif": "src/server/games.ts"},
+        {"motif": "src/server/settings.ts"},
+        {"motif": "src/server/rating.ts"},
+        {"motif": "src/server/config.ts"},
+        {"motif": "src/server/db.ts"},
+        {"motif": "src/server/index.ts"},
+        {"motif": "src/server/auth.ts"},
+        {"motif": "src/server/security.ts"},
+        {"motif": "src/server/bot-pool.ts"},
+        {"motif": "src/server/summary.ts"},
+        {"motif": "src/server/timezones.ts"},
+        {"motif": "deploy/production.env"},
+        {"motif": "deploy/README.md"},
+        {"motif": ".env.example"},
+        {"motif": "test/server-draft.test.ts"},
+        {"motif": "test/server-clock.test.ts"},
+        {"motif": "test/server-kings.test.ts"},
+        {"motif": "test/server-file.test.ts"},
+        {"motif": "test/server-assise.test.ts"},
+        {"motif": "test/server-regles.test.ts"},
+        {"motif": "test/server-config.test.ts"},
+        {"motif": "test/server-features.test.ts"},
+        {"motif": "test/rating.test.ts"},
+        {"motif": "test/integration.mjs"},
+        {"motif": "test/ranked.mjs"},
+        {"motif": "test/climats-serveur.mjs"}
+      ],
+      "partage": [
+        {"motif": "src/server/games.ts", "note": "cédés au lot 9 pour le raccord SLOT_DEFS"},
+        {"motif": "src/server/auth.ts", "note": "cédés au lot 9 pour le raccord SLOT_DEFS"},
+        {"motif": "test/fixtures/v1/generer.ts", "note": "reçu du lot 1 ; générateur des témoins seulement (vues des salles, ECARTS_VOULUS) ; témoins JSON figés ; cédé au lot 9"}
+      ]
+    },
+    {
+      "id": "4",
+      "titre": "Effets, échiquier et sons",
+      "vague": 2,
+      "dependances": ["0a", "0b"],
+      "possede": [
+        {"motif": "src/client/vfx/**"},
+        {"motif": "src/client/sound.ts"},
+        {"motif": "src/client/motion.ts"},
+        {"motif": "src/client/components/Board.tsx"},
+        {"motif": "src/client/components/premoves.ts"},
+        {"motif": "src/client/components/mate.ts"},
+        {"motif": "src/client/components/CardArt.tsx"},
+        {"motif": "src/client/components/cardScenes.ts"},
+        {"motif": "src/client/components/CardScene.tsx"},
+        {"motif": "src/client/components/pieces.ts"},
+        {"motif": "src/client/styles/board.css"},
+        {"motif": "test/textures.test.ts"},
+        {"motif": "test/mate.test.ts"},
+        {"motif": "test/premoves.test.ts"},
+        {"motif": "test/scenes.html"},
+        {"motif": "test/scenes.tsx"},
+        {"motif": "test/vfx-harness.tsx"},
+        {"motif": "test/vfx.html"},
+        {"motif": "test/sorts.mjs"},
+        {"motif": "test/cardfx.test.ts"},
+        {"motif": "test/durees-css.test.ts"}
+      ],
+      "partage": [
+        {"motif": "test/fixtures/v1/existantes.json", "note": "reçu du lot 2 ; classement des captures existantes seulement (sorts) ; cédé au lot 9"}
+      ]
+    },
+    {
+      "id": "5",
+      "titre": "Partie en ligne et coque partagée",
+      "vague": 3,
+      "dependances": ["0a", "0b", "1", "3"],
+      "possede": [
+        {"motif": "src/client/game/**"},
+        {"motif": "src/client/odyssee/shell/**"},
+        {"motif": "src/client/features/CardHand.tsx"},
+        {"motif": "src/client/features/BoardStage.tsx"},
+        {"motif": "src/client/components/SpellCard.tsx"},
+        {"motif": "src/client/pages/GameRoute.tsx"},
+        {"motif": "src/client/styles/game.css"},
+        {"motif": "src/client/styles/cards.css"},
+        {"motif": "test/v2-correction.test.ts"},
+        {"motif": "test/v2-revue.test.ts"},
+        {"motif": "test/coque-layout.test.ts"},
+        {"motif": "test/choix-cartes.test.ts"}
+      ],
+      "partage": []
+    },
+    {
+      "id": "6",
+      "titre": "Socle client, marque, routes et SEO",
+      "vague": 3,
+      "dependances": ["0a", "0b", "3"],
+      "possede": [
+        {"motif": "src/client/App.tsx"},
+        {"motif": "src/client/main.tsx"},
+        {"motif": "src/client/api.ts"},
+        {"motif": "src/client/socket.ts"},
+        {"motif": "src/client/store.tsx"},
+        {"motif": "src/client/components/Layout.tsx"},
+        {"motif": "src/client/pages/NotFound.tsx"},
+        {"motif": "src/client/pages/Legal.tsx"},
+        {"motif": "src/client/pages/PageScene.tsx"},
+        {"motif": "src/client/features/ui.tsx"},
+        {"motif": "src/client/features/storage.ts"},
+        {"motif": "src/client/styles/global.css"},
+        {"motif": "src/shared/config/routes.ts"},
+        {"motif": "src/server/site.ts"},
+        {"motif": "index.html"},
+        {"motif": "public/**"},
+        {"motif": "vite.config.ts"},
+        {"motif": "test/og.tsx"},
+        {"motif": "test/og.html"},
+        {"motif": "test/routes.test.ts"},
+        {"motif": "test/marque.test.ts"},
+        {"motif": "test/socle-client.test.ts"}
+      ],
+      "partage": []
+    },
+    {
+      "id": "7",
+      "titre": "Accueil Odyssée",
+      "vague": 4,
+      "dependances": ["0a", "0b", "1", "2", "5"],
+      "possede": [
+        {"motif": "src/client/odyssee/OdysseeHome.tsx"},
+        {"motif": "src/client/odyssee/useLiveGame.ts"},
+        {"motif": "src/client/odyssee/useHomeLobby.ts"},
+        {"motif": "src/client/odyssee/StageBoard.tsx"},
+        {"motif": "src/client/odyssee/data.ts"},
+        {"motif": "src/client/odyssee/parts.tsx"},
+        {"motif": "src/client/odyssee/country.ts"},
+        {"motif": "src/client/odyssee/castSafely.ts"},
+        {"motif": "src/client/odyssee/odyssee.css"},
+        {"motif": "src/client/odyssee/scenery.tsx", "note": "sélection par identifiant seulement"},
+        {"motif": "src/client/odyssee/engine.ts", "note": "ajouts d'export seulement"},
+        {"motif": "test/accueil.test.ts"}
+      ],
+      "partage": [{"motif": "test/kings.test.ts", "note": "reçu du lot 2 ; adaptation à PLACES seulement"}]
+    },
+    {
+      "id": "8",
+      "titre": "Pages, contenu pédagogique et libellés",
+      "vague": 4,
+      "dependances": ["0a", "0b", "1"],
+      "possede": [
+        {"motif": "src/client/pages/Rules.tsx"},
+        {"motif": "src/client/pages/Rules.css"},
+        {"motif": "src/client/pages/Play.tsx"},
+        {"motif": "src/client/pages/Learn.tsx"},
+        {"motif": "src/client/pages/Puzzles.tsx"},
+        {"motif": "src/client/pages/MyGames.tsx"},
+        {"motif": "src/client/pages/Live.tsx"},
+        {"motif": "src/client/pages/Leaderboard.tsx"},
+        {"motif": "src/client/pages/Auth.tsx"},
+        {"motif": "src/client/pages/Analysis.tsx"},
+        {"motif": "src/client/pages/Home.tsx", "note": "suppression"},
+        {"motif": "src/client/components/DemoBoard.tsx", "note": "suppression"},
+        {"motif": "src/client/features/format.ts"},
+        {"motif": "src/client/features/history.ts"},
+        {"motif": "src/client/features/review.ts"},
+        {"motif": "src/client/features/EvalViews.tsx"},
+        {"motif": "src/client/features/MiniBoard.tsx"},
+        {"motif": "src/client/features/MoveTree.tsx"},
+        {"motif": "src/client/features/PositionEditor.tsx"},
+        {"motif": "src/client/features/engine.ts"},
+        {"motif": "src/client/features/engine.worker.ts"},
+        {"motif": "src/client/features/features.css"},
+        {"motif": "src/client/styles/pages.css"},
+        {"motif": "src/shared/lessons.ts"},
+        {"motif": "src/shared/puzzles.ts"},
+        {"motif": "test/lessons.test.ts"},
+        {"motif": "test/puzzles.test.ts"}
+      ],
+      "partage": []
+    },
+    {
+      "id": "9",
+      "titre": "Intégration, vérification et documentation (seul sur la machine)",
+      "vague": 5,
+      "dependances": ["0a", "0b", "1", "2", "3", "4", "5", "6", "7", "8"],
+      "possede": [
+        {"motif": "README.md"},
+        {"motif": "docs/REGLAGES.md"},
+        {"motif": "test/coherence.test.ts"},
+        {"motif": "test/perf/mesure.mjs"},
+        {"motif": "test/glisser.mjs"},
+        {"motif": "package.json"}
+      ],
+      "partage": [
+        {"motif": "src/server/auth.ts", "note": "SLOT_COLUMN dérivé de SLOT_DEFS"},
+        {"motif": "src/server/games.ts", "note": "SLOT_COLUMN dérivé de SLOT_DEFS"},
+        {"motif": "src/shared/text/regles.ts", "note": "remontée des phrases locales en double"},
+        {"motif": "src/shared/protocol.ts", "note": "retrait des alias"},
+        {"motif": "src/shared/game.ts", "note": "retrait des alias"},
+        {"motif": "src/client/odyssee/shell/cards.ts", "note": "retrait du repli sur le texte des refus"},
+        {"motif": "test/fixtures/v1/generer.ts", "note": "reçu du lot 3 ; générateur des témoins seulement ; témoins JSON figés"},
+        {"motif": "test/fixtures/v1/existantes.json", "note": "reçu du lot 4 ; classement des captures existantes seulement"}
+      ]
+    }
+  ],
+  "passages": [
+    {
+      "fichiers": ["test/fixtures/v1/existantes.json"],
+      "ordre": ["0a", "2", "4", "9"],
+      "note": "classement stables / bruitées des captures existantes : un lot qui rend son script reproductible reprend la référence sur le code d'avant et passe ses images en « stables »"
+    },
+    {
+      "fichiers": ["test/fixtures/v1/generer.ts"],
+      "ordre": ["0a", "1", "3", "9"],
+      "note": "le générateur seul (adaptation aux signatures, écarts voulus déclarés) ; les témoins JSON et textes restent au lot 0a, figés"
+    },
+    {
+      "fichiers": ["src/shared/game.ts", "src/shared/cards.ts", "src/shared/bot.ts", "src/shared/rules.ts"],
+      "ordre": ["0b", "1"],
+      "note": "0b : types, alias et champs de données ; 1 : le reste. game.ts revient au lot 9 (retrait des alias)."
+    },
+    {"fichiers": ["src/shared/game.ts"], "ordre": ["1", "9"], "note": "retrait des alias"},
+    {"fichiers": ["src/shared/catalog.ts"], "ordre": ["0b", "2"], "note": "0b : BOT_LOOK typé Record<BotLevel>"},
+    {"fichiers": ["src/client/store.tsx"], "ordre": ["0b", "6"], "note": "0b : useFeature"},
+    {"fichiers": ["src/server/settings.ts"], "ordre": ["0b", "3"]},
+    {"fichiers": ["vite.config.ts"], "ordre": ["0a", "6"], "note": "0a : bloc test seulement"},
+    {"fichiers": ["package.json"], "ordre": ["0a", "9"], "note": "0a : scripts seulement"},
+    {"fichiers": ["test/kings.test.ts"], "ordre": ["2", "7"], "note": "7 : adaptation à PLACES seulement"},
+    {
+      "fichiers": ["src/server/auth.ts", "src/server/games.ts"],
+      "ordre": ["3", "9"],
+      "note": "9 : SLOT_COLUMN dérivé de SLOT_DEFS"
+    },
+    {"fichiers": ["src/shared/protocol.ts"], "ordre": ["0b", "9"], "note": "gelé entre les deux"},
+    {
+      "fichiers": ["src/shared/text/regles.ts"],
+      "ordre": ["0b", "9"],
+      "note": "gelé entre les deux ; 9 : remontée des phrases locales en double"
+    },
+    {
+      "fichiers": ["src/client/odyssee/shell/cards.ts"],
+      "ordre": ["5", "9"],
+      "note": "9 : retrait du repli sur le texte des refus"
+    }
+  ],
+  "geles": [
+    {"motif": "src/shared/protocol.ts", "apres": "0b", "jusqua": "9"},
+    {"motif": "src/shared/config/**", "sauf": ["src/shared/config/routes.ts"], "apres": "0b", "jusqua": "9"},
+    {"motif": "src/shared/text/regles.ts", "apres": "0b", "jusqua": "9"}
+  ]
+}

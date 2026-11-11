@@ -1,0 +1,94 @@
+Aller au contenu
+8
+7
+6
+5
+4
+3
+2
+a
+1
+b
+c
+d
+e
+f
+g
+h
+Retour
+⋯
+
+COUP 1 · POUVOIRS
+
+Au tour d'Aurore.
+B
+Basile
+Invité · Noirs
+5:00
+PARTIE SANS CARTES
+5:00
+A
+Aurore · vous
+Invité · Blancs
+
+CHOIX DES CARTES · ENTRE AMIS · 5 + 0
+
+Choisissez vos trois cartes.
+
+Huit pouvoirs, les mêmes pour vous deux. Lisez leur règle, prenez-en trois : votre choix reste secret jusqu’à ce que votre adversaire ait choisi aussi, puis les deux mains sont visibles de tous.
+
+Sablier fou
+CLIMAT · 6 COUPS
+Au prochain tour
+En plus de votre coup
++2 s par coup
+×2 · +0 s
+Pendant 6 coups, les deux pendules s’écoulent deux fois plus vite et les coups ne rapportent plus d’incrément.
+Trêve
+CLIMAT · 3 COUPS
+Au prochain tour
+En plus de votre coup
+1
+Pendant 3 coups, aucune capture n’est permise (prise en passant comprise), sauf pour sortir d’un échec. L’adversaire reprend les captures le premier.
+Lune de sang
+CLIMAT · 3 COUPS
+Au prochain tour
+En plus de votre coup
+1
+2
+Pendant 3 coups, un joueur qui peut capturer doit capturer ; il choisit la capture (prise en passant comprise). L’adversaire retrouve le premier sa liberté.
+Ère glaciaire
+CLIMAT · 4 COUPS
+Au prochain tour
+En plus de votre coup
+Pendant 4 coups, tous les pions des deux camps sont gelés : ils ne bougent ni ne capturent. Un roi ne peut toujours pas se placer sur une case qu’attaque un pion adverse.
+Déflagration
+CLIMAT · 4 COUPS
+Au prochain tour
+En plus de votre coup
+Pendant 4 coups, toute prise fait exploser la pièce qui prend avec sa victime : les deux disparaissent. Les pièces voisines ne craignent rien. Un roi prend normalement.
+Mur de glace
+TERRAIN · PERMANENT · TOUTE LA PARTIE
+Immédiat
+En plus de votre coup
+Une case vide entre la 3e et la 6e rangée devient infranchissable pour les deux camps, jusqu’à la fin de la partie : aucune pièce ne peut s’y arrêter ni la traverser. Un cavalier peut sauter par-dessus.
+Faille
+TERRAIN · 4 COUPS
+Immédiat
+En plus de votre coup
+Choisissez la 4e ou la 5e rangée. Pendant 4 coups, toutes ses cases vides deviennent un gouffre : aucune pièce ne peut s’y arrêter ni le traverser. Les cavaliers passent par-dessus.
+Grande Marée
+ÉVÉNEMENT · INSTANTANÉ
+Immédiat
+Remplace votre coup
+Tous les pions des deux camps qui sont sur leurs 2e à 5e rangées avancent d’une case, si elle est libre. C’est ensuite à l’adversaire de jouer.
+‹n›
+Carte 1
+Carte 2
+Carte 3
+
+Basile choisit ses cartes…
+
+Annuler la partie
+VALIDER MES CARTES
+Encore trois cartes

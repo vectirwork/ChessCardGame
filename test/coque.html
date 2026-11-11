@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Coque de partie (banc d'identité)</title>
+  </head>
+  <!-- Banc de la coque (test/coque.tsx). Avec le serveur de développement (npx vite) : /test/coque.html?ecran=partie&n=3
+       (écrans : partie, carte, attente, choix, choix-partiel, choix-valide, revelation, mini ; n de 1 à 6).
+       test/identite.mjs assemble le même fichier par esbuild et l'injecte ici à la place de la balise script. -->
+  <body style="margin:0;background:#070821">
+    <div id="root"></div>
+    <script type="module" src="./coque.tsx"></script>
+  </body>
+</html>

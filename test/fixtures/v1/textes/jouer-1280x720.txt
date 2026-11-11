@@ -1,0 +1,105 @@
+Aller au contenu
+SPELLMATE
+Jouer
+Apprendre
+Problèmes
+Analyse
+Boutique
+Se connecter
+Menu
+
+JOUER · LE SEUIL
+
+Choisissez votre adversaire.
+
+Les échecs, plus trois cartes de pouvoir chacun, que vous choisissez au début de la partie. Une IA, un ami, ou le premier joueur venu : la partie s’ouvre en plein écran.
+
+I
+Contre l'IA
+3 niveaux
+Apprenti, Sorcier ou Archimage : une IA qui calcule et garde ses sorts pour le bon moment.
+II
+Défier un ami
+Sans compte
+Créez la partie, envoyez le lien : votre ami la rejoint en un clic, sur mobile comme sur ordinateur.
+III
+Partie amicale
+Ouverte à tous
+Un adversaire humain, au hasard, sans classement. Aucun compte nécessaire.
+IV
+Partie classée
+Elo
+Un adversaire de votre niveau, et votre classement qui évolue. Un compte gratuit suffit.
+
+Sans rien choisir : la partie immédiate de l’accueil.
+Les cartes et leurs règles
+
+PORTE I · CONTRE L'IA
+
+Affronter l'Oracle.
+
+Elle commence dès que vous êtes prêt. Vous pouvez la quitter et la reprendre.
+
+NIVEAU DE L’IA
+Apprenti
+Joue vite, lance ses sorts au hasard.
+≈ 800 Elo
+Sorcier
+Calcule, protège ses pièces, garde une carte pour la fin.
+≈ 1300 Elo
+Archimage
+Calcule en profondeur et punit chaque sort gaspillé.
+≈ 1800 Elo
+CARTES
+POUVOIRS
+Huit pouvoirs, visibles des deux joueurs, qui changent la partie pour les deux camps.
+SANS CARTES
+Les échecs classiques, rien d’autre.
+Vous choisirez vos trois cartes au début de la partie, en 45 secondes : votre choix reste secret jusqu’à ce que votre adversaire ait choisi aussi.
+CADENCE
+1 + 0
+Bullet
+3 + 2
+Blitz
+5 + 0
+Blitz
+10 + 0
+Rapide
+15 + 10
+Rapide
+Sans limite
+Libre
+VOTRE COULEUR
+Blancs
+Au hasard
+Noirs
+VOTRE PSEUDO
+Pas de compte nécessaire. En créer un pour garder votre historique.
+COMMENCER LA PARTIE
+Contre le Sorcier · 10 + 0
+SPELLMATE
+
+Les échecs que vous aimez, avec trois cartes de pouvoir pour renverser la partie. Gratuit, sans publicité, sans pay-to-win.
+
+JOUER
+Partie immédiate
+Contre l'IA
+Inviter un ami
+Parties classées
+Parties en direct
+APPRENDRE
+Leçons
+Problèmes
+Analyse
+Règles et cartes
+COMMUNAUTÉ
+Classement
+Mes parties
+Boutique
+LÉGAL
+Mentions légales
+Conditions d'utilisation
+Conditions de vente
+Confidentialité
+© 2026 Spellmate. Tous droits réservés.
+Les échecs, avec un peu de magie.

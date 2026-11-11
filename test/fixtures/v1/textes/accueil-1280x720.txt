@@ -1,0 +1,365 @@
+Aller au contenu
+SPELLMATE
+Jouer
+Apprendre
+Problèmes
+Analyse
+Boutique
+Se connecter
+Menu
+N
+E
+S
+O
+8
+7
+6
+5
+4
+3
+2
+a
+1
+b
+c
+d
+e
+f
+g
+h
+CONTRE L'IA · VOUS AVEZ LES BLANCS · JOUEZ VOTRE PREMIER COUP
+ALTITUDE
+9 120 m
+L'OBSERVATOIRE
+I
+L'OBSERVATOIRE
+II
+LA FORÊT DE GIVRE
+III
+LES PICS DE L'ORAGE
+IV
+LE SABLIER
+V
+LE BAZAR CÉLESTE
+VI
+LE SEUIL
+
+I
+L'OBSERVATOIRE
+
+Les échecs
+ont appris
+la magie.
+
+Une vraie partie d'échecs, trois cartes de pouvoir, un sort par tour. La partie est déjà ouverte : déplacez une pièce sur l'échiquier, l’Oracle, une IA, vous répond.
+
+VOS TROIS SORTS
+Trêve
+Mur de glace
+Lune de sang
+Touchez-en un pour le lire et le lancer, puis jouez votre coup.
+
+L'ORACLE TIENT
+Trêve
+Ère glaciaire
+Grande Marée
+
+CONTRE
+IA
+l'Oracle, une intelligence artificielle
+NIVEAU
+Apprenti
+Sorcier
+Archimage
+
+CHERCHER UN VRAI JOUEUR
+sans compte ; l'IA continue de jouer en attendant
+
+Ouvrir la partie en plein écran
+GRATUIT
+SANS COMPTE
+ZÉRO PAY-TO-WIN
+DÉFILER POUR DESCENDRE
+
+II
+LA FORÊT DE GIVRE
+6 480 M
+
+Une partie d'échecs.
+Trois sorts en main.
+01
+Les échecs, intacts.
+
+Roque, prise en passant, promotion, pendule : toutes les règles, sans exception. Votre jeu reste votre meilleure arme.
+
+02
+Trois cartes, visibles.
+
+Au début d'une partie, vous choisissez vos trois cartes ; sur l'accueil, elles sont tirées au hasard. Visibles des deux joueurs, chacune ne sert qu'une fois.
+
+03
+Un sort par tour.
+
+Avant votre coup, lancez une carte : elle change la partie pour les deux camps. Certaines s’annoncent un tour à l’avance.
+
+Ici, le froid
+gagne la partie.
+
+Sous les pins gelés, on apprend à fermer le jeu : figer tous les pions, murer une case pour toute la partie, fendre le plateau. Le froid tient les deux camps.
+
+AU PROCHAIN TOUR
+Ère glaciaire
++
+En plus du coup
+
+RARE
+4 COUPS (2 CHACUN)
+
+Ère glaciaire
+
+Le front se fige.
+
+Annoncée, elle arrive au début de votre prochain tour. Pendant 4 coups, tous les pions des deux camps sont gelés : ils ne bougent ni ne capturent. Un roi ne peut toujours pas se placer sur une case qu’attaque un pion adverse.
+
+EN PARTIE
+Présage : annoncée maintenant, elle arrive à votre tour suivant. L'adversaire a un coup pour s'y préparer.
+
+IMMÉDIAT
+Mur de glace
++
+En plus du coup
+
+COMMUNE
+JUSQU’À LA FIN DE LA PARTIE
+
+Mur de glace
+
+Ici, plus personne ne passe.
+
+Une case vide entre la 3e et la 6e rangée devient infranchissable pour les deux camps, jusqu’à la fin de la partie : aucune pièce ne peut s’y arrêter ni la traverser. Un cavalier peut sauter par-dessus.
+
+EN PARTIE
+Choisissez une case vide entre la 3e et la 6e rangée
+
+IMMÉDIAT
+Faille
++
+En plus du coup
+
+COMMUNE
+4 COUPS (2 CHACUN)
+
+Faille
+
+Le plateau se fend en deux.
+
+Choisissez la 4e ou la 5e rangée. Pendant 4 coups, toutes ses cases vides deviennent un gouffre : aucune pièce ne peut s’y arrêter ni le traverser. Les cavaliers passent par-dessus.
+
+EN PARTIE
+Choisissez la 4e ou la 5e rangée (une case de la rangée)
+
+III
+LES PICS DE L'ORAGE
+4 210 M
+
+Là-haut,
+le ciel tranche.
+
+Des climats nés dans l'orage : chaque prise qui explose, des captures forcées, une trêve où plus personne ne prend. Pour les deux camps, toujours.
+
+AU PROCHAIN TOUR
+Déflagration
++
+En plus du coup
+
+ÉPIQUE
+4 COUPS (2 CHACUN)
+
+Déflagration
+
+Chaque prise est un sacrifice.
+
+Annoncée, elle arrive au début de votre prochain tour. Pendant 4 coups, toute prise fait exploser la pièce qui prend avec sa victime : les deux disparaissent. Les pièces voisines ne craignent rien. Un roi prend normalement.
+
+EN PARTIE
+Présage : annoncée maintenant, elle arrive à votre tour suivant. L'adversaire a un coup pour s'y préparer.
+
+AU PROCHAIN TOUR
+Lune de sang
++
+En plus du coup
+
+ÉPIQUE
+3 COUPS (VOUS, LUI, VOUS)
+
+Lune de sang
+
+Qui peut prendre, doit prendre.
+
+Annoncée, elle arrive au début de votre prochain tour. Pendant 3 coups, un joueur qui peut capturer doit capturer ; il choisit la capture (prise en passant comprise). L’adversaire retrouve le premier sa liberté.
+
+EN PARTIE
+Présage : annoncée maintenant, elle arrive à votre tour suivant. L'adversaire a un coup pour s'y préparer.
+
+AU PROCHAIN TOUR
+Trêve
++
+En plus du coup
+
+COMMUNE
+3 COUPS (VOUS, LUI, VOUS)
+
+Trêve
+
+Les armes se taisent.
+
+Annoncée, elle arrive au début de votre prochain tour. Pendant 3 coups, aucune capture n’est permise (prise en passant comprise), sauf pour sortir d’un échec. L’adversaire reprend les captures le premier.
+
+EN PARTIE
+Présage : annoncée maintenant, elle arrive à votre tour suivant. L'adversaire a un coup pour s'y préparer.
+
+IV
+LE SABLIER
+1 730 M
+
+Le temps,
+retourné.
+
+Au cœur du désert, le grand sablier obéit aux audacieux : affoler les deux pendules, lever la marée qui pousse tous les pions.
+
+AU PROCHAIN TOUR
+Sablier fou
++
+En plus du coup
+
+RARE
+6 COUPS (3 CHACUN)
+
+Sablier fou
+
+Le temps s’emballe pour tout le monde.
+
+Annoncé, il arrive au début de votre prochain tour. Pendant 6 coups, les deux pendules s’écoulent deux fois plus vite et les coups ne rapportent plus d’incrément.
+
+EN PARTIE
+Présage : annoncée maintenant, elle arrive à votre tour suivant. L'adversaire a un coup pour s'y préparer.
+
+IMMÉDIAT
+Grande Marée
+Remplace le coup
+
+RARE
+INSTANTANÉ
+
+Grande Marée
+
+La mer avance pour tout le monde.
+
+Rituel : la carte remplace votre coup. Tous les pions des deux camps qui sont sur leurs 2e à 5e rangées avancent d’une case, si elle est libre. C’est ensuite à l’adversaire de jouer.
+
+EN PARTIE
+Rituel : la carte remplace votre coup.
+
+Le monde change.
+Pour les deux camps.
+
+Une carte ne vous donne pas un pouvoir : elle change la partie pour tout le monde. Vos cartes et celles de l’adversaire sont visibles : vous gagnez parce que vous avez choisi le moment.
+
+Toutes les règles et les cartes
+Apprendre pas à pas
+
+ZÉRO PAY-TO-WIN · STYLE UNIQUEMENT ·
+
+V
+LE BAZAR CÉLESTE
+640 M
+
+Du style.
+Jamais d'avantage.
+
+La boutique ne vend que de l'apparence : votre roi, votre échiquier et l'habillage de vos sorts. Toutes les cartes, tous les modes et le classement restent gratuits. 
+Entrer dans la boutique
+
+ROIS
+Roi du printemps · 2,99 €
+SORTS
+Sakura · 2,99 €
+Arcane
+Offert
+Inferno
+2,99 €
+Néon 2084
+2,99 €
+Céleste
+3,99 €
+Néant
+3,99 €
+Sakura
+2,99 €
+Laurier
+2,99 €
+Écarlate
+3,99 €
+ÉCHIQUIERS
+Palais de jade · 1,99 €
+Roi du printemps
+Une couronne de lotus, une fleur de cerisier pour croix et un rameau en fleurs gravé sur la porcelaine.
+2,99 € · BOUTIQUE
+
+VI
+LE SEUIL
+0 M
+
+La descente s'achève.
+La partie commence.
+
+Une partie dure de 5 à 20 minutes. La vôtre vous attend sur l'échiquier, sans inscription.
+
+FRANCHIR LE SEUIL
+Contre l'Oracle · Sorcier
+
+TROIS PORTES
+
+I
+Défier un ami Sans compte
+Créez une partie, envoyez le lien. Votre ami la rejoint en un clic, sur mobile comme sur ordinateur.
+→
+II
+Affronter l'IA 3 niveaux
+Apprenti, Sorcier ou Archimage : une IA qui calcule et garde ses sorts pour le bon moment.
+→
+III
+Parties classées Elo
+Montez au classement et gardez l'historique de vos parties. Un compte gratuit suffit.
+→
+Apprendre
+Problèmes
+Analyse
+En direct
+Classement
+SPELLMATE
+
+Les échecs que vous aimez, avec trois cartes de pouvoir pour renverser la partie. Gratuit, sans publicité, sans pay-to-win.
+
+JOUER
+Partie immédiate
+Contre l'IA
+Inviter un ami
+Parties classées
+Parties en direct
+APPRENDRE
+Leçons
+Problèmes
+Analyse
+Règles et cartes
+COMMUNAUTÉ
+Classement
+Mes parties
+Boutique
+LÉGAL
+Mentions légales
+Conditions d'utilisation
+Conditions de vente
+Confidentialité
+© 2026 Spellmate. Tous droits réservés.
+Les échecs, avec un peu de magie.

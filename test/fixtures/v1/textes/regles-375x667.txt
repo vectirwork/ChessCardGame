@@ -1,0 +1,336 @@
+Aller au contenu
+SPELLMATE
+
+LE GRIMOIRE
+RÈGLES ET CARTES
+
+Les échecs, et huit pouvoirs
+
+Spellmate, ce sont les échecs que vous connaissez, plus trois cartes de pouvoir chacun. Les deux mains sont visibles, et chaque pouvoir change la partie pour les deux camps.
+
+L’ESSENTIEL
+LE TEMPS DES SORTS
+LES HUIT POUVOIRS
+DEUX FORMULES
+
+I
+L’ESSENTIEL
+
+Six règles, rien de plus
+1
+Les échecs, tels quels
+
+Toutes les règles officielles s’appliquent : roque, prise en passant, promotion, pat, triple répétition, règle des 50 coups. On gagne par mat, au temps ou par abandon.
+
+2
+Trois cartes chacun, à découvert
+
+Au début d’une partie, vous choisissez vos trois cartes ; sur l’accueil, elles sont tirées au hasard. Votre choix reste secret jusqu’à ce que votre adversaire ait choisi, puis les deux mains restent visibles de tous jusqu’à la fin ; une carte jouée reste à sa place, grisée.
+
+3
+Un sort par tour, avant votre coup
+
+À votre tour, vous pouvez lancer une carte, puis vous jouez votre coup. Chaque carte ne sert qu’une fois. Seule exception : un Rituel remplace votre coup.
+
+4
+Chaque pouvoir touche les deux camps
+
+Aucun sort ne vise l’adversaire : il change une règle, des cases ou le plateau pour tout le monde. Tout l’art est de choisir le moment où ce monde nouveau vous sert davantage.
+
+5
+Pas d’échec par magie
+
+Une carte ne met jamais le roi adverse en échec : c’est votre coup qui le fait. Après votre carte, il doit vous rester un coup légal. Sans coup légal, vous devez jouer une carte qui vous en redonne un, s’il en existe une.
+
+6
+La magie cède
+
+Si les effets vous laissent sans aucun coup alors que vous n’êtes pas en échec, vous jouez ce coup comme s’ils n’existaient pas pour vos pièces. Si votre pièce s’arrête sur un Mur ou une Faille, la case redevient normale. Personne ne passe son tour.
+
+II
+LE TEMPS DES SORTS
+
+Présage, Rituel et durée
+
+Un pouvoir ne frappe jamais par surprise : le ciel s’annonce, la terre agit tout de suite, l’événement prend la place du coup.
+
+Présage
+
+CLIMATS
+
+Le sort est annoncé avant votre coup et arrive au début de votre tour suivant. En attendant, il est affiché pour tous : l’adversaire a toujours un coup pour s’y préparer.
+
+Tout de suite
+
+TERRAINS
+
+Le Mur de glace et la Faille agissent dès le lancement, avant votre coup : vous jouez déjà sur le terrain transformé.
+
+Rituel
+
+ÉVÉNEMENT
+
+La Grande Marée est votre coup : elle termine votre tour, et l’adversaire profite le premier de la nouvelle position.
+
+Durée en coups
+
+TOUS LES EFFETS
+
+Un coup, c’est le coup d’un seul joueur : « 4 coups (2 chacun) ». Le compte part de l’arrivée de l’effet et le plateau affiche les coups restants. Le Mur de glace, lui, reste jusqu’à la fin de la partie.
+
+Exemple : la Trêve, un Climat de 3 coups (vous, lui, vous). Aucune capture n’est permise pendant ces trois coups, sauf pour sortir d’un échec.
+VOUS
+Vous lancez la Trêve, puis vous jouez.
+Annoncée
+ADVERSAIRE
+Il répond : il la voit venir.
+Arrive au coup suivant
+VOUS
+Elle arrive : vous jouez sans capturer.
+1er coup sur 3
+ADVERSAIRE
+Il joue sans capturer.
+2e coup sur 3
+VOUS
+Vous jouez sans capturer.
+3e coup sur 3
+ADVERSAIRE
+Il peut capturer le premier.
+Terminée
+
+III
+LES HUIT POUVOIRS
+
+Trois familles, huit cartes
+
+Voici la règle exacte de chaque carte, telle que la partie l’applique.
+
+Climats
+PRÉSAGE
+
+Une règle change sur tout le plateau. Un seul Climat à la fois : le nouveau remplace l’ancien à son arrivée, et on ne peut pas en annoncer un tant qu’un autre est annoncé.
+
+AU PROCHAIN TOUR
+Sablier fou
++
+En plus du coup
+Sablier fou
+
+Le temps s’emballe pour tout le monde.
+
+Annoncé, il arrive au début de votre prochain tour. Pendant 6 coups, les deux pendules s’écoulent deux fois plus vite et les coups ne rapportent plus d’incrément.
++2 s par coup
+×2 · +0 s
+Pendule normale
+Deux fois plus vite, sans incrément
+ARRIVÉE
+Au prochain tour (annoncée)
+VOTRE COUP
+Joué en plus
+DURÉE
+6 coups (3 chacun)
+RARETÉ
+Rare
+
+Entre humains, avec pendule
+
+AU PROCHAIN TOUR
+Trêve
++
+En plus du coup
+Trêve
+
+Les armes se taisent.
+
+1
+Annoncée, elle arrive au début de votre prochain tour. Pendant 3 coups, aucune capture n’est permise (prise en passant comprise), sauf pour sortir d’un échec. L’adversaire reprend les captures le premier.
+ARRIVÉE
+Au prochain tour (annoncée)
+VOTRE COUP
+Joué en plus
+DURÉE
+3 coups (vous, lui, vous)
+RARETÉ
+Commune
+AU PROCHAIN TOUR
+Lune de sang
++
+En plus du coup
+Lune de sang
+
+Qui peut prendre, doit prendre.
+
+1
+2
+Annoncée, elle arrive au début de votre prochain tour. Pendant 3 coups, un joueur qui peut capturer doit capturer ; il choisit la capture (prise en passant comprise). L’adversaire retrouve le premier sa liberté.
+ARRIVÉE
+Au prochain tour (annoncée)
+VOTRE COUP
+Joué en plus
+DURÉE
+3 coups (vous, lui, vous)
+RARETÉ
+Épique
+AU PROCHAIN TOUR
+Ère glaciaire
++
+En plus du coup
+Ère glaciaire
+
+Le front se fige.
+
+Annoncée, elle arrive au début de votre prochain tour. Pendant 4 coups, tous les pions des deux camps sont gelés : ils ne bougent ni ne capturent. Un roi ne peut toujours pas se placer sur une case qu’attaque un pion adverse.
+Avant
+Pions gelés : ils ne bougent plus
+ARRIVÉE
+Au prochain tour (annoncée)
+VOTRE COUP
+Joué en plus
+DURÉE
+4 coups (2 chacun)
+RARETÉ
+Rare
+AU PROCHAIN TOUR
+Déflagration
++
+En plus du coup
+Déflagration
+
+Chaque prise est un sacrifice.
+
+Annoncée, elle arrive au début de votre prochain tour. Pendant 4 coups, toute prise fait exploser la pièce qui prend avec sa victime : les deux disparaissent. Les pièces voisines ne craignent rien. Un roi prend normalement.
+La dame prend le cavalier
+Les deux disparaissent
+ARRIVÉE
+Au prochain tour (annoncée)
+VOTRE COUP
+Joué en plus
+DURÉE
+4 coups (2 chacun)
+RARETÉ
+Épique
+Terrains
+TOUT DE SUITE
+
+Des cases changent pour les deux camps. Les Terrains se cumulent, jamais sur la même case ; une seule Faille à la fois.
+
+IMMÉDIAT
+Mur de glace
++
+En plus du coup
+Mur de glace
+
+Ici, plus personne ne passe.
+
+Une case vide entre la 3e et la 6e rangée devient infranchissable pour les deux camps, jusqu’à la fin de la partie : aucune pièce ne peut s’y arrêter ni la traverser. Un cavalier peut sauter par-dessus.
+Sans le mur
+Le mur arrête la tour
+ARRIVÉE
+Immédiate
+VOTRE COUP
+Joué en plus
+DURÉE
+Jusqu’à la fin de la partie
+RARETÉ
+Commune
+IMMÉDIAT
+Faille
++
+En plus du coup
+Faille
+
+Le plateau se fend en deux.
+
+Choisissez la 4e ou la 5e rangée. Pendant 4 coups, toutes ses cases vides deviennent un gouffre : aucune pièce ne peut s’y arrêter ni le traverser. Les cavaliers passent par-dessus.
+Avant
+La faille coupe le plateau
+ARRIVÉE
+Immédiate
+VOTRE COUP
+Joué en plus
+DURÉE
+4 coups (2 chacun)
+RARETÉ
+Commune
+Événement
+RITUEL
+
+Il agit une fois, à la place de votre coup, et ne laisse aucun effet derrière lui.
+
+IMMÉDIAT
+Grande Marée
+Remplace le coup
+Grande Marée
+
+La mer avance pour tout le monde.
+
+Rituel : la carte remplace votre coup. Tous les pions des deux camps qui sont sur leurs 2e à 5e rangées avancent d’une case, si elle est libre. C’est ensuite à l’adversaire de jouer.
+Avant
+Tous les pions avancent
+ARRIVÉE
+Immédiate
+VOTRE COUP
+Remplacé par la carte
+DURÉE
+Instantané
+RARETÉ
+Rare
+
+IV
+DEUX FORMULES
+
+Avec les pouvoirs, ou sans
+
+La formule se choisit avant la partie, dans les options de l’accueil ou sur la page Jouer.
+
+Pouvoirs
+Par défaut
+
+Huit pouvoirs, visibles des deux joueurs, qui changent la partie pour les deux camps.
+
+Trois cartes chacun, choisies parmi les huit pouvoirs au début de la partie.
+Les deux mains visibles, du premier au dernier coup.
+Un sort par tour au plus, toujours facultatif.
+Sans cartes
+
+Les échecs classiques, rien d’autre.
+
+Les règles officielles, sans aucune carte.
+Pour s’échauffer, travailler une ouverture ou jouer à l’ancienne.
+Précisions
+Le roi est hors d’atteinte des pouvoirs : aucun effet ne le déplace, ne le gèle ni ne le détruit.
+Votre roi doit être à l’abri après votre coup, avec les effets tels qu’ils seront alors : l’arrivée d’un Climat ou la fermeture d’une Faille comptent déjà. Celui qui répond à un Présage se prépare donc au monde qui arrive.
+Un Climat ne sauve jamais du mat : il arrive trop tard. Le Mur de glace, la Faille ou la Grande Marée le peuvent.
+Le Sablier fou n’est proposé qu’entre humains, dans les parties avec pendule.
+Le choix des cartes dure 45 secondes : trois cartes différentes parmi les huit pouvoirs, sans autre contrainte. Si le temps s’écoule, celles qui vous manquent sont tirées au hasard. Sur l’accueil, le tirage favorise les cartes les moins rares, avec au plus deux Climats par main.
+Les animations des sorts ne vous coûtent pas de temps à la pendule.
+Pré-coups : pendant que votre adversaire réfléchit, jouez déjà vos coups suivants, autant que vous voulez. Ils apparaissent en fantômes numérotés et se jouent d’eux-mêmes, dans l’ordre ; si l’un n’est plus possible, tous s’annulent. Clic droit (ou toucher une case vide) pour les annuler. Les cartes, elles, ne se préparent pas.
+Pour choisir vos cartes et votre adversaire, passez par la page Jouer.
+Jouer une partie
+Apprendre pas à pas
+SPELLMATE
+
+Les échecs que vous aimez, avec trois cartes de pouvoir pour renverser la partie. Gratuit, sans publicité, sans pay-to-win.
+
+JOUER
+Partie immédiate
+Contre l'IA
+Inviter un ami
+Parties classées
+Parties en direct
+APPRENDRE
+Leçons
+Problèmes
+Analyse
+Règles et cartes
+COMMUNAUTÉ
+Classement
+Mes parties
+Boutique
+LÉGAL
+Mentions légales
+Conditions d'utilisation
+Conditions de vente
+Confidentialité
+© 2026 Spellmate. Tous droits réservés.
+Les échecs, avec un peu de magie.

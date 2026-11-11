@@ -1,0 +1,948 @@
+{
+ "scores": [
+  {
+   "design": "centralise",
+   "simplicity": 6,
+   "coverage": 9,
+   "safety": 8,
+   "testability": 9,
+   "deliverability": 7,
+   "comment": "Conception la plus complète, avec 21 scénarios dont des extrapolations utiles : cartes suspendues, mode maintenance, règles par contexte. Elle protège bien les données enregistrées : la photographie des règles n'est écrite que si elle diffère des règles historiques, donc zéro octet change au réglage par défaut. Ses 300 parties-témoins rejouées coup pour coup donnent une excellente testabilité. Trois points la pénalisent. (1) `cardPlayed` y signifie « au moins une carte jouée » : il faudrait migrer chaque lecteur du client pour permettre 2 cartes par tour. Or ces lecteurs restent justes tels quels si `cardPlayed` signifie « budget épuisé » (vérifié : 20 occurrences, toutes de ce sens sauf les messages). (2) Elle active les mains cachées dès le lot serveur, ce qui fuit par R4c, par le matériel insuffisant et par l'IA, et oblige à adapter le client. (3) Elle prévoit deux rangées pour la main adverse, une mise en page nouvelle pour rien. Une douzaine de fichiers de configuration, des alias et des enveloppes « touche puis cède » sur beaucoup de fichiers alourdissent le plan."
+  },
+  {
+   "design": "ruleset",
+   "simplicity": 5,
+   "coverage": 8,
+   "safety": 7,
+   "testability": 8,
+   "deliverability": 8,
+   "comment": "Le registre de jeux de règles publiés et immuables est rigoureux, il permet plusieurs formules en même temps et des parties personnalisées. Mais il ajoute de la cérémonie : passer à 5 cartes demande un `derive()`, un changement de `SITE.formulas` et une montée de `PROTOCOL_VERSION`. On s'éloigne du « quelques constantes » demandé, et les comportements de catalogue se retrouvent recopiés dans chaque jeu. Sur la sûreté, sa formule d'éventail adverse `n - 0,1·(n-1) + 0,17` donne 2,9699999999999998 et non 2,97 (vérifié avec node) : l'identité exacte à N = 3 casse. Ses bons apports, repris dans la synthèse : témoins pris avant toute modification (relevé du texte des pages), serveur jetable, carte de propriété contrôlée par script, `dist` de référence hors git, en-tête PGN des règles, refus des mains cachées tant qu'elles ne sont pas prêtes."
+  },
+  {
+   "design": "donnees",
+   "simplicity": 8,
+   "coverage": 9,
+   "safety": 8,
+   "testability": 9,
+   "deliverability": 8,
+   "comment": "La meilleure base. Un seul objet `GAME_RULES` règle les nouvelles parties, et `DEAL` règle leur mise en place. `cardPlayed` garde son sens de lecture (« plus de carte possible ce tour »), avec un compteur à côté : aucun lecteur à migrer, et le contournement de l'accueil reste juste. Le défaut de fin du choix est corrigé à la source : le serveur dit quels camps ont vraiment reçu des cartes au hasard (`filled`). `checkRules` tourne au build, et `deploy/update.sh` (avec `set -e`, construction avant `up`) bloque alors le déploiement. La formule `(90n+27)/100` donne 2,97 exact. Le garde-fou des textes s'appuie sur une dette par lot. Trois défauts : elle écrit les règles dans tous les états (environ 300 octets, et le JSON enregistré change au réglage par défaut), elle ajoute `SeatView.look` sans besoin, et son lot 6 (pages, socle client, marque, routes, site.ts) est trop gros. La synthèse le scinde."
+  }
+ ],
+ "settingsTable": [
+  {
+   "key": "GAME_RULES.cardsPerPlayer",
+   "default": "3",
+   "scope": "par partie (photographiée si ≠ V1)",
+   "module": "src/shared/config/rules.ts",
+   "consumers": "dealHands, draftRefusal/completeDraft, chooseBotDraft, newRoom/draftView/schéma game:draft, CardDraft (via view.draft.count), éventails (via la longueur des mains), mini-main, textes (text/regles.ts)"
+  },
+  {
+   "key": "GAME_RULES.cardsPerTurn",
+   "default": "1",
+   "scope": "par partie",
+   "module": "src/shared/config/rules.ts",
+   "consumers": "cardPrecheck, R4c (evaluateEnd), castsLeft, decideTurn, maybeBot/relayPlay, shell/cards.ts, consignes"
+  },
+  {
+   "key": "GAME_RULES.cardEndsTurn",
+   "default": "false",
+   "scope": "par partie",
+   "module": "src/shared/config/rules.ts",
+   "consumers": "applyCardRaw (passTurn + finishTurn), commitCard (incrément via cardEndsTurn), profondeur de l'IA, pastilles de SpellCard, castMessage, textes"
+  },
+  {
+   "key": "GAME_RULES.handsVisible",
+   "default": "true (false refusé par checkRules dans cette passe)",
+   "scope": "par partie",
+   "module": "src/shared/config/rules.ts",
+   "consumers": "checkRules ; requires des leçons et problèmes ; réservé au futur lot « mains cachées » (viewFor, dos de carte)"
+  },
+  {
+   "key": "GAME_RULES.presageDelay",
+   "default": "2 (pair)",
+   "scope": "par partie",
+   "module": "src/shared/config/rules.ts",
+   "consumers": "addEffect (delay), sonde R4b en boucle, profondeur de l'IA, gabarit « arrive au début de votre prochain tour »"
+  },
+  {
+   "key": "GAME_RULES.fiftyHalfmoves / repetitions",
+   "default": "100 / 3",
+   "scope": "par partie",
+   "module": "src/shared/config/rules.ts",
+   "consumers": "evaluateEnd, RESULT_TEXT dérivé, page Règles"
+  },
+  {
+   "key": "GAME_RULES.startFen",
+   "default": "null (position standard, roque standard seulement)",
+   "scope": "par partie",
+   "module": "src/shared/config/rules.ts",
+   "consumers": "createGame, initialStateOf, export PGN, flèche d'invite de l'accueil, numérotation des coups"
+  },
+  {
+   "key": "RULES_BY_CONTEXT",
+   "default": "{} (mêmes règles partout)",
+   "scope": "création",
+   "module": "src/shared/config/rules.ts",
+   "consumers": "rulesFor(ctx) : newRoom (classee, amicale, invitation, ia), startHomeGame et useLiveGame (accueil), checkRules"
+  },
+  {
+   "key": "RULES_V1",
+   "default": "gelé (3, 1, false, true, 2, 100, 3, null, équilibrage actuel)",
+   "scope": "par partie (états sans `rules`)",
+   "module": "src/shared/config/rules.ts",
+   "consumers": "rulesOf, stampRules, leçons, problèmes, démonstrations, cabine de la boutique, relectures"
+  },
+  {
+   "key": "BOUNDS",
+   "default": "cartes par joueur 1 à 6, par tour 1 à 3, délai du Présage 2 à 6",
+   "scope": "global",
+   "module": "src/shared/config/rules.ts",
+   "consumers": "checkRules, schéma zod de game:draft"
+  },
+  {
+   "key": "CARDS.<id>.coups",
+   "default": "Sablier 6, Trêve 3, Lune 3, Ère 4, Déflagration 4, Faille 4",
+   "scope": "par partie (copié dans Rules.tuning)",
+   "module": "src/shared/cards.ts",
+   "consumers": "addEffect via tuneOf, gabarits des textes de cartes, frise de la Trêve (Règles), leçons, cardMeta"
+  },
+  {
+   "key": "CARDS.<id>.ranks",
+   "default": "Mur [2,3,4,5], Faille [3,4], Marée [1,2,3,4] (relatives)",
+   "scope": "par partie (copié)",
+   "module": "src/shared/cards.ts",
+   "consumers": "rawCandidates, riftSquares, tidePushes, garde WALL_MATE_PAIRS (mode prudent si différent), textes"
+  },
+  {
+   "key": "CARDS.hourglass.clockRate",
+   "default": "2",
+   "scope": "par partie (copié)",
+   "module": "src/shared/cards.ts",
+   "consumers": "clockRate (game.ts), textes « deux fois plus vite »"
+  },
+  {
+   "key": "CARDS.<id>.retired / genre",
+   "default": "absent / m ou f",
+   "scope": "contenu",
+   "module": "src/shared/cards.ts",
+   "consumers": "cardsOf (réserves), relectures ; accords des gabarits"
+  },
+  {
+   "key": "CATALOG_RULES",
+   "default": "climats : la magie cède, effets globaux, tirage pondéré, crédit de cinématique ; duel : instantanés, Mur partout, tirage uniforme ; aucune : comme aujourd'hui",
+   "scope": "par partie (le catalogue est stocké)",
+   "module": "src/shared/cards.ts",
+   "consumers": "magicYields, dealHands, pushSnapshot, rawCandidates, addEffect, insufficientMaterial, creditCinematic, offeredCatalog, zod, PGN"
+  },
+  {
+   "key": "DEFAULT_CATALOG / LEGACY_CATALOG",
+   "default": "'climats' / 'duel'",
+   "scope": "global",
+   "module": "src/shared/cards.ts",
+   "consumers": "création des parties ; catalogOf (états sans catalogue seulement)"
+  },
+  {
+   "key": "DEAL.draft",
+   "default": "true (l'accueil tire toujours)",
+   "scope": "création",
+   "module": "src/shared/config/rules.ts",
+   "consumers": "newRoom, phrase constitutionMains (Règles, Jouer, leçons, accueil)"
+  },
+  {
+   "key": "DEAL.draftMs",
+   "default": "45 000",
+   "scope": "création (échéance absolue)",
+   "module": "src/shared/config/rules.ts",
+   "consumers": "openDraft, DraftView.totalMs, barre de CardDraft, phrase dureeChoix"
+  },
+  {
+   "key": "DEAL.handLimits",
+   "default": "au plus 1 Légendaire, au plus 2 Climats (R9)",
+   "scope": "création",
+   "module": "src/shared/config/rules.ts",
+   "consumers": "dealHands, chooseBotDraft, checkRules, phrase limitesMain"
+  },
+  {
+   "key": "DEAL.limitsInDraft",
+   "default": "false",
+   "scope": "création",
+   "module": "src/shared/config/rules.ts",
+   "consumers": "draftRefusal, completeDraft, CardDraft.toggle (refus immédiat)"
+  },
+  {
+   "key": "DEAL.rarityWeight / redrawAttempts",
+   "default": "commune 4, rare 3, épique 2, légendaire 1 / 64",
+   "scope": "création",
+   "module": "src/shared/config/rules.ts",
+   "consumers": "dealHands ; RARITY_WEIGHT réexporté jusqu'au lot 9 ; fréquences attendues calculées par énumération"
+  },
+  {
+   "key": "SUSPENDED_CARDS",
+   "default": "[]",
+   "scope": "création",
+   "module": "src/shared/config/rules.ts",
+   "consumers": "cardPool (tirage, choix, IA)"
+  },
+  {
+   "key": "TIME_CONTROLS (+ short, quick, invite, archived)",
+   "default": "1+0, 3+2, 5+0, 10+0, 15+10, sans limite ; rapides : 3+2 à 15+10 ; invitation de l'accueil : 5+0, 10+0, 15+10, sans limite",
+   "scope": "création (pendule copiée dans la partie)",
+   "module": "src/shared/protocol.ts",
+   "consumers": "newRoom, joinQueue, revanche, tcLabel (remplace 7 formateurs), Jouer, FriendSheet"
+  },
+  {
+   "key": "DEFAULT_QUICK",
+   "default": "'10+0'",
+   "scope": "global",
+   "module": "src/shared/protocol.ts",
+   "consumers": "Jouer, FriendSheet (repli : première cadence rapide)"
+  },
+  {
+   "key": "PROTOCOL_VERSION",
+   "default": "1",
+   "scope": "global",
+   "module": "src/shared/protocol.ts",
+   "consumers": "handshake socket et /api/me (serveur), rechargement sur server:outdated (client), test de garde de protocole"
+  },
+  {
+   "key": "TIMINGS.firstMoveMs",
+   "default": "45 000",
+   "scope": "global",
+   "module": "src/server/settings.ts",
+   "consumers": "games.ts, tests (importé), échéance envoyée dans la vue"
+  },
+  {
+   "key": "TIMINGS.claimAfterMs",
+   "default": "60 000",
+   "scope": "global",
+   "module": "src/server/settings.ts",
+   "consumers": "games.ts, vue (claimAfterMs)"
+  },
+  {
+   "key": "TIMINGS.botIdleMs / untimedIdleMs / inviteTtlMs / endedRoomEvictMs / housekeepingMs",
+   "default": "30 min / 3 j / 3 j / 10 min / 60 s",
+   "scope": "global",
+   "module": "src/server/settings.ts",
+   "consumers": "ménage de games.ts"
+  },
+  {
+   "key": "TIMINGS.rematchTtlMs",
+   "default": "null (aucune échéance, comme aujourd'hui)",
+   "scope": "global",
+   "module": "src/server/settings.ts",
+   "consumers": "revanche (inactif au défaut)"
+  },
+  {
+   "key": "TIMINGS.saveDebounceMs / flagMarginMs / minPlyToStart",
+   "default": "250 / 30 / 2",
+   "scope": "global",
+   "module": "src/server/settings.ts",
+   "consumers": "sauvegarde, minuterie du drapeau, isStarted (5 endroits)"
+  },
+  {
+   "key": "CINEMATIC_MS / BOT_CARD_PAUSE_MS / BOT_TIMEOUT_MS",
+   "default": "1200 / 2300 / 20 000",
+   "scope": "global",
+   "module": "src/shared/config/timings.ts",
+   "consumers": "games.ts, bot-pool, client/ai, test de cohérence avec les animations"
+  },
+  {
+   "key": "RATING",
+   "default": "départ 1200 ; K 40 avant 30 parties, puis 20 ; échelle 400 ; plancher 100",
+   "scope": "création (écart stocké)",
+   "module": "src/server/settings.ts",
+   "consumers": "elo() exporté (rating.ts), INSERT des comptes (valeur explicite), invité dans la file"
+  },
+  {
+   "key": "MATCHMAKING",
+   "default": "tolérance 250 + 25 par seconde ; entrée oubliée après 10 min ; balayage 30 s ; files séparées par catalogue ; « Anonyme- »",
+   "scope": "global",
+   "module": "src/server/settings.ts",
+   "consumers": "joinQueue, ménage de la file"
+  },
+  {
+   "key": "RELAY",
+   "default": "premier coup 10 s, inactivité 30 s, abandon 30 s, délai 900 à 1600 ms, niveau 2",
+   "scope": "global",
+   "module": "src/server/settings.ts",
+   "consumers": "armRelay, relayPlay"
+  },
+  {
+   "key": "BOT_RUNTIME",
+   "default": "pause 500 à 1000 ms, relance 50 ms, 3 échecs puis coup légal au hasard, 4 fils au plus",
+   "scope": "environnement",
+   "module": "src/server/settings.ts",
+   "consumers": "maybeBot, relayPlay, bot-pool"
+  },
+  {
+   "key": "LIMITS",
+   "default": "8 parties ouvertes ; socket 20 jetons à 8/s ; 40 créations par 10 min ; listes direct 40, récentes 30, classement 100, profil 20, achats 100",
+   "scope": "environnement",
+   "module": "src/server/settings.ts",
+   "consumers": "games.ts, account.ts, index.ts"
+  },
+  {
+   "key": "ACCOUNT",
+   "default": "session 30 j ; cookie invité 365 j ; vérification 72 h ; réinitialisation 1 h",
+   "scope": "global",
+   "module": "src/server/settings.ts",
+   "consumers": "auth.ts, mail.ts (« expire dans une heure » dérivé), Legal (durée des sessions servie)"
+  },
+  {
+   "key": "FEATURES (ranked, friendlyQueue, invites, botGames, guestPlay, live, homeDuel, homeRelay, puzzles, learn, analysis, shop, newGames)",
+   "default": "tous à true",
+   "scope": "global, surchargé par FEATURE_*",
+   "module": "src/shared/config/features.ts + src/server/settings.ts",
+   "consumers": "refus côté serveur, /api/me, meta sm-features (site.ts), useFeature : menus, routes, portes, liens, boutique, accueil"
+  },
+  {
+   "key": "HOME",
+   "default": "catalogue climats, sans pendule, vsBot vrai, Blancs, niveau 2, tirage, fenêtre 30 s, appariable jusqu'au demi-coup 4, « Visiteur », sauvegarde sm:odyssee:partie v1 30 j, Oracle 520 + 380 ms et 380 ms après un sort, repos 30 s",
+   "scope": "global",
+   "module": "src/shared/config/home.ts",
+   "consumers": "startHomeGame, useLiveGame, useHomeLobby, OdysseeHome, StageBoard"
+  },
+  {
+   "key": "BOT_LEVELS / DEFAULT_BOT_LEVEL / BOT_PROFILES",
+   "default": "[1, 2, 3] / 2 / Apprenti 800-1-350 ms, Sorcier 1300-2-700 ms, Archimage 1800-5-1500 ms",
+   "scope": "global (le niveau est stocké dans le siège)",
+   "module": "src/shared/bot.ts",
+   "consumers": "zod dérivé, Jouer (grille --n), parts, data.ts LEVELS, Layout, BOT_LOOK : Record<BotLevel>, botLevelOr"
+  },
+  {
+   "key": "DRAFT_VALUE / DRAFT_NOISE",
+   "default": "Mur 5 … Sablier 1, défaut 3 / 3, 1,6, 1",
+   "scope": "global",
+   "module": "src/shared/bot.ts",
+   "consumers": "chooseBotDraft (Record exhaustif sur les Pouvoirs)"
+  },
+  {
+   "key": "GUEST_NAME / USERNAME / PASSWORD",
+   "default": "2 à 20 caractères [lettres, chiffres, espace _ . -] / 3 à 20 [A-Za-z0-9_-] et mots réservés / 8 à 200",
+   "scope": "global",
+   "module": "src/shared/config/limits.ts",
+   "consumers": "zod (games.ts, auth.ts), Jouer, overlays, OdysseeHome, Auth, Account"
+  },
+  {
+   "key": "BRAND",
+   "default": "Spellmate, SPELLMATE, « Les échecs ont appris la magie », « Les échecs, avec un peu de magie. », #04050f, variante PGN « Spellmate », préfixe 'sm:'",
+   "scope": "global",
+   "module": "src/shared/config/brand.ts",
+   "consumers": "greffon Vite (index.html, manifeste), Layout, useTitle, partage, PGN, config.appName par défaut, nom des fichiers exportés"
+  },
+  {
+   "key": "APP_NAME, PUBLIC_URL, MAIL_FROM, LEGAL_*",
+   "default": "BRAND.name ; — ; dérivé du domaine ; modèles (avertissement en production)",
+   "scope": "environnement",
+   "module": "deploy/production.env, /opt/spellmate/local.env",
+   "consumers": "e-mails, /api/legal, canonical et og:url (site.ts)"
+  },
+  {
+   "key": "PAYMENTS_MODE",
+   "default": "off en production",
+   "scope": "environnement (validé : stripe, demo, off)",
+   "module": "deploy/production.env",
+   "consumers": "shop.ts, boutique (« Bientôt en vente »)"
+  },
+  {
+   "key": "SPELLMATE_TEST_RULES",
+   "default": "absent ; refusé en production",
+   "scope": "environnement (tests)",
+   "module": "src/server/config.ts → setRulesOverride",
+   "consumers": "serveur jetable des tests de bout en bout"
+  },
+  {
+   "key": "SLOT_DEFS",
+   "default": "king, board, skin (libellés, accords, rayon, vu par l'adversaire : roi et sorts, défaut arcane, colonne equipped_*)",
+   "scope": "contenu",
+   "module": "src/shared/skins/slots.ts",
+   "consumers": "SLOTS, SLOT_LABEL, DEFAULT_ITEM, RAYONS, SLOT_WORD, WHO_SEES, equipNote, itemLabel, SLOT_COLUMN (lot 9), Bazar, Profil"
+  },
+  {
+   "key": "PRICE / RARITY / packProducts.display / Item.badge / Item.retired / Collection.sealName",
+   "default": "valeurs actuelles ; Grimoire au rayon Sorts, Trésor en bandeau ; « Populaire » sur Inferno",
+   "scope": "contenu",
+   "module": "src/shared/catalog.ts, src/shared/skins/*",
+   "consumers": "boutique, e-mails, Bazar de l'accueil, bandeau du Trésor dérivé"
+  },
+  {
+   "key": "CURRENCY / LOCALE / PAYMENT_PROVIDER / SHOP_FEATURED",
+   "default": "'eur' / 'fr-FR' / 'Stripe' / { king: 'king:braise' }",
+   "scope": "global",
+   "module": "src/shared/catalog.ts",
+   "consumers": "formatPrice, session Stripe, textes de la boutique, Shop.tsx"
+  },
+  {
+   "key": "PLACES (+ anchor)",
+   "default": "6 lieux",
+   "scope": "contenu",
+   "module": "src/client/odyssee/data.ts",
+   "consumers": "OdysseeHome (placeAttrs, PLACE.bazar, seuil), poseFor, SCENES, ciels"
+  },
+  {
+   "key": "CARD_FX / CARD_SOUND",
+   "default": "valeurs actuelles (impact, inclinaison, secousse, éclair, ambiance, teinte, son)",
+   "scope": "contenu",
+   "module": "src/client/vfx/cardFx.ts, src/client/sound.ts",
+   "consumers": "effects.ts, Board (effets d'échiquier), board.css (classes inchangées)"
+  },
+  {
+   "key": "VFX",
+   "default": "densité de pixels 2 (1,5 si appareil modeste), 2600 particules, pool 20 s, cède après 1,5 s, passage 0,9 s",
+   "scope": "environnement",
+   "module": "src/client/vfx/config.ts",
+   "consumers": "stage.ts, useVfx.ts"
+  },
+  {
+   "key": "ROUTES",
+   "default": "28 chemins actuels",
+   "scope": "global",
+   "module": "src/shared/config/routes.ts",
+   "consumers": "App (filtre), Layout (menus), NotFound, site.ts (titre, canonical, og:url, 404), robots et sitemap"
+  },
+  {
+   "key": "KEYS",
+   "default": "clés actuelles inchangées (sm:sound, sm:odyssee:partie, sm:cartes:lues, spellmate:reload…)",
+   "scope": "global",
+   "module": "src/client/storageKeys.ts",
+   "consumers": "tous les accès au stockage local et de session"
+  }
+ ],
+ "lots": [
+  {
+   "id": "0a",
+   "title": "Socle (1/2) : témoins et outillage",
+   "goal": "Capturer, sur le code actuel et avant toute modification, toutes les références qui prouveront l'identité au réglage par défaut. Poser l'outillage de test et de propriété des fichiers. Aucun fichier de src/ n'est modifié.",
+   "ownedFiles": [
+    "test/helpers/rng.ts",
+    "test/helpers/sq.ts",
+    "test/helpers/sieges.ts",
+    "test/helpers/matrice.ts",
+    "test/lib/playwright.mjs",
+    "test/lib/client.mjs",
+    "test/fixtures/v1/**",
+    "test/textes-pages.mjs",
+    "test/identite.mjs",
+    "test/coque.html",
+    "test/coque.tsx",
+    "scripts/serveur-jetable.mjs",
+    "scripts/verifier-lot.mjs",
+    "docs/polymorphie/LOTS.json"
+   ],
+   "sharedFiles": [
+    "vite.config.ts (bloc test seulement ; cédé au lot 6)",
+    "package.json (scripts seulement ; cédé au lot 9)"
+   ],
+   "dependsOn": [],
+   "steps": "1. Lancer `npm run build`, puis copier `dist/` dans `/home/user/spellmate-ref/dist` (hors git). Ce sera la référence du banc de performance final.\n2. Écrire `scripts/serveur-jetable.mjs`. Il lance `node dist/server/index.js` avec un DATA_DIR temporaire (PGlite) sur un port libre, transmet SPELLMATE_TEST_RULES, exécute la commande donnée après `--`, arrête le serveur et rend le code de sortie de la commande.\n3. Écrire `test/lib/playwright.mjs` (cherche node_modules, puis /opt/node-tools ; variable PLAYWRIGHT_PATH) et `test/lib/client.mjs` (cookies, socket, waitFor, sq), factorisés depuis integration.mjs et les scripts de captures. Ne pas migrer les suites existantes : les lots 3 et 9 le feront.\n4. Créer test/helpers : rng (un seul mulberry32), sq, sièges (human, bot, invite), matrice (MATRICE lue dans SPELLMATE_MATRICE, défaut « 1,3,5 »).\n5. Écrire le script gardé `test/fixtures/v1/generer.ts`, qui produit :\n   - cartes.json : name, tagline, description, duration et prompts de chaque carte de CARDS ;\n   - layout.json : gameLayout, desktopHandRight et la formule actuelle d'oppCardWidth pour 14 tailles, de 320×568 à 2560×1440 ;\n   - parties/*.json : 40 parties au hasard à graine fixe (Pouvoirs avec et sans pendule, Duel, Sans cartes ; Rituel et Présages compris), avec mains, journal, suite des positionKey, résultat et état final ;\n   - tirages.json : 500 dealHands, completeDraft et chooseBotDraft à graine fixe ;\n   - salles/*.json : RoomData sérialisées, via newRoom et les fonctions exportées de games.ts (attente d'invitation ; choix en cours avec un choix validé et une sélection provisoire ; Pouvoirs en cours avec Présage annoncé, Mur et Faille ; Duel avec instantanés et cardPlayed vrai ; partie terminée ; partie de l'accueil en relais) ;\n   - accueil-v1.json : une sauvegarde locale de l'accueil ;\n   - partie-locale.json : une PlayedGame ;\n   - pgn/*.pgn.\n   Si une fonction utile n'est pas exportée, ne pas modifier src/ : le noter pour le lot 3, qui fera ses vues en premier commit.\n6. Écrire `test/textes-pages.mjs`. Avec serveur-jetable et Math.random semé par un script injecté, il relève document.body.innerText en 1280×720 et 375×667 pour /, /regles, /jouer, /apprendre, /problemes, /cartes, /boutique, /compte (invité) et /mentions-legales, et pour une partie à 4 moments (attente d'une invitation, choix des cartes, partie en cours, fin), pilotée par test/lib/client.mjs. Sortie : test/fixtures/v1/textes/*.txt.\n7. Écrire `test/identite.mjs`, qui couvre les mêmes écrans :\n   - captures, plus le JSON des boîtes (getBoundingClientRect) d'une liste d'éléments clés ;\n   - le banc test/coque.tsx : GameShell (main, main adverse, salle d'attente), CardDraft (réserve, emplacements), révélation et mini-main de l'accueil, rendus avec des vues figées et assemblés par esbuild à la volée comme rois.mjs, en 1280×720, 1440×900, 375×667 et 360×640, avec des vues paramétrables en N pour les lots suivants ;\n   - références dans /home/user/spellmate-ref/captures ;\n   - un mode `--comparer` qui liste les écarts (pixels à tolérance 0 sur les bancs, boîtes et textes sur les pages).\n8. Lancer les scripts de captures existants (sorts, rois, echiquiers, boutique) vers /home/user/spellmate-ref/.\n9. Écrire `scripts/verifier-lot.mjs` et `docs/polymorphie/LOTS.json` : motifs de chemins par lot, d'après le plan, avec les fichiers partagés et leur ordre.\n10. vite.config.ts : ajouter un bloc test avec trois projets, rapide, matrice et lent ; mettre bot.test.ts dans lent. package.json : scripts test:rapide, test:matrice, test:lent, typecheck:concepts (tsc -p tsconfig.concepts.json, non bloquant), identite et textes-pages.",
+   "tests": "- Deux exécutions successives de textes-pages et d'identite (mode comparer) donnent zéro écart : le bruit est nul. Sinon, stabiliser (graine, attente de fin d'animation) avant de rendre.\n- verifier-lot accepte une branche témoin et refuse une modification hors périmètre.\n- generer.ts est déterministe : deux exécutions produisent des fichiers identiques.",
+   "acceptance": "- `npm test` vert, sans aucun test existant modifié.\n- Aucun fichier de src/ modifié (verifier-lot).\n- Références présentes dans test/fixtures/v1 (dans git) et dans /home/user/spellmate-ref (hors git).\n- Ce qui n'a pas pu être capturé est listé dans le rapport du lot."
+  },
+  {
+   "id": "0b",
+   "title": "Socle (2/2) : contrats, tableau de bord des réglages, aides de texte",
+   "goal": "Créer les modules de réglages (valeurs identiques), les aides françaises et les phrases dérivées avec leurs tests de référence, les types et champs facultatifs, les ajouts au protocole et les garde-fous, sans aucun changement de comportement, de texte ni d'image.",
+   "ownedFiles": [
+    "src/shared/config/index.ts",
+    "src/shared/config/rules.ts",
+    "src/shared/config/features.ts",
+    "src/shared/config/brand.ts",
+    "src/shared/config/limits.ts",
+    "src/shared/config/timings.ts",
+    "src/shared/config/home.ts",
+    "src/shared/rules.ts",
+    "src/shared/text/fr.ts",
+    "src/shared/text/regles.ts",
+    "src/shared/text/libelles.ts",
+    "src/shared/botProtocol.ts",
+    "src/server/settings.ts",
+    "src/client/storageKeys.ts",
+    "src/client/components/boardGeometry.ts",
+    "tsconfig.json",
+    "tsconfig.concepts.json",
+    "test/fr.test.ts",
+    "test/textes-regles.test.ts",
+    "test/config.test.ts",
+    "test/socle.test.ts",
+    "test/board-geometry.test.ts",
+    "test/garde-fous/**",
+    "test/fixtures/protocole.json",
+    "test/fixtures/rules-v1.json"
+   ],
+   "sharedFiles": [
+    "src/shared/protocol.ts (puis gelé jusqu'au lot 9)",
+    "src/shared/game.ts (types et alias seulement ; cédé au lot 1)",
+    "src/shared/cards.ts (champs de données ranks, clockRate, genre, CATALOG_IDS ; cédé au lot 1)",
+    "src/shared/bot.ts (BOT_LEVELS, DEFAULT_BOT_LEVEL, botLevelOr ; cédé au lot 1)",
+    "src/shared/catalog.ts (BOT_LOOK typé Record<BotLevel> ; cédé au lot 2)",
+    "src/client/store.tsx (useFeature ; cédé au lot 6)"
+   ],
+   "dependsOn": [],
+   "steps": "1. Créer `src/shared/config/{rules,features,brand,limits,timings,home}.ts`, sans import à l'exécution (import type seulement), aux valeurs actuelles :\n   - GAME_RULES (pas de `as const`), RULES_BY_CONTEXT vide, DEAL, SUSPENDED_CARDS vide, BOUNDS ;\n   - RULES_V1 écrit en littéral et gelé en profondeur.\n   Puis `config/index.ts` : sommaire commenté, une ligne par réglage, à l'usage du fondateur.\n2. cards.ts, données seulement : ranks (ice_wall [2,3,4,5], rift [3,4], tide [1,2,3,4]), clockRate (hourglass 2), genre (m/f), CATALOG_IDS. Aucun code ne les lit encore.\n3. Créer `src/shared/rules.ts` : rulesFor(ctx) (mémorisé, gelé ; tuning lu dans CARDS), rulesOf, sameRules, stampRules, tuneOf, castsLeft, cardEndsTurn, validHand, maxValidHand (énumération exacte), checkRules (contextes × réserves : avec ou sans pendule, contre l'IA, accueil), setRulesOverride. Messages en français.\n4. game.ts, types seulement :\n   - champs facultatifs `rules?: Rules` et `cardsThisTurn?: number` ;\n   - doc de `cardPlayed` : « plus de carte possible ce tour » ;\n   - RefusalCode et `Outcome.code?`.\n   Garder CARDS_PER_PLAYER et DRAFT_MS comme alias de GAME_RULES et DEAL. Aucun changement de comportement.\n5. protocol.ts :\n   - PROTOCOL_VERSION = 1 ;\n   - TimeControlDef avec short, quick, invite et archived, aux valeurs actuelles ; QUICK_CONTROLS dérivé (même liste) ; DEFAULT_QUICK ;\n   - tcLabel(id | pendule | null), mêmes libellés qu'aujourd'hui ;\n   - DraftView.totalMs? ; événement reveal { auto, filled? } ; MeResponse.features? et version? ;\n   - événement server:outdated ;\n   - PAYMENTS_MODES et le type PaymentsMode.\n   Le fichier est ensuite gelé.\n6. Créer `src/shared/botProtocol.ts` : types BotRequest et BotReply { card, cards?, move, error? }.\n7. bot.ts : BOT_LEVELS, DEFAULT_BOT_LEVEL, botLevelOr. catalog.ts : BOT_LOOK typé Record<BotLevel>.\n8. Créer `text/fr.ts` (enLettres 0 à 99 au masculin et au féminin, cap, pluriel, compte, possessif, duree, mmss, ordinal, ordinalLettres, romain, liste, prix, LOCALE), `text/regles.ts` (les fonctions du §4.2) et `text/libelles.ts` (colorName, catalogLabel avec un repli unique, modeLabel, cardName).\n9. Créer `src/server/settings.ts` aux valeurs actuelles : TIMINGS, RATING, MATCHMAKING, RELAY, BOT_RUNTIME, LIMITS, ACCOUNT, et FEATURES fusionnées avec FEATURE_*. Rien ne les consomme encore.\n10. Créer `src/client/storageKeys.ts` (KEYS, valeurs actuelles) et `src/client/components/boardGeometry.ts` (squareAt, cellOf, pures, valables dans les deux orientations).\n11. store.tsx : `useFeature(k)` lit d'abord `<meta name=\"sm-features\">`, puis `/api/me`. À défaut, il vaut FEATURES. Aucun rendu de plus au défaut.\n12. tsconfig.json : retirer concepts de include. tsconfig.concepts.json l'étend pour `typecheck:concepts`.\n13. Garde-fou des textes chiffrés (§4.1) avec test/garde-fous/dette-<lot>.txt, une par lot, répartie selon le plan ; exceptions permanentes pour « Spellmate ».\n14. Garde de protocole : test/fixtures/protocole.json fige { version, ids des cartes, catalogues, ids des cadences, GAME_RULES, DEAL.draftMs }.",
+   "tests": "- fr.test.ts : 0 à 99 aux deux genres (« une », « vingt et une », « soixante et onze », « quatre-vingts », « quatre-vingt-un »), pluriels 0/1/2, possessifs, durées, ordinaux, romains, liste.\n- textes-regles.test.ts : chaque phrase du §4.2, au défaut, égale à la chaîne actuelle copiée telle quelle (espaces insécables et apostrophes compris), plus les variantes N = 1, 2, 5 et 2 cartes par tour.\n- config.test.ts :\n  - checkRules vide au défaut ;\n  - erreurs pour 6 cartes (main valide maximale 5, avec le message attendu), 8 cartes en choix contre l'IA, délai impair, cardEndsTurn avec 2 cartes par tour, handsVisible faux ;\n  - maxValidHand vaut 5 pour chaque réserve ;\n  - rulesFor('classee') égal en profondeur à RULES_V1 ; stampRules(rulesFor(…)) undefined ;\n  - RULES_V1 égal à test/fixtures/rules-v1.json.\n- socle.test.ts : modules config/* et text/* sans import à l'exécution hors de ces dossiers ; tcLabel égal aux libellés actuels ; QUICK_CONTROLS égal à la liste actuelle.\n- board-geometry.test.ts.\n- Garde de protocole.",
+   "acceptance": "- tsc et npm test verts sans modifier les tests existants.\n- dist/client/index.html identique.\n- Paquet principal à ±0,5 ko compressé.\n- Aucun texte ni comportement changé.\n- Les dettes du garde-fou listent toutes les occurrences actuelles."
+  },
+  {
+   "id": "1",
+   "title": "Moteur, cartes et IA",
+   "goal": "Le moteur obéit aux règles de la partie. Catalogues et équilibrage deviennent des données, les textes des cartes sont produits par gabarits, la décision de l'IA est unique et sait jouer plusieurs cartes. Les anciennes parties se rejouent coup pour coup.",
+   "ownedFiles": [
+    "src/shared/game.ts",
+    "src/shared/cards.ts",
+    "src/shared/bot.ts",
+    "src/shared/pgn.ts",
+    "src/shared/chess.ts (aucune lecture de réglage)",
+    "src/shared/rules.ts",
+    "src/server/bot-worker.ts",
+    "src/server/bot-worker-dev.mjs",
+    "src/client/ai/**",
+    "test/game.test.ts",
+    "test/chess.test.ts",
+    "test/climats.test.ts",
+    "test/climats-random.test.ts",
+    "test/climats-adverse.test.ts",
+    "test/pouvoirs-adverse.test.ts",
+    "test/bot.test.ts",
+    "test/pgn.test.ts",
+    "test/regles-matrice.test.ts",
+    "test/compat-parties.test.ts",
+    "test/frequences.test.ts",
+    "scripts/banc-ia.mjs"
+   ],
+   "sharedFiles": [],
+   "dependsOn": [
+    "0a",
+    "0b"
+   ],
+   "steps": "1. Caractérisation : tests qui rejouent test/fixtures/v1/parties et tirages.json, verts avant tout changement.\n2. Création des parties :\n   - createGame(hands, timed, catalog obligatoire, opts?: { rules }) écrit `rules = stampRules(opts.rules ?? rulesFor('classee'))`, donc rien au défaut ;\n   - createGameFromFen avec catalogue obligatoire ; l'ancienne inférence devient une aide nommée (inferCatalog) utilisée par pgn.ts:67 et les tests, pour un comportement identique ;\n   - initialStateOf transmet rulesOf(final) ;\n   - PGN : en-tête [SpellmateRules \"…\"] seulement si les règles sont présentes, relu à l'import ; un schéma inconnu donne une erreur explicite.\n3. Compteur de cartes :\n   - au lancement, k = (cardsThisTurn ?? (cardPlayed ? 1 : 0)) + 1 ; cardPlayed = k ≥ cardsPerTurn ; cardsThisTurn = k écrit seulement si cardsPerTurn > 1 ;\n   - finishTurn et probeState effacent cardsThisTurn ;\n   - texte du refus par refusBudget(r), identique au défaut ;\n   - R4c inchangé ;\n   - aucun ajout à Snapshot.\n   Ajouter castsThisTurn(s, color) : liste des cartes lancées depuis le dernier coup.\n4. Carte à la place du coup :\n   - extraire passTurn(n, color, { pawnPush }) du cas de la Marée ;\n   - si cardEndsTurn(def, r) : passTurn puis finishTurn ; garde-fous du Rituel pour toute carte qui termine le tour ; demi-coup compté pour les 50 coups hors Marée (Q6).\n   info.ritual reste réservé au Rituel : aucun nouveau champ dans CardInfo.\n5. Présage : delay lu dans rulesOf(s).presageDelay ; la sonde R4b fait `delay` tickEffects en alternant le lanceur et l'adversaire (identique pour 2) ; profondeur de l'IA selon le délai.\n6. Équilibrage par tuneOf : durées (addEffect), rangées (rawCandidates, riftSquares, tidePushes), clockRate. WALL_MATE_PAIRS n'est utilisée que si les rangées du Mur valent [2..5] ; sinon, pas de nulle par matériel insuffisant quand un Mur est posé ou en main.\n7. Seuils fiftyHalfmoves et repetitions dans evaluateEnd ; startFen dans createGame (roque standard, refus sinon).\n8. CATALOG_RULES remplace les 7 comparaisons de game.ts ; offeredCatalog dérivé de `offered` ; DEFAULT_CATALOG et LEGACY_CATALOG ; drapeau `retired` sur une carte ; suppression de CardDef.catalog.\n9. Tirage et choix :\n   - dealHands garde ses paramètres positionnels ; ses options gagnent { rules?, deal? } ;\n   - validHand avec DEAL.handLimits ; SUSPENDED_CARDS dans cardPool ;\n   - draftRefusal(pool, cards, partial, count) avec compte() : « Choisissez 3 cartes. » identique, « 1 carte » correct ;\n   - completeDraft(pool, partial, rand, count, limits si limitsInDraft) ;\n   - chooseBotDraft(pool, level, rand, { count, limits }) ;\n   - DRAFT_VALUE en Record exhaustif sur les Pouvoirs.\n10. Codes de refus sur tous les refus, messages identiques.\n11. Textes des cartes produits par gabarits (dureeEffet, quiReprend, arriveePresage, rangees), égaux à fixtures/v1/cartes.json ; cardText(id, rules) pour les bulles ; description du catalogue calculée depuis cardsOf.\n12. IA :\n   - decideTurn(s, level, { cards = true }) dans bot.ts boucle tant que castsLeft > 0 et qu'une carte est jugée utile, dans un seul budget de temps, et rend { cards[], move } ;\n   - bot-worker et think l'utilisent et répondent { card: cards[0] ?? null, cards, move } ;\n   - askBot(state, level, opts?) dans client/ai/index.ts.\n13. Fréquences du tirage calculées par énumération exacte : remplacent la table de climats-random.test.ts:39-44.",
+   "tests": "- regles-matrice.test.ts (§8.2) pour la partie moteur.\n- compat-parties.test.ts : avec GAME_RULES modifié dans le test, les états v1, Duel, Sans cartes, ceux avec cardPlayed vrai et les parties terminées se rejouent complets et égaux aux témoins.\n- frequences.test.ts.\n- Sonde avec un délai de 4.\n- startFen.\n- Codes de refus.\n- decideTurn ne dépasse jamais castsLeft et rend un coup légal.\n- Aucune lecture de réglage dans chess.ts (recherche dans le fichier).\n- banc-ia.mjs : positions fixes, chooseBotMove aux profondeurs 3 et 5, chooseBotCard.",
+   "acceptance": "- Traces v1 identiques coup pour coup.\n- Anciens tests verts ; seules leurs attentes de catalogue deviennent explicites.\n- Aucun champ `rules` ni `cardsThisTurn` dans les états créés au défaut.\n- Médianes de banc-ia à ±3 %, mesurées dans le worktree hors de toute autre charge : à défaut, refaites au lot 9.\n- dette-1 vide."
+  },
+  {
+   "id": "2",
+   "title": "Boutique et équipement",
+   "goal": "Les emplacements, le marchandisage et les paiements sont pilotés par les données. L'objet retiré par l'administrateur est déséquipé. Textes et images restent identiques au défaut.",
+   "ownedFiles": [
+    "src/shared/catalog.ts",
+    "src/shared/skins/**",
+    "src/client/skins.ts",
+    "src/client/components/CollectionSeal.tsx",
+    "src/client/components/boardTheme.ts",
+    "src/client/pages/Shop.tsx",
+    "src/client/pages/Account.tsx",
+    "src/client/pages/DemoCheckout.tsx",
+    "src/client/pages/Profile.tsx",
+    "src/client/pages/Admin.tsx",
+    "src/client/pages/shop/**",
+    "src/server/shop.ts",
+    "src/server/admin.ts",
+    "src/server/account.ts",
+    "src/server/mail.ts",
+    "test/catalog.test.ts",
+    "test/server-shop.test.ts",
+    "test/server-refund.test.ts",
+    "test/trial.test.ts",
+    "test/boards.test.ts",
+    "test/shop-promises.mjs",
+    "test/stripe-webhook.mjs",
+    "test/boutique.mjs",
+    "test/rois.mjs",
+    "test/echiquiers.mjs",
+    "test/fixtures/rois/**"
+   ],
+   "sharedFiles": [
+    "test/kings.test.ts (cédé au lot 7 pour la partie lieux)"
+   ],
+   "dependsOn": [
+    "0a",
+    "0b"
+   ],
+   "steps": "1. Corriger le défaut : `revokeItems(userId, ids)` exporté de shop.ts (DELETE puis UNEQUIP_LOST_SQL), appelé par la route de retrait de admin.ts.\n2. Créer `skins/slots.ts` : SLOT_DEFS (libellés, pluriels, accords, rayon, note, vu par l'adversaire, défaut, colonne). En dériver SLOTS, SLOT_LABEL, DEFAULT_ITEM, RAYONS, RAYON_NOTE, SLOT_WORD, WHO_SEES, equipNote, itemLabel et itemPhrase, avec des chaînes identiques. Supprimer les copies (Account SLOT_TITLE, SLOT_RAYON et SLOT_NOTE ; trial.itemPhrase ; TrialAction.phraseOf ; equippedMessage).\n3. Fonctions génériques : collectionItems, isTrying, trialOf, surprise via SLOTS ; bySlot(ids) partagé par quoteCart, slotSelection, equipAtDelivery, equippable et deliver ; normItem(kind, id).\n4. Exporter PREMIUM_ITEMS, PREMIUM_COLLECTIONS et PACKS ; selectionLabel(n) partagé (4 copies) ; prix des packs écrit une seule fois (badge calculé ensuite).\n5. Marchandisage en données :\n   - Item.badge (« Populaire »), Item.retired (hors rayons et hors Trésor, mais toujours résolu), Collection.sealName (au lieu de SEAL_NAME par id), Product.display (rayon ou bandeau), avec une carte de pack générique ;\n   - bandeau du Trésor dérivé des collections premium, même ordre, angle 360°/(n−1), texte « Les sept sceaux » dérivé ;\n   - drapeau du contenu du Trésor : comportement actuel au défaut (Q2).\n6. Constantes CURRENCY, LOCALE, PAYMENT_PROVIDER et SHOP_FEATURED. Les textes « Stripe » restent tels quels sans décision (Q5).\n7. Cabine : ordre de la préférence actuelle, puis le reste de cardsOf ; createGameFromFen avec { rules: RULES_V1 }.\n8. CSS : `--slots` et `--n` avec les valeurs actuelles par défaut (.pb, rangées, sceau des sorts, couronne du déballage).\n9. useFeature('shop') dans la boutique et le compte.\n10. account.ts : listes lues dans LIMITS ; SELECT de publicProfile généré depuis SLOT_COLUMN (importé en lecture d'auth.ts).\n11. mail.ts : SLOT_WORD et WHO_SEES dérivés ; « expire dans une heure » dérivé d'ACCOUNT, texte identique.",
+   "tests": "- Chaque table dérivée égale à l'ancienne valeur.\n- Retrait par l'administrateur d'un roi équipé : l'objet est déséquipé.\n- Un emplacement fictif dans un test de types fait échouer la compilation aux bons endroits.\n- Un pack fictif est rendu par la carte générique.\n- catalog.test sépare les invariants (prix historiques qui ne montent jamais) des photographies de l'offre.",
+   "acceptance": "- Captures boutique.mjs, rois.mjs et echiquiers.mjs identiques.\n- Relevé du texte de /boutique et /compte identique.\n- Prix et e-mails identiques.\n- dette-2 vide."
+  },
+  {
+   "id": "3",
+   "title": "Serveur : règles par partie, réglages nommés, concurrence, robustesse, interrupteurs",
+   "goal": "Le serveur crée les parties avec leurs règles et sert le choix des cartes d'après elles. Il lit des réglages nommés, corrige les défauts du serveur, valide sa configuration, applique les interrupteurs et la version de protocole.",
+   "ownedFiles": [
+    "src/server/games.ts",
+    "src/server/settings.ts",
+    "src/server/rating.ts",
+    "src/server/config.ts",
+    "src/server/db.ts",
+    "src/server/index.ts",
+    "src/server/auth.ts",
+    "src/server/security.ts",
+    "src/server/bot-pool.ts",
+    "src/server/summary.ts",
+    "src/server/timezones.ts",
+    "deploy/production.env",
+    "deploy/README.md",
+    ".env.example",
+    "test/server-draft.test.ts",
+    "test/server-clock.test.ts",
+    "test/server-kings.test.ts",
+    "test/server-file.test.ts",
+    "test/server-assise.test.ts",
+    "test/server-regles.test.ts",
+    "test/server-config.test.ts",
+    "test/server-features.test.ts",
+    "test/rating.test.ts",
+    "test/integration.mjs",
+    "test/ranked.mjs",
+    "test/climats-serveur.mjs"
+   ],
+   "sharedFiles": [
+    "src/server/games.ts et src/server/auth.ts (cédés au lot 9 pour le raccord SLOT_DEFS)"
+   ],
+   "dependsOn": [
+    "0a",
+    "0b",
+    "1"
+   ],
+   "steps": "1. Caractérisation : vues JSON (viewFor, draftView) des salles témoins, si elles manquent dans test/fixtures/v1.\n2. Défauts :\n   - joinQueue : calculer le classement d'abord, puis section synchrone (leaveQueues, nouvelle lecture de queues.get(pool), choix, écriture) ;\n   - joinGame : après await seatFor, revérifier status === 'waiting' et le siège libre, sinon répondre en spectateur ;\n   - pool.on('error') et connectionTimeoutMillis ;\n   - spectateurs de /live = sockets sans couleur ;\n   - bot-pool : sur exit ou error, rejeter les demandes en attente du fil, le recréer, repli dans le processus si les relances échouent.\n3. Lire settings.ts partout ; exporter les constantes pour les tests (plus de 45_000 recopié) ; `rating.ts` contient elo() pur et exporté ; isStarted(state) ; réutiliser COLORS.\n4. Règles :\n   - newRoom({ …, ctx, rules? (tests) }) avec rulesFor(ctx) ; dealHands avec ces règles ; choix si DEAL.draft ;\n   - newDraft lève une erreur si la réserve est trop petite (plus de tirage silencieux) ;\n   - draftView.count = rulesOf(d.state).cardsPerPlayer et totalMs = DEAL.draftMs ;\n   - submitDraft avec count ; schéma game:draft borné par BOUNDS ;\n   - openDraft avec DEAL.draftMs ;\n   - closeDraftRoom calcule filled (camps sans validation dont la sélection provisoire avait moins de count cartes) et envoie reveal { auto, filled }.\n5. Revanche :\n   - pendule depuis d.clock ; RoomData.setup = { deal, relay } repris ;\n   - règles du moment (Q3) ;\n   - cadence inconnue refusée dans newRoom ; cadences `archived` encore résolues.\n6. IA :\n   - maybeBot et relayPlay appliquent reply.cards (repli sur reply.card) une à une, avec BOT_CARD_PAUSE_MS entre elles ;\n   - compteur d'échecs consécutifs : au-delà de BOT_RUNTIME.maxFailures, coup légal au hasard ;\n   - botLevelOr pour un niveau inconnu ;\n   - commitCard accorde l'incrément et `started` avec cardEndsTurn(CARDS[card], rulesOf(state)) ;\n   - creditCinematic via CATALOG_RULES ; catalogOf partout (lignes 933, 1468, 1494).\n7. Configuration :\n   - schéma zod de l'environnement (PAYMENTS_MODE, PORT, PUBLIC_URL, TRUST_PROXY en nombre de sauts, FEATURE_*, SPELLMATE_TEST_RULES refusé en production, transmis à setRulesOverride) ;\n   - arrêt avec message en français ;\n   - avertissement en production si un champ LEGAL_* est encore un modèle ou si le webhook manque en mode stripe ;\n   - checkRules au démarrage, avec une ligne de journal résumant les règles.\n8. Interrupteurs : refus côté serveur (file classée et amicale, mode du POST /games, invités, /live, home:*, relais, newGames) ; /api/me renvoie features et version ; contrôle de version au handshake (auth.v), puis server:outdated.\n9. index.ts : /api/health déclaré avant identify.\n10. auth.ts :\n   - INSERT des comptes avec RATING.initial et DEFAULT_ITEM explicites (DEFAULT SQL inchangé) ;\n   - verifyPassword lit N dans le hachage ;\n   - USERNAME et PASSWORD lus dans limits.ts ;\n   - messages identiques.\n11. Facultatif, en fin de lot : nouvel essai de persistResult et rattrapage au démarrage des parties terminées où ratings_applied est faux.\n12. Suites de bout en bout : integration.mjs, ranked.mjs et climats-serveur.mjs lisent view.draft.count, pool et msLeft (plus de copies de DRAFT_MS, des pouvoirs ni des mains de 3) et tournent via serveur-jetable et test/lib.",
+   "tests": "- Courses de la file (userById retardé par injection), avec les 3 scénarios de l'audit.\n- Course à l'assise.\n- Spectateurs.\n- Fil d'IA mort.\n- elo() et tolérance de l'appariement.\n- newRoom avec N = 1, 3 et 5 : count, totalMs, closeDraft (mains de N cartes), filled (sélection complète, puis à 2 cartes).\n- Reprise des salles v1 avec GAME_RULES de test à 5 cartes : le choix en cours garde 3 cartes.\n- Revanche d'une cadence archivée.\n- IA en échec répété.\n- Configuration invalide refusée.\n- Interrupteurs coupés refusés.\n- Version ancienne : server:outdated.",
+   "acceptance": "- Vues JSON égales aux témoins au défaut.\n- npm test vert.\n- integration.mjs et ranked.mjs verts via serveur-jetable : au défaut, puis avec SPELLMATE_TEST_RULES {\"cardsPerPlayer\":5}, {\"cardsPerPlayer\":1}, {\"cardsPerTurn\":2}, puis avec le tirage partout.\n- Plus aucun littéral de délai, d'Elo ni d'appariement dans games.ts.\n- dette-3 vide."
+  },
+  {
+   "id": "4",
+   "title": "Effets, échiquier et sons",
+   "goal": "Tout ce qui distingue une carte à l'écran ou à l'oreille devient un registre exhaustif. Les traits des skins deviennent des données, le code mort est retiré, les durées JS et CSS sont reliées. Images identiques.",
+   "ownedFiles": [
+    "src/client/vfx/**",
+    "src/client/sound.ts",
+    "src/client/motion.ts",
+    "src/client/components/Board.tsx",
+    "src/client/components/premoves.ts",
+    "src/client/components/mate.ts",
+    "src/client/components/CardArt.tsx",
+    "src/client/components/cardScenes.ts",
+    "src/client/components/CardScene.tsx",
+    "src/client/components/pieces.ts",
+    "src/client/styles/board.css",
+    "test/textures.test.ts",
+    "test/mate.test.ts",
+    "test/premoves.test.ts",
+    "test/scenes.html",
+    "test/scenes.tsx",
+    "test/vfx-harness.tsx",
+    "test/vfx.html",
+    "test/sorts.mjs",
+    "test/cardfx.test.ts",
+    "test/durees-css.test.ts"
+   ],
+   "sharedFiles": [],
+   "dependsOn": [
+    "0a",
+    "0b"
+   ],
+   "steps": "1. Créer `vfx/cardFx.ts` : CARD_FX en Record exhaustif sur les cartes des Pouvoirs. Il reprend exactement IMPACT_AT, TILT, SHAKE, FLASH, ambiance (classe et délai) et teinte. Les scènes lisent la teinte dans la fiche ; constante unique pour la Faille.\n2. sound.ts : table CARD_SOUND à la place du switch, sons identiques (son générique compris) ; préférence lue par KEYS.\n3. Traits des skins en tables à côté des peintres (PARTICLE_TRAITS, FLOURISH_TRAITS), au lieu des comparaisons à 'void', 'petal', 'filigree' et 'laurel' (stage.ts:334 ; effects.ts:23, 28, 67, 245, 795, 934).\n4. Retirer le code mort des objets persistants : markers, createMarker, riftMarker, shatter, wallCluster, états Slow et Park, markerFactory. syncMarkers garde la détection des arrivées.\n5. Ambiances : échiquier capturé à la pose, retrait par stage.later, compteur par classe. useVfx avec catch. playArrival reçoit les cibles de l'effet. Teinte de l'annonce neutre si rulesOf(state).handsVisible est faux (préparé, inactif).\n6. Créer `vfx/config.ts` (constantes actuelles), les constantes N = 8 et HALF = 3,5, et des accesseurs publics canvas et perspective (les `as unknown as` de l'accueil seront retirés par le lot 7).\n7. Board :\n   - effets d'échiquier lus dans CARD_FX ;\n   - messages de refus construits avec CARDS[id].name (texte identique) ;\n   - conversion écran ↔ case par boardGeometry ;\n   - aria-label de la promotion par PIECE_NAMES (correction d'accessibilité, listée).\n8. Créer `motion.ts` : une seule MediaQueryList, abonnable ; stage.reduced devient un getter.\n9. Ne jamais changer l'ordre des appels à Math.random.",
+   "tests": "- cardfx.test.ts : couverture exhaustive de cardsOf('climats') par CARD_FX, CARD_SOUND, CardArt et CARD_SCENES.\n- durees-css.test.ts : éclair, Retour arrière, chute du mat et bandeau de sort, JS égal à CSS.\n- textures.test inchangé.",
+   "acceptance": "- Planches et finales de sorts.mjs identiques au pixel.\n- Paquet principal inchangé ou plus petit.\n- dette-4 vide.\n- Banc d'effets (compositeFailed, images par sort) reporté au lot 9."
+  },
+  {
+   "id": "5",
+   "title": "Partie en ligne et coque partagée",
+   "goal": "La partie et la coque suivent N, le budget de cartes et le moment de la carte, avec des textes dérivés. Elles corrigent 4 défauts confirmés et affichent les états oubliés. Identité exacte pour N = 3.",
+   "ownedFiles": [
+    "src/client/game/**",
+    "src/client/odyssee/shell/**",
+    "src/client/features/CardHand.tsx",
+    "src/client/features/BoardStage.tsx",
+    "src/client/components/SpellCard.tsx",
+    "src/client/pages/GameRoute.tsx",
+    "src/client/styles/game.css",
+    "src/client/styles/cards.css",
+    "test/v2-correction.test.ts",
+    "test/v2-revue.test.ts",
+    "test/coque-layout.test.ts",
+    "test/choix-cartes.test.ts"
+   ],
+   "sharedFiles": [],
+   "dependsOn": [
+    "0a",
+    "0b",
+    "1",
+    "3"
+   ],
+   "steps": "1. layout.ts : fanT, fanPose (r = 7t, y = 14t²), fanArrival (28t), oppFanSpan(n) ((90n+27)/100 jusqu'à 3, puis (70n+47)/100), handCardWidth(n, l, vw, vh) et oppCardWidth(l, vw, n) exportées. OPP_FAN_SPAN, DESKTOP_OPP_ROOM, gameLayout et desktopHandRight inchangés.\n2. GameShell :\n   - FAN[i % 3] et [-28, 0, 28] remplacés par ces fonctions ;\n   - N déduit des mains ;\n   - pour N > 3 seulement, data-crowd et variables en ligne avec de nouvelles règles CSS ;\n   - un seul écouteur de redimensionnement (useGameLayout) ; écouteur clavier stable.\n3. Salle d'attente : prop emptyHand ; « Partie sans cartes » seulement sans cartes.\n4. CardDraft :\n   - textes par fr.ts et regles.ts (choixComplet, choisissezVos, accords pour 1) ;\n   - barre de temps depuis view.draft.totalMs (repli sur DEAL.draftMs) ;\n   - GamePage.process transmet l'événement reveal ; la note de révélation s'affiche si `you ∈ filled` (repli sur l'heuristique actuelle si filled manque) ;\n   - message d'expiration selon la sélection ;\n   - verrou 500 ms avant l'échéance locale ; la validation envoie aussitôt la sélection ;\n   - colonnes de la réserve, révélation selon N, donne k·n + i, raccourcis jusqu'à 9, cartes exclues calculées (liste()).\n   Décisions pures extraites en fonctions testables.\n5. GamePage :\n   - consignes par regles.ts ;\n   - émotes : un minuteur par couleur, annulé à chaque émote, à la revanche et au démontage ; key sur la bulle ;\n   - incrément barré si noIncrement ; « L'IA joue pour X » si standIn ;\n   - numérotation depuis fullmove ; railTop dérivé.\n6. shell/cards.ts :\n   - castsThisTurn (liste) ;\n   - apresLancement(r, annonce, reste) ;\n   - handNotes teste les codes de refus, avec un repli transitoire sur le texte, retiré au lot 9.\n7. SpellCard : pastilles par cardEndsTurn(def, rulesOf(state)). CardHand se fie à cardPlayable seul. CardBack reçoit un id SVG unique (prêt pour un futur dos de carte).\n8. overlays et parts :\n   - JoinSheet par regles.ts ; carte de fin conditionnée par useFeature('ranked') ;\n   - seuil du compte à rebours du premier coup dérivé de l'échéance ;\n   - GUEST_NAME ; tcLabel ;\n   - formatClock avec heures (identique pour les cadences actuelles) ;\n   - « deux fois plus vite » depuis rate ;\n   - retrait de levelName.\n9. game.css : .pl-levels en repeat(var(--n, 3), …).",
+   "tests": "- coque-layout.test.ts : fanPose(i, 3) égal à FAN ; fanArrival égal à [-28, 0, 28] ; oppFanSpan(3) === 2.97 ; gameLayout, desktopHandRight et oppCardWidth égaux à fixtures/v1/layout.json ; pour N de 1 à 6 et les tailles types, la main reste dans son enveloppe et à au moins 10 px de l'échiquier, la main mobile tient dans vw − 16.\n- choix-cartes.test.ts : note de révélation (filled, sélection complète ou non), colonnes, raccourcis, textes à N = 1, 3 et 5.\n- Minuteurs d'émote (faux temps).",
+   "acceptance": "- Banc de la coque et captures de la partie (choix, révélation, éventails, partie, fin) identiques pour N = 3, sauf la salle d'attente corrigée.\n- Relevé du texte identique, sauf les corrections listées.\n- Captures de revue pour N = 1, 2, 4, 5 et 6 jointes au rapport.\n- dette-5 vide."
+  },
+  {
+   "id": "6",
+   "title": "Socle client, marque, routes et SEO",
+   "goal": "Un filet d'erreurs côté client, un réseau robuste, des interrupteurs sans flash, une version de protocole, une marque unique générée au build, une table des routes partagée et un SEO servi sans coût. HTML construit identique au défaut.",
+   "ownedFiles": [
+    "src/client/App.tsx",
+    "src/client/main.tsx",
+    "src/client/api.ts",
+    "src/client/socket.ts",
+    "src/client/store.tsx",
+    "src/client/components/Layout.tsx",
+    "src/client/pages/NotFound.tsx",
+    "src/client/pages/Legal.tsx",
+    "src/client/pages/PageScene.tsx",
+    "src/client/features/ui.tsx",
+    "src/client/features/storage.ts",
+    "src/client/styles/global.css",
+    "src/shared/config/routes.ts",
+    "src/server/site.ts",
+    "index.html",
+    "public/**",
+    "vite.config.ts",
+    "test/og.tsx",
+    "test/og.html",
+    "test/routes.test.ts",
+    "test/marque.test.ts",
+    "test/socle-client.test.ts"
+   ],
+   "sharedFiles": [],
+   "dependsOn": [
+    "0a",
+    "0b",
+    "3"
+   ],
+   "steps": "1. Page blanche :\n   - PageBoundary, avec pour clé le chemin, autour de <Suspense> ; « Réessayer » recrée le composant paresseux (page() garde un lazy recréable après un rejet) ;\n   - createRoot(…, { onUncaughtError }).\n2. api.ts : délai maximal par AbortSignal.timeout ; échec réseau transformé en ApiError(« Connexion au serveur impossible. Vérifiez votre réseau. », 0) ; errMsg ne relaie que les ApiError.\n3. store.tsx :\n   - refresh avec nouveaux essais espacés ; état « inconnu » distinct de « invité » ;\n   - logout avec finally setMe(null) ;\n   - useFeature (meta, puis /api/me).\n4. socket.ts : emitAck typé sur ClientToServer ; constantes SOCKET explicites (valeurs par défaut de socket.io) ; auth.v envoyé ; sur server:outdated, rechargement avec la garde d'une minute.\n5. main.tsx : vite:preloadError ne recharge que pour le code d'une page ; un module facultatif (three.js) ne recharge plus la page.\n6. ROUTES (métadonnées), utilisées par :\n   - App, qui filtre selon les interrupteurs, avec des import() littéraux et un Record exhaustif, donc le même découpage en morceaux ;\n   - Layout (menus, grilles --n) ;\n   - NotFound ;\n   - robots.txt.\n7. site.ts :\n   - meta sm-features injectée seulement si une valeur diffère des défauts ;\n   - canonical, og:url et og:image absolus depuis PUBLIC_URL (changement invisible) ;\n   - titre initial égal à celui que la page pose déjà ;\n   - statut 404 pour un chemin inconnu ;\n   - cookie sm_guest posé aussi sur les réponses HTML.\n   Tout est calculé une fois par page.\n8. Marque :\n   - Layout et un useTitle unique lisent BRAND ;\n   - greffon Vite (transformIndexHtml, y compris en développement) avec des marqueurs dans index.html, manifeste émis par generateBundle, sortie identique octet pour octet ;\n   - le même greffon appelle checkRules et fait échouer le build en cas d'erreur.\n9. Legal : état d'erreur réseau avec « Réessayer » ; liste des produits depuis SLOT_LABEL seulement après Q5 (texte inchangé sinon).\n10. storage.ts : usePref réécrit sur useStored, par KEYS (valeurs inchangées).\n11. global.css : retrait des classes mortes (.spacer, .grid-3, .gradient-text, .hairline, .btn-arcane, .divider, .auth-wrap) après une recherche finale.\n12. og.tsx : textes dérivés ; image non régénérée sans Q5.",
+   "tests": "- routes.test.ts : chaque route a son chargeur et son motif dans site.ts, et inversement.\n- marque.test.ts : dist/client/index.html et manifeste identiques octet pour octet (noms de fichiers hachés normalisés).\n- socle-client.test.ts : PageBoundary (rejet de chargement, puis « Réessayer » ; exception de rendu) ; repli réseau en français ; meta absente au défaut ; useFeature.\n- checkRules qui échoue fait échouer le build.",
+   "acceptance": "- Paquet principal à ±0,5 ko compressé, sans nouveau morceau.\n- Captures et relevé du texte identiques.\n- Statut 404 sur un chemin inconnu, 200 sur toutes les pages connues.\n- dette-6 vide."
+  },
+  {
+   "id": "7",
+   "title": "Accueil Odyssée",
+   "goal": "L'accueil lit HOME, PLACES, les règles et les interrupteurs, avec des textes et une mini-main dérivés. Corrige deux défauts confirmés. DOM, images et performance strictement inchangés au défaut.",
+   "ownedFiles": [
+    "src/client/odyssee/OdysseeHome.tsx",
+    "src/client/odyssee/useLiveGame.ts",
+    "src/client/odyssee/useHomeLobby.ts",
+    "src/client/odyssee/StageBoard.tsx",
+    "src/client/odyssee/data.ts",
+    "src/client/odyssee/parts.tsx",
+    "src/client/odyssee/country.ts",
+    "src/client/odyssee/castSafely.ts",
+    "src/client/odyssee/odyssee.css",
+    "src/client/odyssee/scenery.tsx (sélection par identifiant seulement)",
+    "src/client/odyssee/engine.ts (ajouts d'export seulement)",
+    "test/accueil.test.ts"
+   ],
+   "sharedFiles": [
+    "test/kings.test.ts (reçu du lot 2 ; adaptation à PLACES seulement)"
+   ],
+   "dependsOn": [
+    "0a",
+    "0b",
+    "1",
+    "2",
+    "5"
+   ],
+   "steps": "1. Défaut du halo : onAstreMove et HoverHalo passent par boardGeometry avec g.me.\n2. Défaut de startDuel : appliquer une position neutre (createGame vide, catalogue et règles de l'accueil) sans la sauvegarder, ou masquer mains et échiquier tant que duelInfo est nul.\n3. HOME partout : catalogue, pendule, vsBot (dealHands avec { vsBot: true }), couleur, niveau (botLevelOr), rythme de l'Oracle, repos, appariement ; hands[g.them] au lieu de hands.b.\n4. validState : catalogue de HOME ; règles égales à rulesFor('accueil') ; mains de cardsPerPlayer cartes. Sinon, partie neuve. Format v1 conservé.\n5. askBot(s, level, { cards: false }) au lieu de { ...s, cardPlayed: true }.\n6. Textes par regles.ts : cartesDePouvoir, sortParTour, vosSorts, sortsEnMain, consignes, « Touchez-en un » au singulier si N = 1. Portes : nombre et numéros dérivés de MODES (romain, ordinalLettres). LEVELS et « 3 niveaux » dérivés de BOT_PROFILES.\n7. Mini-main : pour N > 3 seulement, data-crowd et --n (chevauchement dans la largeur actuelle) ; décalage de sortie borné sous 0,42 s, identique pour 3.\n8. PLACES comme source unique : placeIndex, placeAttrs(id) (data-scene et data-place numériques conservés), PLACE.bazar au lieu de PLACES[4], seuil au lieu de place === 5, Kicker lu dans PLACES. DOM identique.\n9. Bazar : étagères actuelles gardées, emplacement futur par SLOT_DEFS ; formatPrice ; useFeature('shop') pour les prix et les liens.\n10. FriendSheet : cadences de TIME_CONTROLS.invite, DEFAULT_QUICK, GUEST_NAME.\n11. Interrupteurs : homeDuel (useHomeLobby, « Chercher un vrai joueur »), porte du classé, liens.\n12. Durées nommées T (paires ms et s identiques) ; castTilt lit SLOT_TILT et poseFor().tilt.\n13. Retirer l'état thinking et la sortie catalog, inutilisés (deux rendus de moins par tour de l'Oracle) ; demoCatalog passe en référence.\n14. Flèche e2-e4 seulement si c'est au visiteur, en position standard, avec les Blancs.\n15. useHomeLobby attend /api/me (ready) avant d'ouvrir le socket.\n16. Retirer les `as unknown as` sur la scène des effets (accesseurs du lot 4).",
+   "tests": "- accueil.test.ts :\n  - validState (catalogue, règles, taille des mains) et sauvegarde v1 reprise ;\n  - squareAt et cellOf dans les deux orientations ;\n  - placeAttrs(id) égal aux attributs actuels de chaque section ;\n  - textes de l'accueil au défaut, puis à N = 1 et 5.",
+   "acceptance": "- Captures et boîtes de l'accueil (chaque lieu, ordinateur et mobile) et partie contre l'Oracle identiques.\n- Relevé du texte identique.\n- Aucun changement d'exécution dans engine.ts ni scenery.tsx (diff limité aux export et aux sélecteurs).\n- dette-7 vide.\n- Mesures de performance au lot 9."
+  },
+  {
+   "id": "8",
+   "title": "Pages, contenu pédagogique et libellés",
+   "goal": "Les pages, les leçons et les problèmes dérivent leurs textes et leurs grilles des règles, avec des libellés uniques. Le contenu pédagogique est figé en V1 avec `requires`. Les pluriels sont corrigés.",
+   "ownedFiles": [
+    "src/client/pages/Rules.tsx",
+    "src/client/pages/Rules.css",
+    "src/client/pages/Play.tsx",
+    "src/client/pages/Learn.tsx",
+    "src/client/pages/Puzzles.tsx",
+    "src/client/pages/MyGames.tsx",
+    "src/client/pages/Live.tsx",
+    "src/client/pages/Leaderboard.tsx",
+    "src/client/pages/Auth.tsx",
+    "src/client/pages/Analysis.tsx",
+    "src/client/pages/Home.tsx (suppression)",
+    "src/client/components/DemoBoard.tsx (suppression)",
+    "src/client/features/format.ts",
+    "src/client/features/history.ts",
+    "src/client/features/review.ts",
+    "src/client/features/EvalViews.tsx",
+    "src/client/features/MiniBoard.tsx",
+    "src/client/features/MoveTree.tsx",
+    "src/client/features/PositionEditor.tsx",
+    "src/client/features/engine.ts",
+    "src/client/features/engine.worker.ts",
+    "src/client/features/features.css",
+    "src/client/styles/pages.css",
+    "src/shared/lessons.ts",
+    "src/shared/puzzles.ts",
+    "test/lessons.test.ts",
+    "test/puzzles.test.ts"
+   ],
+   "sharedFiles": [],
+   "dependsOn": [
+    "0a",
+    "0b",
+    "1"
+   ],
+   "steps": "1. Textes chiffrés par regles.ts dans Rules, Play, Learn, Puzzles et lessons.ts (§4.2, §4.3). Pluriels corrigés : Learn:65 et 82, MyGames:162.\n2. Rules :\n   - frise de la Trêve générée depuis coups (6 étapes au défaut) ;\n   - grilles .rg-* en repeat(var(--n, valeur actuelle)) ;\n   - note humanOnly/timedOnly composée d'après les drapeaux ;\n   - phrase du Sablier exclu calculée ;\n   - phrase R9 par limitesMain ;\n   - « Les échecs, tels quels » inchangé.\n3. Play : BOT_LEVELS, DEFAULT_BOT_LEVEL, DEFAULT_QUICK, descriptions des niveaux, portes filtrées par useFeature, GUEST_NAME, --n sur .pl-levels.\n4. Leçons et problèmes :\n   - créés avec { rules: RULES_V1 } ;\n   - champ requires ({ handsVisible, cardsPerTurn: 1, cardBefore: true }) qui masque ce qui contredit les règles courantes ;\n   - hand([...]) tronque à la taille courante (carte de la solution en tête) ;\n   - gabarits (maxMoves, coups, rangées) ;\n   - problème du jour stable (date d'ajout, `since`) ;\n   - filtres générés depuis THEME_LABEL.\n5. Libellés uniques : tcLabel, catalogLabel (repli unique), modeLabel, colorName, romain() ; copies de format.ts, MyGames, Live, Profile (lecture seule) et Analysis supprimées.\n6. history.ts enregistre `rules` ; Analysis rejoue avec rulesOf (createGame avec rules).\n7. Supprimer SkinPreview (Home.tsx) et DemoBoard.tsx, désormais sans usage (concepts sorti de la vérification) ; CSS mort de pages.css (Jouer et Règles « conservées », SkinPreview).",
+   "tests": "- Textes des leçons et problèmes égaux aux photographies au défaut.\n- Mains des problèmes et leçons au plus RULES_V1.cardsPerPlayer.\n- requires filtre selon les règles.\n- Unicité des solutions jusqu'à cardsPerTurn cartes.\n- Ajouter un problème ne change pas le problème du jour.\n- Libellés de cadence identiques pour les 6 cadences.",
+   "acceptance": "- Relevé du texte des pages identique, sauf les trois pluriels corrigés.\n- Captures de Règles, Jouer, Apprendre et Problèmes identiques.\n- dette-8 vide."
+  },
+  {
+   "id": "9",
+   "title": "Intégration, vérification et documentation (seul sur la machine)",
+   "goal": "Fusionner, raccorder les lots entre eux, retirer les compatibilités, lancer la matrice de bout en bout, les bancs d'identité et le banc de performance, puis documenter le tableau de bord.",
+   "ownedFiles": [
+    "README.md",
+    "docs/REGLAGES.md",
+    "test/coherence.test.ts",
+    "test/perf/mesure.mjs",
+    "test/glisser.mjs",
+    "package.json"
+   ],
+   "sharedFiles": [
+    "src/server/auth.ts et src/server/games.ts (SLOT_COLUMN dérivé de SLOT_DEFS)",
+    "src/shared/text/regles.ts (remontée des phrases locales en double)",
+    "src/shared/protocol.ts et src/shared/game.ts (retrait des alias)",
+    "src/client/odyssee/shell/cards.ts (retrait du repli sur le texte des refus)"
+   ],
+   "dependsOn": [
+    "0a",
+    "0b",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8"
+   ],
+   "steps": "1. Fusionner dans l'ordre des vagues ; tsc et npm test après chaque fusion.\n2. Raccords et nettoyage :\n   - SLOT_COLUMN dérivé de SLOT_DEFS ; SELECT de la revanche par equippedSelect ;\n   - retrait des alias CARDS_PER_PLAYER, DRAFT_MS et RARITY_WEIGHT, du paramètre mirror de dealHands et du repli sur le texte des refus ;\n   - remontée dans regles.ts des phrases locales en double ;\n   - PROTOCOL_VERSION mis à jour, garde de protocole au vert.\n3. coherence.test.ts :\n   - complétude des registres par carte ;\n   - TIME_CONTROLS et niveaux d'IA ;\n   - durées JS = CSS ;\n   - MOBILE_MAX contre les 819 px du CSS ;\n   - imports du paquet principal ;\n   - toutes les dettes du garde-fou vides.\n4. Bout en bout via serveur-jetable : au défaut ; avec 1 et 5 cartes ; 2 cartes par tour (l'IA joue deux cartes, la coque les liste) ; carte à la place du coup ; tirage partout ; cadence archivée ; classé et boutique coupés.\n5. Identité : `node test/identite.mjs --comparer` et `textes-pages.mjs --comparer` contre les références du lot 0a, plus les scripts de captures existants. Seules les corrections listées doivent apparaître.\n6. Performance, machine au repos et aucun autre agent : `node test/perf/mesure.mjs ref=/home/user/spellmate-ref/dist actuelle=dist --scenarios=accueil,accueil-mobile,accueil-foret,partie,jouer,apprendre --passages=3`, banc des effets (compositeFailed, images par sort) et banc-ia.\n7. docs/REGLAGES.md : le tableau « ce qu'on change demain », à jour, et la table des réglages. Mettre le README à jour (skins, profondeur de l'analyse, section « Modifier l'offre »). Rapport au fondateur : vérifié, non vérifié, décisions Q1 à Q11.",
+   "tests": "Tous les tests du dépôt, plus la matrice complète (SPELLMATE_MATRICE=1,2,3,4,5), les suites de bout en bout ci-dessus, les bancs d'identité et le banc de performance.",
+   "acceptance": "- Tout est vert.\n- Différences d'identité limitées à la liste des corrections voulues.\n- Fil principal à ±5 %, zéro image au repos, aucune composition en échec ni repeinte de plus.\n- IA à ±3 %.\n- index.html identique.\n- docs/REGLAGES.md relu.\n- Le rapport précise que rien n'a été vérifié en production."
+  }
+ ],
+ "bugsToFix": [
+  {
+   "file": "src/server/games.ts",
+   "issue": "File d'attente : joinQueue lit `queues.get(pool)` avant `await userById` (l. 983-984), puis réécrit cette liste périmée. Résultats : double appariement, entrée perdue, ou joueur parti quand même apparié. Confirmé.",
+   "lot": "3",
+   "fix": "Calculer le classement d'abord. Ensuite, sans aucun await : leaveQueues(key), nouvelle lecture de queues.get(pool), choix de l'adversaire, écriture de la file. Test avec userById retardé, sur les 3 scénarios."
+  },
+  {
+   "file": "src/server/games.ts",
+   "issue": "Assise d'une invitation : le siège libre est choisi (l. 1144-1145), puis `await seatFor`, puis affecté sans revérification (l. 1153). Le second compte écrase le premier et begin() est rappelé. Confirmé.",
+   "lot": "3",
+   "fix": "Après l'await, revérifier `room.d.status === 'waiting' && !room.d.seats[free]`. Sinon, répondre en spectateur. Test de deux joinGame concurrents."
+  },
+  {
+   "file": "src/server/db.ts",
+   "issue": "pg.Pool sans écouteur 'error' (l. 29) : un redémarrage de PostgreSQL fait tomber le processus sans flushRooms. Confirmé, reproduit avec pg-pool.",
+   "lot": "3",
+   "fix": "pool.on('error', …) et connectionTimeoutMillis ; max réglable."
+  },
+  {
+   "file": "src/server/games.ts",
+   "issue": "/live compte les spectateurs comme `sockets.size - 2` (l. 1475) : faux contre l'IA, avec deux onglets ouverts, ou après une déconnexion. Confirmé.",
+   "lot": "3",
+   "fix": "Compter les sockets dont colorOf(room, identité) est null."
+  },
+  {
+   "file": "src/server/bot-pool.ts",
+   "issue": "Un fil de calcul de l'IA qui meurt reste dans la rotation : il n'y a ni écouteur 'exit' ni retrait. Chaque demande qui lui est confiée attend 20 s puis échoue, et maybeBot relance. Confirmé par moi à la lecture de bot-pool.ts : seul `on('error')` journalise. Il faut qu'un fil meure (manque de mémoire, erreur de chargement) pour le déclencher.",
+   "lot": "3",
+   "fix": "Sur 'exit' ou 'error' : rejeter les demandes en attente de ce fil, le remplacer, et passer en calcul dans le processus si les relances échouent en boucle."
+  },
+  {
+   "file": "src/server/admin.ts",
+   "issue": "Le retrait d'un objet par l'administrateur (l. 57, DELETE seul) ne le déséquipe pas : seatFor, toMe et publicProfile le montrent encore, y compris en partie. Confirmé.",
+   "lot": "2",
+   "fix": "revokeItems(userId, ids) exporté de shop.ts (DELETE puis UNEQUIP_LOST_SQL), appelé par la route de retrait. Test avec un roi équipé."
+  },
+  {
+   "file": "src/client/odyssee/shell/GameShell.tsx",
+   "issue": "Salle d'attente d'une invitation avec cartes : « Partie sans cartes » s'affiche (l. 740) sous « Votre main · un sort par tour » (GamePage:818, 826). Confirmé.",
+   "lot": "5",
+   "fix": "Prop emptyHand fournie selon hasCards. En attente : aucun texte, ou le libellé décidé par le fondateur."
+  },
+  {
+   "file": "src/client/game/CardDraft.tsx",
+   "issue": "Fin du choix : « vos cartes manquantes ont été tirées au hasard » (l. 426, 536) alors que la sélection provisoire était complète et qu'aucune carte n'a été tirée. Le serveur met dans `auto` tout camp sans validation. Confirmé.",
+   "lot": "3 et 5",
+   "fix": "Lot 3 : closeDraftRoom envoie `reveal { auto, filled }`, où filled liste les camps dont la sélection provisoire avait moins de count cartes. Lot 5 : la note s'affiche si `you ∈ filled`."
+  },
+  {
+   "file": "src/client/game/CardDraft.tsx",
+   "issue": "La révélation devine `auto` (l. 93) au lieu de lire l'événement du serveur. Une validation qui arrive après l'échéance du serveur laisse une carte tirée au hasard, sans aucun message. Confirmé.",
+   "lot": "5",
+   "fix": "GamePage.process transmet l'événement reveal (filled) à CardDraft. Verrou 500 ms avant l'échéance locale. La validation envoie aussitôt la sélection."
+  },
+  {
+   "file": "src/client/game/GamePage.tsx",
+   "issue": "Émotes : les minuteurs ne sont ni annulés ni liés à l'émote (l. 292-297). Le minuteur de la première efface la seconde après 0,8 s. Confirmé.",
+   "lot": "5",
+   "fix": "Un minuteur par couleur, annulé à chaque émote, à la revanche et au démontage ; key sur la bulle."
+  },
+  {
+   "file": "src/client/odyssee/OdysseeHome.tsx",
+   "issue": "Partie en direct de l'accueil avec les Noirs : onAstreMove (l. 887) et HoverHalo (l. 147) calculent la case comme pour les Blancs. Halo et curseur apparaissent sur les pièces adverses. Confirmé.",
+   "lot": "7",
+   "fix": "Conversion écran ↔ case par boardGeometry (squareAt, cellOf) avec l'orientation g.me."
+  },
+  {
+   "file": "src/client/odyssee/useLiveGame.ts",
+   "issue": "startDuel (l. 585) ne remet pas la position de départ. Jusqu'à la réponse de game:join, la partie contre l'Oracle reste affichée, retournée, avec les mains inversées. L'affichage reste si game:join échoue. Confirmé.",
+   "lot": "7",
+   "fix": "Appliquer une position neutre (createGame vide, catalogue et règles de l'accueil) sans la sauvegarder, ou masquer mains et échiquier tant que duelInfo est nul."
+  },
+  {
+   "file": "src/client/App.tsx",
+   "issue": "Aucune limite d'erreur, et React.lazy garde le rejet pour toujours. Un morceau de page qui échoue dans la minute suivant un rechargement automatique, ou n'importe quelle exception de rendu, démonte toute la racine : page blanche. Confirmé.",
+   "lot": "6",
+   "fix": "PageBoundary (clé = chemin) autour de <Suspense>, avec « Réessayer » qui recrée le composant paresseux. createRoot(…, { onUncaughtError })."
+  },
+  {
+   "file": "src/client/api.ts",
+   "issue": "errMsg renvoie e.message (l. 25). Un échec réseau de fetch affiche le message du navigateur, en anglais (« Failed to fetch », « Load failed »), dans une interface en français. Confirmé.",
+   "lot": "6",
+   "fix": "Dans api(), attraper l'échec de fetch et lever ApiError('Connexion au serveur impossible. Vérifiez votre réseau.', 0). errMsg ne relaie que les ApiError. Délai maximal par AbortSignal.timeout."
+  },
+  {
+   "file": "deploy/production.env",
+   "issue": "Mentions légales de production restées en modèles : /api/legal sert « [Raison sociale] », « [SIREN] » et contact@example.com, cité dans les CGV et la politique de confidentialité. Confirmé en ligne.",
+   "lot": "3",
+   "fix": "Le fondateur fournit les vraies valeurs LEGAL_* (local.env ou production.env). Le lot 3 ajoute un avertissement au démarrage en production si un champ commence par « [ » ou se termine par @example.com, et un contact par défaut entre crochets."
+  },
+  {
+   "file": "src/client/pages/Learn.tsx",
+   "issue": "Tuile d'une leçon non commencée : `${l.steps.length} étapes` (l. 82) affiche « 1 étapes » pour mur-magie et mains-visibles. Confirmé.",
+   "lot": "8",
+   "fix": "compte(n, ['étape', 'étapes']) de text/fr.ts."
+  },
+  {
+   "file": "src/client/pages/Learn.tsx",
+   "issue": "aria-label `${done} leçons terminées sur ${n}` (l. 65) : « 1 leçons terminées sur 22 ». Confirmé.",
+   "lot": "8",
+   "fix": "pluriel() de text/fr.ts."
+  },
+  {
+   "file": "src/client/pages/MyGames.tsx",
+   "issue": "`${movesFromPlies(r.plies)} coups` (aujourd'hui l. 162) : « Abandon · 1 coups » après un ou deux demi-coups. Confirmé.",
+   "lot": "8",
+   "fix": "compte(movesFromPlies(n), ['coup', 'coups'])."
+  }
+ ],
+ "deferred": [
+  "Mains cachées (activation de handsVisible = false). Lot dédié plus tard : type d'affichage HandCardView { card: CardId | null } dans tout le client ; masquage dans viewFor (déjà mis en cache par couleur), avec révélation à la fin ; dos de carte (CardBack paramétré, futur emplacement de skin) ; textes conditionnels ; équité de l'IA, qui reçoit l'état complet. Fuites à accepter par le fondateur : R4c et la nulle par matériel insuffisant laissent deviner une carte en main. Dans cette passe, le champ existe et checkRules refuse false.",
+  "Choix des cartes sur l'accueil : il faut un écran de choix dans la coque et un choix local contre l'Oracle. L'accueil garde le tirage.",
+  "Chess960 et variantes avec un roque non standard : réécriture de castleMoves, de ROOK_HOME_BITS, des bits de la Permutation et des pré-coups ; validation de WALL_MATE_PAIRS. startFen reste limité au roque standard.",
+  "Découpage de src/server/games.ts (1 508 lignes) en modules (rooms, clock, draft, rating, matchmaking, home, sockets, http) : après cette passe, en déplacements purs, seul sur la machine.",
+  "Jetons de design (164 ors en rgba ou rgb, 54 « #f3c969 », rayons, z-index) : passe séparée et mécanique, avec captures. Aucun scénario du fondateur ne l'exige.",
+  "Hook commun useCardPlay (partie, accueil, leçons) : risque pour la performance de l'accueil. Le moteur porte déjà la règle (cardPlayable, castsLeft) ; on ne partage que des fonctions pures.",
+  "i18n complète : non demandée. Codes de refus, text/fr.ts, LOCALE et repérage suffisent.",
+  "Densité des effets réglable (mode économie) : aucun besoin exprimé ; toucherait toutes les scènes.",
+  "Emplacement de skin vu en partie de façon générique (SeatView.look, colonne jsonb equipped) : à faire le jour où un tel emplacement arrive. equippedSelect suffit d'ici là.",
+  "Vérification d'origine du handshake Socket.IO (allowRequest) : risque de bloquer de vrais clients (www et domaine nu). À essayer en production plus tard.",
+  "Plusieurs instances du serveur (adaptateur Socket.IO, limiteurs partagés) : l'architecture à un seul processus est assumée.",
+  "Lignes d'achat et remboursement partiel automatique : nouvelle table, besoin faible. revokeItems suffit.",
+  "Décisions du fondateur qui changeraient des textes ou des sons au défaut : vouvoiement de 3 messages, « 10+0 » ou « 10 + 0 », mention Stripe quand la vente est fermée, CGV sans les rois ni les collections, régénération de og.jpg, signatures sonores des 7 Pouvoirs, fin au temps à la FIDE, échéance de revanche, contenu du Trésor du Bazar.",
+  "Portes ouvertes rendues bon marché par les règles photographiées : préréglages choisis par l'invitant (partie personnalisée non classée), plusieurs formules en même temps, événements temporaires (« week-end à 5 cartes »), page d'administration qui affiche les réglages en vigueur.",
+  "Mode miroir dans GameView, overlays et GamePage : inoffensif. Retiré seulement s'il reste du temps au lot 9 (lecture du champ gardée pour les anciennes vues)."
+ ]
+}

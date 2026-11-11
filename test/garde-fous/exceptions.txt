@@ -1,0 +1,22 @@
+# Exceptions permanentes du garde-fou des textes chiffrés et de la marque (textes-chiffres.test.ts).
+# Une ligne : chemin<TAB>texte trouvé (en minuscules)<TAB>extrait de la ligne qui l’autorise<TAB># raison.
+# Une occurrence est permise si sa ligne contient l’extrait. Une exception devenue inutile ne gêne pas.
+src/client/odyssee/scenery.tsx	3 niveaux	écart mesuré de 3 niveaux sur 255	# niveaux de gris d’une image, pas les niveaux de l’IA
+src/client/components/CardArt.tsx	spellmate	// Emblèmes des cartes de pouvoir (SVG dessinés pour Spellmate).	# commentaire
+src/client/components/pieces.ts	spellmate	dessiné pour Spellmate	# commentaire
+src/client/components/Layout.tsx	spellmate	/** Marque Spellmate :	# commentaire
+src/client/features/ui.tsx	spellmate	/** Titre du document : « Apprendre · Spellmate ». */	# commentaire
+src/client/pages/PageScene.tsx	spellmate	/** Titre du document : « Boutique · Spellmate ». */	# commentaire
+src/client/styles/global.css	spellmate	/* Spellmate · socle visuel commun	# commentaire
+src/client/odyssee/OdysseeHome.tsx	spellmate	// Spellmate · L'Odyssée	# commentaire
+src/client/odyssee/odyssee.css	spellmate	/* Spellmate · L'Odyssée	# commentaire
+src/client/odyssee/parts.tsx	spellmate	la marque Spellmate au trait de l'Odyssée	# commentaire
+src/shared/bot.ts	spellmate	// IA de Spellmate	# commentaire
+src/shared/chess.ts	spellmate	// Moteur d'échecs de Spellmate.	# commentaire
+src/shared/chess.ts	spellmate	* Spellmate ajoute `*`	# commentaire (notation des captures qui explosent)
+src/shared/game.ts	spellmate	// Règles d'une partie de Spellmate	# commentaire
+src/shared/pgn.ts	spellmate	// Extension Spellmate	# commentaire (format PGN)
+src/shared/pgn.ts	spellmate	h.Variant = 'Spellmate';	# variante PGN : format d’échange, ne jamais changer (BRAND.pgnVariant)
+src/client/ai/index.ts	spellmate	name: 'spellmate-ia'	# nom du fil de calcul (identifiant technique)
+src/client/features/engine.ts	spellmate	name: 'spellmate-analyse'	# nom du fil de calcul (identifiant technique)
+src/client/storageKeys.ts	spellmate	reload: 'spellmate:reload'	# clé de stockage : identifiant technique, ne jamais renommer

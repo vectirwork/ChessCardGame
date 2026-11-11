@@ -4,6 +4,10 @@ import type { ReactNode } from 'react';
 import type { MeResponse, MeUser } from '../shared/protocol';
 import { api } from './api';
 import { resetSocket } from './socket';
+// Importé après api et socket, à garder ici : plus haut, l'ordre d'exécution change et Vite fond le morceau api-*.js
+// dans le paquet principal (index.html perd une ligne modulepreload ; vérifié au build).
+import { FEATURES, mergeFeatures } from '../shared/config/features';
+import type { FeatureKey, Features } from '../shared/config/features';
 
 interface Toast {
   id: number;
@@ -15,6 +19,8 @@ interface AppState {
   me: MeUser | null;
   ready: boolean;
   payments: MeResponse['payments'];
+  /** Interrupteurs du site (useFeature). */
+  features: Readonly<Features>;
   setMe: (u: MeUser | null) => void;
   refresh: () => Promise<void>;
   logout: () => Promise<void>;
@@ -23,10 +29,26 @@ interface AppState {
 
 const Ctx = createContext<AppState>(null as unknown as AppState);
 
+/**
+ * Interrupteurs posés par le serveur dans la page (<meta name="sm-features" content='{"shop":false}'>), présents
+ * seulement si l'un diffère des défauts : lus une fois, au montage, sans attendre /api/me (aucun clignotement).
+ */
+function featuresFromPage(): Readonly<Features> {
+  if (typeof document === 'undefined') return FEATURES;
+  const content = document.querySelector('meta[name="sm-features"]')?.getAttribute('content');
+  if (!content) return FEATURES;
+  try {
+    return mergeFeatures(FEATURES, JSON.parse(content));
+  } catch {
+    return FEATURES;
+  }
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
   const [me, setMeState] = useState<MeUser | null>(null);
   const [ready, setReady] = useState(false);
   const [payments, setPayments] = useState<MeResponse['payments']>('off');
+  const [features, setFeatures] = useState<Readonly<Features>>(featuresFromPage);
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const refresh = useCallback(async () => {
@@ -34,6 +56,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const r = await api<MeResponse>('/me');
       setMeState(r.user);
       setPayments(r.payments);
+      // Même objet si rien ne change (mergeFeatures) : aucun rendu de plus au défaut.
+      if (r.features) setFeatures(f => mergeFeatures(f, r.features));
     } finally {
       setReady(true);
     }
@@ -62,7 +86,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast('À bientôt !');
   }, [setMe, toast]);
 
-  const value = useMemo(() => ({ me, ready, payments, setMe, refresh, logout, toast }), [me, ready, payments, setMe, refresh, logout, toast]);
+  const value = useMemo(
+    () => ({ me, ready, payments, features, setMe, refresh, logout, toast }),
+    [me, ready, payments, features, setMe, refresh, logout, toast],
+  );
   return (
     <Ctx.Provider value={value}>
       {children}
@@ -76,6 +103,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 }
 
 export const useApp = () => useContext(Ctx);
+
+/**
+ * Une fonction du site est-elle ouverte ? D'abord la meta sm-features de la page, puis /api/me ; à défaut, FEATURES
+ * (src/shared/config/features.ts).
+ */
+export function useFeature(k: FeatureKey): boolean {
+  return useContext(Ctx).features[k];
+}
 
 /** Préférence locale (son, animations…) conservée dans le navigateur. */
 export function usePref<T>(key: string, initial: T): [T, (v: T) => void] {

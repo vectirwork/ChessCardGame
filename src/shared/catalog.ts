@@ -7,6 +7,7 @@ import { COLLECTIONS } from './skins/collections';
 import { KING_ITEMS } from './skins/kings';
 import { SPELL_ITEMS } from './skins/spells';
 import type { BoardStyle, Collection, Item, ItemKind, KingStyle, Product, SkinRarity, SkinStyle } from './skins/types';
+import type { BotLevel } from './bot';
 
 export * from './skins/types';
 export { COLLECTIONS } from './skins/collections';
@@ -47,7 +48,7 @@ export const DEFAULT_ITEM: Record<ItemKind, string> = { king: DEFAULT_KING, boar
  * Apparence des IA du serveur (par niveau) et de l'Oracle de l'accueil. Vitrine : elles peuvent porter du payant.
  * Avant les rois, l'IA avait les sorts Arcane, Inferno et Néant, et l'Oracle Néant : gardés.
  */
-export const BOT_LOOK: Record<1 | 2 | 3, { skin: string; king: string }> = {
+export const BOT_LOOK: Record<BotLevel, { skin: string; king: string }> = {
   1: { skin: 'skin:arcane', king: 'king:arcane' },
   2: { skin: 'skin:inferno', king: 'king:braise' },
   3: { skin: 'skin:void', king: 'king:eclipse' },

@@ -19,6 +19,8 @@ import {
   makeMove, opposite, rankOf, sqIndex, sqName, toSan,
 } from './chess';
 import { CARDS, CardId, Catalog, RARITY_WEIGHT, cardsOf, isCardId } from './cards';
+import { DEAL, GAME_RULES } from './config/rules';
+import type { Rules } from './config/rules';
 
 export interface Effect {
   id: number;
@@ -106,8 +108,16 @@ export interface GameState {
   pos: Position;
   effects: Effect[];
   hands: Record<Color, HandCard[]>;
-  /** Une carte a déjà été jouée pendant ce tour. */
+  /**
+   * Plus aucune carte possible ce tour : le budget de cartes du tour est épuisé. Sens de lecture inchangé : avec une
+   * carte par tour (RULES_V1), c'est « une carte a déjà été jouée pendant ce tour ».
+   */
   cardPlayed: boolean;
+  /**
+   * Cartes jouées pendant ce tour. Écrit seulement si la partie permet plus d'une carte par tour
+   * (rulesOf(s).cardsPerTurn > 1) ; absent : 0, ou 1 si `cardPlayed`.
+   */
+  cardsThisTurn?: number;
   /** Pièces capturées (ou détruites), rangées par couleur de la pièce perdue. */
   captured: Record<Color, PieceType[]>;
   nextPieceId: number;
@@ -123,10 +133,16 @@ export interface GameState {
   timed: boolean;
   /** Catalogue de cartes de la partie (absent dans les parties antérieures : 'duel'). */
   catalog?: Catalog;
+  /**
+   * Règles de la partie, photographiées à sa création si elles diffèrent de RULES_V1 (stampRules). Absent : RULES_V1
+   * (toutes les parties d'avant le versionnement, et celles créées au réglage par défaut). Lire par rulesOf(s).
+   */
+  rules?: Rules;
   result: Result | null;
 }
 
-export const CARDS_PER_PLAYER = 3;
+/** @deprecated Alias de GAME_RULES.cardsPerPlayer (config/rules.ts), retiré au lot 9 : lire rulesOf(s).cardsPerPlayer. */
+export const CARDS_PER_PLAYER = GAME_RULES.cardsPerPlayer;
 
 /** Catalogue effectif d'une partie (les parties enregistrées avant les catalogues sont des parties Duel). */
 export const catalogOf = (s: GameState): Catalog => s.catalog ?? 'duel';
@@ -222,8 +238,11 @@ export function cardPool(catalog: Catalog, timed: boolean, opts: DealOptions = {
 // (la règle R9 du tirage ne s'applique pas). Le serveur garde les choix secrets jusqu'à ce que les deux joueurs
 // aient choisi, puis donne les mains avec `withHands`. La partie de l'accueil garde le tirage (`dealHands`).
 
-/** Durée du choix des cartes (ms) ; à l'échéance, le serveur complète au hasard ce qui manque. */
-export const DRAFT_MS = 45_000;
+/**
+ * Durée du choix des cartes (ms) ; à l'échéance, le serveur complète au hasard ce qui manque.
+ * @deprecated Alias de DEAL.draftMs (config/rules.ts), retiré au lot 9.
+ */
+export const DRAFT_MS = DEAL.draftMs;
 
 /**
  * Refus d'un choix de cartes, ou null s'il est valide : des cartes de la réserve, toutes différentes, exactement
@@ -552,7 +571,28 @@ export interface MoveInfo {
   expired?: number[];
 }
 
-export type Outcome<I> = { ok: true; state: GameState; info: I } | { ok: false; error: string };
+/**
+ * Nature d'un refus du moteur, pour que le client teste un code plutôt qu'un texte (le texte reste le message
+ * affiché). 'card-budget' : plus de carte possible ce tour.
+ */
+export type RefusalCode =
+  | 'game-over'
+  | 'not-your-turn'
+  | 'card-budget'
+  | 'card-unknown'
+  | 'card-used'
+  | 'target-missing'
+  | 'target-invalid'
+  | 'needs-clock'
+  | 'climate-pending'
+  | 'no-pawn'
+  | 'must-capture'
+  | 'checks-king'
+  | 'leaves-check'
+  | 'no-move'
+  | 'no-move-on-arrival';
+
+export type Outcome<I> = { ok: true; state: GameState; info: I } | { ok: false; error: string; code?: RefusalCode };
 
 /** Duel : instantané de `s` avant le coup `next` (Retour arrière) ; on n'en garde que deux. */
 function pushSnapshot(n: GameState, s: GameState, next: Snapshot['next']) {

@@ -1,0 +1,2 @@
+# Dette du lot 9 : aucune occurrence relevée dans ses fichiers. Le fichier doit rester vide.
+# Une ligne par occurrence : chemin<TAB>texte trouvé (en minuscules)<TAB># ligne au relevé (indicative) : extrait.

@@ -1,0 +1,7 @@
+{
+  "//": "Maquettes du dossier concepts/ : vérifiées à part, hors de la vérification principale : npx tsc --noEmit -p tsconfig.concepts.json",
+  "extends": "./tsconfig.json",
+  "include": [
+    "concepts"
+  ]
+}

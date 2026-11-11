@@ -10,7 +10,16 @@ import {
   CARDS_PER_PLAYER, GameState, cardOptions, cardPlayable, legalMovesOf, magicYields, modsSequence, playCard,
 } from './game';
 
-export type BotLevel = 1 | 2 | 3;
+/** Niveaux de l'IA, du plus faible au plus fort. Ne jamais recycler un niveau : il est enregistré dans les sièges. */
+export const BOT_LEVELS = [1, 2, 3] as const;
+export type BotLevel = (typeof BOT_LEVELS)[number];
+/** Niveau par défaut (Sorcier) : Jouer, accueil, relais, niveau inconnu d'une partie enregistrée. */
+export const DEFAULT_BOT_LEVEL: BotLevel = 2;
+
+/** `x` s'il désigne un niveau connu, sinon `fallback` (niveau absent, inconnu ou d'une autre version). */
+export function botLevelOr(x: unknown, fallback: BotLevel = DEFAULT_BOT_LEVEL): BotLevel {
+  return (BOT_LEVELS as readonly unknown[]).includes(x) ? (x as BotLevel) : fallback;
+}
 
 export const BOT_PROFILES: Record<BotLevel, { name: string; rating: number; depth: number; noise: number; cardThreshold: number; thinkMs: number }> = {
   1: { name: 'Apprenti', rating: 800, depth: 1, noise: 70, cardThreshold: 60, thinkMs: 350 },

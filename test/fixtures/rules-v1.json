@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "cardsPerPlayer": 3,
+  "cardsPerTurn": 1,
+  "cardEndsTurn": false,
+  "handsVisible": true,
+  "presageDelay": 2,
+  "fiftyHalfmoves": 100,
+  "repetitions": 3,
+  "startFen": null,
+  "tuning": {
+    "hourglass": { "coups": 6, "clockRate": 2 },
+    "truce": { "coups": 3 },
+    "blood_moon": { "coups": 3 },
+    "ice_age": { "coups": 4 },
+    "blast": { "coups": 4 },
+    "rift": { "coups": 4, "ranks": [3, 4] },
+    "ice_wall": { "ranks": [2, 3, 4, 5] },
+    "tide": { "ranks": [1, 2, 3, 4] }
+  }
+}

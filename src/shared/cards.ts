@@ -37,7 +37,9 @@ export type Rarity = 'commune' | 'rare' | 'épique' | 'légendaire';
  * - 'duel' : les 11 cartes historiques ; plus proposé, gardé pour les parties créées avant ;
  * - 'aucune' : échecs classiques, sans cartes.
  */
-export type Catalog = 'climats' | 'duel' | 'aucune';
+export type Catalog = (typeof CATALOG_IDS)[number];
+/** Tous les catalogues connus du moteur (proposés ou non). Ne jamais retirer un identifiant : des parties le portent. */
+export const CATALOG_IDS = ['climats', 'duel', 'aucune'] as const;
 /** Catalogue qui contient des cartes. */
 export type CardCatalog = Exclude<Catalog, 'aucune'>;
 /** Catalogues proposés (interface, création de partie, file d'attente), le premier par défaut. */
@@ -95,6 +97,20 @@ export interface CardDef {
   coups?: number;
   /** Pouvoirs : l'effet dure jusqu'à la fin de la partie (Mur de glace). */
   permanent?: boolean;
+  /**
+   * Pouvoirs : rangées concernées, de 0 à 7 (Mur de glace, Faille ; relatives au camp du pion pour la Grande Marée).
+   * Copiées dans les règles de la partie à sa création (Rules.tuning) ; le moteur ne les lit pas encore.
+   */
+  ranks?: readonly number[];
+  /** Pouvoirs : vitesse d'écoulement des pendules sous l'effet (Sablier fou : 2). Copiée dans Rules.tuning. */
+  clockRate?: number;
+  /** Genre grammatical du nom de la carte, pour les accords des textes (« Annoncée, elle arrive… »). */
+  genre: 'm' | 'f';
+  /**
+   * Carte retirée du jeu pour de bon : plus dans aucune réserve, mais toujours relue dans les parties enregistrées.
+   * Ne jamais supprimer ni recycler l'identifiant d'une carte. Absent : en jeu.
+   */
+  retired?: boolean;
   /** Catalogues auxquels la carte appartient (le Mur de glace est dans les deux). */
   catalogs: CardCatalog[];
   /**
@@ -117,6 +133,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     catalogs: ['climats'],
     family: 'climat',
     name: 'Sablier fou',
+    genre: 'm',
     tagline: 'Le temps s’emballe pour tout le monde.',
     description:
       'Annoncé, il arrive au début de votre prochain tour. Pendant 6 coups, les deux pendules s’écoulent deux fois plus vite et les coups ne rapportent plus d’incrément.',
@@ -129,12 +146,14 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     humanOnly: true,
     presage: true,
     coups: 6,
+    clockRate: 2,
   },
   truce: {
     id: 'truce',
     catalogs: ['climats'],
     family: 'climat',
     name: 'Trêve',
+    genre: 'f',
     tagline: 'Les armes se taisent.',
     description:
       'Annoncée, elle arrive au début de votre prochain tour. Pendant 3 coups, aucune capture n’est permise (prise en passant comprise), sauf pour sortir d’un échec. L’adversaire reprend les captures le premier.',
@@ -151,6 +170,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     catalogs: ['climats'],
     family: 'climat',
     name: 'Lune de sang',
+    genre: 'f',
     tagline: 'Qui peut prendre, doit prendre.',
     description:
       'Annoncée, elle arrive au début de votre prochain tour. Pendant 3 coups, un joueur qui peut capturer doit capturer ; il choisit la capture (prise en passant comprise). L’adversaire retrouve le premier sa liberté.',
@@ -167,6 +187,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     catalogs: ['climats'],
     family: 'climat',
     name: 'Ère glaciaire',
+    genre: 'f',
     tagline: 'Le front se fige.',
     description:
       'Annoncée, elle arrive au début de votre prochain tour. Pendant 4 coups, tous les pions des deux camps sont gelés : ils ne bougent ni ne capturent. Un roi ne peut toujours pas se placer sur une case qu’attaque un pion adverse.',
@@ -183,6 +204,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     catalogs: ['climats'],
     family: 'climat',
     name: 'Déflagration',
+    genre: 'f',
     tagline: 'Chaque prise est un sacrifice.',
     description:
       'Annoncée, elle arrive au début de votre prochain tour. Pendant 4 coups, toute prise fait exploser la pièce qui prend avec sa victime : les deux disparaissent. Les pièces voisines ne craignent rien. Un roi prend normalement.',
@@ -202,6 +224,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     catalogs: ['climats', 'duel'],
     family: 'terrain',
     name: 'Mur de glace',
+    genre: 'm',
     tagline: 'Ici, plus personne ne passe.',
     description:
       'Une case vide entre la 3e et la 6e rangée devient infranchissable pour les deux camps, jusqu’à la fin de la partie : aucune pièce ne peut s’y arrêter ni la traverser. Un cavalier peut sauter par-dessus.',
@@ -214,12 +237,14 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     permanent: true,
     turns: 3,
     countsOnOpponent: true,
+    ranks: [2, 3, 4, 5],
   },
   rift: {
     id: 'rift',
     catalogs: ['climats'],
     family: 'terrain',
     name: 'Faille',
+    genre: 'f',
     tagline: 'Le plateau se fend en deux.',
     description:
       'Choisissez la 4e ou la 5e rangée. Pendant 4 coups, toutes ses cases vides deviennent un gouffre : aucune pièce ne peut s’y arrêter ni le traverser. Les cavaliers passent par-dessus.',
@@ -229,6 +254,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     rarity: 'commune',
     hue: 285,
     coups: 4,
+    ranks: [3, 4],
   },
 
   // -------------------------------------------------------------------------------------------
@@ -238,6 +264,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     catalogs: ['climats'],
     family: 'evenement',
     name: 'Grande Marée',
+    genre: 'f',
     tagline: 'La mer avance pour tout le monde.',
     description:
       'Rituel : la carte remplace votre coup. Tous les pions des deux camps qui sont sur leurs 2e à 5e rangées avancent d’une case, si elle est libre. C’est ensuite à l’adversaire de jouer.',
@@ -247,6 +274,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     rarity: 'rare',
     hue: 172,
     ritual: true,
+    ranks: [1, 2, 3, 4],
   },
 
   // -------------------------------------------------------------------------------------------
@@ -256,6 +284,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     catalogs: ['duel'],
     family: 'duel',
     name: 'Distorsion temporelle',
+    genre: 'f',
     tagline: 'Le temps file entre ses doigts.',
     description: "La pendule adverse s'écoule deux fois plus vite pendant ses 3 prochains coups.",
     targets: 0,
@@ -272,6 +301,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     catalogs: ['duel'],
     family: 'duel',
     name: 'Gravité',
+    genre: 'f',
     tagline: 'Chaque pas pèse une tonne.',
     description: 'La portée des tours, fous et dames adverses est divisée par deux : 3 cases au plus.',
     targets: 0,
@@ -287,6 +317,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     catalogs: ['duel'],
     family: 'duel',
     name: 'Cryogénie',
+    genre: 'f',
     tagline: 'Figée dans la glace éternelle.',
     description: 'Gèle une pièce adverse (sauf le roi) : elle ne peut ni bouger, ni capturer, ni protéger.',
     targets: 1,
@@ -302,6 +333,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     catalogs: ['duel'],
     family: 'duel',
     name: 'Égide',
+    genre: 'f',
     tagline: 'Intouchable.',
     description: 'Une de vos pièces (sauf le roi) devient imprenable et insensible aux cartes adverses.',
     targets: 1,
@@ -317,6 +349,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     catalogs: ['duel'],
     family: 'duel',
     name: 'Permutation',
+    genre: 'f',
     tagline: 'Deux âmes, deux places.',
     description:
       "Échange instantanément la place de deux de vos pièces (sauf le roi). Un pion ne peut pas arriver sur la première ou la dernière rangée.",
@@ -331,6 +364,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     catalogs: ['duel'],
     family: 'duel',
     name: 'Retour arrière',
+    genre: 'm',
     tagline: 'Ce coup-là ? Il n’a jamais existé.',
     description: "Annule le dernier coup adverse. Votre adversaire doit rejouer, et pas le même coup.",
     targets: 0,
@@ -344,6 +378,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     catalogs: ['duel'],
     family: 'duel',
     name: 'Résurrection',
+    genre: 'f',
     tagline: 'Les héros ne meurent jamais vraiment.',
     description:
       'Ramène votre meilleure pièce capturée (tour, puis fou, puis cavalier) sur une case vide de votre première rangée, ou un pion sur votre deuxième rangée.',
@@ -358,6 +393,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     catalogs: ['duel'],
     family: 'duel',
     name: 'Saut du cavalier',
+    genre: 'm',
     tagline: "L'élan d'un destrier.",
     description: 'Pour ce tour, une de vos tours, fous ou dames peut aussi se déplacer comme un cavalier.',
     targets: 1,
@@ -372,6 +408,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     catalogs: ['duel'],
     family: 'duel',
     name: 'Foudre',
+    genre: 'f',
     tagline: 'Le ciel a tranché.',
     description: 'Pulvérise un pion adverse, où qu’il soit sur l’échiquier.',
     targets: 1,
@@ -385,6 +422,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     catalogs: ['duel'],
     family: 'duel',
     name: 'Passe-muraille',
+    genre: 'm',
     tagline: 'Vos rangs s’écartent comme de la brume.',
     description:
       'Pour ce tour, une de vos tours, fous ou dames traverse vos propres pièces. Une pièce adverse l’arrête toujours.',

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "cards": ["hourglass", "truce", "blood_moon", "ice_age", "blast", "ice_wall", "rift", "tide", "time_warp", "gravity", "freeze", "shield", "swap", "rewind", "revive", "knight_leap", "lightning", "phase"],
+  "catalogs": ["climats", "duel", "aucune"],
+  "offeredCatalogs": ["climats", "aucune"],
+  "timeControls": ["1+0", "3+2", "5+0", "10+0", "15+10", "none"],
+  "quickControls": ["3+2", "5+0", "10+0", "15+10"],
+  "botLevels": [1, 2, 3],
+  "gameRules": {
+    "cardsPerPlayer": 3,
+    "cardsPerTurn": 1,
+    "cardEndsTurn": false,
+    "handsVisible": true,
+    "presageDelay": 2,
+    "fiftyHalfmoves": 100,
+    "repetitions": 3,
+    "startFen": null
+  },
+  "draftMs": 45000
+}

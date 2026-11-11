@@ -1,0 +1,20 @@
+# Dette du lot 6 (socle client, marque, index.html et manifeste : BRAND, pageTitle, KEYS.reload, cartesDePouvoir, sortParTour).
+# Occurrences actuelles de textes chiffrés ou du nom de la marque écrits en dur dans les fichiers du lot :
+# à dériver de src/shared/text/regles.ts, text/fr.ts ou config/*, puis à retirer d’ici. Le lot rend ce fichier vide.
+# Une ligne par occurrence : chemin<TAB>texte trouvé (en minuscules)<TAB># ligne au relevé (indicative) : extrait.
+index.html	spellmate	# 6 : <title>Spellmate · Les échecs ont appris la magie</title>
+index.html	trois cartes	# 7 : <meta name="description" content="Jouez aux échecs avec trois cartes de pouvoir qui changent la partie pour le
+index.html	spellmate	# 13 : <meta property="og:title" content="Spellmate · Les échecs ont appris la magie" />
+index.html	trois cartes	# 14 : <meta property="og:description" content="Une vraie partie d’échecs, trois cartes de pouvoir visibles des deux 
+index.html	un sort par tour	# 14 : <meta property="og:description" content="Une vraie partie d’échecs, trois cartes de pouvoir visibles des deux 
+public/manifest.webmanifest	spellmate	# 2 : "name": "Spellmate",
+public/manifest.webmanifest	spellmate	# 3 : "short_name": "Spellmate",
+public/manifest.webmanifest	trois cartes	# 4 : "description": "Les échecs ont appris la magie : une vraie partie, trois cartes de pouvoir. Gratuit, sans comp
+src/client/components/Layout.tsx	spellmate	# 29 : <Link to="/" className="logo" aria-label="Spellmate, accueil">
+src/client/components/Layout.tsx	spellmate	# 31 : <span>SPELLMATE</span>
+src/client/components/Layout.tsx	trois cartes	# 241 : <p>Les échecs que vous aimez, avec trois cartes de pouvoir pour renverser la partie. Gratuit, sans publicité, 
+src/client/components/Layout.tsx	spellmate	# 264 : <span>© {new Date().getFullYear()} Spellmate. Tous droits réservés.</span>
+src/client/features/ui.tsx	spellmate	# 37 : document.title = `${title} · Spellmate`;
+src/client/main.tsx	spellmate	# 31 : if (Date.now() - Number(sessionStorage.getItem('spellmate:reload') ?? 0) < 60_000) return;
+src/client/main.tsx	spellmate	# 32 : sessionStorage.setItem('spellmate:reload', String(Date.now()));
+src/client/pages/PageScene.tsx	spellmate	# 44 : document.title = `${title} · Spellmate`;

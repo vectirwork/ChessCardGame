@@ -1,0 +1,51 @@
+# Dette du lot 8 (pages, leçons, problèmes : cartesChacun, constitutionMains, dureeChoix, pouvoirs, limitesMain, BRAND.name…).
+# Occurrences actuelles de textes chiffrés ou du nom de la marque écrits en dur dans les fichiers du lot :
+# à dériver de src/shared/text/regles.ts, text/fr.ts ou config/*, puis à retirer d’ici. Le lot rend ce fichier vide.
+# Une ligne par occurrence : chemin<TAB>texte trouvé (en minuscules)<TAB># ligne au relevé (indicative) : extrait.
+src/client/components/DemoBoard.tsx	huit pouvoirs	# 3 : // par odyssee/StageBoard. Il montre les huit pouvoirs (catalogue « climats »).
+src/client/pages/Analysis.tsx	spellmate	# 139 : Event: 'Partie Spellmate (locale)', Site: 'Spellmate', Date: pgnDate(new Date(g.at)), White: g.white, Black: g
+src/client/pages/Analysis.tsx	spellmate	# 139 : Event: 'Partie Spellmate (locale)', Site: 'Spellmate', Date: pgnDate(new Date(g.at)), White: g.white, Black: g
+src/client/pages/Analysis.tsx	spellmate	# 172 : Event: v.rated ? 'Partie classée Spellmate' : 'Partie Spellmate',
+src/client/pages/Analysis.tsx	spellmate	# 172 : Event: v.rated ? 'Partie classée Spellmate' : 'Partie Spellmate',
+src/client/pages/Analysis.tsx	spellmate	# 321 : const h = { Event: 'Analyse', Site: 'Spellmate', Date: pgnDate(new Date()), ...headers };
+src/client/pages/Analysis.tsx	spellmate	# 337 : const base = game ? `spellmate-${game.id}` : 'spellmate-analyse';
+src/client/pages/Analysis.tsx	spellmate	# 337 : const base = game ? `spellmate-${game.id}` : 'spellmate-analyse';
+src/client/pages/Learn.tsx	spellmate	# 62 : sub="De la marche des pièces aux mats élémentaires, puis les cartes de Spellmate. Chaque leçon se joue sur l’é
+src/client/pages/Live.tsx	spellmate	# 80 : sub="Regardez les parties qui se jouent en ce moment sur Spellmate, sans vous asseoir à l’échiquier. Les parti
+src/client/pages/Play.tsx	trois cartes	# 4 : // le choix des trois cartes de chaque joueur (décision D5, src/client/game/CardDraft.tsx). Le mode miroir n'e
+src/client/pages/Play.tsx	3 niveaux	# 34 : { mode: 'bot', num: 'I', title: "Contre l'IA", badge: '3 niveaux', text: 'Apprenti, Sorcier ou Archimage : une
+src/client/pages/Play.tsx	trois cartes	# 200 : <p className="lede">Les échecs, plus trois cartes de pouvoir chacun, que vous choisissez au début de la partie
+src/client/pages/Play.tsx	trois cartes	# 291 : Vous choisirez vos trois cartes au début de la partie, en 45 secondes : votre choix reste secret jusqu’à ce qu
+src/client/pages/Play.tsx	45 secondes	# 291 : Vous choisirez vos trois cartes au début de la partie, en 45 secondes : votre choix reste secret jusqu’à ce qu
+src/client/pages/Puzzles.tsx	huit pouvoirs	# 110 : sub="Des positions choisies à la main : mats en un, deux ou trois coups, fourchettes, clouages, enfilades, dév
+src/client/pages/Rules.css	huit pouvoirs	# 242 : /* III. Les huit pouvoirs */
+src/client/pages/Rules.tsx	huit pouvoirs	# 1 : // Règles du jeu et grimoire des huit pouvoirs (route /cartes), au langage de l'Odyssée.
+src/client/pages/Rules.tsx	trois cartes	# 22 : title: 'Trois cartes chacun, à découvert',
+src/client/pages/Rules.tsx	trois cartes	# 25 : Au début d’une partie, vous choisissez vos trois cartes ; sur l’accueil, elles sont tirées au hasard. Votre ch
+src/client/pages/Rules.tsx	un sort par tour	# 32 : title: 'Un sort par tour, avant votre coup',
+src/client/pages/Rules.tsx	trois cartes	# 105 : 'Trois cartes chacun, choisies parmi les huit pouvoirs au début de la partie.',
+src/client/pages/Rules.tsx	huit pouvoirs	# 105 : 'Trois cartes chacun, choisies parmi les huit pouvoirs au début de la partie.',
+src/client/pages/Rules.tsx	un sort par tour	# 107 : 'Un sort par tour au plus, toujours facultatif.',
+src/client/pages/Rules.tsx	45 secondes	# 117 : 'Le choix des cartes dure 45 secondes : trois cartes différentes parmi les huit pouvoirs, sans autre contraint
+src/client/pages/Rules.tsx	trois cartes	# 117 : 'Le choix des cartes dure 45 secondes : trois cartes différentes parmi les huit pouvoirs, sans autre contraint
+src/client/pages/Rules.tsx	huit pouvoirs	# 117 : 'Le choix des cartes dure 45 secondes : trois cartes différentes parmi les huit pouvoirs, sans autre contraint
+src/client/pages/Rules.tsx	deux climats	# 117 : 'Le choix des cartes dure 45 secondes : trois cartes différentes parmi les huit pouvoirs, sans autre contraint
+src/client/pages/Rules.tsx	huit pouvoirs	# 210 : Les échecs, <em>et huit pouvoirs</em>
+src/client/pages/Rules.tsx	trois cartes	# 213 : lede="Spellmate, ce sont les échecs que vous connaissez, plus trois cartes de pouvoir chacun. Les deux mains s
+src/client/pages/Rules.tsx	spellmate	# 213 : lede="Spellmate, ce sont les échecs que vous connaissez, plus trois cartes de pouvoir chacun. Les deux mains s
+src/client/pages/Rules.tsx	huit pouvoirs	# 218 : <a href="#pouvoirs">Les huit pouvoirs</a>
+src/client/pages/Rules.tsx	huit pouvoirs	# 284 : kicker="Les huit pouvoirs"
+src/client/pages/Rules.tsx	huit cartes	# 287 : Trois familles, <em>huit cartes</em>
+src/shared/lessons.ts	huit pouvoirs	# 4 : // Les leçons de cartes suivent le jeu final (catalogue « Pouvoirs ») : huit pouvoirs qui touchent les deux ca
+src/shared/lessons.ts	huit pouvoirs	# 427 : // Les cartes (catalogue « Pouvoirs » : huit pouvoirs qui touchent les deux camps, mains visibles)
+src/shared/lessons.ts	trois cartes	# 430 : summary: 'Trois cartes chacun, visibles des deux joueurs ; une par tour, avant le coup.',
+src/shared/lessons.ts	une par tour	# 430 : summary: 'Trois cartes chacun, visibles des deux joueurs ; une par tour, avant le coup.',
+src/shared/lessons.ts	trois cartes	# 435 : text: 'Spellmate, ce sont les échecs, plus trois cartes de pouvoir par joueur. Au début d’une partie, vous cho
+src/shared/lessons.ts	trois cartes	# 435 : text: 'Spellmate, ce sont les échecs, plus trois cartes de pouvoir par joueur. Au début d’une partie, vous cho
+src/shared/lessons.ts	une seule par tour	# 435 : text: 'Spellmate, ce sont les échecs, plus trois cartes de pouvoir par joueur. Au début d’une partie, vous cho
+src/shared/lessons.ts	spellmate	# 435 : text: 'Spellmate, ce sont les échecs, plus trois cartes de pouvoir par joueur. Au début d’une partie, vous cho
+src/shared/lessons.ts	huit pouvoirs	# 456 : summary: 'Avec les huit pouvoirs ou sans cartes ; Climats, Terrains, Événement.',
+src/shared/lessons.ts	huit cartes	# 460 : text: 'Chaque partie choisit son jeu. Par défaut, les Pouvoirs : huit cartes qui changent la partie pour les d
+src/shared/lessons.ts	huit pouvoirs	# 464 : text: 'Les huit pouvoirs forment trois familles. Un Climat change une règle sur tout le plateau pendant quelqu
+src/shared/puzzles.ts	huit pouvoirs	# 5 : // Problèmes à cartes : les huit pouvoirs (catalogue « Pouvoirs »), mains visibles des deux camps. Un problème
+src/shared/puzzles.ts	huit pouvoirs	# 367 : // Cartes : les huit pouvoirs (catalogue « Pouvoirs »), mains visibles des deux côtés

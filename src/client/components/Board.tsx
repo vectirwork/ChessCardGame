@@ -9,9 +9,12 @@ import type { Effect } from '../../shared/game';
 import { CARDS } from '../../shared/cards';
 import type { CardId } from '../../shared/cards';
 import { boardStyle } from '../../shared/catalog';
+import { BOARD_MARKS, PIECE_MARKS, SQUARE_MARKS } from '../vfx/boardMarks';
+import type { PieceMark, SquareMark } from '../vfx/boardMarks';
+import { cellOf, squareAt, squareOfCell } from './boardGeometry';
 import { boardTheme } from './boardTheme';
 import { fallSide } from './mate';
-import { pieceUrl } from './pieces';
+import { PIECE_NAMES, pieceUrl } from './pieces';
 import { fullmoveOf, premoveDests, virtualBoard } from './premoves';
 import type { Premove } from './premoves';
 
@@ -73,9 +76,14 @@ interface Shown {
 
 const moveKey = (m: { from: number; to: number } | null | undefined) => (m ? `${m.from}-${m.to}` : '');
 
-function xy(sq: number, o: Color) {
-  const f = sq & 7, r = sq >> 3;
-  return o === 'w' ? { x: f, y: 7 - r } : { x: 7 - f, y: r };
+/** Cellule affichée d'une case : colonne et ligne de l'échiquier dessiné (boardGeometry). */
+const xy = cellOf;
+
+/** Ajoute `v` à l'ensemble `k` de `m`. */
+function mark<K, V>(m: Map<K, Set<V>>, k: K, v: V) {
+  let set = m.get(k);
+  if (!set) m.set(k, (set = new Set()));
+  set.add(v);
 }
 
 export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, ref) {
@@ -176,27 +184,23 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
     return m;
   }, [legal]);
 
+  /** Effets actifs : marques sur les cases et les pièces (BOARD_MARKS), Climat en cours. */
   const fx = useMemo(() => {
-    const iced = new Set<number>();
-    const frozen = new Set<number>();
-    const shielded = new Set<number>();
-    const leap = new Set<number>();
-    const phase = new Set<number>();
-    const weighted = new Set<Color>();
-    const rift = new Set<number>();
+    const squares = new Map<SquareMark, Set<number>>();
+    const pieces = new Map<PieceMark, Set<number>>();
+    const sliders = new Map<PieceMark, Set<Color>>();
     let climate: CardId | null = null;
     for (const e of effects) {
       if (e.pending) continue;
       if (CARDS[e.card]?.family === 'climat') climate = e.card;
-      if (e.card === 'rift') for (const q of e.squares ?? []) rift.add(q);
-      if (e.card === 'ice_wall') iced.add(e.square!);
-      if (e.card === 'freeze') frozen.add(e.pieceId!);
-      if (e.card === 'shield') shielded.add(e.pieceId!);
-      if (e.card === 'knight_leap') leap.add(e.pieceId!);
-      if (e.card === 'phase') phase.add(e.pieceId!);
-      if (e.card === 'gravity') weighted.add(e.countsOn);
+      const m = BOARD_MARKS[e.card];
+      if (!m) continue;
+      if (m.on === 'square') mark(squares, m.cls, e.square!);
+      else if (m.on === 'squares') for (const q of e.squares ?? []) mark(squares, m.cls, q);
+      else if (m.on === 'piece') mark(pieces, m.cls, e.pieceId!);
+      else mark(sliders, m.cls, e.countsOn);
     }
-    return { iced, frozen, shielded, leap, phase, weighted, rift, climate };
+    return { squares, pieces, sliders, climate };
   }, [effects]);
 
   const targetSet = useMemo(() => new Set(targets ?? []), [targets]);
@@ -268,10 +272,7 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
     const el = boardRef.current;
     if (!el) return null;
     const r = el.getBoundingClientRect();
-    const x = Math.floor(((cx - r.left) / r.width) * 8);
-    const y = Math.floor(((cy - r.top) / r.height) * 8);
-    if (x < 0 || x > 7 || y < 0 || y > 7) return null;
-    return orientation === 'w' ? (7 - y) * 8 + x : y * 8 + (7 - x);
+    return squareAt((cx - r.left) / r.width, (cy - r.top) / r.height, orientation);
   }, [orientation]);
 
   const tryMove = useCallback((from: number, to: number): boolean => {
@@ -301,18 +302,18 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
     const capture = !!victim && victim.c !== mover.c;
     if (to !== null && !capture) {
       // Lune de sang : un coup tranquille alors qu'une prise existe
-      if (fx.climate === 'blood_moon' && legal.some(m => m.flags & F_CAPTURE)) return 'Lune de sang : vous devez capturer.';
+      if (fx.climate === 'blood_moon' && legal.some(m => m.flags & F_CAPTURE)) return `${CARDS.blood_moon.name} : vous devez capturer.`;
       return null;
     }
     if (to === null) {
-      if (mover.t === 'p' && fx.climate === 'ice_age') return 'Ère glaciaire : les pions sont gelés.';
-      if (fx.frozen.has(mover.id)) return 'Cette pièce est gelée.';
+      if (mover.t === 'p' && fx.climate === 'ice_age') return `${CARDS.ice_age.name} : les pions sont gelés.`;
+      if (fx.pieces.get('frozen')?.has(mover.id)) return 'Cette pièce est gelée.';
       return null;
     }
-    if (fx.climate === 'truce') return 'Trêve : aucune capture pendant ce Climat.';
-    if (mover.t === 'p' && fx.climate === 'ice_age') return 'Ère glaciaire : les pions ne capturent pas.';
-    if (fx.climate === 'blood_moon') return 'Lune de sang : choisissez une des prises possibles.';
-    if (victim && fx.shielded.has(victim.id)) return 'Cette pièce est protégée.';
+    if (fx.climate === 'truce') return `${CARDS.truce.name} : aucune capture pendant ce Climat.`;
+    if (mover.t === 'p' && fx.climate === 'ice_age') return `${CARDS.ice_age.name} : les pions ne capturent pas.`;
+    if (fx.climate === 'blood_moon') return `${CARDS.blood_moon.name} : choisissez une des prises possibles.`;
+    if (victim && fx.pieces.get('shielded')?.has(victim.id)) return 'Cette pièce est protégée.';
     if (victim?.t === 'k') return null;
     return legal.length ? 'Cette prise n’est pas permise ici.' : null;
   };
@@ -414,7 +415,7 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
   const squares = [];
   for (let y = 0; y < 8; y++) {
     for (let x = 0; x < 8; x++) {
-      const sq = orientation === 'w' ? (7 - y) * 8 + x : y * 8 + (7 - x);
+      const sq = squareOfCell(x, y, orientation);
       const light = (x + y) % 2 === 0;
       const cls = ['sq', light ? 'l' : 'd'];
       if (lastMove && (lastMove.from === sq || lastMove.to === sq)) cls.push('last');
@@ -422,8 +423,7 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
       if (preTo.has(sq)) cls.push('pm-to');
       else if (preFrom.has(sq)) cls.push('pm-from');
       if (check === sq) cls.push('check');
-      if (fx.iced.has(sq)) cls.push('iced');
-      if (fx.rift.has(sq)) cls.push('rift');
+      for (const m of SQUARE_MARKS) if (fx.squares.get(m)?.has(sq)) cls.push(m);
       if (targeting && targetSet.has(sq)) cls.push('target');
       if (chosen.includes(sq)) cls.push('chosen');
       if (drag?.moved && hover === sq && dests.has(sq)) cls.push(dests.get(sq) ? 'hover hover-cap' : 'hover');
@@ -479,11 +479,7 @@ export const Board = memo(forwardRef<BoardHandle, Props>(function Board(props, r
             if (blast) cls.push('is-blast');
             if (p.t === 'p') cls.push('pawn');
             if (p.t === 'p' && fx.climate === 'ice_age') cls.push('chilled');
-            if (fx.frozen.has(p.id)) cls.push('frozen');
-            if (fx.shielded.has(p.id)) cls.push('shielded');
-            if (fx.leap.has(p.id)) cls.push('leaping');
-            if (fx.phase.has(p.id)) cls.push('phasing');
-            if (fx.weighted.has(p.c) && isSlider(p.t)) cls.push('weighted');
+            for (const m of PIECE_MARKS) if (fx.pieces.get(m)?.has(p.id) || (fx.sliders.get(m)?.has(p.c) && isSlider(p.t))) cls.push(m);
             if (dragging) cls.push('dragging');
             if (moving.has(p.id)) cls.push('is-moving');
             // Pièce qui sera prise si l'on lâche ici
@@ -553,7 +549,7 @@ function PromotionPicker({ color, x, top, onPick, onCancel }: { color: Color; x:
     <div className="promo-veil" onPointerDown={e => { e.stopPropagation(); onCancel(); }}>
       <div className="promo" style={{ left: `${x * 12.5}%`, [top ? 'top' : 'bottom']: 0 }} onPointerDown={e => e.stopPropagation()}>
         {types.map(t => (
-          <button key={t} onClick={() => onPick(t)} style={{ backgroundImage: pieceUrl(color, t) }} aria-label={t} />
+          <button key={t} onClick={() => onPick(t)} style={{ backgroundImage: pieceUrl(color, t) }} aria-label={PIECE_NAMES[t]} />
         ))}
       </div>
     </div>

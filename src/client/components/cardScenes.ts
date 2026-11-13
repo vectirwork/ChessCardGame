@@ -6,8 +6,10 @@
 //   Animée (survol, bulle d'une carte) : l'image de droite rejoue l'action, celle de gauche reste le point de départ.
 // - une seule image avec des flèches (Trêve, Lune de sang) : un coup interdit (flèche barrée) ou forcé.
 // Coordonnées propres à la scène : colonnes a, b, c…, rangées 1 (en bas) à `rows`.
-import type { CardId } from '../../shared/cards';
+import { CARDS } from '../../shared/cards';
+import type { CardId, PowerCardId } from '../../shared/cards';
 import type { Color, PieceType } from '../../shared/chess';
+import { vitesse } from '../../shared/text/regles';
 
 export interface ScenePiece {
   id: string;
@@ -67,8 +69,8 @@ export interface CardSceneDef {
   steps: SceneStep[];
   /** Ce que montre la scène, en une phrase (texte alternatif et légende). */
   caption: string;
-  /** Sablier fou : des pendules au lieu d'un échiquier. */
-  clocks?: boolean;
+  /** Sablier fou : des pendules au lieu d'un échiquier ; `rate`, leur vitesse pendant le pouvoir (« ×2 »). */
+  clocks?: { rate: number };
   /**
    * Deux images, avant et après. `afterAt` : étape à partir de laquelle l'image de droite montre l'effet (marques,
    * points, teinte) quand elle s'anime ; par défaut, la dernière.
@@ -76,7 +78,14 @@ export interface CardSceneDef {
   pair?: { labels: [string, string]; before: PanelDecor; after: PanelDecor; afterAt?: number };
 }
 
-export const CARD_SCENES: Partial<Record<CardId, CardSceneDef>> = {
+/**
+ * Vitesse des pendules sous le Sablier fou, à l'équilibrage du jour (CARDS, comme le texte de la carte) : libellé,
+ * légende et pendule de sa scène la suivent (2 : « Deux fois plus vite », « ×2 »).
+ */
+const HOURGLASS_RATE = CARDS.hourglass.clockRate ?? 2;
+
+/** ← Scène de chaque Pouvoir (table exhaustive : un Pouvoir ajouté ne compile pas sans la sienne). */
+const SCENES: Readonly<Record<PowerCardId, CardSceneDef>> = {
   blood_moon: {
     cols: 4,
     rows: 4,
@@ -212,14 +221,17 @@ export const CARD_SCENES: Partial<Record<CardId, CardSceneDef>> = {
   hourglass: {
     cols: 2,
     rows: 2,
-    clocks: true,
+    clocks: { rate: HOURGLASS_RATE },
     pieces: [],
     arrows: [],
     steps: [{ hold: 2600 }],
-    pair: { labels: ['Pendule normale', 'Deux fois plus vite, sans incrément'], before: {}, after: {}, afterAt: 1 },
-    caption: 'Sablier fou : les deux pendules s’écoulent deux fois plus vite, et les coups ne rapportent plus d’incrément.',
+    pair: { labels: ['Pendule normale', `${vitesse(HOURGLASS_RATE, true)}, sans incrément`], before: {}, after: {}, afterAt: 1 },
+    caption: `Sablier fou : les deux pendules s’écoulent ${vitesse(HOURGLASS_RATE)}, et les coups ne rapportent plus d’incrément.`,
   },
 };
+
+/** Scène d'une carte, par identifiant (les cartes du Duel n'en ont pas). */
+export const CARD_SCENES: Partial<Record<CardId, CardSceneDef>> = SCENES;
 
 /** Colonne et rangée (0 en bas) d'une case de scène (« b3 »). */
 export function sceneXY(at: string): { x: number; y: number } {

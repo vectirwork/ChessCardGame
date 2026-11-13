@@ -4,8 +4,9 @@
     <meta charset="UTF-8" />
     <title>Banc d'essai des effets</title>
     <script>
-      // Animation pilotée image par image par le script de capture (sauf avec ?live)
-      if (!location.search.includes('live')) {
+      // Animation pilotée image par image par le script de capture (sauf avec ?live). test/sorts.mjs pose sa propre
+      // horloge avant cette page (hasard semé, minuteries et animations CSS pilotées aussi) : celle-ci s'efface alors.
+      if (!location.search.includes('live') && !window.__horlogeBanc) {
       window.__t = 0;
       const queue = [];
       window.requestAnimationFrame = cb => (queue.push(cb), queue.length);

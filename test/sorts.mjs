@@ -19,6 +19,10 @@
 //   vitrine de la boutique (/boutique?objet=…), bureau 1440 × 900 et téléphone 412 × 915.
 // - banc.json : coût du dessin de chaque texture (processeur ralenti 4 fois), et premier sort Écarlate comparé au
 //   premier sort Inferno sur un téléphone simulé (412 × 915, densité 2, processeur ralenti 4 fois).
+// Reproductibles au pixel : planche, sorts et finale (référence : /home/user/spellmate-ref/captures-existantes/sorts,
+// comparaison : node test/identite.mjs --existantes=<dossier>). Les pages des sorts et du coup de grâce tirent un
+// hasard semé et n'avancent qu'avec l'horloge du banc (horlogeBanc : images, minuteries, animations CSS) ; le script
+// attend des états (sort fini, arrivée jouée), jamais une durée en temps réel. Vitrine et banc restent en temps réel.
 // Les mesures du banc sont faites en rendu logiciel (SwiftShader) : seules les comparaisons ont un sens, et pas pendant
 // que d'autres processus lourds tournent.
 import assert from 'node:assert/strict';
@@ -52,24 +56,93 @@ const ONLY = (arg('only') ?? `planche,sorts,finale,banc${SITE ? ',vitrine' : ''}
 mkdirSync(OUT, { recursive: true });
 
 // ---------------------------------------------------------------------------------------------
-// Pages du banc, servies par Vite (modules virtuels : aucun fichier de plus dans le dépôt)
+// Horloge du banc : les pages des sorts et du coup de grâce avancent seulement quand le script le demande, et tirent
+// la même suite de hasard à chaque passe. Captures reproductibles au pixel (test/fixtures/v1/existantes.json).
 
-/** Animation pilotée image par image (comme test/vfx.html) : `__step(ms)`, `__pending()` (images demandées). */
-const STEPPED = `<script>
+/**
+ * Script injecté avant ceux de la page (page.addInitScript), à chaque chargement :
+ * - hasard semé (mulberry32, graine fixe) : particules, secousse, et identifiants de three.js (generateUUID tire
+ *   Math.random quatre fois par objet : créer un objet de plus ou de moins décale toute la suite) ;
+ * - animation pilotée image par image : `__step(ms)` avance l'horloge (performance.now), puis joue les images
+ *   demandées (requestAnimationFrame) ; `__pending()` : images en attente ; `__frames` : images jouées ;
+ * - `minuteries` : setTimeout et clearTimeout suivent cette horloge (fin d'un sort, arrivée d'un Présage, éclats
+ *   différés, ambiances retirées, éclair, minuteries de l'échiquier) au lieu de l'horloge murale ; une minuterie part
+ *   à son échéance, dans l'ordre des échéances, avant les images du pas ;
+ * - à la fin de chaque pas, les rendus de React qu'il a demandés sont faits (allers-retours de messages) ;
+ * - `animations` : les animations et transitions CSS (ambiances, éclair, pièces) suivent aussi cette horloge : à la
+ *   fin de chaque pas, chacune est arrêtée à son âge sur l'horloge du banc (âge compté depuis le pas qui l'a vue
+ *   naître).
+ * test/vfx.html ne pose pas sa propre horloge quand celle-ci est en place (`__horlogeBanc`).
+ */
+function horlogeBanc({ graine, minuteries, animations }) {
+  let a = graine >>> 0;
+  Math.random = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  window.__horlogeBanc = true;
   window.__t = 0;
   window.__frames = 0;
   const queue = [];
   window.requestAnimationFrame = cb => (queue.push(cb), queue.length);
   window.cancelAnimationFrame = () => {};
   performance.now = () => window.__t;
-  window.__step = ms => {
-    window.__t += ms;
+  const timers = new Map();
+  let nextId = 1;
+  if (minuteries) {
+    window.setTimeout = (fn, ms = 0, ...args) => {
+      const id = nextId++;
+      timers.set(id, { at: window.__t + Math.max(0, Number(ms) || 0), fn: typeof fn === 'function' ? () => fn(...args) : () => {} });
+      return id;
+    };
+    window.clearTimeout = id => void timers.delete(id);
+  }
+  const born = new WeakMap();
+  /** Un aller-retour de message : les tâches déjà postées (rendus de React, effets) passent avant. */
+  const tour = () =>
+    new Promise(resolve => {
+      const c = new MessageChannel();
+      c.port1.onmessage = () => resolve();
+      c.port2.postMessage(0);
+    });
+  window.__step = async ms => {
+    const target = window.__t + ms;
+    for (;;) {
+      let id = 0;
+      let due = Infinity;
+      for (const [k, t] of timers) if (t.at <= target && t.at < due) [id, due] = [k, t.at];
+      if (!id) break;
+      const t = timers.get(id);
+      timers.delete(id);
+      window.__t = Math.max(window.__t, t.at);
+      try {
+        t.fn();
+      } catch (err) {
+        console.error(err);
+      }
+    }
+    window.__t = target;
     const run = queue.splice(0);
     window.__frames += run.length;
     run.forEach(cb => cb(window.__t));
+    // Ce que le pas a demandé à React (nouvel état à l'impact, pièces masquées, effets de l'échiquier, en cascade) est
+    // rendu avant la fin du pas : les animations CSS qu'il crée naissent donc à ce pas, jamais pendant une capture
+    for (let i = 0; i < 8; i++) await tour();
+    if (animations) {
+      for (const an of document.getAnimations()) {
+        if (!born.has(an)) born.set(an, window.__t);
+        an.pause();
+        an.currentTime = window.__t - born.get(an);
+      }
+    }
   };
   window.__pending = () => queue.length;
-</script>`;
+}
+/** Graine du hasard des pages pilotées. */
+const GRAINE = 20261113;
 
 const PAGES = {
   // Planche des 8 skins : les textures de la scène (particleTexture, flourishTexture : mêmes canevas), teintes comme
@@ -194,7 +267,7 @@ window.ready = true;
   },
   // Coup de grâce : mat du berger (le roi noir en e8, maté par la dame en f7), chute du roi et playFinale
   finale: {
-    head: STEPPED,
+    head: '',
     code: `
 import '/src/client/styles/global.css';
 import '/src/client/styles/board.css';
@@ -303,7 +376,13 @@ await server.listen();
 const BASE = (server.resolvedUrls?.local[0] ?? `http://localhost:${PORT}/`).replace(/\/$/, '');
 console.log('serveur', BASE);
 
-const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const GL = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
+// Captures : le compositeur finit toutes ses étapes (tramage des tuiles compris) avant de dessiner une image, sinon une
+// capture peut montrer des tuiles encore tramées à basse résolution ou d'une image précédente (écarts de 1 ou 2)
+const browser = await chromium.launch({ args: [...GL, '--run-all-compositor-stages-before-draw'] });
+/** Navigateur ordinaire (temps réel) pour la vitrine et le banc de performance, lancé à la demande. */
+let plain = null;
+const browserReel = async () => (plain ??= await chromium.launch({ args: GL }));
 const errors = [];
 const watch = (page, label) => {
   page.on('pageerror', e => errors.push(`${label} : ${e.message}`));
@@ -315,6 +394,30 @@ const watch = (page, label) => {
 // Sondage par minuterie : les pages pilotées image par image remplacent requestAnimationFrame
 const ready = page => page.waitForFunction(() => window.ready === true, null, { timeout: 60000, polling: 100 });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+/**
+ * Attente d'un état d'une page pilotée par horlogeBanc (ses minuteries ne suivent plus l'horloge murale) : sondée
+ * depuis Node, sans faire avancer l'horloge du banc.
+ */
+async function attendre(page, fn, label, timeout = 60000) {
+  const t0 = Date.now();
+  while (!(await page.evaluate(fn))) {
+    assert.ok(Date.now() - t0 < timeout, `${label} : délai dépassé`);
+    await sleep(50);
+  }
+}
+/** Page pilotée prête : React a monté le banc (window.ready) et les polices sont chargées. */
+async function pretePilotee(page, label) {
+  await attendre(page, () => window.ready === true, label);
+  await page.evaluate(() => document.fonts.ready.then(() => true));
+}
+/** Avance l'horloge du banc par pas de `ms` jusqu'à ce que `fn` soit vrai (au plus `max` pas) ; renvoie les pas joués. */
+async function pasJusqua(page, fn, label, ms = 16, max = 400) {
+  for (let n = 0; n <= max; n++) {
+    if (await page.evaluate(fn)) return n;
+    await page.evaluate(ms => window.__step(ms), ms);
+  }
+  assert.fail(`${label} : état attendu absent après ${max} pas de ${ms} ms`);
+}
 
 /** Assemble des captures en une planche (images en data URI, légendes). */
 async function montage(file, title, cells, columns, width) {
@@ -362,6 +465,7 @@ try {
     mkdirSync(path.join(OUT, 'sorts'), { recursive: true });
     const page = await browser.newPage({ viewport: { width: 860, height: 860 } });
     watch(page, 'sorts');
+    await page.addInitScript(horlogeBanc, { graine: GRAINE, minuteries: true, animations: true });
     const step = ms => page.evaluate(ms => window.__step(ms), ms);
     // [carte, cibles, skin, instants (s), arrivée] : avec `arrivée`, deux coups sont joués après l'annonce du Présage et
     // les instants comptent depuis son arrivée (la grande mise en scène, au centre) ; sinon depuis le lancement.
@@ -387,17 +491,17 @@ try {
     };
     for (const [card, targets, skin, times, arrival] of CASTS) {
       await page.goto(`${BASE}/test/vfx.html`);
-      await ready(page);
+      await pretePilotee(page, `${card} ${skin}`);
       for (let i = 0; i < 3; i++) await step(16);
       const r = await page.evaluate(([c, t, s]) => window.cast(c, t, s), [card, targets, skin]);
       assert.equal(r, 'ok', `${card} ${skin} : ${r}`);
       if (arrival) {
         await advance(0, 3.4, 50);
-        await sleep(600);
-        assert.equal(await page.evaluate(() => window.castDone), true, `${card} ${skin} : annonce non terminée`);
+        // Fin de l'annonce : 0,45 s après son impact (minuterie de playCast, sur l'horloge du banc)
+        await pasJusqua(page, () => window.castDone === true, `${card} ${skin} : annonce non terminée`);
         await page.evaluate(() => window.moves(2));
-        // L'arrivée part 80 ms plus tard, en temps réel (VfxStage.syncMarkers)
-        await sleep(250);
+        // L'arrivée part un peu plus tard (VfxStage.syncMarkers, minuterie) : les instants comptent depuis son départ
+        await pasJusqua(page, () => window.arrivals >= 1, `${card} ${skin} : arrivée non jouée`);
       }
       let t = 0;
       for (const at of times) {
@@ -407,8 +511,8 @@ try {
         cells.push({ png, caption: `${NAME[skin]} · ${CARD[card]}${arrival ? ' (arrivée)' : ''} · ${at.toFixed(2)} s` });
       }
       await advance(t, 3.4, 50);
-      // La fin du sort tombe 0,45 s après l'impact en temps réel (minuterie de playCast)
-      await sleep(600);
+      // La fin du sort tombe 0,45 s après l'impact (minuterie de playCast, sur l'horloge du banc)
+      await pasJusqua(page, () => window.castDone === true, `${card} ${skin} : sort non terminé`);
       const end = await page.evaluate(() => [window.castDone, getComputedStyle(document.querySelector('.board-wrap')).getPropertyValue('--tilt').trim()]);
       assert.deepEqual(end, [true, '0deg'], `${card} ${skin} : sort non terminé ou échiquier resté incliné`);
     }
@@ -422,6 +526,8 @@ try {
     mkdirSync(path.join(OUT, 'finale'), { recursive: true });
     const page = await browser.newPage({ viewport: { width: 700, height: 800 }, deviceScaleFactor: 2 });
     watch(page, 'finale');
+    // Chute du roi : ses animations CSS sont calées par seek() sur l'horloge du banc (ni minuteries ni animations ici)
+    await page.addInitScript(horlogeBanc, { graine: GRAINE, minuteries: false, animations: false });
     const step = ms => page.evaluate(ms => window.__step(ms), ms);
     const cells = [];
     // [skin du vainqueur, roi blanc, roi noir, orientation]
@@ -435,8 +541,8 @@ try {
     for (const [skin, kw, kb, o] of RUNS) {
       const label = `${skin.slice(5)}${o === 'b' ? '-noirs' : ''}`;
       await page.goto(`${BASE}/__sorts/finale?skin=${skin}&kw=${kw}&kb=${kb}&o=${o}`);
-      await ready(page);
-      await sleep(200);
+      await pretePilotee(page, label);
+      await attendre(page, () => !!document.querySelector('.sq[data-sq="60"]'), `${label} : échiquier absent`);
       for (let i = 0; i < 3; i++) await step(16);
       const framesBefore = await page.evaluate(() => window.__frames);
       assert.equal(await page.evaluate(() => window.go()), true, `${skin} : playFinale n'a rien joué`);
@@ -473,8 +579,9 @@ try {
     // Mouvement réduit : rien n'est joué
     const reduced = await browser.newPage({ viewport: { width: 700, height: 700 }, reducedMotion: 'reduce' });
     watch(reduced, 'finale réduite');
+    await reduced.addInitScript(horlogeBanc, { graine: GRAINE, minuteries: false, animations: false });
     await reduced.goto(`${BASE}/__sorts/finale?skin=skin:ecarlate`);
-    await ready(reduced);
+    await pretePilotee(reduced, 'finale réduite');
     assert.equal(await reduced.evaluate(() => window.go()), false, 'mouvement réduit : playFinale ne doit rien jouer');
     await reduced.close();
     await montage('finale.png', 'Coup de grâce (playFinale) pendant la chute du roi maté (mat du berger, roi noir en e8), sans rien sur sa case', cells, 6, 230);
@@ -492,7 +599,7 @@ try {
       ['telephone', { viewport: { width: 412, height: 915 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }],
     ]) {
       for (const skin of ['skin:laurier', 'skin:ecarlate']) {
-        const ctx = await browser.newContext(opts);
+        const ctx = await (await browserReel()).newContext(opts);
         const page = await ctx.newPage();
         watch(page, `vitrine ${label} ${skin}`);
         await page.goto(`${SITE}/boutique?objet=${skin}`, { waitUntil: 'networkidle' });
@@ -526,7 +633,7 @@ try {
 
   // -------------------------------------------------------------------------------------------
   if (ONLY.includes('banc')) {
-    const ctx = await browser.newContext({ viewport: { width: 412, height: 915 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    const ctx = await (await browserReel()).newContext({ viewport: { width: 412, height: 915 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
     const page = await ctx.newPage();
     watch(page, 'banc');
     const cdp = await ctx.newCDPSession(page);
@@ -574,6 +681,7 @@ try {
 } finally {
   writeFileSync(path.join(OUT, 'banc.json'), JSON.stringify(results, null, 2));
   await browser.close();
+  await plain?.close();
   await server.close();
 }
 if (errors.length) {

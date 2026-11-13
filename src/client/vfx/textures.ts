@@ -2,7 +2,8 @@
 // Chaque forme de particule et chaque motif a son peintre : tracé blanc (ou gris) sur fond transparent, teinté par le
 // matériau. Les peintres sont rangés dans deux tables indexées par toutes les valeurs des unions ParticleShape et
 // Flourish : une valeur ajoutée au catalogue sans son peintre ne compile pas, et test/textures.test.ts vérifie que
-// chacun dessine quelque chose (et que les textures d'avant les skins n'ont pas changé d'un trait).
+// chacun dessine quelque chose (et que les textures d'avant les skins n'ont pas changé d'un trait). À côté, leurs
+// traits (PARTICLE_TRAITS, FLOURISH_TRAITS : mélange, couleur, animation), lus par la scène au lieu de leurs noms.
 import * as THREE from 'three';
 import type { Flourish, ParticleShape } from '../../shared/catalog';
 
@@ -188,6 +189,28 @@ export const PARTICLE_PAINTERS: Record<ParticleShape, Painter> = {
     g.fillRect(0, 0, S, S);
   },
   shard,
+};
+
+/** Comportement d'une forme de particule dans la scène (stage.ts, effects.ts). */
+export interface ParticleTraits {
+  /**
+   * Mélange : additif (la lumière s'ajoute), ou normal pour les formes sombres ou pleines (Néant, pétales), qui
+   * disparaîtraient sur les cases claires en additif.
+   */
+  blending: 'additive' | 'normal';
+  /** Couleur des lueurs (ondes, éclairs, halos) : la principale du skin, ou son éclat quand la principale est sombre. */
+  glow: 'primary' | 'accent';
+}
+
+/** Traits de chaque forme de particule (table indexée par l'union : exhaustive à la compilation). */
+export const PARTICLE_TRAITS: Record<ParticleShape, ParticleTraits> = {
+  glow: { blending: 'additive', glow: 'primary' },
+  ember: { blending: 'additive', glow: 'primary' },
+  pixel: { blending: 'additive', glow: 'primary' },
+  star: { blending: 'additive', glow: 'primary' },
+  petal: { blending: 'normal', glow: 'primary' },
+  void: { blending: 'normal', glow: 'accent' },
+  shard: { blending: 'additive', glow: 'primary' },
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -449,6 +472,32 @@ export const FLOURISH_PAINTERS: Record<Flourish, Painter> = {
   },
   laurel,
   filigree,
+};
+
+/** Comportement d'un motif d'ornement dans la scène (effects.ts). */
+export interface FlourishTraits {
+  /**
+   * Animation : le motif tourne (`spin`), ou c'est une couronne qui se referme sans jamais tourner (`close` : les deux
+   * moitiés de la texture pivotent autour du nœud, en bas ; effects.ts, laurelDisk, LAUREL_R).
+   */
+  motion: 'spin' | 'close';
+  /**
+   * Teinte : celle des lueurs du skin (`glow`), ou sa couleur secondaire (`secondary` : le filigrane, un travail
+   * d'orfèvre, prend l'or d'Écarlate), que la teinte d'une carte mêle alors aussi (tinted).
+   */
+  color: 'glow' | 'secondary';
+}
+
+/** Traits de chaque motif (table indexée par l'union : exhaustive à la compilation). */
+export const FLOURISH_TRAITS: Record<Flourish, FlourishTraits> = {
+  runes: { motion: 'spin', color: 'glow' },
+  flames: { motion: 'spin', color: 'glow' },
+  grid: { motion: 'spin', color: 'glow' },
+  constellation: { motion: 'spin', color: 'glow' },
+  vortex: { motion: 'spin', color: 'glow' },
+  petals: { motion: 'spin', color: 'glow' },
+  laurel: { motion: 'close', color: 'glow' },
+  filigree: { motion: 'spin', color: 'secondary' },
 };
 
 // ---------------------------------------------------------------------------------------------

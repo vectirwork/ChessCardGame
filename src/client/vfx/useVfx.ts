@@ -15,6 +15,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Color } from '../../shared/chess';
 import { skinStyle } from '../../shared/catalog';
+import { HANDOFF_MS, IDLE_BEFORE_YIELD_MS, POOL_KEEP_MS } from './sharing';
 import type { VfxStage } from './stage';
 
 export type VfxModule = typeof import('./index');
@@ -23,19 +24,17 @@ export interface Vfx {
   m: VfxModule;
 }
 
-/** Scène gardée sans échiquier au-delà de ce délai : elle est libérée (contexte WebGL rendu au navigateur). */
-const POOL_KEEP_MS = 20000;
-/**
- * Un sort laisse des minuteries derrière lui qui visent la scène et son échiquier (fin d'une ambiance, jusqu'à ≈ 2,7 s
- * après le début du sort ; éclats différés de la Déflagration, ≈ 0,5 s après l'impact), à peu près jusqu'à l'arrêt de
- * sa boucle d'images. La scène n'est donc reprise à un échiquier qui cède que si elle n'anime plus rien depuis
- * IDLE_BEFORE_YIELD_MS (ou s'il ne s'en est pas servi), et une scène libérée n'est rendue à l'échiquier qui l'attendait
- * qu'au bout de HANDOFF_MS (détachée entre-temps : les éclats tardifs sont effacés en la rattachant). Quand elle change
- * de famille plus tôt (la partie qui la réclame ou la demande juste après la sortie d'un lieu), ce que les sorts de
- * l'autre famille avaient programmé ne la vise plus (VfxStage.family, later).
+/*
+ * Délais du partage (valeurs dans sharing.ts, avec les réglages). POOL_KEEP_MS : une scène gardée sans échiquier au-delà
+ * de ce délai est libérée (contexte WebGL rendu au navigateur).
+ * IDLE_BEFORE_YIELD_MS et HANDOFF_MS : un sort laisse des minuteries derrière lui qui visent la scène et son échiquier
+ * (fin d'une ambiance, jusqu'à ≈ 2,7 s après le début du sort ; éclats différés de la Déflagration, ≈ 0,5 s après
+ * l'impact), à peu près jusqu'à l'arrêt de sa boucle d'images. La scène n'est donc reprise à un échiquier qui cède que
+ * si elle n'anime plus rien depuis IDLE_BEFORE_YIELD_MS (ou s'il ne s'en est pas servi), et une scène libérée n'est
+ * rendue à l'échiquier qui l'attendait qu'au bout de HANDOFF_MS (détachée entre-temps : les éclats tardifs sont effacés
+ * en la rattachant). Quand elle change de famille plus tôt (la partie qui la réclame ou la demande juste après la sortie
+ * d'un lieu), ce que les sorts de l'autre famille avaient programmé ne la vise plus (VfxStage.family, later).
  */
-const IDLE_BEFORE_YIELD_MS = 1500;
-const HANDOFF_MS = 900;
 
 /** Un échiquier qui tient la scène d'un pool ou attend de la reprendre. */
 interface Holder {
@@ -70,7 +69,6 @@ const load = () => import('./index');
 
 function create(m: VfxModule, wrap: HTMLElement, orientation: Color): VfxStage {
   const stage = new m.VfxStage(wrap, orientation);
-  stage.markerFactory = m.createMarker;
   stage.arrivalFactory = m.playArrival;
   // Programmes des effets compilés au premier moment calme : le premier sort de chaque type ne bloque plus le fil
   // principal, et les suivants ne recompilent plus rien
@@ -293,14 +291,20 @@ function useVfxCore(
     };
     const h: Holder = { wrap, orientation, yields: yieldsRef.current, shares, grant: show };
     holderRef.current = h;
-    void load().then(m => {
-      if (dead) return;
-      setReady(true);
-      const own = poolKey ? request(poolKey, m, h) : create(m, wrap, orientation);
-      if (!own) return;
-      ownRef.current = own;
-      show({ stage: own, m });
-    });
+    void load().then(
+      m => {
+        if (dead) return;
+        setReady(true);
+        const own = poolKey ? request(poolKey, m, h) : create(m, wrap, orientation);
+        if (!own) return;
+        ownRef.current = own;
+        show({ stage: own, m });
+      },
+      // Module des effets introuvable (réseau) : pas de scène pour cet échiquier, ses sorts se jouent sans (l'état est
+      // appliqué sans mise en scène). Seul l'échec du chargement est attendu ici : une erreur levée en créant ou en
+      // passant la scène reste un rejet non traité, visible dans la console, comme avant.
+      () => undefined,
+    );
     return () => {
       show(null);
       dead = true;

@@ -7,13 +7,17 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cellOf, squareAt } from '../src/client/components/boardGeometry';
 import {
-  LEVELS, MODES, MORE_SLOTS, PAGE_TEXTS, PLACE, PLACES, doorKicker, doorNum, doorsLabel, liveTexts, placeAttrs, placeIndex, principle,
+  LEVELS, MODES, MORE_SLOTS, PAGE_TEXTS, PLACE, PLACES, doorKicker, doorNum, doorsLabel, howToPlay, liveTexts, placeAttrs, placeIndex,
+  principle,
 } from '../src/client/odyssee/data';
 import type { TextRules } from '../src/client/odyssee/data';
-import { BOT, PLAYER, loadSaved, validState } from '../src/client/odyssee/useLiveGame';
+import { BOT, PLAYER, abortedEmpty, loadSaved, validState } from '../src/client/odyssee/useLiveGame';
+import { DEFAULT_PERSPECTIVE } from '../src/client/vfx/config';
+import { CARDS } from '../src/shared/cards';
 import { GAME_RULES, RULES_V1 } from '../src/shared/config/rules';
 import { HOME } from '../src/shared/config/home';
 import { createGame, dealHands } from '../src/shared/game';
+import { DEFAULT_QUICK, TIME_CONTROLS } from '../src/shared/protocol';
 import { rulesFor, setRulesOverride } from '../src/shared/rulesCore';
 
 const ROOT = path.resolve(__dirname, '..');
@@ -267,5 +271,49 @@ describe('textes de l’accueil selon les règles (1 et 5 cartes, 2 par tour, ca
       title: 'Un sort par tour, à la place du coup.',
       text: 'À la place de votre coup, lancez une carte : elle change la partie pour les deux camps. Certaines s’annoncent deux tours à l’avance.',
     });
+  });
+});
+
+describe('relecture du lot 7', () => {
+  it('« En partie » d’un Présage : la phrase d’avant au défaut, l’arrivée et les coups de l’adversaire selon le délai', () => {
+    const presages = Object.values(CARDS).filter(c => c.presage && !c.ritual);
+    expect(presages.length).toBeGreaterThan(0);
+    for (const c of presages) {
+      expect(howToPlay(c)).toBe("Présage : annoncée maintenant, elle arrive à votre tour suivant. L'adversaire a un coup pour s'y préparer.");
+      expect(howToPlay(c, GAME_RULES)).toBe(howToPlay(c));
+      expect(howToPlay(c, { presageDelay: 4 })).toBe(
+        "Présage : annoncée maintenant, elle arrive au début de votre deuxième tour à venir. L'adversaire a deux coups pour s'y préparer.",
+      );
+    }
+    const rituel = Object.values(CARDS).find(c => c.ritual)!;
+    expect(howToPlay(rituel, { presageDelay: 4 })).toBe('Rituel : la carte remplace votre coup.');
+  });
+
+  it('partie en direct annulée : retour automatique à l’Oracle au demi-coup 0 seulement (comme avant le lot 7)', () => {
+    const annulee = { winner: null, reason: 'aborted' as const };
+    expect(abortedEmpty(true, { ply: 0, result: annulee })).toBe(true);
+    // Les Blancs ont joué, les Noirs annulent avant leur premier coup (game:abort, partie pas commencée) : l'écran de
+    // fin reste, avec « Rejouer contre l'Oracle »
+    expect(abortedEmpty(true, { ply: 1, result: annulee })).toBe(false);
+    expect(abortedEmpty(false, { ply: 0, result: annulee })).toBe(false);
+    expect(abortedEmpty(true, { ply: 0, result: null })).toBe(false);
+    expect(abortedEmpty(true, { ply: 0, result: { winner: 'w', reason: 'resign' } })).toBe(false);
+  });
+
+  it('perspective du plateau : la même valeur dans StageBoard (morceau à part), engine.ts et vfx/config', () => {
+    const src = (f: string) => readFileSync(path.join(ROOT, f), 'utf8');
+    const stage = src('src/client/odyssee/StageBoard.tsx');
+    const engine = src('src/client/odyssee/engine.ts');
+    expect(Number(/const BOARD_PERSP = (\d+);/.exec(stage)?.[1])).toBe(DEFAULT_PERSPECTIVE);
+    expect(Number(/const PERSP = (\d+);/.exec(engine)?.[1])).toBe(DEFAULT_PERSPECTIVE);
+    // StageBoard, chargé paresseusement par l'accueil, n'importe rien du morceau de l'accueil
+    expect(stage).not.toMatch(/from '\.\/engine'|config\/home'/);
+  });
+
+  it('Défier un ami : au défaut, la cadence d’ouverture (DEFAULT_QUICK) fait partie des cadences proposées', () => {
+    const invite = TIME_CONTROLS.filter(t => t.invite && !t.archived).map(t => t.id);
+    expect(invite).toEqual(['5+0', '10+0', '15+10', 'none']);
+    expect(invite).toContain(DEFAULT_QUICK);
+    expect(DEFAULT_QUICK).toBe('10+0');
   });
 });

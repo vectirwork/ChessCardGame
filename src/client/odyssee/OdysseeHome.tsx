@@ -26,7 +26,7 @@ import { cellOf, squareAt } from '../components/boardGeometry';
 import { CollectionSeal } from '../components/CollectionSeal';
 import { crestUrl, kingUrl } from '../components/pieces';
 import { SpellCard } from '../components/SpellCard';
-import { usePref } from '../features/storage';
+import { readJson } from '../features/storage';
 import { equippedId, isEquipped, owns } from '../skins';
 import { KEYS } from '../storageKeys';
 import { getGuestName, setGuestName, useApp, useFeature } from '../store';
@@ -48,7 +48,7 @@ import type { Act } from './StageBoard';
 import { useHomeLobby } from './useHomeLobby';
 import type { HomeLobby } from './useHomeLobby';
 import { countryName, fromCountry } from './country';
-import { useLiveGame } from './useLiveGame';
+import { abortedEmpty, useLiveGame } from './useLiveGame';
 import type { LiveGame } from './useLiveGame';
 import './odyssee.css';
 
@@ -247,14 +247,6 @@ function LevelPick({ level, onChange }: { level: BotLevel; onChange: (l: BotLeve
   );
 }
 
-/** Fin d'une partie en direct annulée avant d'avoir commencé : retour à l'Oracle, avec la raison. */
-function abortNote(g: LiveGame): string {
-  if (g.state.ply === 0) return 'Personne n’a joué : la partie en direct est annulée, l’Oracle reprend.';
-  return g.state.pos.turn === g.them
-    ? 'Votre adversaire n’a pas joué : la partie en direct est annulée, l’Oracle reprend.'
-    : 'Vous n’avez pas joué : la partie en direct est annulée, l’Oracle reprend.';
-}
-
 function statusOf(g: LiveGame) {
   if (g.result) {
     if (g.result.reason === 'aborted') return 'Partie annulée.';
@@ -344,7 +336,8 @@ export default function OdysseeHome() {
   const myBoard = equippedId(me, 'board');
   const myKing = equippedId(me, 'king');
   // Rois adverses classiques (réglage du compte) : l'Oracle et l'adversaire en direct en roi Arcane
-  const [classicKings] = usePref<boolean>(KEYS.classicKings, false);
+  // Lue une fois, sans abonnement (§9 : aucun écouteur de plus au niveau de l'accueil), comme avant le lot 7
+  const [classicKings] = useState(() => readJson<boolean>(KEYS.classicKings, false));
   // Scène 3D de la partie (three.js et un contexte WebGL) : préparée seulement à la première intention de jouer
   // (survol d'une pièce jouable, toucher de l'échiquier, survol ou focus des cartes, bouton Jouer). Jamais à la simple
   // ouverture de la page (D6) : un visiteur qui ne fait que lire ne la télécharge pas.
@@ -868,23 +861,19 @@ export default function OdysseeHome() {
     return () => window.clearInterval(i);
   }, [away]);
   const claimIn = away !== null && g.duelInfo ? Math.max(0, Math.ceil((away + g.duelInfo.claimAfterMs - Date.now()) / 1000)) : 0;
-  // Partie en direct annulée avant d'avoir commencé : personne n'a joué, ou un joueur n'a pas joué son premier coup à
-  // temps (relais coupé, FEATURE_HOME_RELAY=0 : délai TIMINGS.firstMoveMs du serveur). Retour à l'Oracle après
-  // HOME.duelAbortReturnMs, sans rien demander, avec la raison.
-  const abortedEarly = !!g.duel && g.result?.reason === 'aborted' && (g.state.ply === 0 || !g.duelInfo?.started);
+  // Partie en direct annulée avant le moindre coup (personne n'a joué) : retour à l'Oracle après
+  // HOME.duelAbortReturnMs, sans rien demander. Annulée plus tard (abortedEmpty, useLiveGame) : l'écran de fin reste.
+  const abortedNow = abortedEmpty(!!g.duel, g.state);
   const newGameNow = g.newGame;
-  const abortNoteRef = useRef('');
-  abortNoteRef.current = abortedEarly ? abortNote(g) : '';
   useEffect(() => {
-    if (!abortedEarly) return;
-    const note = abortNoteRef.current;
+    if (!abortedNow) return;
     const t = window.setTimeout(() => {
       newGameNow();
-      notify(note);
+      notify('Personne n’a joué : la partie en direct est annulée, l’Oracle reprend.');
     }, HOME.duelAbortReturnMs);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [abortedEarly]);
+  }, [abortedNow]);
   const duelBanner = meRelayed ? (
     <div className="gp-offer is-away" role="status">
       <p>Vous ne jouiez pas : l’IA joue pour vous en attendant.</p>
@@ -1209,6 +1198,7 @@ export default function OdysseeHome() {
                         onCanvas={onCanvas}
                         kingW={stageKing}
                         kingB={stageKing}
+                        idleMs={HOME.idleMs}
                       />
                     </Suspense>
                   </DecorBoundary>
@@ -1838,6 +1828,8 @@ export default function OdysseeHome() {
             : { name: "L'Oracle", sub: `IA · niveau ${levelName(g.level)}`, hand: g.state.hands[g.them], handLabel: "Cartes de l'Oracle" }
         }
         hand={g.hand}
+        // Appariement en attente de game:join (startDuel : mains vides) : pas de « Partie sans cartes »
+        emptyHand={g.duel && !g.duelInfo ? null : undefined}
         rules={rules}
         playable={g.playable}
         selected={g.selected}
@@ -1890,14 +1882,19 @@ export default function OdysseeHome() {
   );
 }
 
+/** Cadences proposées par « Défier un ami » (TIME_CONTROLS.invite), et celle choisie à l'ouverture : DEFAULT_QUICK si
+ *  elle en fait partie, sinon la première (une cadence que le visiteur ne voit pas ne part jamais). */
+const INVITE_TCS = TIME_CONTROLS.filter(t => t.invite && !t.archived);
+const INVITE_TC0 = INVITE_TCS.some(t => t.id === DEFAULT_QUICK) ? DEFAULT_QUICK : INVITE_TCS[0]?.id ?? DEFAULT_QUICK;
+
 /**
  * Porte « Défier un ami » : créer une invitation (vraie partie sur le serveur) et partir vers /partie/:id. Cadences
- * proposées : TIME_CONTROLS.invite, DEFAULT_QUICK par défaut ; pseudo d'invité : GUEST_NAME.
+ * proposées : INVITE_TCS, INVITE_TC0 à l'ouverture ; pseudo d'invité : GUEST_NAME.
  */
 function FriendSheet({ onClose, catalog: initial, signedIn, kicker }: { onClose: () => void; catalog: string; signedIn: boolean; kicker: string }) {
   const navigate = useNavigate();
   const [name, setName] = useState(getGuestName());
-  const [tc, setTc] = useState(DEFAULT_QUICK);
+  const [tc, setTc] = useState(INVITE_TC0);
   // Jeu proposé : « Pouvoirs » (par défaut) ou « Sans cartes » ; le Duel n'est plus proposé.
   const [catalog, setCatalog] = useState<Catalog>(() => offeredCatalog(initial));
   const [busy, setBusy] = useState(false);
@@ -1957,7 +1954,7 @@ function FriendSheet({ onClose, catalog: initial, signedIn, kicker }: { onClose:
         <div className="field">
           <span className="label">Cadence</span>
           <div className="segmented">
-            {TIME_CONTROLS.filter(t => t.invite && !t.archived).map(({ id, short: label }) => (
+            {INVITE_TCS.map(({ id, short: label }) => (
               <button key={id} type="button" className={tc === id ? 'on' : ''} onClick={() => setTc(id)}>
                 {label}
               </button>

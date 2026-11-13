@@ -7,7 +7,9 @@
 // historiques (RULES_V1 : une carte par tour, avant le coup) quelles que soient celles des nouvelles parties.
 // Sobriété (D6) : la scène 3D est partagée d'un lieu à l'autre (un seul contexte WebGL, gardé par useVfx) ; la
 // démonstration se met en pause quand l'onglet est caché, pendant les traversées, et quand le visiteur ne fait plus
-// rien depuis HOME.idleMs (elle reprend au premier geste).
+// rien depuis `idleMs` (HOME.idleMs de l'accueil ; elle reprend au premier geste).
+// Ce module est chargé à part (lazy) : il n'importe rien du morceau de l'accueil (ni engine.ts, ni config/home), pour
+// ne pas lui être lié en retour.
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Board } from '../components/Board';
 import type { BoardHandle } from '../components/Board';
@@ -19,11 +21,9 @@ import type { Color, Position } from '../../shared/chess';
 import { skinStyle } from '../../shared/catalog';
 import { cardOptions, cardPlayable, createGame, legalMovesOf, playCard, playMove } from '../../shared/game';
 import type { GameState } from '../../shared/game';
-import { HOME } from '../../shared/config/home';
 import { RULES_V1, rulesOf } from '../../shared/rulesCore';
 import { useVfx } from '../vfx/useVfx';
 import { castSafely } from './castSafely';
-import { PERSP } from './engine';
 
 export interface Act {
   /** Identifiant : un changement déclenche un sort immédiat. */
@@ -36,12 +36,18 @@ export interface Act {
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-/** Sans défilement, souris, toucher ni clavier depuis HOME.idleMs, la démonstration s'arrête après son geste en cours. */
+/** Sans défilement, souris, toucher ni clavier depuis `ms` (prop idleMs), la démonstration s'arrête après son geste en cours. */
 let lastInput = performance.now();
 const onInput = () => {
   lastInput = performance.now();
 };
-const idle = () => performance.now() - lastInput > HOME.idleMs;
+const idle = (ms: number) => performance.now() - lastInput > ms;
+
+/**
+ * Perspective du plateau, en px (board.css, .board-wrap ; PERSP d'engine.ts, DEFAULT_PERSPECTIVE de vfx/config) : la
+ * même valeur, gardée ici (test/accueil.test.ts vérifie l'égalité).
+ */
+const BOARD_PERSP = 1400;
 
 /** Un sort ne part qu'après ce délai sans défilement : pendant le geste, la scène 3D plein écran et les pièces
  *  dressées (un calque composé chacune) se disputeraient chaque image avec le défilement (téléphones). Un coup de la
@@ -214,14 +220,18 @@ interface Props {
   /** Rois des deux camps (objets king:*), passés tels quels à Board. Absent : le roi Arcane. */
   kingW?: string;
   kingB?: string;
+  /** Repos : sans geste du visiteur depuis ce délai (HOME.idleMs), la démonstration s'arrête (ms). */
+  idleMs: number;
 }
 
 /** Mémoïsé : l'accueil se re-rend à chaque seuil du défilement (chapitre, amarrage), sans rien changer ici. */
-export const StageBoard = memo(function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, still, playSignal, onCast, onCanvas, kingW, kingB }: Props) {
+export const StageBoard = memo(function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, still, playSignal, onCast, onCanvas, kingW, kingB, idleMs }: Props) {
   // Catalogue lu par référence (les boucles et les remises à neuf prennent toujours le dernier)
   const catalogRef = useRef(catalog);
   catalogRef.current = catalog;
   const freshNow = () => fresh(catalogRef.current);
+  const idleRef = useRef(idleMs);
+  idleRef.current = idleMs;
   const ref = useRef<BoardHandle>(null);
   const [wrap, setWrap] = useState<HTMLDivElement | null>(null);
   const [state, setState] = useState<GameState>(freshNow);
@@ -313,7 +323,7 @@ export const StageBoard = memo(function StageBoard({ act, catalog, theme, resetS
     if (!vfx || still) return;
     const w = wrap ? wrap.getBoundingClientRect().width / Math.max(1, wrap.offsetWidth) : 1;
     // Le plateau est réduit par le calque « astre » : la perspective de la scène 3D doit l'être aussi
-    vfx.stage.perspective = PERSP * w;
+    vfx.stage.perspective = BOARD_PERSP * w;
     const now = performance.now();
     const covered = tiltUntil.current > now + 120;
     vfx.stage.cinematic(ms / 1000, tiltRef.current, 1);
@@ -459,7 +469,7 @@ export const StageBoard = memo(function StageBoard({ act, catalog, theme, resetS
     const loop = async () => {
       await sleep(700);
       while (!dead) {
-        if (document.hidden || pausedRef.current || idle()) {
+        if (document.hidden || pausedRef.current || idle(idleRef.current)) {
           await sleep(300);
           continue;
         }

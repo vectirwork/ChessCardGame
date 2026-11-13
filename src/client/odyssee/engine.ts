@@ -51,7 +51,7 @@ export interface Pose {
 const noHover = () => window.matchMedia?.('(hover: none)').matches ?? false;
 
 /** Perspective du plateau (board.css) : sert à estimer la largeur réelle du bord avant incliné. */
-export const PERSP = 1400;
+const PERSP = 1400;
 
 export function poseFor(key: PoseKey, vw: number, vh: number): Pose {
   if (isMobile(vw)) {

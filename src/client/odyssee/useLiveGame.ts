@@ -116,6 +116,17 @@ export function validState(x: unknown): x is GameState {
   return true;
 }
 
+/**
+ * Partie en direct annulée avant le moindre coup (personne n'a joué dans le délai du serveur) : l'accueil revient de
+ * lui-même à l'Oracle (HOME.duelAbortReturnMs). Une partie annulée plus tard, avant d'avoir commencé (un joueur a
+ * cliqué « Jouer plutôt contre l'Oracle », « Nouvelle partie » ou « Abandonner » avant son premier coup, ou n'a pas
+ * joué à temps, relais coupé), garde l'écran de fin et son bouton « Rejouer contre l'Oracle » : le client ne sait pas
+ * pourquoi elle a été annulée.
+ */
+export function abortedEmpty(duel: boolean, s: Pick<GameState, 'ply' | 'result'>): boolean {
+  return duel && s.result?.reason === 'aborted' && s.ply === 0;
+}
+
 export function loadSaved(): GameState | null {
   try {
     const raw = localStorage.getItem(KEYS.homeGame);
@@ -347,13 +358,16 @@ export function useLiveGame({
 
   // Tour de l'IA : la décision est calculée tout de suite (Worker), elle n'est jouée qu'en mode immersif. Sans état
   // « réfléchit » : l'accueil n'est pas rendu deux fois de plus à chaque tour de l'Oracle (rien ne l'affichait).
+  // Exception : l'Oracle a le trait au départ (HOME.playerColor 'b', ou position de départ aux Noirs) ; il joue alors
+  // son premier coup sur la page, sinon le visiteur n'aurait aucun coup à jouer sur l'échiquier du héros. Au défaut,
+  // le visiteur a les Blancs : l'Oracle n'a jamais le trait au demi-coup 0.
   const botTurn = useCallback(async () => {
     const epoch = epochRef.current;
     const s0 = stateRef.current;
     const started = performance.now();
     const d = await askBot(s0, levelRef.current);
     const stale = () => epoch !== epochRef.current || stateRef.current !== s0;
-    while (!activeRef.current && !stale()) await sleep(150);
+    while (!activeRef.current && s0.ply > 0 && !stale()) await sleep(150);
     // Un temps de réflexion lisible, même quand le calcul est instantané
     const minThink = HOME.oracleThinkMs + Math.random() * HOME.oracleThinkJitterMs;
     const elapsed = performance.now() - started;

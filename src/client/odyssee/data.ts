@@ -24,7 +24,8 @@ import { SLOT_DEFS } from '../../shared/skins/slots';
 import type { ItemKind } from '../../shared/skins/slots';
 import { apostrophes, cap, enLettres, ordinalLettres, pluriel, romain } from '../../shared/text/fr';
 import {
-  cartesDePouvoir, cartesVisibles, constitutionMains, niveauxIA, nomsNiveaux, refusBudget, sortParTour, sortsEnMain, vosSorts,
+  cartesDePouvoir, cartesVisibles, constitutionMains, niveauxIA, nomsNiveaux, prochainTour, refusBudget, sortParTour, sortsEnMain,
+  vosSorts,
 } from '../../shared/text/regles';
 
 export type PoseKey = 'hero' | 'foret' | 'pics' | 'sablier' | 'bazar' | 'seuil';
@@ -146,10 +147,19 @@ export function idleCasts(place: PoseKey, catalog: CardCatalog): CardId[] {
   }
 }
 
-/** Ligne « En partie » d'un chapitre : comment la carte se joue. */
-export function howToPlay(c: CardDef): string {
+/**
+ * Ligne « En partie » d'un chapitre : comment la carte se joue. Présage : son arrivée suit le délai des règles des
+ * nouvelles parties (GAME_RULES.presageDelay, comme la description de la carte dans CARDS) ; au défaut (2), « à votre
+ * tour suivant » et « un coup » ; à 4, « au début de votre deuxième tour à venir » et « deux coups ».
+ */
+export function howToPlay(c: CardDef, r: Pick<GameRulesSettings, 'presageDelay'> = GAME_RULES): string {
   if (c.ritual) return 'Rituel : la carte remplace votre coup.';
-  if (c.presage) return "Présage : annoncée maintenant, elle arrive à votre tour suivant. L'adversaire a un coup pour s'y préparer.";
+  if (c.presage) {
+    // Tours d'avance (compté comme prochainTour de regles.ts) : autant de coups de l'adversaire avant l'arrivée
+    const k = Math.max(1, Math.round(r.presageDelay / 2));
+    const quand = k === 1 ? 'à votre tour suivant' : `au début de ${prochainTour(r.presageDelay)}`;
+    return `Présage : annoncée maintenant, elle arrive ${quand}. L'adversaire a ${enLettres(k)} ${pluriel(k, 'coup')} pour s'y préparer.`;
+  }
   return c.prompts[0] ?? 'Effet immédiat, sans cible.';
 }
 
@@ -189,7 +199,12 @@ export const INTERLUDE: Partial<Record<CardCatalog, Copy>> & { climats: Copy } =
 /** Règles que décrivent les textes de l'accueil : celles de la partie ouverte (rulesOf), ou GAME_RULES. */
 export type TextRules = Pick<GameRulesSettings, 'cardsPerPlayer' | 'cardsPerTurn' | 'cardEndsTurn' | 'presageDelay'>;
 
-/** Les trois principes (Forêt de givre), pour les règles des nouvelles parties. */
+/**
+ * Les trois principes (Forêt de givre), pour les règles des nouvelles parties (GAME_RULES), comme PAGE_TEXTS : la Forêt
+ * décrit le jeu en général. Écart accepté : si RULES_BY_CONTEXT.accueil donne un autre nombre de cartes, la clause
+ * « sur l'accueil, elles sont tirées au hasard » ne le dit pas (le héros, lui, suit les règles de la partie ouverte :
+ * liveTexts). Une phrase propre à l'accueil demanderait une variante de constitutionMains (text/regles.ts, gelé).
+ */
 export function principle(r: TextRules = GAME_RULES) {
   const n = r.cardsPerPlayer;
   const k = r.cardsPerTurn;

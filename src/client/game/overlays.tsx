@@ -6,11 +6,17 @@ import { Link } from 'react-router-dom';
 import { opposite } from '../../shared/chess';
 import { CARDS } from '../../shared/cards';
 import type { CardId, Catalog } from '../../shared/cards';
-import { RESULT_TEXT } from '../../shared/game';
+import { BRAND } from '../../shared/config/brand';
+import { GUEST_NAME } from '../../shared/config/limits';
+import type { Rules } from '../../shared/config/rules';
+import { resultText } from '../../shared/game';
 import type { GameView } from '../../shared/protocol';
+import { rulesOf } from '../../shared/rulesCore';
+import { compte, liste } from '../../shared/text/fr';
+import { cartesDePouvoir, prochainTour } from '../../shared/text/regles';
 import { Modal, Spinner } from '../components/Layout';
 import { SpellCard } from '../components/SpellCard';
-import { getGuestName, useApp } from '../store';
+import { getGuestName, useApp, useFeature } from '../store';
 import { catalogDescription, catalogTag, colorName, tcLong } from './parts';
 
 export interface Casting {
@@ -20,22 +26,22 @@ export interface Casting {
   key: number;
 }
 
-const NAME_RE = /^[\p{L}\p{N} _.-]{2,20}$/u;
-const plural = (n: number, w: string) => `${n} ${w}${n > 1 ? 's' : ''}`;
 // ---------------------------------------------------------------------------------------------
 // Sort lancé : la carte apparaît au-dessus de l'échiquier pendant que la scène 3D joue l'effet
 
-export function CastBanner({ c }: { c: Casting }) {
+/** `rules` : règles de la partie (délai des Présages, carte à la place du coup). */
+export function CastBanner({ c, rules }: { c: Casting; rules?: Pick<Rules, 'cardEndsTurn' | 'presageDelay'> }) {
   const def = CARDS[c.card];
   if (!def) return null;
+  const tour = prochainTour(rules?.presageDelay ?? 2);
   return (
     <div className="gp-cast" style={{ '--h': def.hue } as CSSProperties} aria-live="polite">
-      <SpellCard id={c.card} size="full" tilt={false} />
+      <SpellCard id={c.card} size="full" tilt={false} rules={rules} />
       <p className="gp-cast-cap">
         {/* Présage : la carte est annoncée, elle n'agit qu'au prochain tour de son lanceur (la grande animation aussi) */}
         <span>{def.presage ? (c.mine ? 'Vous annoncez' : `${c.by} annonce`) : c.mine ? 'Vous lancez' : `${c.by} lance`}</span>
         <b>{def.name}</b>
-        {def.presage && <small>Active au début {c.mine ? 'de votre prochain tour' : 'de son prochain tour'}</small>}
+        {def.presage && <small>Active au début {c.mine ? `de ${tour}` : `de ${tour.replace(/^votre /, 'son ')}`}</small>}
       </p>
     </div>
   );
@@ -64,7 +70,7 @@ export function WaitingCard({ id, view, catalog, onCancel }: { id: string; view:
   };
   const share = async () => {
     try {
-      await navigator.share({ title: 'Partie de Spellmate', text: 'Je vous défie aux échecs… avec des pouvoirs.', url });
+      await navigator.share({ title: `Partie de ${BRAND.name}`, text: 'Je vous défie aux échecs… avec des pouvoirs.', url });
     } catch {
       // partage annulé
     }
@@ -112,7 +118,7 @@ export function WaitingCard({ id, view, catalog, onCancel }: { id: string; view:
 export function JoinSheet({ host, loggedIn, mirror, catalog, view, onJoin }: { host: string; loggedIn: boolean; mirror: boolean; catalog: Catalog; view: GameView; onJoin: (name: string) => void }) {
   const [name, setName] = useState(getGuestName());
   const [busy, setBusy] = useState(false);
-  const valid = NAME_RE.test(name.trim());
+  const valid = GUEST_NAME.full.test(name.trim());
   const back = `/connexion?retour=${encodeURIComponent(location.pathname)}`;
   return (
     <Modal>
@@ -124,7 +130,7 @@ export function JoinSheet({ host, loggedIn, mirror, catalog, view, onJoin }: { h
         <p className="gp-card-text">
           {catalog === 'aucune'
             ? 'Une partie d’échecs classiques, sans cartes.'
-            : `Les échecs, plus trois cartes de pouvoir chacun. ${catalogDescription(catalog)}`}
+            : `Les échecs, plus ${cartesDePouvoir(rulesOf(view.state))} chacun. ${catalogDescription(catalog)}`}
         </p>
         {mirror && catalog !== 'aucune' && <p className="gp-note">Mode miroir : vous recevrez tous les deux les mêmes cartes.</p>}
         {!loggedIn ? (
@@ -139,7 +145,7 @@ export function JoinSheet({ host, loggedIn, mirror, catalog, view, onJoin }: { h
           >
             <div className="field">
               <label htmlFor="gp-guest-name">Votre pseudo</label>
-              <input id="gp-guest-name" className="input" autoFocus maxLength={20} value={name} onChange={e => setName(e.target.value)} placeholder="Ex. : Magnus du 93" autoComplete="nickname" />
+              <input id="gp-guest-name" className="input" autoFocus maxLength={GUEST_NAME.max} value={name} onChange={e => setName(e.target.value)} placeholder="Ex. : Magnus du 93" autoComplete="nickname" />
             </div>
             <button type="submit" className="btn-gold sm gp-join-btn" disabled={!valid || busy}>
               {busy ? <Spinner /> : 'Rejoindre la partie'}
@@ -202,15 +208,23 @@ export function AwayNotice({ since, claimAfter, onClaim }: { since: number; clai
   );
 }
 
-/** Délai du premier coup : sans coup avant l'échéance, la partie est annulée. */
-export function FirstMoveCountdown({ deadline }: { deadline: number }) {
+/**
+ * Seuil d'affichage du compte à rebours du premier coup (s) : 2 minutes, ou tout le délai s'il est plus long (une
+ * échéance plus lointaine que le délai annoncé vient d'une horloge décalée : on attend).
+ */
+export function firstMoveShown(totalMs?: number): number {
+  return Math.max(120, Math.ceil((totalMs ?? 45_000) / 1000));
+}
+
+/** Délai du premier coup : sans coup avant l'échéance, la partie est annulée. `total` : délai entier (view.firstMoveMs). */
+export function FirstMoveCountdown({ deadline, total }: { deadline: number; total?: number }) {
   const [, force] = useState(0);
   useEffect(() => {
     const i = setInterval(() => force(x => x + 1), 1000);
     return () => clearInterval(i);
   }, []);
   const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
-  if (left <= 0 || left > 120) return null;
+  if (left <= 0 || left > firstMoveShown(total)) return null;
   return <small>Premier coup avant {left} s, sinon la partie est annulée.</small>;
 }
 
@@ -243,15 +257,19 @@ export function EndCard({ view, onClose, onRematch, loggedIn, footer, screen }: 
   const diff = you && view.ratingDiff ? view.ratingDiff[you] : null;
   const rematch = rematchLabel(view);
   const moves = Math.ceil(view.state.ply / 2);
+  // Ce qu'un compte apporte, selon les fonctions ouvertes : historique, parties classées, skins
+  const ranked = useFeature('ranked');
+  const shop = useFeature('shop');
+  const perks = liste(['garder votre historique', ...(ranked ? ['jouer en classé'] : []), ...(shop ? ['débloquer des skins'] : [])]);
   return (
     <div className={`gp-veil is-end ${screen ? 'is-screen' : ''}`}>
       <div className={`gp-card gp-end ${aborted ? 'is-aborted' : win ? 'is-win' : draw ? 'is-draw' : you ? 'is-loss' : ''}`} role="dialog" aria-label="Fin de partie">
         <div className="gp-end-mark" aria-hidden="true">
           {aborted ? '✕' : draw ? '½' : win ? '♛' : '♚'}
         </div>
-        <p className="gp-kick">Fin de partie{moves > 0 && !aborted ? ` · ${plural(moves, 'coup')}` : ''}</p>
+        <p className="gp-kick">Fin de partie{moves > 0 && !aborted ? ` · ${compte(moves, 'coup')}` : ''}</p>
         <h2 className="gp-card-title">{win ? <em>Victoire.</em> : resultTitle(view)}</h2>
-        <p className="gp-card-text">{aborted ? 'Elle ne compte ni au classement ni dans l’historique.' : `${RESULT_TEXT[r.reason] ?? 'Partie terminée'}.`}</p>
+        <p className="gp-card-text">{aborted ? 'Elle ne compte ni au classement ni dans l’historique.' : `${resultText(r.reason, rulesOf(view.state)) ?? 'Partie terminée'}.`}</p>
         {diff !== null && (
           <p className={`gp-end-diff ${diff >= 0 ? 'up' : 'down'}`}>
             {diff >= 0 ? '+' : ''}
@@ -278,7 +296,8 @@ export function EndCard({ view, onClose, onRematch, loggedIn, footer, screen }: 
         </div>
         {!loggedIn && you && (
           <p className="gp-card-meta">
-            <Link to="/inscription">Créez un compte gratuit</Link> pour garder votre historique, jouer en classé et débloquer des skins.
+            <Link to="/inscription">Créez un compte gratuit</Link>
+            {` pour ${perks}.`}
           </p>
         )}
         {footer}

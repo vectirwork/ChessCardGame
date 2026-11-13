@@ -9,10 +9,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  ITEMS, PACKS, SHOP_COLLECTIONS, SHOP_FEATURED, SLOTS, SLOT_DEFS, alone, bySlot, collectionById, collectionItems, equippedMessage,
-  formatPrice, itemById, itemLabel, unitPrice,
+  ITEMS, PACKS, SHOP_COLLECTIONS, SHOP_FEATURED, SLOTS, SLOT_DEFS, alone, bySlot, collectionById, collectionItems, formatPrice, itemById,
+  itemLabel, unitPrice,
 } from '../../shared/catalog';
 import type { Collection, ItemKind, Product } from '../../shared/catalog';
+import { equippedMessage } from '../../shared/skins/texts';
 import type { ConfirmResponse, MeUser } from '../../shared/protocol';
 import { api, errMsg } from '../api';
 import { isEquipped, owns } from '../skins';

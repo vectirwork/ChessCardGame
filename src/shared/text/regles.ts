@@ -66,11 +66,18 @@ export function sortsEnMain(r: Regles<'cardsPerPlayer'>, majuscule = false): str
 /**
  * Comment les mains sont constituées : « vous choisissez vos trois cartes ; sur l’accueil, elles sont tirées au
  * hasard » ; sans choix des cartes (DEAL.draft faux) : « vos trois cartes sont tirées au hasard ».
+ * `accueil` : règles de l'accueil (rulesFor('accueil')), qui tire toujours les mains. Si elles donnent un autre nombre
+ * de cartes (RULES_BY_CONTEXT.accueil), la clause le dit : « … ; sur l’accueil, vos cinq cartes sont tirées au
+ * hasard » (sans choix : « vos trois cartes sont tirées au hasard ; sur l’accueil, vos cinq cartes aussi »). Défaut :
+ * `r` (même nombre de cartes : la phrase d'avant).
  */
-export function constitutionMains(r: Regles<'cardsPerPlayer'>, d: Pick<DealSettings, 'draft'> = DEAL): string {
+export function constitutionMains(r: Regles<'cardsPerPlayer'>, d: Pick<DealSettings, 'draft'> = DEAL, accueil: Regles<'cardsPerPlayer'> = r): string {
   const n = r.cardsPerPlayer;
-  if (!d.draft) return `${vosCartes(r)} ${n === 1 ? 'est tirée' : 'sont tirées'} au hasard`;
-  return `vous choisissez ${vosCartes(r)} ; sur l’accueil, ${n === 1 ? 'elle est tirée' : 'elles sont tirées'} au hasard`;
+  const m = accueil.cardsPerPlayer;
+  const tirees = (k: number) => (k === 1 ? 'est tirée' : 'sont tirées');
+  if (!d.draft) return `${vosCartes(r)} ${tirees(n)} au hasard${m === n ? '' : ` ; sur l’accueil, ${vosCartes(accueil)} aussi`}`;
+  const surAccueil = m === n ? (n === 1 ? 'elle est tirée' : 'elles sont tirées') : `${vosCartes(accueil)} ${tirees(m)}`;
+  return `vous choisissez ${vosCartes(r)} ; sur l’accueil, ${surAccueil} au hasard`;
 }
 
 /** Durée du choix des cartes : « 45 secondes ». */
@@ -177,11 +184,28 @@ export function dejaLance(r: Regles<'cardsPerTurn'>): string {
 }
 
 /**
+ * Tours d'avance d'un Présage : tours du lanceur entre l'annonce et l'arrivée, autant de coups pour l'adversaire
+ * (délai en demi-coups, presageDelay) : 2 → 1 ; 4 → 2 ; 6 → 3 ; au moins 1. Le même compte pour tous les textes
+ * (prochainTour, moment des cartes, Règles, accueil).
+ */
+export function toursPresage(delay: number): number {
+  return Math.max(1, Math.round(delay / 2));
+}
+
+/**
+ * Coups de l'adversaire du lanceur avant l'arrivée d'un Présage déjà annoncé, à partir des demi-coups qui restent
+ * (Effect.delay) : 1 ou 2 → 1 ; 3 ou 4 → 2 (le coup en cours compris s'il a le trait).
+ */
+export function coupsAvantArrivee(restants: number): number {
+  return Math.ceil(restants / 2);
+}
+
+/**
  * « votre prochain tour » (délai du Présage 2) ; 4 : « votre deuxième tour à venir » ; 6 : « votre troisième tour à
  * venir » (« à venir » : compté depuis l'annonce, pas depuis le début de la partie).
  */
 export function prochainTour(delay: number): string {
-  const k = Math.max(1, Math.round(delay / 2));
+  const k = toursPresage(delay);
   return k === 1 ? 'votre prochain tour' : `votre ${ordinalLettres(k)} tour à venir`;
 }
 

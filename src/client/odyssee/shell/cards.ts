@@ -11,13 +11,8 @@ import type { GameState, Refusal } from '../../../shared/game';
 import { rulesOf } from '../../../shared/rulesCore';
 import { apresLancement, dejaLance } from '../../../shared/text/regles';
 
-/** Refus « cible » du moteur : la bulle dit plutôt qu'aucune case ne convient. */
+/** Refus « cible » du moteur (par leur code, jamais par leur texte) : la bulle dit plutôt qu'aucune case ne convient. */
 const TARGET_CODES: readonly string[] = ['target-missing', 'target-invalid'];
-/**
- * Mêmes refus, par leur texte : repli transitoire pour un refus sans code (moteur d'avant les codes de refus), retiré
- * au lot 9.
- */
-const TARGET_TEXTS: readonly string[] = ['Cible manquante.', 'Cible invalide.'];
 
 /**
  * Pour chaque carte de `color` : pourquoi elle n'est pas jouable maintenant, en une phrase, ou null (jouable, ou
@@ -36,7 +31,7 @@ export function handNotes(s: GameState, color: Color, myTurn: boolean, playable:
     } catch {
       ref = null;
     }
-    const target = !ref?.error || (ref.code ? TARGET_CODES.includes(ref.code) : TARGET_TEXTS.includes(ref.error));
+    const target = !ref?.error || (!!ref.code && TARGET_CODES.includes(ref.code));
     if (target) return CARDS[h.card].targets ? 'Aucune case possible pour cette carte en ce moment.' : 'Pas jouable pour le moment.';
     return ref!.error!;
   });

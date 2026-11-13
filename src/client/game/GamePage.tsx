@@ -196,6 +196,8 @@ export default function GamePage() {
           hide: ids => setHidden(new Set(ids)),
           show: () => setHidden(new Set()),
           victimAtBottom: bottom,
+          // Mains cachées (règles de la partie) : l'annonce d'un Présage ne trahit pas la carte ; au défaut, faux
+          secret: !rulesOf(u.view.state).handsVisible,
         });
       } else {
         await new Promise(r => setTimeout(r, 650));

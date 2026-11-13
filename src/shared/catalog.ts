@@ -12,13 +12,18 @@ import { SLOT_DEFS } from './skins/slots';
 import { SPELL_ITEMS } from './skins/spells';
 import type { BoardStyle, Collection, Item, ItemKind, KingStyle, Product, SkinRarity, SkinStyle } from './skins/types';
 import type { BotLevel } from './bot';
-import { LOCALE, cap, compte, liste } from './text/fr';
+import { LOCALE, liste } from './text/fr';
 
 export * from './skins/types';
 export { COLLECTIONS } from './skins/collections';
 export { KING_ART, KING_BASE } from './skins/kings';
 export { SLOT_DEFS } from './skins/slots';
 export type { SlotDef, SlotRayon } from './skins/slots';
+// Phrases de la boutique, du compte et des e-mails : skins/texts.ts, à importer de là. TRANSITOIRE : whoSees et
+// selectionLabel restent réexportés ici pour le serveur (mail.ts, shop.ts, qui les importent encore de catalog.ts).
+// Cette réexportation range texts.ts dans le morceau du catalogue, que chargent l'accueil et la partie (≈ 0,6 ko
+// compressé) : à retirer dès que mail.ts et shop.ts importent de skins/texts.ts.
+export { selectionLabel, whoSees } from './skins/texts';
 export { LOCALE } from './text/fr';
 
 // ---------------------------------------------------------------------------------------------
@@ -161,42 +166,6 @@ export function itemLabel(it: Item): string {
   return d.named ? it.name : `${d.label} ${it.name}`;
 }
 
-/** Objet dans une phrase, avec son article : « le roi de braise », « l’échiquier Rubis », « les sorts Inferno ». */
-export function itemWithArticle(it: Item): string {
-  const d = SLOT_DEFS[it.kind];
-  return d.named ? `${d.article}${it.name.charAt(0).toLowerCase()}${it.name.slice(1)}` : `${d.article}${d.word} ${it.name}`;
-}
-
-/** Message après l'équipement d'un objet : « Sorts Inferno équipés : vos adversaires les verront à chacun de vos sorts. » */
-export function equippedMessage(it: Item): string {
-  const d = SLOT_DEFS[it.kind];
-  return `${itemLabel(it)} ${d.equipped}${d.equippedTail}`;
-}
-
-/**
- * Qui voit quoi : « Votre roi et vos sorts : vos adversaires les voient. Votre échiquier : il vous suit dans toutes vos
- * parties. » Avec `theirs` : « …, et vos adversaires gardent le leur. » (engagements de la boutique).
- */
-export function whoSees(opts: { theirs?: boolean } = {}): string {
-  const seen = SLOTS.filter(k => SLOT_DEFS[k].seen);
-  const out: string[] = [];
-  if (seen.length) {
-    const les = seen.length > 1 || SLOT_DEFS[seen[0]].pl ? 'les' : 'le';
-    out.push(`${cap(liste(seen.map(k => SLOT_DEFS[k].mine)))} : vos adversaires ${les} voient.`);
-  }
-  for (const k of SLOTS) {
-    const d: { mine: string; seen: boolean; follows?: { verb: string; pronoun: string; theirs: string } } = SLOT_DEFS[k];
-    // `follows` ne sert qu'à un emplacement que l'adversaire ne voit pas
-    if (d.seen || !d.follows) continue;
-    const keep = opts.theirs ? `, et vos adversaires gardent ${d.follows.theirs}` : '';
-    out.push(`${cap(d.mine)} : ${d.follows.pronoun} ${d.follows.verb}${keep}.`);
-  }
-  return out.join(' ');
-}
-
-/** Panier de plusieurs skins : « Votre sélection (2 skins) ». */
-export const selectionLabel = (n: number): string => `Votre sélection (${compte(n, 'skin')})`;
-
 const pct = (price: number, compare: number) => `-${Math.round((1 - price / compare) * 100)} %`;
 
 const unitProducts: Product[] = ITEMS.filter(i => !i.free).map(it => ({
@@ -317,8 +286,6 @@ const PRODUCT_BY_ID = new Map(ALL_PRODUCTS.map(p => [p.id, p]));
 export const productById = (id: string): Product | undefined => PRODUCT_BY_ID.get(id);
 /** Collections en vente (premium, produit non retiré), dans l'ordre du catalogue : rayon et vitrine de la boutique. */
 export const SHOP_COLLECTIONS: Collection[] = PREMIUM_COLLECTIONS.filter(c => !productById(c.id)?.retired);
-/** Sceaux qu'apporte un ensemble d'objets (un pack) : les collections premium qu'il complète, dans l'ordre du bandeau. */
-export const sealsIn = (items: readonly string[]): Collection[] => tresorSeals().filter(c => collectionItems(c).every(i => items.includes(i)));
 
 export function skinStyle(id: string | undefined): SkinStyle {
   return (itemById(id ?? '')?.skin ?? itemById(DEFAULT_SKIN)!.skin)!;

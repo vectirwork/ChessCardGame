@@ -18,14 +18,14 @@ import type { CardCatalog, CardDef, CardId } from '../../shared/cards';
 import { ITEMS, PRODUCTS, formatPrice, itemById, unitPrice } from '../../shared/catalog';
 import type { FeatureKey } from '../../shared/config/features';
 import { HOME } from '../../shared/config/home';
-import { GAME_RULES } from '../../shared/config/rules';
+import { DEAL, GAME_RULES } from '../../shared/config/rules';
 import type { GameRulesSettings } from '../../shared/config/rules';
 import { SLOT_DEFS } from '../../shared/skins/slots';
 import type { ItemKind } from '../../shared/skins/slots';
 import { apostrophes, cap, enLettres, ordinalLettres, pluriel, romain } from '../../shared/text/fr';
 import {
   cartesDePouvoir, cartesVisibles, constitutionMains, niveauxIA, nomsNiveaux, prochainTour, refusBudget, sortParTour, sortsEnMain,
-  vosSorts,
+  toursPresage, vosSorts,
 } from '../../shared/text/regles';
 
 export type PoseKey = 'hero' | 'foret' | 'pics' | 'sablier' | 'bazar' | 'seuil';
@@ -155,8 +155,8 @@ export function idleCasts(place: PoseKey, catalog: CardCatalog): CardId[] {
 export function howToPlay(c: CardDef, r: Pick<GameRulesSettings, 'presageDelay'> = GAME_RULES): string {
   if (c.ritual) return 'Rituel : la carte remplace votre coup.';
   if (c.presage) {
-    // Tours d'avance (compté comme prochainTour de regles.ts) : autant de coups de l'adversaire avant l'arrivée
-    const k = Math.max(1, Math.round(r.presageDelay / 2));
+    // Tours d'avance (toursPresage) : autant de coups de l'adversaire avant l'arrivée
+    const k = toursPresage(r.presageDelay);
     const quand = k === 1 ? 'à votre tour suivant' : `au début de ${prochainTour(r.presageDelay)}`;
     return `Présage : annoncée maintenant, elle arrive ${quand}. L'adversaire a ${enLettres(k)} ${pluriel(k, 'coup')} pour s'y préparer.`;
   }
@@ -201,15 +201,16 @@ export type TextRules = Pick<GameRulesSettings, 'cardsPerPlayer' | 'cardsPerTurn
 
 /**
  * Les trois principes (Forêt de givre), pour les règles des nouvelles parties (GAME_RULES), comme PAGE_TEXTS : la Forêt
- * décrit le jeu en général. Écart accepté : si RULES_BY_CONTEXT.accueil donne un autre nombre de cartes, la clause
- * « sur l'accueil, elles sont tirées au hasard » ne le dit pas (le héros, lui, suit les règles de la partie ouverte :
- * liveTexts). Une phrase propre à l'accueil demanderait une variante de constitutionMains (text/regles.ts, gelé).
+ * décrit le jeu en général. La clause « sur l'accueil » suit les règles de l'accueil (`accueil` : l'accueil passe
+ * rulesFor('accueil')) : si RULES_BY_CONTEXT.accueil donne un autre nombre de cartes, elle le dit (« sur l'accueil,
+ * vos cinq cartes sont tirées au hasard ») ; au défaut, la phrase d'avant. Le héros, lui, suit les règles de la partie
+ * ouverte (liveTexts).
  */
-export function principle(r: TextRules = GAME_RULES) {
+export function principle(r: TextRules = GAME_RULES, accueil: Pick<GameRulesSettings, 'cardsPerPlayer'> = r) {
   const n = r.cardsPerPlayer;
   const k = r.cardsPerTurn;
-  // Tours d'avance d'un Présage (délai en demi-coups, compté comme prochainTour de regles.ts)
-  const tours = Math.max(1, Math.round(r.presageDelay / 2));
+  // Tours d'avance d'un Présage (délai en demi-coups)
+  const tours = toursPresage(r.presageDelay);
   const lance = k === 1 ? 'lancez une carte : elle change' : `lancez jusqu’à ${enLettres(k, 'f')} cartes : chacune change`;
   return [
     {
@@ -220,7 +221,7 @@ export function principle(r: TextRules = GAME_RULES) {
     {
       n: '02',
       title: cartesVisibles(r),
-      text: `Au début d'une partie, ${apostrophes(constitutionMains(r), 'droite')}. ${
+      text: `Au début d'une partie, ${apostrophes(constitutionMains(r, DEAL, accueil), 'droite')}. ${
         n === 1 ? "Visible des deux joueurs, elle ne sert qu'une fois." : "Visibles des deux joueurs, chacune ne sert qu'une fois."
       }`,
     },

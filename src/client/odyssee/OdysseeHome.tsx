@@ -17,7 +17,7 @@ import { HOME } from '../../shared/config/home';
 import { GAME_RULES } from '../../shared/config/rules';
 import { resultText } from '../../shared/game';
 import type { MeUser } from '../../shared/protocol';
-import { cardEndsTurn, castsLeft, rulesOf } from '../../shared/rulesCore';
+import { cardEndsTurn, castsLeft, rulesFor, rulesOf } from '../../shared/rulesCore';
 import { SLOT_DEFS } from '../../shared/skins/slots';
 import { api, errMsg } from '../api';
 import { Board } from '../components/Board';
@@ -177,8 +177,11 @@ type Mode = 'page' | 'entering' | 'game' | 'leaving';
 type SheetKind = 'friend' | 'ai' | null;
 
 const levelName = (l: BotLevel) => BOT_PROFILES[l].name;
-/** Les trois principes (Forêt de givre) : le jeu en général, règles des nouvelles parties (calculés une fois). */
-const PRINCIPLE = principle(GAME_RULES);
+/**
+ * Les trois principes (Forêt de givre) : le jeu en général, règles des nouvelles parties ; la clause « sur l'accueil »
+ * aux règles de l'accueil (calculés une fois).
+ */
+const PRINCIPLE = principle(GAME_RULES, rulesFor('accueil'));
 
 /**
  * Halo sous la pièce jouable survolée (échiquier du héros, souris). Son propre état : passer d'une case à l'autre ne

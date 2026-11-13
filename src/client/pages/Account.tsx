@@ -4,8 +4,9 @@ import type { CSSProperties, FormEvent } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import {
   ITEMS, LOCALE, PAYMENT_PROVIDER, PREMIUM_COLLECTIONS, SLOTS, SLOT_DEFS, collectionById, collectionItems, formatPrice, itemById, itemLabel, productById,
-  sealOf, selectionLabel, unitPrice, whoSees,
+  sealOf, unitPrice,
 } from '../../shared/catalog';
+import { SLOT_TEXTS, selectionLabel, whoSees } from '../../shared/skins/texts';
 import { CART_PRODUCT_ID } from '../../shared/protocol';
 import type { MeUser, PurchaseRecord } from '../../shared/protocol';
 import { api, errMsg } from '../api';
@@ -288,7 +289,7 @@ function CollectionTab({ me }: { me: MeUser }) {
       const r = await api<{ user: MeUser }>('/account/equip', { body: { itemId: id } });
       setMe(r.user);
       const it = itemById(id);
-      if (it) toast(`${itemLabel(it)} ${SLOT_DEFS[it.kind].equipped}.`, 'success');
+      if (it) toast(`${itemLabel(it)} ${SLOT_TEXTS[it.kind].equipped}.`, 'success');
       // Le roi est pris à l'assise : une partie en cours garde l'ancien
       if (itemById(id)?.kind === 'king') {
         const g = await api<{ games: { status: string }[] }>('/games/mine').catch(() => ({ games: [] }));
@@ -349,7 +350,7 @@ function CollectionTab({ me }: { me: MeUser }) {
                 );
               })}
             </div>
-            <p className="acc-coll-note">{SLOT_DEFS[kind].note}</p>
+            <p className="acc-coll-note">{SLOT_TEXTS[kind].note}</p>
             {kind === 'king' && (
               <div className="acc-pref">
                 <span className="acc-pref-t">

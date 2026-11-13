@@ -2,7 +2,8 @@
 // « Qui voit quoi » dit juste (whoSees, d'après SLOT_DEFS) : le roi et les sorts se voient chez l'adversaire, l'échiquier
 // non (chacun garde le sien, GamePage passe l'échiquier de celui qui regarde).
 import { Link } from 'react-router-dom';
-import { PAYMENT_PROVIDER, whoSees } from '../../../shared/catalog';
+import { PAYMENT_PROVIDER } from '../../../shared/catalog';
+import { whoSees } from '../../../shared/skins/texts';
 import { StarMark } from '../PageScene';
 
 export function ShopPromise() {

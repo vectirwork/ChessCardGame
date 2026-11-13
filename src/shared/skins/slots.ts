@@ -1,11 +1,13 @@
 // Emplacements équipables (roi, échiquier, sorts) : une entrée par emplacement, dans l'ordre d'affichage. Aucun import
 // à l'exécution. Tout ce qui nomme, range, montre ou enregistre un emplacement en est dérivé : SLOTS, libellés, rayons
-// de la boutique, notes, « qui voit quoi », objets par défaut, champs du compte, colonnes SQL (catalog.ts, boutique,
-// compte, e-mails).
+// de la boutique, objets par défaut, champs du compte, colonnes SQL (catalog.ts, boutique, compte, e-mails). Les
+// phrases propres à la boutique, au compte et aux e-mails (notes, « qui voit quoi », message après l'équipement) sont
+// dans texts.ts (SLOT_TEXTS), hors du code que chargent l'accueil et la partie.
 //
-// Ajouter un emplacement (un dos de carte, un jeu de pièces) : une entrée ici, une migration (sa colonne equipped_*,
-// src/server/db.ts), le dessin de sa vignette (ItemThumb) et ses données (un fichier voisin, PRICE dans catalog.ts).
-// Le compilateur signale les tables à compléter (ItemKind est la liste des clés de SLOT_DEFS).
+// Ajouter un emplacement (un dos de carte, un jeu de pièces) : une entrée ici et ses phrases (SLOT_TEXTS, texts.ts), une
+// migration (sa colonne equipped_*, src/server/db.ts), le dessin de sa vignette (ItemThumb) et ses données (un fichier
+// voisin, PRICE dans catalog.ts). Le compilateur signale les tables à compléter (ItemKind est la liste des clés de
+// SLOT_DEFS).
 
 export interface SlotDef {
   /** Libellé : « Roi », « Échiquier », « Sorts ». Aussi devant le nom d'un objet (itemLabel), sauf si `named`. */
@@ -23,22 +25,12 @@ export interface SlotDef {
   named: boolean;
   /** Article devant le mot, ou devant le nom d'un objet `named` : « l’échiquier Rubis », « le roi de braise ». */
   article: string;
-  /** Possessif : « votre roi », « vos sorts ». */
-  mine: string;
-  /** Accord de « équipé » : « Sorts Inferno équipés ». */
-  equipped: string;
-  /** Fin du message après équipement (« Roi de braise équipé » + fin). */
-  equippedTail: string;
   /** Rayon de la boutique : identifiant d'adresse (?rayon=). */
   rayon: string;
   /** Vue de la cabine qui montre l'emplacement : le portrait du roi, ou l'échiquier en partie. */
   view: 'roi' | 'partie';
-  /** Note sous le rayon et dans la collection du compte. */
-  note: string;
-  /** Vu par l'adversaire en partie (pris à l'assise) ; sinon chacun voit le sien (« il vous suit… »). */
+  /** Vu par l'adversaire en partie (pris à l'assise) ; sinon chacun voit le sien (« il vous suit… » : SLOT_TEXTS). */
   seen: boolean;
-  /** Objet non vu par l'adversaire : ce qu'il fait (« vous suit dans toutes vos parties »), pronom et « le leur ». */
-  follows?: { verb: string; pronoun: string; theirs: string };
   /** Objet porté par défaut (invités, nouveaux comptes, identifiant inconnu, retour après remboursement). */
   default: string;
   /** Colonne de l'objet porté (table users). Lue par auth.ts (SLOT_COLUMN) à partir du lot 9. */
@@ -58,12 +50,8 @@ export const SLOT_DEFS = {
     unit: ['roi', 'rois'],
     named: true,
     article: 'le ',
-    mine: 'votre roi',
-    equipped: 'équipé',
-    equippedTail: '. Vos adversaires le verront dès votre prochaine partie.',
     rayon: 'rois',
     view: 'roi',
-    note: 'Votre roi vous représente : vos adversaires le voient en face d’eux.',
     seen: true,
     default: 'king:arcane',
     column: 'equipped_king',
@@ -78,14 +66,9 @@ export const SLOT_DEFS = {
     unit: ['échiquier', 'échiquiers'],
     named: false,
     article: 'l’',
-    mine: 'votre échiquier',
-    equipped: 'équipé',
-    equippedTail: ' : il vous suit dans toutes vos parties.',
     rayon: 'echiquiers',
     view: 'partie',
-    note: 'Votre échiquier vous suit dans toutes vos parties. Vos adversaires gardent le leur.',
     seen: false,
-    follows: { verb: 'vous suit dans toutes vos parties', pronoun: 'il', theirs: 'le leur' },
     default: 'board:arcane',
     column: 'equipped_board',
     meField: 'equippedBoard',
@@ -99,12 +82,8 @@ export const SLOT_DEFS = {
     unit: ['sort', 'sorts'],
     named: false,
     article: 'les ',
-    mine: 'vos sorts',
-    equipped: 'équipés',
-    equippedTail: ' : vos adversaires les verront à chacun de vos sorts.',
     rayon: 'sorts',
     view: 'partie',
-    note: 'Vos sorts s’animent avec ce skin, chez vous comme chez votre adversaire.',
     seen: true,
     default: 'skin:arcane',
     column: 'equipped_skin',

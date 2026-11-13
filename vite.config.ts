@@ -123,6 +123,11 @@ export interface BuildConstants {
   pseudoCompte: { min: number; max: number; pattern: string; aide: string };
   /** Mot de passe (PASSWORD) : longueur minimale et aide (Connexion). */
   motDePasse: { min: number; aide: string };
+  /**
+   * dureeChoix() : durée du choix des cartes, « 45 secondes » (Règles, Jouer). Figée ici, elle laisse duree() de
+   * text/fr.ts hors du code du client (le morceau fr, que charge l'accueil).
+   */
+  dureeChoix: string;
 }
 
 declare global {
@@ -160,6 +165,7 @@ export function buildConstants({ brand, rules, regles, keys, protocol, bot, limi
     },
     pseudoCompte: { min: USERNAME.min, max: USERNAME.max, pattern: inputPattern(USERNAME.chars), aide: USERNAME.hint },
     motDePasse: { min: PASSWORD.min, aide: PASSWORD.hint },
+    dureeChoix: regles.dureeChoix(rules.DEAL),
   };
 }
 

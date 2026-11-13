@@ -6,9 +6,10 @@
 // Aussi : le bandeau d'un pack (Trésor du Bazar) et la carte de pack en tête d'un rayon (Grimoire des sorts).
 import type { CSSProperties } from 'react';
 import {
-  PREMIUM_ITEMS, SLOT_DEFS, collectionItems, formatPrice, itemById, itemLabel, productById, productPrice, sealName, sealsIn,
+  PREMIUM_ITEMS, SLOT_DEFS, collectionItems, formatPrice, itemById, itemLabel, productById, productPrice, sealName,
 } from '../../../shared/catalog';
 import type { Collection, Product } from '../../../shared/catalog';
+import { sealsIn } from '../../../shared/skins/texts';
 import { enLettres } from '../../../shared/text/fr';
 import { CollectionSeal } from '../../components/CollectionSeal';
 import { ItemThumb, RarityGem } from './ItemThumb';

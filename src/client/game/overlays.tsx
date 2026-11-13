@@ -6,7 +6,6 @@ import { Link } from 'react-router-dom';
 import { opposite } from '../../shared/chess';
 import { CARDS } from '../../shared/cards';
 import type { CardId, Catalog } from '../../shared/cards';
-import { BRAND } from '../../shared/config/brand';
 import { GUEST_NAME } from '../../shared/config/limits';
 import type { Rules } from '../../shared/config/rules';
 import { resultText } from '../../shared/game';
@@ -70,7 +69,8 @@ export function WaitingCard({ id, view, catalog, onCancel }: { id: string; view:
   };
   const share = async () => {
     try {
-      await navigator.share({ title: `Partie de ${BRAND.name}`, text: 'Je vous défie aux échecs… avec des pouvoirs.', url });
+      // Marque : BRAND.name figé au build (__SM__.marque) ; l'objet BRAND entier n'est pas chargé par la partie
+      await navigator.share({ title: `Partie de ${__SM__.marque}`, text: 'Je vous défie aux échecs… avec des pouvoirs.', url });
     } catch {
       // partage annulé
     }

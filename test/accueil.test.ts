@@ -272,6 +272,19 @@ describe('textes de l’accueil selon les règles (1 et 5 cartes, 2 par tour, ca
       text: 'À la place de votre coup, lancez une carte : elle change la partie pour les deux camps. Certaines s’annoncent deux tours à l’avance.',
     });
   });
+  it('Forêt : la clause « sur l’accueil » suit les règles de l’accueil (RULES_BY_CONTEXT.accueil), au défaut la phrase d’avant', () => {
+    // L'accueil passe rulesFor('accueil') : au défaut, les mêmes règles, la même phrase
+    expect(principle(GAME_RULES, rulesFor('accueil'))).toEqual(principle());
+    expect(readFileSync(path.join(__dirname, '../src/client/odyssee/OdysseeHome.tsx'), 'utf8')).toContain(
+      "const PRINCIPLE = principle(GAME_RULES, rulesFor('accueil'));",
+    );
+    expect(principle(GAME_RULES, avec({ cardsPerPlayer: 5 }))[1].text).toBe(
+      "Au début d'une partie, vous choisissez vos trois cartes ; sur l'accueil, vos cinq cartes sont tirées au hasard. Visibles des deux joueurs, chacune ne sert qu'une fois.",
+    );
+    expect(principle(avec({ cardsPerPlayer: 5 }), GAME_RULES)[1].text).toBe(
+      "Au début d'une partie, vous choisissez vos cinq cartes ; sur l'accueil, vos trois cartes sont tirées au hasard. Visibles des deux joueurs, chacune ne sert qu'une fois.",
+    );
+  });
 });
 
 describe('relecture du lot 7', () => {

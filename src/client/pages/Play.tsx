@@ -19,7 +19,7 @@ import type { GameMode } from '../../shared/protocol';
 import { rulesFor } from '../../shared/rulesCore';
 import { cap, mmss, pluriel, romain } from '../../shared/text/fr';
 import { catalogLabel, modeLabel } from '../../shared/text/libelles';
-import { cartesDePouvoir, constitutionMains, dureeChoix, niveauxIA, nomsNiveaux, vosCartes } from '../../shared/text/regles';
+import { cartesDePouvoir, constitutionMains, niveauxIA, nomsNiveaux, vosCartes } from '../../shared/text/regles';
 import { api, errMsg } from '../api';
 import { Spinner } from '../components/Layout';
 import { emitAck, getSocket } from '../socket';
@@ -90,7 +90,7 @@ const LEDE = `Les échecs, plus ${cartesDePouvoir(GAME_RULES)} chacun, ${
 function handHelp(mode: Mode): string {
   const r = rulesFor(DOOR_CONTEXT[mode]);
   if (!DEAL.draft) return `${cap(constitutionMains(r))} au début de la partie.`;
-  return `Vous choisirez ${vosCartes(r)} au début de la partie, en ${dureeChoix()} : votre choix reste secret jusqu’à ce que votre adversaire ait choisi aussi.`;
+  return `Vous choisirez ${vosCartes(r)} au début de la partie, en ${__SM__.dureeChoix} : votre choix reste secret jusqu’à ce que votre adversaire ait choisi aussi.`;
 }
 
 function parseMode(v: string | null): Mode {

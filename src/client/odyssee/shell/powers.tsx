@@ -12,7 +12,7 @@ import type { Color } from '../../../shared/chess';
 import { CARDS } from '../../../shared/cards';
 import type { Effect } from '../../../shared/game';
 import { compte, ordinalLettres } from '../../../shared/text/fr';
-import { prochainTour } from '../../../shared/text/regles';
+import { coupsAvantArrivee, prochainTour } from '../../../shared/text/regles';
 import { CardEmblem } from '../../components/CardArt';
 import { CardScene, scenePaired } from '../../components/CardScene';
 import { cardTexts } from '../../components/SpellCard';
@@ -46,7 +46,7 @@ export function powerTiming(e: Effect, you: Color | null, names?: PowersProps['n
     else {
       // Vu par l'adversaire du lanceur : après combien de ses coups (le coup en cours compris s'il a le trait)
       const delay = e.delay ?? 1;
-      const k = Math.ceil(delay / 2);
+      const k = coupsAvantArrivee(delay);
       when = k > 1 ? `arrive après votre ${ordinalLettres(k)} coup à venir` : delay > 1 ? 'arrive après votre prochain coup' : 'arrive après votre coup';
     }
     return `${caster} · annoncé, ${when}`;

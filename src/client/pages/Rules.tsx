@@ -14,8 +14,8 @@ import type { CardDef, Catalog, Family } from '../../shared/cards';
 import { DEAL, GAME_RULES } from '../../shared/config/rules';
 import { cap, enLettres, liste, ordinal, pluriel } from '../../shared/text/fr';
 import {
-  cartesChacun, cartesDePouvoir, cartesDuCatalogue, constitutionMains, dureeChoix, dureeEffet, limitesMain, pouvoirs, premierApres,
-  prochainTour, regle50, repetition, sortAuPlus, sortParTour,
+  cartesChacun, cartesDePouvoir, cartesDuCatalogue, constitutionMains, dureeEffet, limitesMain, pouvoirs, premierApres,
+  prochainTour, regle50, repetition, sortAuPlus, sortParTour, toursPresage,
 } from '../../shared/text/regles';
 import { SpellCard } from '../components/SpellCard';
 import { CardScene, scenePaired } from '../components/CardScene';
@@ -100,7 +100,7 @@ const ESSENTIALS: { title: string; text: ReactNode }[] = [
 ];
 
 /** Coups de l'adversaire entre l'annonce d'un Présage et son arrivée (un au délai de 2 demi-coups). */
-const replies = Math.max(1, Math.round(R.presageDelay / 2));
+const replies = toursPresage(R.presageDelay);
 
 const TEMPO: { key: string; family: string; text: string }[] = [
   {
@@ -200,7 +200,7 @@ const DETAILS: ReactNode[] = [
   'Un Climat ne sauve jamais du mat : il arrive trop tard. Le Mur de glace, la Faille ou la Grande Marée le peuvent.',
   ...restrictedCards(DEFS),
   DEAL.draft
-    ? `Le choix des cartes dure ${dureeChoix()} : ${n === 1 ? 'une carte' : `${enLettres(n, 'f')} cartes différentes`} parmi les ${pouvoirs(N)}, ${DEAL.limitsInDraft && LIMITS ? `avec ${LIMITS}` : 'sans autre contrainte'}. Si le temps s’écoule, ${n === 1 ? 'elle est tirée' : 'celles qui vous manquent sont tirées'} au hasard. Sur l’accueil, le tirage favorise les cartes les moins rares${LIMITS ? `, avec ${LIMITS}` : ''}.`
+    ? `Le choix des cartes dure ${__SM__.dureeChoix} : ${n === 1 ? 'une carte' : `${enLettres(n, 'f')} cartes différentes`} parmi les ${pouvoirs(N)}, ${DEAL.limitsInDraft && LIMITS ? `avec ${LIMITS}` : 'sans autre contrainte'}. Si le temps s’écoule, ${n === 1 ? 'elle est tirée' : 'celles qui vous manquent sont tirées'} au hasard. Sur l’accueil, le tirage favorise les cartes les moins rares${LIMITS ? `, avec ${LIMITS}` : ''}.`
     : `Les cartes sont tirées au hasard : le tirage favorise les cartes les moins rares${LIMITS ? `, avec ${LIMITS}` : ''}.`,
   'Les animations des sorts ne vous coûtent pas de temps à la pendule.',
   'Pré-coups : pendant que votre adversaire réfléchit, jouez déjà vos coups suivants, autant que vous voulez. Ils apparaissent en fantômes numérotés et se jouent d’eux-mêmes, dans l’ordre ; si l’un n’est plus possible, tous s’annulent. Clic droit (ou toucher une case vide) pour les annuler. Les cartes, elles, ne se préparent pas.',

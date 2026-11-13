@@ -3,6 +3,11 @@
 // Le même code tourne sur le serveur (arbitre), dans le navigateur (aperçu des coups, partie contre l'IA locale)
 // et dans l'IA (src/shared/bot.ts).
 //
+// Les règles d'une partie (cartes par tour, carte à la place du coup, délai du Présage, nulles, position de départ,
+// équilibrage des cartes) sont celles qu'elle porte : rulesOf(s), tuneOf(s, carte) (src/shared/rules.ts), RULES_V1
+// pour une partie sans champ `rules`. Elles ne sont lues qu'ici, aux points d'entrée, jamais dans chess.ts, la
+// recherche de l'IA ni positionKey. Ce qui distingue les catalogues est lu dans CATALOG_RULES (cards.ts).
+//
 // Deux catalogues de cartes (voir cards.ts) :
 // - Pouvoirs (identifiant 'climats', concepts/CARTES-GLOBALES.md et décision du fondateur du 30 octobre dans
 //   docs/PLAN-ODYSSEE.md) : 8 pouvoirs qui touchent les deux camps, mains visibles. Les effets se décomptent sur
@@ -18,9 +23,15 @@ import {
   emptyMods, fromFen, hasLegalMove, inCheck, initialPosition, isCapture, isLightSquare, isSlider, legalMoves,
   makeMove, opposite, rankOf, sqIndex, sqName, toSan,
 } from './chess';
-import { CARDS, CardId, Catalog, RARITY_WEIGHT, cardsOf, isCardId } from './cards';
+import { CARDS, CATALOG_RULES, CardId, Catalog, LEGACY_CATALOG, DEFAULT_CATALOG, isCardId } from './cards';
+import type { CardDef } from './cards';
 import { DEAL, GAME_RULES } from './config/rules';
-import type { Rules } from './config/rules';
+import type { DealSettings, HandLimits, Rules } from './config/rules';
+import {
+  basicFenError, cardEndsTurn, castsLeft, poolOf, rulesFor, rulesOf, stampRules, tuneOf, validHand,
+} from './rules';
+import { compte } from './text/fr';
+import { limitesMain, refusBudget } from './text/regles';
 
 export interface Effect {
   id: number;
@@ -47,7 +58,7 @@ export interface Effect {
   permanent?: boolean;
   /** Présage : effet annoncé, pas encore actif (il le devient au début du tour suivant du lanceur). Public. */
   pending?: boolean;
-  /** Présage : coups avant l'arrivée (2 au lancement, 1 après le coup du lanceur). */
+  /** Présage : coups avant l'arrivée (rulesOf(s).presageDelay au lancement, 2 par défaut ; 1 après le coup du lanceur). */
   delay?: number;
   /** Cases concernées quand il y en a plusieurs (Faille : cases du gouffre). */
   squares?: number[];
@@ -145,10 +156,13 @@ export interface GameState {
 export const CARDS_PER_PLAYER = GAME_RULES.cardsPerPlayer;
 
 /** Catalogue effectif d'une partie (les parties enregistrées avant les catalogues sont des parties Duel). */
-export const catalogOf = (s: GameState): Catalog => s.catalog ?? 'duel';
+export const catalogOf = (s: Pick<GameState, 'catalog'>): Catalog => s.catalog ?? LEGACY_CATALOG;
+
+/** Règles propres au catalogue de la partie (CATALOG_RULES). */
+const catalogRules = (s: Pick<GameState, 'catalog'>) => CATALOG_RULES[catalogOf(s)];
 
 /** « La magie cède » (R6) : règle du catalogue Pouvoirs. */
-export const magicYields = (s: GameState): boolean => catalogOf(s) === 'climats';
+export const magicYields = (s: GameState): boolean => catalogRules(s).magicYields;
 
 const isClimate = (card: CardId) => CARDS[card].family === 'climat';
 
@@ -158,64 +172,63 @@ const isClimate = (card: CardId) => CARDS[card].family === 'climat';
 export interface DealOptions {
   /** Partie contre l'IA : les cartes `humanOnly` (Sablier fou) sont exclues. */
   vsBot?: boolean;
+  /** Règles de la partie à créer : nombre de cartes par main (défaut : rulesFor('classee')). */
+  rules?: Pick<Rules, 'cardsPerPlayer'>;
+  /** Mise en place : contraintes du tirage, poids, essais (défaut : DEAL). */
+  deal?: Pick<DealSettings, 'handLimits' | 'rarityWeight' | 'redrawAttempts'>;
 }
 
-/** Une main du catalogue Pouvoirs est valide avec au plus 1 Légendaire et au plus 2 Climats (R9). */
-function validClimatsHand(hand: CardId[]): boolean {
-  let legendary = 0;
-  let climates = 0;
-  for (const id of hand) {
-    if (CARDS[id].rarity === 'légendaire') legendary++;
-    if (isClimate(id)) climates++;
-  }
-  return legendary <= 1 && climates <= 2;
-}
+/** Nombre de cartes par main des nouvelles parties quand l'appelant ne donne pas de règles. */
+const defaultHandSize = () => rulesFor('classee').cardsPerPlayer;
 
 /**
- * Distribue les mains.
- * - Pouvoirs : tirage pondéré par rareté (Commune 4, Rare 3, Épique 2, Légendaire 1), sans remise, recommencé
- *   si la main a plus d'une Légendaire ou plus de deux Climats (R9). Avec 8 cartes (5 Climats, 1 Légendaire),
- *   seule la contrainte des Climats compte ; sans le Sablier fou (contre l'IA, sans pendule), il en reste 7,
- *   dont 3 qui ne sont pas des Climats : une main valide existe toujours.
- * - Duel (anciennes parties, tests) : tirage uniforme, sans remise.
+ * Distribue les mains (`rules.cardsPerPlayer` cartes chacune).
+ * - Tirage pondéré (CATALOG_RULES.draw, Pouvoirs) : pondéré par la rareté (DEAL.rarityWeight), sans remise,
+ *   recommencé tant que la main ne respecte pas les contraintes du tirage (DEAL.handLimits, R9), au plus
+ *   DEAL.redrawAttempts fois, puis tirage contraint carte par carte. checkRules (rules.ts) garantit qu'une main
+ *   valide existe dans chaque réserve.
+ * - Tirage uniforme (Duel : anciennes parties, tests) : sans remise, sans contrainte.
  * Les cartes `timedOnly` sont exclues sans pendule, les cartes `humanOnly` contre l'IA (`cardPool`). En mode miroir
  * (anciennes parties, tests ; plus proposé), les deux joueurs reçoivent la même main.
  */
 export function dealHands(
-  timed: boolean, mirror: boolean, rand: () => number = Math.random, catalog: Catalog = 'duel', opts: DealOptions = {},
+  timed: boolean, mirror: boolean, rand: () => number = Math.random, catalog: Catalog = LEGACY_CATALOG, opts: DealOptions = {},
 ): Record<Color, CardId[]> {
-  if (catalog === 'aucune') return { w: [], b: [] };
   const pool = cardPool(catalog, timed, opts);
+  if (!pool.length) return { w: [], b: [] };
+  const n = opts.rules?.cardsPerPlayer ?? defaultHandSize();
+  const deal = opts.deal ?? DEAL;
+  const limits = deal.handLimits;
   const uniform = () => {
     const a = pool.slice();
     for (let i = a.length - 1; i > 0; i--) {
       const j = Math.floor(rand() * (i + 1));
       [a[i], a[j]] = [a[j], a[i]];
     }
-    return a.slice(0, CARDS_PER_PLAYER);
+    return a.slice(0, n);
   };
-  const weight = (id: CardId) => RARITY_WEIGHT[CARDS[id].rarity];
+  const weight = (id: CardId) => deal.rarityWeight[CARDS[id].rarity];
   /** Tirage pondéré sans remise ; `constrained` : on écarte au fur et à mesure les cartes qui rendraient la main invalide. */
   const weighted = (constrained: boolean) => {
     let bag = pool.slice();
     const hand: CardId[] = [];
-    while (hand.length < CARDS_PER_PLAYER && bag.length) {
+    while (hand.length < n && bag.length) {
       let r = rand() * bag.reduce((t, id) => t + weight(id), 0);
       let k = 0;
       while (k < bag.length - 1 && r >= weight(bag[k])) r -= weight(bag[k++]);
       hand.push(bag[k]);
       bag.splice(k, 1);
-      if (constrained) bag = bag.filter(id => validClimatsHand([...hand, id]));
+      if (constrained) bag = bag.filter(id => validHand([...hand, id], limits));
     }
     return hand;
   };
   const draw = () => {
-    if (catalog === 'duel') return uniform();
-    // Tirage recommencé tant que la main est invalide (R9). Au-delà de 64 essais (générateur dégénéré, tests),
-    // tirage contraint carte par carte.
-    for (let attempt = 0; attempt < 64; attempt++) {
+    if (CATALOG_RULES[catalog].draw === 'uniforme') return uniform();
+    // Tirage recommencé tant que la main est invalide (R9). Au-delà (générateur dégénéré, tests), tirage contraint
+    // carte par carte.
+    for (let attempt = 0; attempt < deal.redrawAttempts; attempt++) {
       const hand = weighted(false);
-      if (validClimatsHand(hand)) return hand;
+      if (validHand(hand, limits)) return hand;
     }
     return weighted(true);
   };
@@ -224,19 +237,21 @@ export function dealHands(
 }
 
 /**
- * Réserve d'une partie : les cartes du catalogue, sans les cartes `timedOnly` dans une partie sans pendule ni les
- * cartes `humanOnly` contre l'IA (Sablier fou). Vide pour « Sans cartes ». Sert au tirage et au choix des cartes.
+ * Réserve d'une partie : les cartes du catalogue, sans les cartes retirées (`retired`) ou suspendues
+ * (SUSPENDED_CARDS), sans les cartes `timedOnly` dans une partie sans pendule ni les cartes `humanOnly` contre l'IA
+ * (Sablier fou). Vide pour « Sans cartes ». Sert au tirage et au choix des cartes (poolOf, rules.ts).
  */
-export function cardPool(catalog: Catalog, timed: boolean, opts: DealOptions = {}): CardId[] {
-  return cardsOf(catalog).filter(id => (timed || !CARDS[id].timedOnly) && !(opts.vsBot && CARDS[id].humanOnly));
+export function cardPool(catalog: Catalog, timed: boolean, opts: Pick<DealOptions, 'vsBot'> = {}): CardId[] {
+  return poolOf(catalog, { timed, vsBot: opts.vsBot });
 }
 
 // ---------------------------------------------------------------------------------------------
 // Choix des cartes (décision D5 du plan V2, docs/PLAN-V2.md)
 // Au début d'une vraie partie (invitation, file amicale ou classée, IA lancée depuis la page Jouer, revanche),
-// chaque joueur choisit CARDS_PER_PLAYER cartes différentes dans la réserve de la partie, sans autre contrainte
-// (la règle R9 du tirage ne s'applique pas). Le serveur garde les choix secrets jusqu'à ce que les deux joueurs
-// aient choisi, puis donne les mains avec `withHands`. La partie de l'accueil garde le tirage (`dealHands`).
+// chaque joueur choisit rulesOf(state).cardsPerPlayer cartes différentes dans la réserve de la partie, sans autre
+// contrainte (les contraintes du tirage, R9, ne s'appliquent au choix que si DEAL.limitsInDraft : le serveur passe
+// alors `limits`). Le serveur garde les choix secrets jusqu'à ce que les deux joueurs aient choisi, puis donne les
+// mains avec `withHands`. La partie de l'accueil garde le tirage (`dealHands`).
 
 /**
  * Durée du choix des cartes (ms) ; à l'échéance, le serveur complète au hasard ce qui manque.
@@ -246,26 +261,40 @@ export const DRAFT_MS = DEAL.draftMs;
 
 /**
  * Refus d'un choix de cartes, ou null s'il est valide : des cartes de la réserve, toutes différentes, exactement
- * CARDS_PER_PLAYER (`partial` : de 0 à CARDS_PER_PLAYER, pour une sélection provisoire).
+ * `count` (`partial` : de 0 à `count`, pour une sélection provisoire). `count` : rulesOf(state).cardsPerPlayer
+ * (défaut : celui des nouvelles parties). `limits` (DEAL.limitsInDraft seulement) : contraintes du tirage appliquées
+ * aussi au choix, sélection provisoire comprise.
  */
-export function draftRefusal(pool: readonly CardId[], cards: readonly unknown[], partial = false): string | null {
+export function draftRefusal(
+  pool: readonly CardId[], cards: readonly unknown[], partial = false, count: number = defaultHandSize(), limits?: HandLimits,
+): string | null {
   if (!Array.isArray(cards)) return 'Choix de cartes invalide.';
-  if (partial ? cards.length > CARDS_PER_PLAYER : cards.length !== CARDS_PER_PLAYER) {
-    return `Choisissez ${CARDS_PER_PLAYER} cartes.`;
-  }
+  if (partial ? cards.length > count : cards.length !== count) return `Choisissez ${compte(count, 'carte')}.`;
   if (!cards.every(c => isCardId(c) && pool.includes(c))) return 'Cette carte n’est pas proposée dans cette partie.';
   if (new Set(cards).size !== cards.length) return 'Choisissez des cartes différentes.';
+  if (limits && !validHand(cards as CardId[], limits)) {
+    const l = limitesMain(pool.map(id => CARDS[id]), limits);
+    return l ? `${l.charAt(0).toUpperCase()}${l.slice(1)}.` : 'Cette main n’est pas permise.';
+  }
   return null;
 }
 
 /**
- * Complète au hasard une sélection (valide, éventuellement vide) jusqu'à CARDS_PER_PLAYER cartes différentes de la
- * réserve, uniformément. Les cartes déjà choisies gardent leur place, en tête.
+ * Complète au hasard une sélection (valide, éventuellement vide) jusqu'à `count` cartes différentes de la réserve,
+ * uniformément. Les cartes déjà choisies gardent leur place, en tête. `limits` (DEAL.limitsInDraft seulement) : les
+ * cartes qui rendraient la main invalide ne sont pas tirées.
  */
-export function completeDraft(pool: readonly CardId[], partial: readonly CardId[], rand: () => number = Math.random): CardId[] {
-  const hand = partial.filter((c, i) => pool.includes(c) && partial.indexOf(c) === i).slice(0, CARDS_PER_PLAYER);
-  const rest = pool.filter(c => !hand.includes(c));
-  while (hand.length < CARDS_PER_PLAYER && rest.length) {
+export function completeDraft(
+  pool: readonly CardId[], partial: readonly CardId[], rand: () => number = Math.random, count: number = defaultHandSize(),
+  limits?: HandLimits,
+): CardId[] {
+  const hand = partial.filter((c, i) => pool.includes(c) && partial.indexOf(c) === i).slice(0, count);
+  let rest = pool.filter(c => !hand.includes(c));
+  while (hand.length < count && rest.length) {
+    if (limits) {
+      rest = rest.filter(c => validHand([...hand, c], limits));
+      if (!rest.length) break;
+    }
     const k = Math.min(rest.length - 1, Math.floor(rand() * rest.length));
     hand.push(rest[k]);
     rest.splice(k, 1);
@@ -284,8 +313,27 @@ export function withHands(s: GameState, hands: Record<Color, CardId[]>): GameSta
   return n;
 }
 
-export function createGame(hands: Record<Color, CardId[]>, timed: boolean, catalog: Catalog = 'duel'): GameState {
-  const { pos, nextId } = initialPosition();
+export interface CreateOptions {
+  /**
+   * Règles de la partie (défaut : rulesFor('classee'), les règles des nouvelles parties). Écrites dans la partie
+   * seulement si elles diffèrent de RULES_V1 (stampRules) : au réglage par défaut, rien n'est écrit. Les relectures
+   * passent rulesOf(partie) ; les leçons, problèmes et démonstrations, RULES_V1.
+   */
+  rules?: Rules;
+}
+
+/** Position de départ des règles : la position standard, ou `startFen` (roque standard seulement, refus sinon). */
+function startPosition(r: Rules) {
+  if (!r.startFen) return initialPosition();
+  const err = basicFenError(r.startFen);
+  if (err) throw new Error(`Position de départ des règles refusée : ${err}`);
+  return fromFen(r.startFen);
+}
+
+/** Nouvelle partie : mains données (vides pendant le choix des cartes), pendule ou non, catalogue de cartes. */
+export function createGame(hands: Record<Color, CardId[]>, timed: boolean, catalog: Catalog, opts: CreateOptions = {}): GameState {
+  const rules = stampRules(opts.rules ?? rulesFor('classee'));
+  const { pos, nextId } = startPosition(rulesOf({ rules }));
   const s: GameState = {
     pos,
     effects: [],
@@ -304,6 +352,7 @@ export function createGame(hands: Record<Color, CardId[]>, timed: boolean, catal
     forbidden: null,
     timed,
     catalog,
+    ...(rules ? { rules } : {}),
     result: null,
   };
   s.keys.push(positionKey(s));
@@ -311,12 +360,18 @@ export function createGame(hands: Record<Color, CardId[]>, timed: boolean, catal
 }
 
 /**
- * Partie à partir d'une position FEN (tests, tutoriel, problèmes).
- * Sans catalogue précisé : Pouvoirs si une main contient une carte qui n'est pas du Duel, sinon Duel.
+ * Catalogue déduit des mains (anciens appels sans catalogue : tests, relectures) : celui des parties enregistrées
+ * (Duel) si toutes les cartes en sont, sinon le catalogue par défaut (Pouvoirs). Mains vides : Duel.
  */
-export function createGameFromFen(fen: string, hands: Record<Color, CardId[]>, timed = true, catalog?: Catalog): GameState {
-  const cat = catalog ?? ([...hands.w, ...hands.b].some(id => !CARDS[id].catalogs.includes('duel')) ? 'climats' : 'duel');
-  const s = createGame(hands, timed, cat);
+export function inferCatalog(hands: Record<Color, readonly CardId[]>): Catalog {
+  return [...hands.w, ...hands.b].some(id => !CARDS[id].catalogs.includes(LEGACY_CATALOG as never)) ? DEFAULT_CATALOG : LEGACY_CATALOG;
+}
+
+/** Partie à partir d'une position FEN (tests, tutoriel, problèmes, analyse) ; la position remplace celle des règles. */
+export function createGameFromFen(
+  fen: string, hands: Record<Color, CardId[]>, timed: boolean, catalog: Catalog, opts: CreateOptions = {},
+): GameState {
+  const s = createGame(hands, timed, catalog, opts);
   const { pos, nextId } = fromFen(fen);
   s.pos = pos;
   s.nextPieceId = nextId;
@@ -441,14 +496,18 @@ export function timeWarpOn(s: GameState, c: Color): boolean {
   return s.effects.some(e => e.card === 'time_warp' && e.countsOn === c);
 }
 
-/** Sablier fou arrivé : les deux pendules s'écoulent deux fois plus vite. */
+/** Sablier fou arrivé : les deux pendules s'écoulent plus vite (vitesse de son équilibrage, `clockRate`). */
 function hourglassOn(s: GameState): boolean {
   return s.effects.some(e => e.card === 'hourglass' && !e.pending);
 }
 
-/** Vitesse d'écoulement de la pendule de `c` (2 sous la Distorsion temporelle ou le Sablier fou). */
+/**
+ * Vitesse d'écoulement de la pendule de `c` : celle du Sablier fou dans les règles de la partie (2 par défaut), ou 2
+ * sous la Distorsion temporelle (Duel), sinon 1.
+ */
 export function clockRate(s: GameState, c: Color): number {
-  return timeWarpOn(s, c) || hourglassOn(s) ? 2 : 1;
+  if (hourglassOn(s)) return tuneOf(s, 'hourglass').clockRate ?? 2;
+  return timeWarpOn(s, c) ? 2 : 1;
 }
 
 /** Les coups ne rapportent pas d'incrément tant que le Sablier fou est actif (à lire AVANT le coup). */
@@ -573,10 +632,20 @@ export interface MoveInfo {
 
 /**
  * Nature d'un refus du moteur, pour que le client teste un code plutôt qu'un texte (le texte reste le message
- * affiché). 'card-budget' : plus de carte possible ce tour.
+ * affiché, identique). Tous les refus du moteur en ont un.
+ * - Coups : 'game-over', 'illegal-move' (coup illégal), 'bad-promotion' (promotion invalide).
+ * - Cartes : 'not-your-turn', 'card-budget' (plus de carte possible ce tour), 'card-unknown', 'card-used',
+ *   'target-missing', 'target-invalid', 'needs-clock', 'climate-pending' (un Climat est déjà annoncé), 'no-pawn'
+ *   (aucun pion ne peut avancer), 'must-capture' (Lune de sang), 'checks-king' (la carte mettrait le roi adverse en
+ *   échec), 'leaves-check' (elle laisserait le roi du lanceur en échec), 'no-move' (le lanceur n'aurait plus de
+ *   coup), 'no-move-on-arrival' (Présage : plus de coup à son arrivée).
+ * - Cartes du Duel : 'effect-active' (même effet déjà actif), 'no-target-piece' (aucune pièce visée possible),
+ *   'nothing-to-undo' (aucun coup adverse à annuler), 'opponent-no-move' (l'adversaire n'aurait plus aucun coup).
  */
 export type RefusalCode =
   | 'game-over'
+  | 'illegal-move'
+  | 'bad-promotion'
   | 'not-your-turn'
   | 'card-budget'
   | 'card-unknown'
@@ -590,9 +659,22 @@ export type RefusalCode =
   | 'checks-king'
   | 'leaves-check'
   | 'no-move'
-  | 'no-move-on-arrival';
+  | 'no-move-on-arrival'
+  | 'effect-active'
+  | 'no-target-piece'
+  | 'nothing-to-undo'
+  | 'opponent-no-move';
 
-export type Outcome<I> = { ok: true; state: GameState; info: I } | { ok: false; error: string; code?: RefusalCode };
+/** Refus du moteur : le message affiché et sa nature. */
+export interface Refusal {
+  error: string;
+  code: RefusalCode;
+}
+
+export type Outcome<I> = { ok: true; state: GameState; info: I } | ({ ok: false } & Refusal);
+
+const refuse = (error: string, code: RefusalCode): { ok: false } & Refusal => ({ ok: false, error, code });
+const refusal = (error: string, code: RefusalCode): Refusal => ({ error, code });
 
 /** Duel : instantané de `s` avant le coup `next` (Retour arrière) ; on n'en garde que deux. */
 function pushSnapshot(n: GameState, s: GameState, next: Snapshot['next']) {
@@ -609,13 +691,15 @@ function pushSnapshot(n: GameState, s: GameState, next: Snapshot['next']) {
 }
 
 /**
- * Fin de tour commune à un coup et à un Rituel : décompte des effets, trait à l'adversaire (déjà donné par
- * le coup), clé de position et fin de partie éventuelle. Renvoie les effets arrivés et expirés.
+ * Fin de tour commune à un coup et à une carte qui termine le tour (Rituel ; toute carte si `cardEndsTurn`) :
+ * décompte des effets, trait à l'adversaire (déjà donné par le coup ou par passTurn), budget de cartes remis à zéro,
+ * clé de position et fin de partie éventuelle. Renvoie les effets arrivés et expirés.
  */
 function finishTurn(n: GameState, mover: Color): { arrived: number[]; expired: number[] } {
   const before = n.effects;
   n.effects = dropOrphanEffects(tickEffects(before, mover), n.pos);
   n.cardPlayed = false;
+  if (n.cardsThisTurn !== undefined) delete n.cardsThisTurn;
   n.forbidden = null;
   n.ply++;
   n.keys.push(positionKey(n));
@@ -636,17 +720,17 @@ function clearTerrainUnder(effects: Effect[], pos: Position, blocked: boolean[])
 }
 
 export function playMove(s: GameState, from: number, to: number, promo?: PieceType): Outcome<MoveInfo> {
-  if (s.result) return { ok: false, error: 'La partie est terminée.' };
+  if (s.result) return refuse('La partie est terminée.', 'game-over');
   const legal = legalMovesOf(s);
   const candidates = legal.filter(m => m.from === from && m.to === to);
-  if (!candidates.length) return { ok: false, error: 'Coup illégal.' };
+  if (!candidates.length) return refuse('Coup illégal.', 'illegal-move');
   const m = candidates.find(c => !(c.flags & F_PROMO) || c.promo === (promo ?? 'q'));
-  if (!m) return { ok: false, error: 'Promotion invalide.' };
+  if (!m) return refuse('Promotion invalide.', 'bad-promotion');
   const mover = s.pos.turn;
   const now = nowMods(s);
   const san = toSan(s.pos, m, legal);
   const n = cloneState(s);
-  if (catalogOf(s) === 'duel') pushSnapshot(n, s, { from: m.from, to: m.to, promo: m.promo, log: s.log.length });
+  if (catalogRules(s).snapshots) pushSnapshot(n, s, { from: m.from, to: m.to, promo: m.promo, log: s.log.length });
   const u = makeMove(n.pos, m);
   if (u.captured) n.captured[u.captured.c].push(u.captured.t);
   for (const x of u.blasted ?? []) n.captured[x.piece.c].push(x.piece.t);
@@ -693,21 +777,59 @@ export interface CardInfo {
   expired?: number[];
 }
 
-/** Vérifications communes : tour du joueur, carte disponible, une seule carte par tour. */
-function cardPrecheck(s: GameState, color: Color, index: number): string | null {
-  if (s.result) return 'La partie est terminée.';
-  if (s.pos.turn !== color) return "Ce n'est pas votre tour.";
-  if (s.cardPlayed) return 'Une seule carte par tour.';
+/** Vérifications communes : tour du joueur, carte disponible, budget de cartes du tour (castsLeft). */
+function cardPrecheck(s: GameState, color: Color, index: number): Refusal | null {
+  if (s.result) return refusal('La partie est terminée.', 'game-over');
+  if (s.pos.turn !== color) return refusal("Ce n'est pas votre tour.", 'not-your-turn');
+  if (castsLeft(s) <= 0) return refusal(refusBudget(rulesOf(s)), 'card-budget');
   const h = s.hands[color][index];
-  if (!h) return 'Carte inconnue.';
-  if (h.used) return 'Carte déjà utilisée.';
+  if (!h) return refusal('Carte inconnue.', 'card-unknown');
+  if (h.used) return refusal('Carte déjà utilisée.', 'card-used');
   return null;
+}
+
+/**
+ * Le trait passe à l'adversaire sans coup (carte qui termine le tour : Rituel, ou toute carte si `cardEndsTurn`) :
+ * plus de prise en passant, numéro de coup, règle des 50 coups. `pawnPush` (Grande Marée : des pions avancent) remet
+ * le compteur des 50 coups à zéro ; sinon la carte compte comme un demi-coup (décision Q6), sauf sous la Trêve ou
+ * l'Ère glaciaire, qui figent le compteur comme pour un coup.
+ */
+function passTurn(n: GameState, color: Color, o: { pawnPush: boolean; frozen?: boolean }) {
+  n.pos.ep = -1;
+  if (o.pawnPush) n.pos.halfmove = 0;
+  else if (!o.frozen) n.pos.halfmove++;
+  if (color === 'b') n.pos.fullmove++;
+  n.pos.turn = opposite(color);
+}
+
+/**
+ * La carte termine-t-elle le tour de son lanceur ici ? Un Rituel toujours, toute carte si les règles le disent
+ * (cardEndsTurn), sauf le Retour arrière (Duel), qui rend déjà le trait à l'adversaire en annulant son coup.
+ */
+const endsTurnHere = (card: CardId, def: CardDef, r: Rules) => cardEndsTurn(def, r) && card !== 'rewind';
+
+/**
+ * Cartes que `color` a lancées depuis son dernier coup, dans l'ordre (vide si ce n'est pas son tour ou si la partie
+ * est finie). Avec une carte par tour, au plus une ; elle reste listée tant que le coup n'est pas joué.
+ */
+export function castsThisTurn(s: GameState, color: Color): CardId[] {
+  if (s.result || s.pos.turn !== color) return [];
+  const out: CardId[] = [];
+  for (let i = s.log.length - 1; i >= 0; i--) {
+    const e = s.log[i];
+    if (e.k === 'move' || e.c !== color) break;
+    if (!e.undone && isCardId(e.card)) out.unshift(e.card);
+  }
+  return out;
 }
 
 function bestRevivable(captured: PieceType[]): PieceType | null {
   for (const t of ['r', 'b', 'n'] as PieceType[]) if (captured.includes(t)) return t;
   return null;
 }
+
+/** Rangées d'un Terrain ou de la Grande Marée dans les règles de la partie (0 à 7 ; relatives au camp pour la Marée). */
+const ranksOf = (s: GameState, card: 'ice_wall' | 'rift' | 'tide'): readonly number[] => tuneOf(s, card).ranks ?? CARDS[card].ranks!;
 
 /** Faille : cases vides (et sans Terrain) de la rangée, qui formeront le gouffre. */
 function riftSquares(s: GameState, rank: number): number[] {
@@ -721,20 +843,22 @@ function riftSquares(s: GameState, rank: number): number[] {
 }
 
 /**
- * Grande Marée : pions des deux camps sur leurs 2e à 5e rangées dont la case suivante est libre (dans la
- * position d'avant la marée : déplacement simultané), ni murée ni dans le gouffre. Deux pions qui visent la
- * même case ne bougent ni l'un ni l'autre. Les pions gelés (Ère glaciaire) ne bougent pas.
+ * Grande Marée : pions des deux camps sur les rangées de la Marée (2e à 5e par défaut, relatives à leur camp) dont
+ * la case suivante est libre (dans la position d'avant la marée : déplacement simultané), ni murée ni dans le
+ * gouffre. Deux pions qui visent la même case ne bougent ni l'un ni l'autre. Les pions gelés (Ère glaciaire) ne
+ * bougent pas.
  */
 export function tidePushes(s: GameState): { from: number; to: number }[] {
   const b = s.pos.board;
   const mods = nowMods(s);
   if (mods.pawnsFrozen) return [];
+  const ranks = ranksOf(s, 'tide');
   const pushes: { from: number; to: number }[] = [];
   for (let i = 0; i < 64; i++) {
     const p = b[i];
     if (!p || p.t !== 'p' || mods.frozen.has(p.id)) continue;
     const rel = p.c === 'w' ? rankOf(i) : 7 - rankOf(i);
-    if (rel < 1 || rel > 4) continue;
+    if (!ranks.includes(rel)) continue;
     const to = i + (p.c === 'w' ? 8 : -8);
     if (b[to] || mods.blocked[to]) continue;
     pushes.push({ from: i, to });
@@ -753,16 +877,17 @@ function rawCandidates(s: GameState, color: Color, card: CardId, partial: number
   };
   switch (card) {
     case 'ice_wall': {
-      // Pouvoirs : une case vide des rangées 3 à 6 ; Duel (anciennes parties) : n'importe quelle case vide.
+      // Pouvoirs : une case vide de ses rangées (3e à 6e par défaut) ; Duel (anciennes parties) : n'importe laquelle.
       const terrain = terrainSquares(s.effects);
-      const anyRank = catalogOf(s) === 'duel';
-      each((p, i) => !p && !mods.blocked[i] && !terrain.has(i) && (anyRank || (rankOf(i) >= 2 && rankOf(i) <= 5)));
+      const anyRank = catalogRules(s).wallAnyRank;
+      const ranks = ranksOf(s, 'ice_wall');
+      each((p, i) => !p && !mods.blocked[i] && !terrain.has(i) && (anyRank || ranks.includes(rankOf(i))));
       break;
     }
     case 'rift': {
-      // Une seule Faille à la fois ; la cible désigne la rangée (4e ou 5e), qui doit avoir une case vide.
+      // Une seule Faille à la fois ; la cible désigne la rangée (4e ou 5e par défaut), qui doit avoir une case vide.
       if (s.effects.some(e => e.card === 'rift')) break;
-      for (const rank of [3, 4]) if (riftSquares(s, rank).length) for (let f = 0; f < 8; f++) out.push(rank * 8 + f);
+      for (const rank of ranksOf(s, 'rift')) if (riftSquares(s, rank).length) for (let f = 0; f < 8; f++) out.push(rank * 8 + f);
       out.sort((x, y) => x - y);
       break;
     }
@@ -810,31 +935,37 @@ function rawCandidates(s: GameState, color: Color, card: CardId, partial: number
 }
 
 /** Applique l'effet brut de la carte (sans les contrôles de fin). */
-function applyCardRaw(s: GameState, color: Color, index: number, targets: number[], skin: string): { state: GameState; info: CardInfo } | string {
+function applyCardRaw(s: GameState, color: Color, index: number, targets: number[], skin: string): { state: GameState; info: CardInfo } | Refusal {
   const card = s.hands[color][index].card;
   const def = CARDS[card];
-  if (targets.length !== def.targets) return 'Cible manquante.';
+  const rules = rulesOf(s);
+  if (targets.length !== def.targets) return refusal('Cible manquante.', 'target-missing');
   for (let k = 0; k < targets.length; k++) {
-    if (!rawCandidates(s, color, card, targets.slice(0, k)).includes(targets[k])) return 'Cible invalide.';
+    if (!rawCandidates(s, color, card, targets.slice(0, k)).includes(targets[k])) return refusal('Cible invalide.', 'target-invalid');
   }
-  if (def.timedOnly && !s.timed) return 'Cette carte demande une partie avec pendule.';
+  if (def.timedOnly && !s.timed) return refusal('Cette carte demande une partie avec pendule.', 'needs-clock');
   const them = opposite(color);
   const n = cloneState(s);
   n.hands[color][index] = { card, used: true };
-  n.cardPlayed = true;
+  // Budget de cartes du tour : `cardPlayed` dès qu'il est épuisé ; le compteur n'est écrit qu'avec plusieurs
+  // cartes par tour (au défaut, une carte : cardPlayed vrai, rien d'autre).
+  const k = (s.cardsThisTurn ?? (s.cardPlayed ? 1 : 0)) + 1;
+  n.cardPlayed = k >= rules.cardsPerTurn;
+  if (rules.cardsPerTurn > 1) n.cardsThisTurn = k;
   const info: CardInfo = { card, caster: color, targets, pieces: [], skin };
   const addEffect = (extra: Partial<Effect>) => {
-    // Pouvoirs : effet des deux camps (décompté sur leurs coups, ou permanent). Duel : `turns` coups d'un camp
-    // (le Mur de glace d'une ancienne partie Duel garde ses 3 coups adverses).
-    const global = catalogOf(s) === 'climats' && (def.coups !== undefined || !!def.permanent);
+    // Pouvoirs : effet des deux camps (décompté sur leurs coups, ou permanent), durée des règles de la partie.
+    // Duel : `turns` coups d'un camp (le Mur de glace d'une ancienne partie Duel garde ses 3 coups adverses).
+    const coups = tuneOf(s, card).coups;
+    const global = catalogRules(s).globalEffects && (coups !== undefined || !!def.permanent);
     const permanent = global && !!def.permanent;
-    const turns = permanent ? 0 : (global ? def.coups : def.turns) ?? 1;
+    const turns = permanent ? 0 : (global ? coups : def.turns) ?? 1;
     const e: Effect = {
       id: n.nextEffectId++, card, caster: color, countsOn: global ? color : def.countsOnOpponent ? them : color,
       remaining: turns, total: turns, skin,
       ...(global ? { global: true } : {}),
       ...(permanent ? { permanent: true } : {}),
-      ...(def.presage ? { pending: true, delay: 2 } : {}),
+      ...(def.presage ? { pending: true, delay: rules.presageDelay } : {}),
       ...extra,
     };
     n.effects = [...n.effects, e];
@@ -849,7 +980,7 @@ function applyCardRaw(s: GameState, color: Color, index: number, targets: number
     case 'ice_age':
     case 'blast':
       // Un seul Climat annoncé à la fois (R1) ; il remplacera le Climat actif à son arrivée.
-      if (s.effects.some(e => e.pending && isClimate(e.card))) return 'Un Climat est déjà annoncé.';
+      if (s.effects.some(e => e.pending && isClimate(e.card))) return refusal('Un Climat est déjà annoncé.', 'climate-pending');
       addEffect({});
       break;
     // ----- Terrains -----
@@ -861,32 +992,28 @@ function applyCardRaw(s: GameState, color: Color, index: number, targets: number
       break;
     // ----- Événements -----
     case 'tide': {
-      // Rituel : la marée est le coup du lanceur. Sous la Lune de sang, qui peut prendre doit prendre : la marée,
-      // qui ne prend rien, n'est permise que si aucune capture n'est jouable.
+      // Rituel : la marée est le coup du lanceur (passTurn, plus bas). Sous la Lune de sang, qui peut prendre doit
+      // prendre : la marée, qui ne prend rien, n'est permise que si aucune capture n'est jouable.
       const mods = nowMods(s);
-      if (mods.mustCapture && strictMoves(s, mods, afterMods(s)).some(isCapture)) return 'La Lune de sang impose une capture.';
+      if (mods.mustCapture && strictMoves(s, mods, afterMods(s)).some(isCapture)) return refusal('La Lune de sang impose une capture.', 'must-capture');
       const pushes = tidePushes(s);
-      if (!pushes.length) return 'Aucun pion ne peut avancer.';
+      if (!pushes.length) return refusal('Aucun pion ne peut avancer.', 'no-pawn');
       const pieces = pushes.map(x => b[x.from]!);
       for (const x of pushes) b[x.from] = null;
       pushes.forEach((x, k) => { b[x.to] = pieces[k]; });
       info.pieces = pieces.map(p => p.id);
       info.moves = pushes;
       info.ritual = true;
-      n.pos.ep = -1;
-      n.pos.halfmove = 0;
-      if (color === 'b') n.pos.fullmove++;
-      n.pos.turn = them;
       break;
     }
     // ----- Duel -----
     case 'time_warp':
-      if (timeWarpOn(s, them)) return 'La pendule adverse est déjà accélérée.';
+      if (timeWarpOn(s, them)) return refusal('La pendule adverse est déjà accélérée.', 'effect-active');
       addEffect({});
       break;
     case 'gravity':
-      if (s.effects.some(e => e.card === 'gravity' && e.countsOn === them)) return 'Gravité déjà active.';
-      if (!b.some(p => p && p.c === them && isSlider(p.t))) return "L'adversaire n'a ni tour, ni fou, ni dame.";
+      if (s.effects.some(e => e.card === 'gravity' && e.countsOn === them)) return refusal('Gravité déjà active.', 'effect-active');
+      if (!b.some(p => p && p.c === them && isSlider(p.t))) return refusal("L'adversaire n'a ni tour, ni fou, ni dame.", 'no-target-piece');
       addEffect({});
       break;
     case 'freeze':
@@ -926,11 +1053,13 @@ function applyCardRaw(s: GameState, color: Color, index: number, targets: number
     }
     case 'rewind': {
       const snap = s.snaps[s.snaps.length - 1];
-      if (!snap || snap.pos.turn !== them) return "Aucun coup adverse à annuler.";
+      if (!snap || snap.pos.turn !== them) return refusal('Aucun coup adverse à annuler.', 'nothing-to-undo');
       n.pos = clonePosition(snap.pos);
       n.effects = snap.effects;
       n.captured = { w: snap.captured.w.slice(), b: snap.captured.b.slice() };
       n.cardPlayed = snap.cardPlayed;
+      // Les instantanés ne gardent que `cardPlayed` : le compteur de l'adversaire repart de là.
+      if (n.cardsThisTurn !== undefined) delete n.cardsThisTurn;
       n.ply = snap.ply;
       n.keys = s.keys.slice(0, snap.keysLen);
       n.snaps = s.snaps.slice(0, -1);
@@ -942,8 +1071,11 @@ function applyCardRaw(s: GameState, color: Color, index: number, targets: number
     }
   }
   n.log.push({ k: 'card', c: color, card, targets: info.targets });
-  if (def.ritual) {
-    // Le Rituel termine le tour comme un coup (décompte des effets, trait adverse, fin de partie).
+  if (endsTurnHere(card, def, rules)) {
+    // Un Rituel (toute carte si `cardEndsTurn`) termine le tour comme un coup : trait adverse, décompte des effets,
+    // fin de partie. Sous la Trêve ou l'Ère glaciaire, le compteur des 50 coups ne monte pas, comme pour un coup.
+    const now = nowMods(s);
+    passTurn(n, color, { pawnPush: card === 'tide', frozen: now.truce || now.pawnsFrozen });
     const fx = finishTurn(n, color);
     info.arrived = fx.arrived;
     info.expired = fx.expired;
@@ -961,26 +1093,36 @@ function probeState(n: GameState, turn: Color, effects: Effect[]): GameState {
     pos.turn = turn;
     pos.ep = -1;
   }
-  return { ...n, pos, effects, forbidden: null, cardPlayed: false, result: null };
+  const p: GameState = { ...n, pos, effects, forbidden: null, cardPlayed: false, result: null };
+  if (p.cardsThisTurn !== undefined) delete p.cardsThisTurn;
+  return p;
 }
 
 /**
  * Présage (Climats) : R4b jugée aussi à l'arrivée, en supposant que les coups d'ici là ne changent rien. Au tour
- * suivant du lanceur, l'effet arrivé, il garde un coup légal sous les effets, sauf s'il était déjà bloqué avant
- * la carte. Sans cela, un camp réduit aux coups de pion annoncerait l'Ère glaciaire pour pousser ensuite ses
- * pions par « la magie cède » pendant que ceux de l'adversaire sont gelés (de même pour la Trêve quand il n'a
- * que des prises). La sonde compare le même monde avec et sans le nouvel effet : seul l'effet de la carte est
- * jugé.
+ * du lanceur où l'effet arrive, il garde un coup légal sous les effets, sauf s'il était déjà bloqué avant la carte.
+ * Sans cela, un camp réduit aux coups de pion annoncerait l'Ère glaciaire pour pousser ensuite ses pions par « la
+ * magie cède » pendant que ceux de l'adversaire sont gelés (de même pour la Trêve quand il n'a que des prises). La
+ * sonde compare le même monde avec et sans le nouvel effet : seul l'effet de la carte est jugé.
+ * L'arrivée : autant de décomptes que le délai restant de l'effet, en alternant les camps à partir de celui qui a le
+ * trait dans `n` (le lanceur, ou l'adversaire si la carte a déjà terminé le tour).
  * Les autres garde-fous n'ont pas besoin d'être jugés à l'arrivée : aucun Climat ne change les attaques, donc
  * une arrivée ne met jamais un roi en échec (R4a) ni l'adversaire sans aucun coup (« la magie cède » lui rend
  * toujours ses coups ordinaires).
  */
-function presageRefusal(s: GameState, n: GameState, color: Color, id: number): string | null {
-  const them = opposite(color);
+function presageRefusal(s: GameState, n: GameState, color: Color, id: number): Refusal | null {
+  const delay = n.effects.find(e => e.id === id)?.delay ?? 0;
   const others = n.effects.filter(e => e.id !== id);
-  const arrival = (effects: Effect[]) => probeState(n, color, tickEffects(tickEffects(effects, color), them));
+  const arrival = (effects: Effect[]) => {
+    let mover = n.pos.turn;
+    for (let k = 0; k < delay; k++) {
+      effects = tickEffects(effects, mover);
+      mover = opposite(mover);
+    }
+    return probeState(n, color, effects);
+  };
   if (hasStrictLegal(s) && hasStrictLegal(arrival(others)) && !hasStrictLegal(arrival(n.effects))) {
-    return 'À son arrivée, cette carte vous laisserait sans aucun coup.';
+    return refusal('À son arrivée, cette carte vous laisserait sans aucun coup.', 'no-move-on-arrival');
   }
   return null;
 }
@@ -989,33 +1131,38 @@ function presageRefusal(s: GameState, n: GameState, color: Color, id: number): s
  * Garde-fous après une carte (R4) :
  * a) elle ne met jamais le roi adverse en échec ;
  * b) le lanceur garde un coup légal sous les effets (« la magie cède » ne compte pas, sauf s'il était déjà
- *    bloqué ; Présage : aussi à l'arrivée, `presageRefusal`) ; un Rituel est un coup : il ne peut pas laisser
- *    le roi du lanceur en échec.
+ *    bloqué ; Présage : aussi à l'arrivée, `presageRefusal`) ; une carte qui termine le tour (Rituel, ou toute carte
+ *    si `cardEndsTurn`) est un coup : elle ne peut pas laisser le roi du lanceur en échec (un Présage qui termine
+ *    le tour est aussi jugé à son arrivée).
  */
-function validateAfterCard(s: GameState, n: GameState, color: Color, card: CardId, info: CardInfo): string | null {
+function validateAfterCard(s: GameState, n: GameState, color: Color, card: CardId, info: CardInfo): Refusal | null {
   if (card === 'rewind') {
-    return hasLegal(n) ? null : "L'adversaire n'aurait aucun autre coup possible.";
+    return hasLegal(n) ? null : refusal("L'adversaire n'aurait aucun autre coup possible.", 'opponent-no-move');
   }
   const them = opposite(color);
-  if (CARDS[card].ritual) {
-    if (inCheck(n.pos, color, nowMods(n))) return 'Ce rituel laisserait votre roi en échec.';
-    if (inCheck(n.pos, them, nowMods(n)) || sideInCheck(n)) return 'Une carte ne peut pas mettre le roi adverse en échec.';
+  const def = CARDS[card];
+  if (endsTurnHere(card, def, rulesOf(s))) {
+    if (inCheck(n.pos, color, nowMods(n))) {
+      return refusal(def.ritual ? 'Ce rituel laisserait votre roi en échec.' : 'Cette carte laisserait votre roi en échec.', 'leaves-check');
+    }
+    if (inCheck(n.pos, them, nowMods(n)) || sideInCheck(n)) return refusal('Une carte ne peut pas mettre le roi adverse en échec.', 'checks-king');
+    if (def.presage && info.effectId !== undefined && magicYields(n)) return presageRefusal(s, n, color, info.effectId);
     return null;
   }
-  if (inCheck(n.pos, them, nowMods(n))) return 'Une carte ne peut pas mettre le roi adverse en échec.';
-  if (!hasLegal(n)) return 'Après cette carte, vous n’auriez plus aucun coup légal.';
-  if (magicYields(n) && !hasStrictLegal(n) && hasStrictLegal(s)) return 'Cette carte vous laisserait sans aucun coup.';
-  if (CARDS[card].presage && info.effectId !== undefined && magicYields(n)) return presageRefusal(s, n, color, info.effectId);
+  if (inCheck(n.pos, them, nowMods(n))) return refusal('Une carte ne peut pas mettre le roi adverse en échec.', 'checks-king');
+  if (!hasLegal(n)) return refusal('Après cette carte, vous n’auriez plus aucun coup légal.', 'no-move');
+  if (magicYields(n) && !hasStrictLegal(n) && hasStrictLegal(s)) return refusal('Cette carte vous laisserait sans aucun coup.', 'no-move');
+  if (def.presage && info.effectId !== undefined && magicYields(n)) return presageRefusal(s, n, color, info.effectId);
   return null;
 }
 
 function tryCard(s: GameState, color: Color, index: number, targets: number[], skin: string): Outcome<CardInfo> {
   const pre = cardPrecheck(s, color, index);
-  if (pre) return { ok: false, error: pre };
+  if (pre) return { ok: false, ...pre };
   const r = applyCardRaw(s, color, index, targets, skin);
-  if (typeof r === 'string') return { ok: false, error: r };
+  if (!('state' in r)) return { ok: false, ...r };
   const err = validateAfterCard(s, r.state, color, s.hands[color][index].card, r.info);
-  if (err) return { ok: false, error: err };
+  if (err) return { ok: false, ...err };
   return { ok: true, state: r.state, info: r.info };
 }
 
@@ -1042,15 +1189,20 @@ export function cardPlayable(s: GameState, color: Color, index: number): boolean
 
 /** Raison pour laquelle la carte ne peut pas être jouée maintenant (sans cible : la première trouvée), ou null. */
 export function cardRefusal(s: GameState, color: Color, index: number, targets: number[] = []): string | null {
+  return cardRefusalInfo(s, color, index, targets)?.error ?? null;
+}
+
+/** Comme cardRefusal, avec la nature du refus (code) : le client teste le code, pas le texte. */
+export function cardRefusalInfo(s: GameState, color: Color, index: number, targets: number[] = []): Refusal | null {
   const r = tryCard(s, color, index, targets, '');
-  return r.ok ? null : r.error;
+  return r.ok ? null : { error: r.error, code: r.code };
 }
 
 export function playCard(s: GameState, color: Color, index: number, targets: number[], skin: string): Outcome<CardInfo> {
   const r = tryCard(s, color, index, targets, skin);
   if (!r.ok) return r;
-  // Un Rituel a déjà évalué la fin de partie pour l'adversaire (finishTurn).
-  if (!r.info.ritual) r.state.result = evaluateEnd(r.state);
+  // Une carte qui termine le tour (Rituel) a déjà évalué la fin de partie pour l'adversaire (finishTurn).
+  if (!endsTurnHere(r.info.card, CARDS[r.info.card], rulesOf(s))) r.state.result = evaluateEnd(r.state);
   return r;
 }
 
@@ -1078,13 +1230,18 @@ export function positionKey(s: GameState): string {
  * Paires de Murs de glace (rangées 3 à 6) avec lesquelles une seule pièce mineure peut mater : Roi et Cavalier, ou
  * Roi et Fou de la bonne couleur, contre Roi. Vérifié par force brute : aucun mat avec un seul Mur ; ces 16 paires, au
  * bord de l'échiquier, suffisent au cavalier, et chacune à une seule couleur de fou (`light` : fou de cases claires ;
- * Murs a3 et a5, Rc4, Fc6# contre Ra4).
+ * Murs a3 et a5, Rc4, Fc6# contre Ra4). Valable seulement pour ces rangées (WALL_MATE_RANKS) : avec d'autres rangées
+ * du Mur, la table n'est pas utilisée (terrainMate considère un mat possible dès qu'un Mur est posé ou en main).
  */
 const WALL_MATE_PAIRS: { squares: [number, number]; light: boolean }[] = (
   [['a3', 'b4', 1], ['a3', 'a5', 1], ['b3', 'a4', 0], ['g3', 'h4', 1], ['h3', 'g4', 0], ['h3', 'h5', 0],
     ['a4', 'b5', 0], ['a4', 'a6', 0], ['b4', 'a5', 1], ['g4', 'h5', 0], ['h4', 'g5', 1], ['h4', 'h6', 1],
     ['a5', 'b6', 1], ['b5', 'a6', 0], ['g5', 'h6', 1], ['h5', 'g6', 0]] as const
 ).map(([x, y, l]) => ({ squares: [sqIndex(x), sqIndex(y)], light: l === 1 }));
+/** Rangées du Mur pour lesquelles WALL_MATE_PAIRS a été calculée (3e à 6e). */
+const WALL_MATE_RANKS = [2, 3, 4, 5];
+const sameRanks = (a: readonly number[], b: readonly number[]) =>
+  a.length === b.length && [...a].sort((x, y) => x - y).every((x, i) => x === b[i]);
 
 /** Cartes `card` encore en main, des deux camps (un mat aidé compte : chacun peut poser des Terrains). */
 const unusedCards = (s: GameState, card: CardId) =>
@@ -1109,6 +1266,8 @@ function terrainMate(s: GameState, m: Minors): boolean {
   }
   const wallCards = unusedCards(s, 'ice_wall');
   if ((riftPosed || unusedCards(s, 'rift') > 0) && walls.size + wallCards > 0) return true;
+  // Rangées du Mur changées : la table ne vaut plus ; par prudence, un Mur posé ou en main permet un mat.
+  if (!sameRanks(ranksOf(s, 'ice_wall'), WALL_MATE_RANKS)) return walls.size + wallCards > 0;
   return WALL_MATE_PAIRS.some(pair => {
     if (!m.knight && !(pair.light ? m.lightBishop : m.darkBishop)) return false;
     return pair.squares.filter(q => !walls.has(q)).length <= wallCards;
@@ -1132,7 +1291,7 @@ function cardMateHelp(s: GameState, c: Color): boolean {
     }
   });
   const minor = m.knight || m.lightBishop || m.darkBishop;
-  if (catalogOf(s) !== 'duel') return minor && terrainMate(s, m);
+  if (catalogRules(s).terrainMate) return minor && terrainMate(s, m);
   const inHand = (card: CardId) => s.hands[c].some(h => !h.used && h.card === card);
   if (inHand('revive') && s.captured[c].some(t => t !== 'q')) return true;
   return minor && (inHand('ice_wall') || s.effects.some(e => e.card === 'ice_wall'));
@@ -1158,6 +1317,8 @@ function insufficientMaterial(s: GameState): boolean {
 /**
  * Fin de partie éventuelle pour le camp au trait. Sans coup jouable (« la magie cède » comprise) : une carte
  * qui en redonne un doit être jouée s'il en existe une (R4c), sinon mat si le roi est en échec (R5), pat sinon.
+ * Nulles réglementaires selon les règles de la partie : règle des 50 coups (`fiftyHalfmoves` demi-coups) et
+ * répétition (`repetitions` occurrences de la même position).
  */
 export function evaluateEnd(s: GameState): Result | null {
   const turn = s.pos.turn;
@@ -1165,9 +1326,10 @@ export function evaluateEnd(s: GameState): Result | null {
     if (!s.cardPlayed && hasPlayableCard(s, turn)) return null;
     return sideInCheck(s, turn) ? { winner: opposite(turn), reason: 'checkmate' } : { winner: null, reason: 'stalemate' };
   }
-  if (s.pos.halfmove >= 100) return { winner: null, reason: 'fifty' };
+  const rules = rulesOf(s);
+  if (s.pos.halfmove >= rules.fiftyHalfmoves) return { winner: null, reason: 'fifty' };
   const key = s.keys[s.keys.length - 1];
-  if (key && s.keys.filter(k => k === key).length >= 3) return { winner: null, reason: 'repetition' };
+  if (key && s.keys.filter(k => k === key).length >= rules.repetitions) return { winner: null, reason: 'repetition' };
   if (insufficientMaterial(s)) return { winner: null, reason: 'insufficient' };
   return null;
 }

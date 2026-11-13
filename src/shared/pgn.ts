@@ -1,59 +1,30 @@
 // Notation : lecture et écriture de la notation algébrique (SAN), du FEN et du PGN.
 // Extension Spellmate : une carte jouée s'écrit en commentaire avant le coup, `{[%spell freeze f6]}`,
 // et une carte qui remplace le coup (Rituel) est suivie du coup nul `--`.
+// Les règles d'une partie qui diffèrent des règles historiques (RULES_V1) s'écrivent dans l'en-tête
+// `[SpellmateRules "{…}"]` (JSON) et sont relues à l'import ; sans cet en-tête, la partie suit RULES_V1.
 // Tout est pur et partagé : la page Analyse s'en sert, les tests aussi.
 
-import {
-  Color, F_CASTLE_K, F_CASTLE_Q, Move, PieceType, fromFen, inCheck, NO_MODS, opposite, rankOf,
-  sqIndex, sqName, toFen,
-} from './chess';
-import { CARDS, CardId, Catalog, isCardId } from './cards';
+import { F_CASTLE_K, F_CASTLE_Q, Move, PieceType, sqIndex, sqName, toFen } from './chess';
+import type { Color } from './chess';
+import { CARDS, CATALOG_IDS, CardId, Catalog, LEGACY_CATALOG, isCardId } from './cards';
 import {
   GameState, LogEntry, createGame, createGameFromFen, legalMovesOf, playCard, playMove,
 } from './game';
+import { RULES_V1, basicFenError, parseRules, rulesOf } from './rules';
+import type { Rules } from './rules';
 
 export const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 // ---------------------------------------------------------------------------------------------
 // FEN
 
-/** Vérifie une chaîne FEN ; renvoie un message d'erreur en français, ou null si elle est valable. */
+/**
+ * Vérifie une chaîne FEN ; renvoie un message d'erreur en français, ou null si elle est valable. Mêmes contrôles et
+ * mêmes phrases que basicFenError (rules.ts), sans l'indication « roque standard seulement », propre aux règles.
+ */
 export function validateFen(fen: string): string | null {
-  const parts = fen.trim().split(/\s+/);
-  if (parts.length < 2) return 'Le FEN doit contenir au moins la position et le trait.';
-  const rows = parts[0].split('/');
-  if (rows.length !== 8) return 'La position doit compter 8 rangées séparées par « / ».';
-  for (const row of rows) {
-    let n = 0;
-    for (const ch of row) {
-      if (/[1-8]/.test(ch)) n += Number(ch);
-      else if (/[prnbqkPRNBQK]/.test(ch)) n++;
-      else return `Caractère inconnu dans la position : « ${ch} ».`;
-    }
-    if (n !== 8) return 'Chaque rangée doit compter exactement 8 cases.';
-  }
-  if (!/^[wb]$/.test(parts[1])) return 'Le trait doit être « w » (Blancs) ou « b » (Noirs).';
-  if (parts[2] && !/^(-|K?Q?k?q?)$/.test(parts[2])) return 'Droits de roque invalides.';
-  if (parts[3] && !/^(-|[a-h][36])$/.test(parts[3])) return 'Case de prise en passant invalide.';
-  if (parts[4] && !/^\d+$/.test(parts[4])) return 'Compteur des 50 coups invalide.';
-  if (parts[5] && !/^\d+$/.test(parts[5])) return 'Numéro de coup invalide.';
-  const { pos } = fromFen(fen);
-  const count = (t: PieceType, c: Color) => pos.board.filter(p => p && p.t === t && p.c === c).length;
-  if (count('k', 'w') !== 1 || count('k', 'b') !== 1) return 'Il faut exactement un roi blanc et un roi noir.';
-  for (let i = 0; i < 64; i++) {
-    const p = pos.board[i];
-    if (p && p.t === 'p' && (rankOf(i) === 0 || rankOf(i) === 7)) return 'Un pion ne peut pas se trouver sur la première ou la dernière rangée.';
-  }
-  if (count('p', 'w') > 8 || count('p', 'b') > 8) return 'Pas plus de 8 pions par camp.';
-  if (inCheck(pos, opposite(pos.turn), NO_MODS)) return 'Le camp qui n’a pas le trait ne peut pas être en échec.';
-  // Droits de roque cohérents avec la position
-  const at = (s: string) => pos.board[sqIndex(s)];
-  const is = (s: string, t: PieceType, c: Color) => at(s)?.t === t && at(s)?.c === c;
-  if (pos.castling & 1 && !(is('e1', 'k', 'w') && is('h1', 'r', 'w'))) return 'Petit roque blanc impossible dans cette position.';
-  if (pos.castling & 2 && !(is('e1', 'k', 'w') && is('a1', 'r', 'w'))) return 'Grand roque blanc impossible dans cette position.';
-  if (pos.castling & 4 && !(is('e8', 'k', 'b') && is('h8', 'r', 'b'))) return 'Petit roque noir impossible dans cette position.';
-  if (pos.castling & 8 && !(is('e8', 'k', 'b') && is('a8', 'r', 'b'))) return 'Grand roque noir impossible dans cette position.';
-  return null;
+  return basicFenError(fen)?.replace(/ \(roque standard seulement[^)]*\)/, '') ?? null;
 }
 
 /** Complète un FEN partiel (position et trait) avec les champs par défaut. */
@@ -62,11 +33,12 @@ export function normalizeFen(fen: string): string {
   return [p[0], p[1] ?? 'w', p[2] ?? '-', p[3] ?? '-', p[4] ?? '0', p[5] ?? '1'].join(' ');
 }
 
-/** Partie sans cartes à partir d'un FEN (analyse libre). */
-export function stateFromFen(fen: string, catalog: Catalog = 'aucune'): GameState {
-  const s = createGameFromFen(normalizeFen(fen), { w: [], b: [] }, false);
-  s.catalog = catalog;
-  return s;
+/**
+ * Partie sans cartes en main à partir d'un FEN (analyse libre, lecture d'un PGN). `rules` : règles de la partie
+ * relue (défaut : celles des nouvelles parties) ; `timed` : partie à pendule (cartes `timedOnly` permises).
+ */
+export function stateFromFen(fen: string, catalog: Catalog = 'aucune', opts: { rules?: Rules; timed?: boolean } = {}): GameState {
+  return createGameFromFen(normalizeFen(fen), { w: [], b: [] }, opts.timed ?? false, catalog, { rules: opts.rules });
 }
 
 export function fenOf(s: GameState): string {
@@ -82,7 +54,7 @@ const SAN_RE = /^([A-Z])?([a-h])?([1-8])?(x|:)?([a-h][1-8])(?:=?\(?([A-Z])\)?)?$
 
 export type SanLang = 'en' | 'fr';
 
-/** Nettoie un coup : suffixes d'échec, annotations, « e.p. », zéros du roque. */
+/** Nettoie un coup : suffixes d'échec, astérisque d'une prise qui explose (Déflagration), annotations, « e.p. », zéros du roque. */
 export function cleanSan(raw: string): string {
   return raw
     .trim()
@@ -238,13 +210,16 @@ export function treeFromLog(start: GameState, log: LogEntry[]): { root: TreeNode
   return { root, complete: true };
 }
 
-/** État initial d'une partie du site (mains visibles ; une carte retirée du jeu est écartée). */
-export function initialStateOf(final: Pick<GameState, 'hands' | 'timed' | 'catalog'>): GameState {
+/**
+ * État initial d'une partie du site (mains visibles ; une carte retirée du jeu est écartée), avec les règles de la
+ * partie (rulesOf : RULES_V1 si elle n'en porte pas), jamais celles du jour.
+ */
+export function initialStateOf(final: Pick<GameState, 'hands' | 'timed' | 'catalog' | 'rules'>): GameState {
   const hands = {
     w: final.hands.w.map(h => h.card).filter((c): c is CardId => !!c && isCardId(c)),
     b: final.hands.b.map(h => h.card).filter((c): c is CardId => !!c && isCardId(c)),
   };
-  return createGame(hands, final.timed, final.catalog ?? 'duel');
+  return createGame(hands, final.timed, final.catalog ?? LEGACY_CATALOG, { rules: rulesOf(final) });
 }
 
 /** Suite principale à partir d'un nœud (le nœud compris). */
@@ -485,6 +460,37 @@ export interface PgnGame {
   result: string;
 }
 
+/**
+ * Règles d'un PGN : l'en-tête SpellmateRules (JSON) s'il existe, sinon RULES_V1 (un PGN sans cet en-tête a été
+ * écrit pour une partie aux règles historiques, ou vient d'ailleurs). Erreur explicite si l'en-tête est illisible,
+ * d'un schéma inconnu (partie plus récente que ce code) ou injouable.
+ */
+export function rulesOfPgn(h: Record<string, string>): Rules {
+  if (h.SpellmateRules === undefined) return RULES_V1;
+  let x: unknown;
+  try {
+    x = JSON.parse(h.SpellmateRules);
+  } catch {
+    throw new PgnError('En-tête SpellmateRules illisible : les règles de la partie sont inconnues.');
+  }
+  const schema = (x as { schema?: unknown } | null)?.schema;
+  if (schema !== RULES_V1.schema) {
+    throw new PgnError(`Règles de la partie d'une version inconnue (schéma ${String(schema)}) : mettez la page à jour pour relire ce PGN.`);
+  }
+  const r = parseRules(x);
+  if (!r) throw new PgnError('En-tête SpellmateRules invalide : ces règles ne sont pas jouables.');
+  return r;
+}
+
+/**
+ * Partie à pendule ? D'après l'en-tête TimeControl : « - » veut dire sans pendule ; une cadence, avec ; absent ou
+ * « ? » (inconnu), on suppose une pendule, pour relire les cartes qui en demandent une (Sablier fou) : elles n'ont
+ * pu être jouées que dans une partie à pendule.
+ */
+export function timedOfPgn(h: Record<string, string>): boolean {
+  return h.TimeControl?.trim() !== '-';
+}
+
 /** Lit un PGN (première partie du texte). Lève PgnError avec un message en français. */
 export function readPgn(text: string): PgnGame {
   const parsed = parsePgnText(text);
@@ -494,8 +500,8 @@ export function readPgn(text: string): PgnGame {
     const err = validateFen(fen);
     if (err) throw new PgnError(`FEN de l'en-tête invalide : ${err}`);
   }
-  const catalog = (['climats', 'duel', 'aucune'] as Catalog[]).find(c => c === h.Catalog) ?? 'aucune';
-  const start = stateFromFen(fen, catalog);
+  const catalog = CATALOG_IDS.find(c => c === h.Catalog) ?? 'aucune';
+  const start = stateFromFen(fen, catalog, { rules: rulesOfPgn(h) });
   const root = makeRoot(start);
   if (parsed.intro) root.comment = parsed.intro;
   const lang = detectLang(parsed.entries);
@@ -597,6 +603,8 @@ export function writePgn(headers: Record<string, string>, root: TreeNode, result
     h.Variant = 'Spellmate';
     if (root.state.catalog) h.Catalog = root.state.catalog;
   }
+  // Règles de la partie, seulement si elles diffèrent des règles historiques (rien au réglage par défaut).
+  if (root.state.rules) h.SpellmateRules = JSON.stringify(root.state.rules);
   const keys = [...TAG_ORDER, ...Object.keys(h).filter(k => !TAG_ORDER.includes(k))];
   const tags = keys.map(k => `[${k} "${escapeTag(h[k])}"]`).join('\n');
   const moves = writeMovetext(root);

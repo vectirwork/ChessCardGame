@@ -1,9 +1,3 @@
-# Dette du lot 1 (moteur, cartes, IA : refusBudget, pouvoirs(), limitesMain… (text/regles.ts)).
-# Occurrences actuelles de textes chiffrés ou du nom de la marque écrits en dur dans les fichiers du lot :
-# à dériver de src/shared/text/regles.ts, text/fr.ts ou config/*, puis à retirer d’ici. Le lot rend ce fichier vide.
+# Dette du lot 1 (moteur, cartes, IA) : réglée par le lot 1 (refusBudget, pouvoirs(), commentaires reformulés).
+# Le fichier doit rester vide.
 # Une ligne par occurrence : chemin<TAB>texte trouvé (en minuscules)<TAB># ligne au relevé (indicative) : extrait.
-src/shared/bot.ts	deux climats	# 417 : * plus un bruit qui dépend du niveau (pas toujours les mêmes cartes), avec au plus deux Climats (un seul Clima
-src/shared/cards.ts	huit pouvoirs	# 47 : { id: 'climats', label: 'Pouvoirs', description: 'Huit pouvoirs, visibles des deux joueurs, qui changent la pa
-src/shared/game.ts	deux climats	# 177 : *   si la main a plus d'une Légendaire ou plus de deux Climats (R9). Avec 8 cartes (5 Climats, 1 Légendaire),
-src/shared/game.ts	une seule carte par tour	# 696 : /** Vérifications communes : tour du joueur, carte disponible, une seule carte par tour. */
-src/shared/game.ts	une seule carte par tour	# 700 : if (s.cardPlayed) return 'Une seule carte par tour.';

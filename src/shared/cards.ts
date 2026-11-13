@@ -4,6 +4,16 @@
 // - 'duel' : les 11 cartes historiques, qui visent l'adversaire. Il n'est plus proposé : le moteur le garde
 //   seulement pour relire ou reprendre les parties créées avant.
 // Le Mur de glace appartient aux deux (permanent dans les Pouvoirs, 3 coups adverses dans le Duel).
+//
+// Ce qui distingue les catalogues (« la magie cède », effets des deux camps, tirage pondéré…) est décrit par des
+// données, CATALOG_RULES : le moteur ne compare jamais un identifiant de catalogue.
+// Les textes des Pouvoirs (description, durée, consignes) sont produits par des gabarits qui lisent l'équilibrage de
+// la carte (coups, rangées, vitesse) et le délai du Présage (cardText) : changer `coups` change aussi le texte.
+
+import { DEAL, GAME_RULES } from './config/rules';
+import type { CardTuning, Rules } from './config/rules';
+import { compte } from './text/fr';
+import { arriveePresage, dureeEffet, etendueRangees, pouvoirs, premierApres, rangees, vitesse } from './text/regles';
 
 export type CardId =
   // Pouvoirs : Climats
@@ -29,6 +39,11 @@ export type CardId =
   | 'lightning'
   | 'phase';
 
+/** Cartes du seul catalogue Duel (historique, plus proposé). */
+export type DuelCardId = 'time_warp' | 'gravity' | 'freeze' | 'shield' | 'swap' | 'rewind' | 'revive' | 'knight_leap' | 'lightning' | 'phase';
+/** Cartes du catalogue Pouvoirs (le Mur de glace sert aussi au Duel). */
+export type PowerCardId = Exclude<CardId, DuelCardId>;
+
 export type Rarity = 'commune' | 'rare' | 'épique' | 'légendaire';
 
 /**
@@ -42,18 +57,59 @@ export type Catalog = (typeof CATALOG_IDS)[number];
 export const CATALOG_IDS = ['climats', 'duel', 'aucune'] as const;
 /** Catalogue qui contient des cartes. */
 export type CardCatalog = Exclude<Catalog, 'aucune'>;
-/** Catalogues proposés (interface, création de partie, file d'attente), le premier par défaut. */
-export const CATALOGS: { id: Catalog; label: string; description: string }[] = [
-  { id: 'climats', label: 'Pouvoirs', description: 'Huit pouvoirs, visibles des deux joueurs, qui changent la partie pour les deux camps.' },
-  { id: 'aucune', label: 'Sans cartes', description: 'Les échecs classiques, rien d’autre.' },
-];
+
+/** Ce qui distingue un catalogue dans les règles : le moteur lit ces données, jamais l'identifiant du catalogue. */
+export interface CatalogRules {
+  /** Proposé pour une nouvelle partie (interface, création, file d'attente). */
+  offered: boolean;
+  /** « La magie cède » (R6) : un joueur privé de tout coup par les effets, hors échec, joue comme s'ils n'existaient pas. */
+  magicYields: boolean;
+  /** Effets des deux camps : décomptés sur les coups des deux camps (`coups`) ou permanents ; sinon, sur un camp (`turns`). */
+  globalEffects: boolean;
+  /** Tirage des mains : uniforme, ou pondéré par la rareté avec les contraintes du tirage (DEAL). */
+  draw: 'uniforme' | 'pondéré';
+  /** Le Mur de glace se pose sur n'importe quelle case vide (sinon, sur ses rangées : `ranks`). */
+  wallAnyRank: boolean;
+  /** Instantanés des deux dernières positions (Retour arrière). */
+  snapshots: boolean;
+  /** Matériel insuffisant : les Terrains posés ou en main peuvent aider à mater (sinon : aides du Duel). */
+  terrainMate: boolean;
+  /** Temps crédité à la pendule pour la cinématique d'une carte (R10, serveur). */
+  cinematicCredit: boolean;
+}
+
+/** Règles propres à chaque catalogue. Un nouveau catalogue : une entrée ici, une dans CATALOG_IDS, et `catalogs` sur ses cartes. */
+export const CATALOG_RULES: Readonly<Record<Catalog, Readonly<CatalogRules>>> = {
+  climats: {
+    offered: true, magicYields: true, globalEffects: true, draw: 'pondéré', wallAnyRank: false, snapshots: false,
+    terrainMate: true, cinematicCredit: true,
+  },
+  duel: {
+    offered: false, magicYields: false, globalEffects: false, draw: 'uniforme', wallAnyRank: true, snapshots: true,
+    terrainMate: false, cinematicCredit: false,
+  },
+  aucune: {
+    offered: true, magicYields: false, globalEffects: false, draw: 'uniforme', wallAnyRank: false, snapshots: false,
+    terrainMate: true, cinematicCredit: false,
+  },
+};
+
+/** Catalogue d'une nouvelle partie quand rien n'est précisé ou que la demande est inconnue (Pouvoirs). */
+export const DEFAULT_CATALOG: Catalog = 'climats';
+/** Catalogue des parties enregistrées sans champ `catalog` (créées avant les catalogues) : le Duel. Rien d'autre. */
+export const LEGACY_CATALOG: Catalog = 'duel';
+
+/** `x` est-il un identifiant de catalogue connu (proposé ou non) ? */
+export function isCatalog(x: unknown): x is Catalog {
+  return (CATALOG_IDS as readonly unknown[]).includes(x);
+}
 
 /**
- * Catalogue d'une nouvelle partie demandé par un client : le Duel (ancien client, préférence enregistrée) est
- * ramené aux Pouvoirs, comme toute valeur inconnue ; seul « Sans cartes » est gardé tel quel.
+ * Catalogue d'une nouvelle partie demandé par un client : un catalogue proposé est gardé tel quel ; le Duel (ancien
+ * client, préférence enregistrée), comme toute valeur inconnue, est ramené au catalogue par défaut.
  */
 export function offeredCatalog(c: unknown): Catalog {
-  return c === 'aucune' ? 'aucune' : 'climats';
+  return isCatalog(c) && CATALOG_RULES[c].offered ? c : DEFAULT_CATALOG;
 }
 
 /** Famille d'une carte : Climat (règle globale), Terrain (cases), Événement (instantané), Duel (catalogue historique). */
@@ -99,7 +155,7 @@ export interface CardDef {
   permanent?: boolean;
   /**
    * Pouvoirs : rangées concernées, de 0 à 7 (Mur de glace, Faille ; relatives au camp du pion pour la Grande Marée).
-   * Copiées dans les règles de la partie à sa création (Rules.tuning) ; le moteur ne les lit pas encore.
+   * Copiées dans les règles de la partie à sa création (Rules.tuning) : le moteur lit celles de la partie (tuneOf).
    */
   ranks?: readonly number[];
   /** Pouvoirs : vitesse d'écoulement des pendules sous l'effet (Sablier fou : 2). Copiée dans Rules.tuning. */
@@ -111,13 +167,8 @@ export interface CardDef {
    * Ne jamais supprimer ni recycler l'identifiant d'une carte. Absent : en jeu.
    */
   retired?: boolean;
-  /** Catalogues auxquels la carte appartient (le Mur de glace est dans les deux). */
+  /** Catalogues auxquels la carte appartient (le Mur de glace est dans les deux) : `inCatalog`, `cardsOf`. */
   catalogs: CardCatalog[];
-  /**
-   * @deprecated Premier catalogue de la carte (le Mur de glace est aussi du Duel) : utiliser `catalogs`,
-   * `inCatalog(id, catalog)` ou `cardsOf(catalog)`.
-   */
-  catalog: CardCatalog;
   family: Family;
   /** Présage : l'effet est annoncé et n'arrive qu'au début du tour suivant du lanceur. */
   presage?: boolean;
@@ -125,7 +176,12 @@ export interface CardDef {
   ritual?: boolean;
 }
 
-const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
+/** Textes d'une carte produits par un gabarit. */
+type CardTexts = Pick<CardDef, 'description' | 'duration' | 'prompts'>;
+/** Définition d'une carte : les Pouvoirs n'écrivent pas leurs textes, produits par TEMPLATES (cardText). */
+type CardData = Omit<CardDef, keyof CardTexts> & Partial<CardTexts>;
+
+const DEFS: Record<CardId, CardData> = {
   // -------------------------------------------------------------------------------------------
   // Climats : une règle pour tout le plateau, annoncée un tour à l'avance (Présage). Un seul Climat à la fois.
   hourglass: {
@@ -135,11 +191,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     name: 'Sablier fou',
     genre: 'm',
     tagline: 'Le temps s’emballe pour tout le monde.',
-    description:
-      'Annoncé, il arrive au début de votre prochain tour. Pendant 6 coups, les deux pendules s’écoulent deux fois plus vite et les coups ne rapportent plus d’incrément.',
     targets: 0,
-    prompts: [],
-    duration: '6 coups (3 chacun)',
     rarity: 'rare',
     hue: 192,
     timedOnly: true,
@@ -155,11 +207,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     name: 'Trêve',
     genre: 'f',
     tagline: 'Les armes se taisent.',
-    description:
-      'Annoncée, elle arrive au début de votre prochain tour. Pendant 3 coups, aucune capture n’est permise (prise en passant comprise), sauf pour sortir d’un échec. L’adversaire reprend les captures le premier.',
     targets: 0,
-    prompts: [],
-    duration: '3 coups (vous, lui, vous)',
     rarity: 'commune',
     hue: 85,
     presage: true,
@@ -172,11 +220,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     name: 'Lune de sang',
     genre: 'f',
     tagline: 'Qui peut prendre, doit prendre.',
-    description:
-      'Annoncée, elle arrive au début de votre prochain tour. Pendant 3 coups, un joueur qui peut capturer doit capturer ; il choisit la capture (prise en passant comprise). L’adversaire retrouve le premier sa liberté.',
     targets: 0,
-    prompts: [],
-    duration: '3 coups (vous, lui, vous)',
     rarity: 'épique',
     hue: 0,
     presage: true,
@@ -189,11 +233,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     name: 'Ère glaciaire',
     genre: 'f',
     tagline: 'Le front se fige.',
-    description:
-      'Annoncée, elle arrive au début de votre prochain tour. Pendant 4 coups, tous les pions des deux camps sont gelés : ils ne bougent ni ne capturent. Un roi ne peut toujours pas se placer sur une case qu’attaque un pion adverse.',
     targets: 0,
-    prompts: [],
-    duration: '4 coups (2 chacun)',
     rarity: 'rare',
     hue: 222,
     presage: true,
@@ -206,11 +246,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     name: 'Déflagration',
     genre: 'f',
     tagline: 'Chaque prise est un sacrifice.',
-    description:
-      'Annoncée, elle arrive au début de votre prochain tour. Pendant 4 coups, toute prise fait exploser la pièce qui prend avec sa victime : les deux disparaissent. Les pièces voisines ne craignent rien. Un roi prend normalement.',
     targets: 0,
-    prompts: [],
-    duration: '4 coups (2 chacun)',
     rarity: 'épique',
     hue: 25,
     presage: true,
@@ -226,11 +262,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     name: 'Mur de glace',
     genre: 'm',
     tagline: 'Ici, plus personne ne passe.',
-    description:
-      'Une case vide entre la 3e et la 6e rangée devient infranchissable pour les deux camps, jusqu’à la fin de la partie : aucune pièce ne peut s’y arrêter ni la traverser. Un cavalier peut sauter par-dessus.',
     targets: 1,
-    prompts: ['Choisissez une case vide entre la 3e et la 6e rangée'],
-    duration: 'Jusqu’à la fin de la partie',
     rarity: 'commune',
     hue: 200,
     // Pouvoirs : permanent. Duel (anciennes parties) : 3 coups adverses, sur n'importe quelle case vide.
@@ -246,11 +278,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     name: 'Faille',
     genre: 'f',
     tagline: 'Le plateau se fend en deux.',
-    description:
-      'Choisissez la 4e ou la 5e rangée. Pendant 4 coups, toutes ses cases vides deviennent un gouffre : aucune pièce ne peut s’y arrêter ni le traverser. Les cavaliers passent par-dessus.',
     targets: 1,
-    prompts: ['Choisissez la 4e ou la 5e rangée (une case de la rangée)'],
-    duration: '4 coups (2 chacun)',
     rarity: 'commune',
     hue: 285,
     coups: 4,
@@ -266,11 +294,7 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
     name: 'Grande Marée',
     genre: 'f',
     tagline: 'La mer avance pour tout le monde.',
-    description:
-      'Rituel : la carte remplace votre coup. Tous les pions des deux camps qui sont sur leurs 2e à 5e rangées avancent d’une case, si elle est libre. C’est ensuite à l’adversaire de jouer.',
     targets: 0,
-    prompts: [],
-    duration: 'Instantané',
     rarity: 'rare',
     hue: 172,
     ritual: true,
@@ -435,22 +459,117 @@ const DEFS: Record<CardId, Omit<CardDef, 'catalog'>> = {
   },
 };
 
+/** Ce dont les gabarits ont besoin : le délai du Présage et l'équilibrage des cartes. */
+export type CardTextRules = Pick<Rules, 'presageDelay'> & { tuning: Readonly<Partial<Record<CardId, CardTuning>>> };
+
+/** Durée en coups d'un effet des Pouvoirs, au singulier ou au pluriel : « 3 coups », « 1 coup ». */
+const coups = (n: number) => compte(n, 'coup');
+
+/**
+ * Gabarits des textes des Pouvoirs, à partir de l'équilibrage de la carte (`t` : coups, rangées, vitesse) et du délai
+ * du Présage. Au réglage d'aujourd'hui, ils donnent les textes d'avant au caractère près (test/fixtures/v1/cartes.json).
+ */
+const TEMPLATES: Record<PowerCardId, (t: CardTuning, delay: number, genre: CardDef['genre']) => CardTexts> = {
+  hourglass: (t, delay, genre) => ({
+    description: `${arriveePresage(delay, genre)}. Pendant ${coups(t.coups!)}, les deux pendules s’écoulent ${vitesse(t.clockRate!)} et les coups ne rapportent plus d’incrément.`,
+    duration: dureeEffet(t.coups!),
+    prompts: [],
+  }),
+  truce: (t, delay, genre) => ({
+    description:
+      `${arriveePresage(delay, genre)}. Pendant ${coups(t.coups!)}, aucune capture n’est permise (prise en passant comprise), sauf pour sortir d’un échec. ` +
+      (premierApres(t.coups!) === 'adversaire' ? 'L’adversaire reprend les captures le premier.' : 'Vous reprenez les captures le premier.'),
+    duration: dureeEffet(t.coups!),
+    prompts: [],
+  }),
+  blood_moon: (t, delay, genre) => ({
+    description:
+      `${arriveePresage(delay, genre)}. Pendant ${coups(t.coups!)}, un joueur qui peut capturer doit capturer ; il choisit la capture (prise en passant comprise). ` +
+      (premierApres(t.coups!) === 'adversaire' ? 'L’adversaire retrouve le premier sa liberté.' : 'Vous retrouvez le premier votre liberté.'),
+    duration: dureeEffet(t.coups!),
+    prompts: [],
+  }),
+  ice_age: (t, delay, genre) => ({
+    description: `${arriveePresage(delay, genre)}. Pendant ${coups(t.coups!)}, tous les pions des deux camps sont gelés : ils ne bougent ni ne capturent. Un roi ne peut toujours pas se placer sur une case qu’attaque un pion adverse.`,
+    duration: dureeEffet(t.coups!),
+    prompts: [],
+  }),
+  blast: (t, delay, genre) => ({
+    description: `${arriveePresage(delay, genre)}. Pendant ${coups(t.coups!)}, toute prise fait exploser la pièce qui prend avec sa victime : les deux disparaissent. Les pièces voisines ne craignent rien. Un roi prend normalement.`,
+    duration: dureeEffet(t.coups!),
+    prompts: [],
+  }),
+  ice_wall: t => ({
+    description: `Une case vide ${rangees(t.ranks!)} devient infranchissable pour les deux camps, jusqu’à la fin de la partie : aucune pièce ne peut s’y arrêter ni la traverser. Un cavalier peut sauter par-dessus.`,
+    duration: 'Jusqu’à la fin de la partie',
+    prompts: [`Choisissez une case vide ${rangees(t.ranks!)}`],
+  }),
+  rift: t => ({
+    description: `Choisissez ${rangees(t.ranks!)}. Pendant ${coups(t.coups!)}, toutes ses cases vides deviennent un gouffre : aucune pièce ne peut s’y arrêter ni le traverser. Les cavaliers passent par-dessus.`,
+    duration: dureeEffet(t.coups!),
+    prompts: [`Choisissez ${rangees(t.ranks!)} (une case de la rangée)`],
+  }),
+  tide: t => ({
+    description: `Rituel : la carte remplace votre coup. Tous les pions des deux camps qui sont sur ${t.ranks!.length > 1 ? 'leurs' : 'leur'} ${etendueRangees(t.ranks!)} avancent d’une case, si elle est libre. C’est ensuite à l’adversaire de jouer.`,
+    duration: 'Instantané',
+    prompts: [],
+  }),
+};
+
+/** Équilibrage d'une définition de carte (coups, rangées, vitesse). */
+const tuningOfDef = (d: CardData): CardTuning => ({ coups: d.coups, ranks: d.ranks, clockRate: d.clockRate });
+
+/** Textes d'une définition, pour un équilibrage et un délai du Présage donnés. */
+function textsOf(id: CardId, d: CardData, t: CardTuning, delay: number): CardTexts {
+  const template = (TEMPLATES as Partial<Record<CardId, (typeof TEMPLATES)[PowerCardId]>>)[id];
+  if (template) return template({ ...tuningOfDef(d), ...t }, delay, d.genre);
+  return { description: d.description!, duration: d.duration!, prompts: d.prompts! };
+}
+
+/** Toutes les cartes, avec leurs textes au réglage du jour (délai du Présage de GAME_RULES, équilibrage de DEFS). */
 export const CARDS = Object.fromEntries(
-  Object.entries(DEFS).map(([id, def]) => [id, { ...def, catalog: def.catalogs[0] }]),
+  (Object.entries(DEFS) as [CardId, CardData][]).map(([id, d]) => [id, { ...d, ...textsOf(id, d, {}, GAME_RULES.presageDelay) }]),
 ) as Record<CardId, CardDef>;
 
 /** Toutes les cartes, Pouvoirs d'abord. Pour les cartes d'un seul catalogue : `cardsOf`. */
 export const CARD_IDS = Object.keys(CARDS) as CardId[];
 
-/** La carte appartient-elle à ce catalogue ? */
+/** La carte appartient-elle à ce catalogue ? (« Sans cartes » n'en contient aucune.) */
 export function inCatalog(id: CardId, catalog: Catalog): boolean {
-  return catalog !== 'aucune' && CARDS[id].catalogs.includes(catalog);
+  return (CARDS[id].catalogs as readonly Catalog[]).includes(catalog);
 }
 
 /** Cartes d'un catalogue, dans l'ordre de présentation (vide pour 'aucune'). */
 export function cardsOf(catalog: Catalog): CardId[] {
   return CARD_IDS.filter(id => inCatalog(id, catalog));
 }
+
+const textMemo = new WeakMap<object, Map<CardId, CardTexts>>();
+
+/**
+ * Textes d'une carte selon les règles d'une partie (bulles, aide d'une partie dont l'équilibrage ou le délai du
+ * Présage diffèrent du réglage du jour) : `rulesOf(state)`. Mémorisé par objet de règles. Pour les règles du jour,
+ * ce sont les textes de CARDS.
+ */
+export function cardText(id: CardId, rules: CardTextRules): CardTexts {
+  let memo = textMemo.get(rules);
+  if (!memo) textMemo.set(rules, (memo = new Map()));
+  let t = memo.get(id);
+  if (!t) {
+    t = textsOf(id, DEFS[id], rules.tuning[id] ?? {}, rules.presageDelay);
+    memo.set(id, t);
+  }
+  return t;
+}
+
+/** Cartes en jeu d'un catalogue (sans les cartes retirées), pour les textes qui les comptent. */
+const inPlay = (catalog: Catalog) => cardsOf(catalog).filter(id => !CARDS[id].retired);
+
+/** Catalogues proposés (interface, création de partie, file d'attente), le premier par défaut. */
+export const CATALOGS: { id: Catalog; label: string; description: string }[] = [
+  { id: 'climats', label: 'Pouvoirs', description: `${pouvoirs(inPlay('climats').length, true)}, visibles des deux joueurs, qui changent la partie pour les deux camps.` },
+  { id: 'aucune', label: 'Sans cartes', description: 'Les échecs classiques, rien d’autre.' },
+];
 
 export const RARITY_LABEL: Record<Rarity, string> = {
   commune: 'Commune',
@@ -459,8 +578,11 @@ export const RARITY_LABEL: Record<Rarity, string> = {
   légendaire: 'Légendaire',
 };
 
-/** Poids du tirage pondéré (catalogue Pouvoirs) : les cartes rares sortent moins souvent. */
-export const RARITY_WEIGHT: Record<Rarity, number> = { commune: 4, rare: 3, épique: 2, légendaire: 1 };
+/**
+ * Poids du tirage pondéré (catalogue Pouvoirs) : les cartes rares sortent moins souvent.
+ * @deprecated Alias de DEAL.rarityWeight (config/rules.ts), le réglage que lit le tirage ; retiré au lot 9.
+ */
+export const RARITY_WEIGHT: Readonly<Record<Rarity, number>> = DEAL.rarityWeight;
 
 export function isCardId(x: unknown): x is CardId {
   return typeof x === 'string' && Object.hasOwn(CARDS, x);

@@ -18,7 +18,8 @@
 // écart. Un champ « rules » ou « cardsThisTurn » ajouté est toujours un écart (designDoc §8.4 : rien de tel n'est écrit
 // au défaut). Les autres fichiers (PGN) se comparent au caractère. Les 10 premiers chemins de chaque fichier s'affichent.
 // Un écart voulu (correction d'un défaut figé ici, décidée et faite par un lot) se déclare dans ECARTS_VOULUS avec sa
-// raison : il est alors affiché sans échec. Ce fichier passe aux lots 1, 3 et 9 pour cela (docs/polymorphie/LOTS.json) ;
+// raison : il est alors affiché sans échec. Avec `chemins`, seuls les écarts dont la description correspond sont
+// tolérés, les autres restent des écarts. Ce fichier passe aux lots 1, 3 et 9 pour cela (docs/polymorphie/LOTS.json) ;
 // les témoins eux-mêmes restent au lot 0a.
 //
 // Fichiers produits (tous déterministes : deux exécutions donnent les mêmes octets) :
@@ -91,11 +92,16 @@ const SORTIE = path.resolve(process.env.TEMOINS_SORTIE ?? ICI);
 const STRICT = process.env.TEMOINS_STRICT === '1';
 
 /**
- * Écarts voulus : témoin (chemin relatif) → raison et lot. Seulement pour la correction décidée d'un défaut figé ici,
- * par exemple, si le fondateur la décide (lot 1) : 'pgn/deflagration.relu.json' (« fxg4* » relu) ou
- * 'pgn/sablier.relu.json' (Sablier fou d'une partie à pendule relu).
+ * Écarts voulus : témoin (chemin relatif) → raison et lot. Seulement pour la correction décidée d'un défaut figé ici
+ * ou un changement prévu par le plan. `chemins` : seuls les écarts dont la description (« .chemin : … ») correspond
+ * sont voulus ; sans `chemins`, tout le fichier.
  */
-const ECARTS_VOULUS: Record<string, string> = {};
+const ECARTS_VOULUS: Record<string, { raison: string; chemins?: RegExp }> = {
+  'cartes-donnees.json': {
+    raison: 'lot 1, conception § 2.2 et étape 8 : CardDef.catalog (déprécié, doublon de catalogs[0]) est supprimé',
+    chemins: /^\.[a-z_]+\.catalog : absent du recalcul/,
+  },
+};
 /** Témoins où un champ ajouté par le recalcul n'est pas un écart (données et vues). */
 const AJOUTS_PERMIS = [/^cartes(-donnees)?\.json$/, /^constantes\.json$/, /^layout\.json$/, /^textes-moteur\.json$/, /^salles\/[^/]+\.vues\.json$/];
 /** Champs qu'aucun témoin ne doit gagner au défaut. */
@@ -909,8 +915,13 @@ describe(`témoins v1 (${MODE === 'ecrire' ? `écriture dans ${SORTIE}` : 'véri
       const d = rel.endsWith('.json') ? ecartsJson(JSON.parse(temoin), JSON.parse(texte)) : ecartsTexte(temoin, texte);
       const voulu = ECARTS_VOULUS[rel];
       if (voulu) {
-        infos.push(`${rel} : écart voulu (${voulu})\n    ${d.differents.slice(0, 10).join('\n    ')}`);
-      } else if (d.differents.length) {
+        // Sans `chemins`, tout le fichier est voulu, champs ajoutés compris ; avec, seulement les écarts décrits.
+        const tolere = [...d.differents, ...(voulu.chemins ? [] : d.ajouts)].filter(e => !voulu.chemins || voulu.chemins.test(e));
+        infos.push(`${rel} : écart voulu (${voulu.raison})\n    ${tolere.slice(0, 10).join('\n    ')}`);
+        d.differents = d.differents.filter(e => !tolere.includes(e));
+        d.ajouts = d.ajouts.filter(e => !tolere.includes(e));
+      }
+      if (d.differents.length) {
         ecarts.push(`${rel} : ${d.differents.length} chemin(s) différent(s)\n    ${d.differents.slice(0, 10).join('\n    ')}`);
       } else if (STRICT || (d.ajouts.length && !AJOUTS_PERMIS.some(m => m.test(rel)))) {
         const quoi = d.ajouts.length ? `${d.ajouts.length} champ(s) ajouté(s)\n    ${d.ajouts.slice(0, 10).join('\n    ')}` : 'mise en forme';

@@ -1,34 +1,27 @@
 // Thread de calcul de l'IA : la recherche ne bloque jamais la boucle d'événements du serveur.
+// La décision d'un tour est decideTurn (shared/bot.ts), la même que dans le navigateur (client/ai/think.ts).
 import { parentPort } from 'node:worker_threads';
-import { playCard, GameState } from '../shared/game';
-import { BotLevel, chooseBotCard, chooseBotMove } from '../shared/bot';
+import type { GameState } from '../shared/game';
+import { decideTurn } from '../shared/bot';
+import type { BotLevel } from '../shared/bot';
+import type { BotReply, BotRequest } from '../shared/botProtocol';
 
-export interface BotRequest { id: number; state: GameState; level: BotLevel }
-export interface BotReply {
-  id: number;
-  card: { index: number; targets: number[] } | null;
-  move: { from: number; to: number; promo?: string } | null;
-  error?: string;
-}
+export type { BotReply, BotRequest } from '../shared/botProtocol';
 
-export function decide(state: GameState, level: BotLevel): Omit<BotReply, 'id'> {
-  let card = chooseBotCard(state, level);
-  let after = state;
-  if (card) {
-    const r = playCard(state, state.pos.turn, card.index, card.targets, '');
-    if (r.ok) after = r.state;
-    else card = null;
-  }
-  // Après un Retour arrière (Duel) ou un Rituel (Grande Marée, qui tient lieu de coup), c'est à l'adversaire de
-  // jouer : pas de coup à calculer.
-  const m = after.pos.turn === state.pos.turn && !after.result ? chooseBotMove(after, level) : null;
-  return { card, move: m ? { from: m.from, to: m.to, promo: m.promo } : null };
+/**
+ * Tour complet de l'IA : `cards` (dans l'ordre, autant que les règles de la partie en permettent), puis le coup.
+ * `card` reste la première carte, pour les appelants qui n'en lisent qu'une.
+ */
+export function decide(state: GameState, level: BotLevel, opts?: BotRequest['opts']): Omit<BotReply, 'id'> {
+  const d = decideTurn(state, level, opts);
+  const m = d.move;
+  return { card: d.cards[0] ?? null, cards: d.cards, move: m ? { from: m.from, to: m.to, promo: m.promo } : null };
 }
 
 parentPort?.on('message', (req: BotRequest) => {
   try {
-    parentPort!.postMessage({ id: req.id, ...decide(req.state, req.level) } satisfies BotReply);
+    parentPort!.postMessage({ id: req.id, ...decide(req.state, req.level, req.opts) } satisfies BotReply);
   } catch (e) {
-    parentPort!.postMessage({ id: req.id, card: null, move: null, error: String(e) } satisfies BotReply);
+    parentPort!.postMessage({ id: req.id, card: null, cards: [], move: null, error: String(e) } satisfies BotReply);
   }
 });

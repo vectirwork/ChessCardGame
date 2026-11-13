@@ -1,14 +1,19 @@
 // IA de Spellmate : recherche alpha-bêta avec quiescence, et usage des cartes évalué par la même recherche.
 // Partagée entre le serveur (threads IA) et le navigateur (partie contre l'IA sur l'accueil, page Analyse).
+// La décision d'un tour complet (cartes, puis coup) est decideTurn : le fil du serveur (bot-worker.ts) et celui du
+// navigateur (client/ai/think.ts) l'appellent tous les deux. La recherche ne lit aucun réglage : les règles de la
+// partie (cartes par tour, délai du Présage) ne sont lues qu'à la racine, dans decideTurn et chooseBotCard.
 
 import {
   Color, F_CAPTURE, F_PROMO, Move, Mods, NO_MODS, Position, VALUE, applyMustCapture, clonePosition, fileOf, inCheck,
   isSlider, kingSquare, legalMoves, makeMove, opposite, pseudoMoves, rankOf, slideDirs, unmakeMove,
 } from './chess';
-import { CARDS, CardId } from './cards';
+import { CARDS, CardId, PowerCardId } from './cards';
+import type { HandLimits } from './config/rules';
 import {
-  CARDS_PER_PLAYER, GameState, cardOptions, cardPlayable, legalMovesOf, magicYields, modsSequence, playCard,
+  GameState, cardOptions, cardPlayable, legalMovesOf, magicYields, modsSequence, playCard,
 } from './game';
+import { castsLeft, rulesFor, rulesOf, validHand } from './rules';
 
 /** Niveaux de l'IA, du plus faible au plus fort. Ne jamais recycler un niveau : il est enregistré dans les sièges. */
 export const BOT_LEVELS = [1, 2, 3] as const;
@@ -136,7 +141,7 @@ interface SearchRules {
   relax: boolean;
 }
 
-function rulesOf(s: GameState): SearchRules {
+function searchRules(s: GameState): SearchRules {
   return { mods: modsSequence(s, MODS_PLIES), relax: magicYields(s) };
 }
 
@@ -287,7 +292,7 @@ function scoreFor(s: GameState, me: Color, depth: number, deadline: number): num
   const moves = legalMovesOf(s);
   // Aucun coup mais la partie continue : une carte doit être jouée (R4c). On s'en tient à l'évaluation statique.
   if (!moves.length) return s.pos.turn === me ? evaluate(s.pos) : -evaluate(s.pos);
-  const search = new Search(rulesOf(s), deadline);
+  const search = new Search(searchRules(s), deadline);
   const res = search.root(clonePosition(s.pos), moves, Math.max(1, depth));
   if (search.aborted || !res.length) return null;
   return s.pos.turn === me ? res[0].score : -res[0].score;
@@ -298,7 +303,7 @@ export function chooseBotMove(s: GameState, level: BotLevel): Move | null {
   let rootMoves = legalMovesOf(s);
   if (!rootMoves.length) return null;
   const deadline = Date.now() + profile.thinkMs;
-  const rules = rulesOf(s);
+  const rules = searchRules(s);
   let best: { move: Move; score: number }[] = [];
   for (let d = 1; d <= profile.depth; d++) {
     const search = new Search(rules, deadline);
@@ -322,14 +327,16 @@ export function chooseBotMove(s: GameState, level: BotLevel): Move | null {
 /**
  * Choisit éventuellement une carte à jouer avant le coup.
  * Méthode : jouer la carte, puis chercher, et comparer avec la même recherche sans carte. La profondeur
- * suit la carte : un Présage n'arrive qu'après deux coups, on cherche donc un coup plus loin pour le voir agir
- * (et la ligne de base aussi, pour comparer à horizon égal) ; un Rituel remplace le coup, on cherche un coup de
- * moins. Tout tient dans le budget de temps du niveau : une recherche interrompue est écartée.
+ * suit la carte : un Présage n'arrive qu'après `presageDelay` coups (2 par défaut), on cherche donc un coup plus loin
+ * par tour d'attente du lanceur pour le voir agir (et la ligne de base aussi, pour comparer à horizon égal) ; un
+ * Rituel remplace le coup, on cherche un coup de moins. Tout tient dans le budget de temps (`deadline`, par défaut
+ * celui du niveau) : une recherche interrompue est écartée.
  */
-export function chooseBotCard(s: GameState, level: BotLevel): { index: number; targets: number[] } | null {
+export function chooseBotCard(
+  s: GameState, level: BotLevel, deadline: number = Date.now() + BOT_PROFILES[level].thinkMs,
+): { index: number; targets: number[] } | null {
   const me = s.pos.turn;
   const profile = BOT_PROFILES[level];
-  const deadline = Date.now() + profile.thinkMs;
   // L'IA ne joue jamais le Sablier fou (carte réservée aux parties entre humains).
   const playable = s.hands[me].map((_, i) => i).filter(i => {
     const card = s.hands[me][i].card;
@@ -344,7 +351,8 @@ export function chooseBotCard(s: GameState, level: BotLevel): { index: number; t
     return { index, targets: randomTargets(s, me, index) };
   }
   const base = Math.min(profile.depth, 2);
-  const depthFor = (card: CardId) => (CARDS[card].presage ? base + 1 : CARDS[card].ritual ? base - 1 : base);
+  const presageDepth = base + Math.max(1, Math.round(rulesOf(s).presageDelay / 2));
+  const depthFor = (card: CardId) => (CARDS[card].presage ? presageDepth : CARDS[card].ritual ? base - 1 : base);
   // Lignes de base, une par horizon (calculées à la demande).
   const baselines = new Map<number, number | null>();
   const baseline = (card: CardId) => {
@@ -390,6 +398,45 @@ export function chooseBotCard(s: GameState, level: BotLevel): { index: number; t
   return null;
 }
 
+/** Carte que l'IA lance : index dans la main du camp au trait, cases désignées. */
+export interface BotCardChoice {
+  index: number;
+  targets: number[];
+}
+
+/** Décision d'un tour complet : les cartes à lancer, dans l'ordre, puis le coup (null si une carte a fini le tour). */
+export interface TurnDecision {
+  cards: BotCardChoice[];
+  move: Move | null;
+}
+
+/**
+ * Tour complet de l'IA pour le camp au trait, partagé par le serveur et le navigateur : tant que les règles de la
+ * partie permettent encore une carte (castsLeft) et qu'une carte est jugée utile (chooseBotCard), elle la lance, dans
+ * un seul budget de temps pour toutes les cartes (celui du niveau) ; puis elle cherche son coup sur la position qui
+ * en résulte. Une carte qui termine le tour (Rituel) arrête tout : pas de coup. `cards: false` : le coup seul.
+ * Ne lance jamais plus de cartes que castsLeft, et le coup rendu est légal dans la position après les cartes.
+ */
+export function decideTurn(s: GameState, level: BotLevel, opts: { cards?: boolean } = {}): TurnDecision {
+  const me = s.pos.turn;
+  if (s.result) return { cards: [], move: null };
+  const cards: BotCardChoice[] = [];
+  let after = s;
+  if (opts.cards !== false) {
+    const deadline = Date.now() + BOT_PROFILES[level].thinkMs;
+    while (!after.result && after.pos.turn === me && castsLeft(after) > 0 && after.hands[me].some(h => !h.used && h.card)) {
+      const c = chooseBotCard(after, level, deadline);
+      if (!c) break;
+      const r = playCard(after, me, c.index, c.targets, '');
+      if (!r.ok) break;
+      cards.push(c);
+      after = r.state;
+    }
+  }
+  const move = !after.result && after.pos.turn === me ? chooseBotMove(after, level) : null;
+  return { cards, move };
+}
+
 // ---------------------------------------------------------------------------------------------
 // Choix des cartes (décision D5) : l'IA choisit tout de suite, avec une heuristique simple et un peu de hasard.
 
@@ -397,8 +444,10 @@ export function chooseBotCard(s: GameState, level: BotLevel): { index: number; t
  * Valeur de départ d'une carte pour l'IA : le Mur (permanent, utile en attaque comme en défense) d'abord, puis les
  * pouvoirs tactiques que sa recherche exploite bien (Lune de sang, Déflagration, Grande Marée). Le Sablier fou,
  * qui ne pénalise que l'humain, n'est jamais proposé contre l'IA ; il est classé en dernier par prudence.
+ * Une valeur par Pouvoir, exigée par le compilateur (une nouvelle carte doit en recevoir une) ; une carte du Duel
+ * (anciennes parties) vaut DRAFT_VALUE_DEFAUT.
  */
-const DRAFT_VALUE: Partial<Record<CardId, number>> = {
+const DRAFT_VALUE: Record<PowerCardId, number> = {
   ice_wall: 5,
   blood_moon: 4.5,
   tide: 4,
@@ -409,32 +458,51 @@ const DRAFT_VALUE: Partial<Record<CardId, number>> = {
   ice_age: 3.1,
   hourglass: 1,
 };
+/** Valeur d'une carte sans valeur propre (cartes du Duel). */
+const DRAFT_VALUE_DEFAUT = 3;
 /** Part de hasard du choix, selon le niveau : l'Apprenti choisit presque au hasard, l'Archimage varie peu. */
 const DRAFT_NOISE: Record<BotLevel, number> = { 1: 3, 2: 1.6, 3: 1 };
+/**
+ * Climats que l'IA prend au plus dans son choix : un seul Climat agit à la fois, un de plus serait gaspillé. Choix de
+ * jeu de l'IA, distinct des contraintes du tirage (DEAL.handLimits), qui s'ajoutent si on les lui passe.
+ */
+const BOT_MAX_CLIMATES = 2;
+
+export interface BotDraftOptions {
+  /** Cartes à choisir : rulesOf(state).cardsPerPlayer (défaut : celui des nouvelles parties). */
+  count?: number;
+  /** Contraintes du tirage à respecter aussi (DEAL.limitsInDraft) ; absent : seulement BOT_MAX_CLIMATES. */
+  limits?: HandLimits;
+}
 
 /**
- * Cartes de l'IA pour la phase de choix : CARDS_PER_PLAYER cartes différentes de la réserve, classées par valeur
- * plus un bruit qui dépend du niveau (pas toujours les mêmes cartes), avec au plus deux Climats (un seul Climat
- * agit à la fois : un troisième serait gaspillé). Toutes les cartes de la réserve sont jouables par l'IA.
+ * Cartes de l'IA pour la phase de choix : `count` cartes différentes de la réserve, classées par valeur plus un
+ * bruit qui dépend du niveau (pas toujours les mêmes cartes), avec au plus BOT_MAX_CLIMATES Climats (et les
+ * contraintes `limits` si on les donne). Toutes les cartes de la réserve sont jouables par l'IA.
  */
-export function chooseBotDraft(pool: readonly CardId[], level: BotLevel, rand: () => number = Math.random): CardId[] {
+export function chooseBotDraft(
+  pool: readonly CardId[], level: BotLevel, rand: () => number = Math.random, opts: BotDraftOptions = {},
+): CardId[] {
+  const count = opts.count ?? rulesFor('classee').cardsPerPlayer;
+  const fits = (hand: CardId[], id: CardId) => !opts.limits || validHand([...hand, id], opts.limits);
   const noise = DRAFT_NOISE[level] ?? 1.6;
   const ranked = pool
-    .filter(id => !CARDS[id].humanOnly || pool.length <= CARDS_PER_PLAYER)
-    .map(id => ({ id, v: (DRAFT_VALUE[id] ?? 3) + (rand() * 2 - 1) * noise }))
+    .filter(id => !CARDS[id].humanOnly || pool.length <= count)
+    .map(id => ({ id, v: ((DRAFT_VALUE as Partial<Record<CardId, number>>)[id] ?? DRAFT_VALUE_DEFAUT) + (rand() * 2 - 1) * noise }))
     .sort((a, b) => b.v - a.v)
     .map(x => x.id);
   const hand: CardId[] = [];
   const climates = () => hand.filter(id => CARDS[id].family === 'climat').length;
   for (const id of ranked) {
-    if (hand.length >= CARDS_PER_PLAYER) break;
-    if (CARDS[id].family === 'climat' && climates() >= 2) continue;
+    if (hand.length >= count) break;
+    if (CARDS[id].family === 'climat' && climates() >= BOT_MAX_CLIMATES) continue;
+    if (!fits(hand, id)) continue;
     hand.push(id);
   }
   // Réserve trop petite pour respecter la limite des Climats : on complète avec ce qui reste.
   for (const id of [...ranked, ...pool]) {
-    if (hand.length >= CARDS_PER_PLAYER) break;
-    if (!hand.includes(id)) hand.push(id);
+    if (hand.length >= count) break;
+    if (!hand.includes(id) && fits(hand, id)) hand.push(id);
   }
   return hand;
 }
@@ -538,7 +606,7 @@ export function analyse(s: GameState, maxDepth = 6, timeMs = 3000, onDepth?: (a:
   let rootMoves = legalMovesOf(s);
   if (!rootMoves.length) return empty;
   const deadline = Date.now() + timeMs;
-  const rules = rulesOf(s);
+  const rules = searchRules(s);
   let last = empty;
   let nodes = 0;
   for (let depth = 1; depth <= maxDepth; depth++) {

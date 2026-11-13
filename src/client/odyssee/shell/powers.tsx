@@ -11,11 +11,12 @@ import { createPortal } from 'react-dom';
 import type { Color } from '../../../shared/chess';
 import { CARDS } from '../../../shared/cards';
 import type { Effect } from '../../../shared/game';
+import { compte } from '../../../shared/text/fr';
+import { prochainTour } from '../../../shared/text/regles';
 import { CardEmblem } from '../../components/CardArt';
 import { CardScene, scenePaired } from '../../components/CardScene';
 import { deNom } from '../../game/names';
 
-const plural = (n: number, w: string) => `${n} ${w}${n > 1 ? 's' : ''}`;
 const COLOR_NAME: Record<Color, string> = { w: 'Blancs', b: 'Noirs' };
 
 export interface PowersProps {
@@ -32,10 +33,12 @@ export function powerTiming(e: Effect, you: Color | null, names?: PowersProps['n
   const mine = you !== null && e.caster === you;
   const caster = mine ? 'Vous' : names?.[e.caster] ?? `Les ${COLOR_NAME[e.caster]}`;
   if (e.pending) {
-    // Annoncé : il arrive au début du prochain tour de son lanceur (après le coup de l'autre camp)
+    // Annoncé : il arrive au début d'un tour de son lanceur (le prochain, au délai des Présages par défaut), après le
+    // coup de l'autre camp. `delay` : demi-coups restants avant l'arrivée.
     let when: string;
-    if (mine) when = 'arrive au début de votre prochain tour';
-    else if (!you) when = 'arrive au début de leur prochain tour';
+    const tour = prochainTour(e.delay ?? 2);
+    if (mine) when = `arrive au début de ${tour}`;
+    else if (!you) when = `arrive au début de ${tour.replace(/^votre /, 'leur ')}`;
     else when = (e.delay ?? 1) > 1 ? 'arrive après votre prochain coup' : 'arrive après votre coup';
     return `${caster} · annoncé, ${when}`;
   }
@@ -46,7 +49,7 @@ export function powerTiming(e: Effect, you: Color | null, names?: PowersProps['n
 export function powerLeft(e: Effect): string {
   if (e.pending) return 'à venir';
   if (e.permanent) return 'toute la partie';
-  return `encore ${plural(e.remaining, 'coup')}`;
+  return `encore ${compte(e.remaining, 'coup')}`;
 }
 
 function Pips({ e }: { e: Effect }) {

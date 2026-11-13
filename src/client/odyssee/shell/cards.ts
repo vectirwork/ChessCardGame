@@ -1,35 +1,59 @@
-// Aides de la main de cartes de la coque : pourquoi une carte n'est pas jouable, carte lancée ce tour, message
-// après un lancement (décision D2 du plan V2). Partagées par l'accueil et la partie en ligne.
+// Aides de la main de cartes de la coque : pourquoi une carte n'est pas jouable, cartes lancées ce tour, message
+// après un lancement (décision D2 du plan V2). Partagées par l'accueil et la partie en ligne. Les phrases suivent les
+// règles de la partie (rulesOf(state)) : nombre de cartes par tour, carte à la place du coup, délai des Présages.
 import { CARDS, isCardId } from '../../../shared/cards';
 import type { CardId } from '../../../shared/cards';
 import type { Color } from '../../../shared/chess';
-import { cardRefusal } from '../../../shared/game';
-import type { GameState } from '../../../shared/game';
+import { GAME_RULES } from '../../../shared/config/rules';
+import type { Rules } from '../../../shared/config/rules';
+import { castsThisTurn as castsOfTurn, cardRefusalInfo } from '../../../shared/game';
+import type { GameState, Refusal } from '../../../shared/game';
+import { rulesOf } from '../../../shared/rulesCore';
+import { apresLancement, dejaLance } from '../../../shared/text/regles';
+
+/** Refus « cible » du moteur : la bulle dit plutôt qu'aucune case ne convient. */
+const TARGET_CODES: readonly string[] = ['target-missing', 'target-invalid'];
+/**
+ * Mêmes refus, par leur texte : repli transitoire pour un refus sans code (moteur d'avant les codes de refus), retiré
+ * au lot 9.
+ */
+const TARGET_TEXTS: readonly string[] = ['Cible manquante.', 'Cible invalide.'];
 
 /**
  * Pour chaque carte de `color` : pourquoi elle n'est pas jouable maintenant, en une phrase, ou null (jouable, ou
  * déjà jouée : la bulle le dit elle-même). `playable` : résultat de cardPlayable, déjà calculé par la page.
  */
 export function handNotes(s: GameState, color: Color, myTurn: boolean, playable: boolean[]): (string | null)[] {
+  const r = rulesOf(s);
   return s.hands[color].map((h, i) => {
     if (h.used || playable[i] || !isCardId(h.card)) return null;
     if (s.result) return 'La partie est terminée.';
-    if (!myTurn || s.pos.turn !== color) return 'Jouable à votre tour, avant votre coup.';
-    if (s.cardPlayed) return 'Un seul sort par tour : vous en avez déjà lancé un.';
-    let r: string | null = null;
+    if (!myTurn || s.pos.turn !== color) return r.cardEndsTurn ? 'Jouable à votre tour, à la place de votre coup.' : 'Jouable à votre tour, avant votre coup.';
+    if (s.cardPlayed) return dejaLance(r);
+    let ref: Partial<Refusal> | null = null;
     try {
-      r = cardRefusal(s, color, i);
+      ref = cardRefusalInfo(s, color, i);
     } catch {
-      r = null;
+      ref = null;
     }
-    if (!r || r === 'Cible manquante.' || r === 'Cible invalide.') {
-      return CARDS[h.card].targets ? 'Aucune case possible pour cette carte en ce moment.' : 'Pas jouable pour le moment.';
-    }
-    return r;
+    const target = !ref?.error || (ref.code ? TARGET_CODES.includes(ref.code) : TARGET_TEXTS.includes(ref.error));
+    if (target) return CARDS[h.card].targets ? 'Aucune case possible pour cette carte en ce moment.' : 'Pas jouable pour le moment.';
+    return ref!.error!;
   });
 }
 
-/** Carte que `color` vient de lancer ce tour-ci, en attendant son coup (null sinon). */
+/**
+ * Cartes que `color` a lancées depuis son dernier coup, dans l'ordre (vide hors de son tour ou partie finie). Avec
+ * une carte par tour, au plus une ; elle reste listée tant que le coup n'est pas joué.
+ */
+export function castsThisTurn(s: GameState, color: Color): CardId[] {
+  return castsOfTurn(s, color);
+}
+
+/**
+ * Carte que `color` vient de lancer ce tour-ci, une fois son budget de cartes épuisé, en attendant son coup (null
+ * sinon). Gardée pour l'accueil ; la partie en ligne lit castsThisTurn.
+ */
 export function castThisTurn(s: GameState, color: Color): CardId | null {
   if (!s.cardPlayed || s.result || s.pos.turn !== color) return null;
   for (let i = s.log.length - 1; i >= 0; i--) {
@@ -40,9 +64,10 @@ export function castThisTurn(s: GameState, color: Color): CardId | null {
   return null;
 }
 
-/** Message après un lancement : un Présage est annoncé, les autres cartes agissent tout de suite. */
-export function castMessage(card: CardId): string {
-  return CARDS[card]?.presage
-    ? 'Annoncé : arrive au début de votre prochain tour. Jouez maintenant votre coup.'
-    : 'Sort lancé. Jouez maintenant votre coup.';
+/**
+ * Message après un lancement : un Présage est annoncé, les autres cartes agissent tout de suite (apresLancement).
+ * `left` : cartes encore permises ce tour (castsLeft). Défaut : « Sort lancé. Jouez maintenant votre coup. ».
+ */
+export function castMessage(card: CardId, r: Pick<Rules, 'cardEndsTurn' | 'presageDelay'> = GAME_RULES, left = 0): string {
+  return apresLancement(r, !!CARDS[card]?.presage, left);
 }

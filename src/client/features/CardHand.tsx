@@ -14,6 +14,7 @@ import { CARDS, CardId, FAMILY_LABEL, isCardId } from '../../shared/cards';
 import { rankOf, sqName } from '../../shared/chess';
 import type { Color } from '../../shared/chess';
 import { Effect, GameState, cardOptions, cardPlayable } from '../../shared/game';
+import { rulesOf } from '../../shared/rulesCore';
 import { handNotes } from '../odyssee/shell/cards';
 
 export interface Targeting {
@@ -222,6 +223,7 @@ export function HandView({ state, color, title = `Cartes des ${sideName(color)}`
   const pos = useAnchoredBubble(shown !== null ? b.refs.current[shown] ?? null : null, 'above');
   b.useKeyFocus(!!pos);
   if (!hand.length) return null;
+  const rules = rulesOf(state);
   const left = hand.filter(h => !h.used).length;
   const shownCard = shown !== null && isCardId(hand[shown]?.card) ? hand[shown].card : null;
   const id = `ft-bubble-ro-${color}`;
@@ -238,14 +240,14 @@ export function HandView({ state, color, title = `Cartes des ${sideName(color)}`
                 type="button"
                 className={`ft-card ro ${h.used ? 'used' : ''} ${shown === i ? 'is-peek' : ''}`}
                 style={{ '--h': def.hue } as CSSProperties}
-                aria-label={cardAriaLabel(def, h.used)}
+                aria-label={cardAriaLabel(def, h.used, 'self', rules)}
                 aria-describedby={shown === i ? id : undefined}
                 {...b.cardProps(i)}
               >
                 <span className="ft-card-em sm"><CardEmblem id={h.card} /></span>
                 <span className="ft-card-txt">
                   <b>{def.name}</b>
-                  {!compact && <TurnPill def={def} className="ft-turn" />}
+                  {!compact && <TurnPill def={def} rules={rules} className="ft-turn" />}
                 </span>
               </button>
             </li>
@@ -259,6 +261,7 @@ export function HandView({ state, color, title = `Cartes des ${sideName(color)}`
           mode={b.open === shown ? 'open' : 'read'}
           owner="opponent"
           used={hand[shown!].used}
+          rules={rules}
           onCancel={b.open === shown ? b.close : undefined}
           primaryRef={b.primary}
           className={`is-floating ${pos.below ? 'is-below' : ''}`}
@@ -274,8 +277,9 @@ export function CardHand({ state, color, targeting, disabled, title = 'Vos carte
   const hand = state.hands[color];
   const b = useCardBubbles(state);
   const [seen, setSeen] = useState(readSeen);
+  // La règle (carte déjà jouée, budget du tour, cibles…) est celle du moteur : cardPlayable seul
   const playable = useMemo(
-    () => hand.map((h, i) => !disabled && !h.used && !state.cardPlayed && isCardId(h.card) && cardPlayable(state, color, i)),
+    () => hand.map((h, i) => !disabled && isCardId(h.card) && cardPlayable(state, color, i)),
     [hand, disabled, state, color],
   );
   const notes = useMemo(() => handNotes(state, color, !disabled, playable), [state, color, disabled, playable]);
@@ -283,6 +287,7 @@ export function CardHand({ state, color, targeting, disabled, title = 'Vos carte
   const pos = useAnchoredBubble(shown !== null ? b.refs.current[shown] ?? null : null, 'below');
   b.useKeyFocus(!!pos);
   if (!hand.length) return null;
+  const rules = rulesOf(state);
   const markSeen = () => {
     if (seen) return;
     setSeen(true);
@@ -314,7 +319,7 @@ export function CardHand({ state, color, targeting, disabled, title = 'Vos carte
               type="button"
               className={`ft-card ${on ? 'on' : ''} ${h.used ? 'used' : ''} ${!h.used && !playable[i] ? 'dim' : ''} ${shown === i ? 'is-peek' : ''}`}
               style={{ '--h': def.hue } as CSSProperties}
-              aria-label={cardAriaLabel(def, h.used)}
+              aria-label={cardAriaLabel(def, h.used, 'self', rules)}
               aria-describedby={shown === i ? id : undefined}
               {...props}
               onClick={e => {
@@ -328,7 +333,7 @@ export function CardHand({ state, color, targeting, disabled, title = 'Vos carte
               <span className="ft-card-em"><CardEmblem id={h.card} /></span>
               <span className="ft-card-txt">
                 <b>{def.name}</b>
-                <TurnPill def={def} className="ft-turn" />
+                <TurnPill def={def} rules={rules} className="ft-turn" />
               </span>
             </button>
           );
@@ -346,6 +351,7 @@ export function CardHand({ state, color, targeting, disabled, title = 'Vos carte
           domId={id}
           mode={b.open === shown ? 'open' : 'read'}
           used={hand[shown!].used}
+          rules={rules}
           note={notes[shown!]}
           onCast={
             b.open === shown && playable[shown!]

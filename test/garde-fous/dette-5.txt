@@ -9,7 +9,3 @@ src/client/game/GamePage.tsx	une seule carte par tour	# 576 : {firstMove ?? (has
 src/client/game/GamePage.tsx	un sort par tour	# 826 : handLabel={you ? 'Votre main · un sort par tour' : `Cartes ${selfSeat?.name ? deNom(selfSeat.name) : `des ${co
 src/client/game/overlays.tsx	spellmate	# 67 : await navigator.share({ title: 'Partie de Spellmate', text: 'Je vous défie aux échecs… avec des pouvoirs.', ur
 src/client/game/overlays.tsx	trois cartes	# 127 : : `Les échecs, plus trois cartes de pouvoir chacun. ${catalogDescription(catalog)}`}
-src/client/odyssee/shell/GameShell.tsx	un sort par tour	# 593 : fanNote = <span className="gs-fan-label gs-in">{p.handLabel ?? 'Votre main · un sort par tour'}</span>;
-src/client/odyssee/shell/cards.ts	seul sort par tour	# 18 : if (s.cardPlayed) return 'Un seul sort par tour : vous en avez déjà lancé un.';
-src/client/odyssee/shell/layout.ts	3 cartes	# 32 : * Ordinateur : la main adverse (3 cartes en éventail, GameShell) occupe 2,97 largeurs de carte + 8 px. On gard
-src/client/odyssee/shell/layout.ts	3 cartes	# 40 : * à gauche, 3 cartes de clamp(112px, 9vw, 138px), shell.css .gs-fan) ne touche pas son cadre (10 px) : la main

@@ -3,8 +3,11 @@
 Site complet d'échecs en ligne avec des **cartes de pouvoir**. Au début d'une partie, chaque joueur **choisit trois
 cartes**, ensuite **visibles des deux joueurs**, et peut en lancer une par tour, avant son coup. Chaque pouvoir change la partie **pour les deux camps** :
 les pions gèlent pour tout le monde, une case devient infranchissable jusqu'à la fin de la partie, les prises
-deviennent interdites ou obligatoires… Le jeu est gratuit ; la boutique vend uniquement des **skins d'animation** et
-des **plateaux** (aucun pay-to-win).
+deviennent interdites ou obligatoires… Le jeu est gratuit ; la boutique vend uniquement des **rois**, des **échiquiers**
+et des **sorts** (animations des cartes) : aucun pay-to-win.
+
+Ces nombres sont des réglages : cartes par joueur, cartes par tour, durées, cadences, IA, boutique, marque… Voir
+[docs/REGLAGES.md](docs/REGLAGES.md).
 
 ## Lancer le site sur votre PC (5 minutes)
 
@@ -32,7 +35,8 @@ débité) tant qu'aucune clé Stripe n'est configurée. Autre port : `PORT=4000 
 | Pouvoirs | Climats annoncés un tour à l'avance (Sablier fou, Trêve, Lune de sang, Ère glaciaire, Déflagration), Terrains (Mur de glace permanent, Faille), Événement (Grande Marée). Cartes épurées (nom, emblème, « + votre coup » ou « Remplace votre coup »), règle dans une bulle au survol ou au toucher, bouton « Lancer ce sort » à côté de la carte, cartes de l'adversaire en éventail retourné. Formules « Pouvoirs » ou « Sans cartes » (échecs classiques) |
 | Modes | IA à 3 niveaux (elle joue aussi ses cartes ; dans le navigateur sur l'accueil), invitation par lien **sans compte**, partie amicale ouverte aux invités, parties classées Elo |
 | Fonctions classiques | Leçons interactives (`/apprendre`), 49 problèmes dont des problèmes à pouvoirs (`/problemes`, problème du jour), échiquier d'analyse avec moteur, import et export PGN ou FEN, éditeur de position, relecture des parties avec courbe d'évaluation (`/analyse`), historique (`/parties`), parties en direct (`/direct`), règles et cartes (`/cartes`), classement |
-| Effets | Couche WebGL (Three.js) alignée sur l'échiquier, animation propre à chaque pouvoir ; 6 skins (Arcane offert, Inferno, Néon 2084, Céleste, Néant, Sakura) ; sons synthétisés |
+| Effets | Couche WebGL (Three.js) alignée sur l'échiquier, animation propre à chaque pouvoir ; sons synthétisés |
+| Boutique | 8 rois, 10 échiquiers et 8 sorts, dont 5 objets offerts ; 7 collections premium ; packs (Grimoire des sorts, Trésor du Bazar) ; cabine d'essai ; panier |
 | Comptes | Inscription, connexion, e-mail de vérification, mot de passe oublié, changement d'e-mail ou de mot de passe, déconnexion de tous les appareils, export des données et suppression du compte (RGPD), profils publics |
 | Paiement | Stripe Checkout (page de paiement hébergée par Stripe), webhook signé et idempotent, remboursements (objets retirés automatiquement), renonciation au droit de rétractation, mode démo sans Stripe |
 | Administration | `/admin` : chiffre d'affaires, ventes, inscriptions, parties en cours, recherche de joueurs, objets offerts ou retirés |
@@ -117,16 +121,41 @@ Toutes les données sont dans PostgreSQL. Sauvegarde quotidienne conseillée, pa
 docker compose exec -T db pg_dump -U spellmate spellmate | gzip > /root/sauvegardes/spellmate-$(date +%F).sql.gz
 ```
 
+## Réglages
+
+Le guide complet est [docs/REGLAGES.md](docs/REGLAGES.md) : ce qu'on change demain (5 cartes par joueur, 2 cartes par
+tour, une carte à la place du coup, rééquilibrer une carte, une nouvelle cadence, couper la boutique, changer le nom du
+site…), la table de tous les réglages avec leur valeur par défaut, et les garde-fous. Le tableau de bord du code est
+`src/shared/config/index.ts`.
+
+En bref :
+
+- **Règles des nouvelles parties** : `GAME_RULES` et `RULES_BY_CONTEXT` dans `src/shared/config/rules.ts`. Chaque
+  partie garde ses règles : un changement ne touche que les parties créées ensuite.
+- **Choix et tirage des cartes** : `DEAL` dans `src/shared/config/rules.ts`.
+- **Fonctions** (boutique, parties classées, maintenance…) : variables `FEATURE_*` du serveur, sans reconstruire le site
+  (`FEATURE_SHOP=0`, `FEATURE_NEW_GAMES=0`…).
+- Des règles impossibles arrêtent la construction et le démarrage du serveur, avec une phrase qui dit quoi changer.
+
 ## Modifier l'offre
 
-- **Prix, skins, plateaux, packs** : `src/shared/catalog.ts` (prix en centimes TTC).
-- **Cartes** (textes, durées, raretés) : `src/shared/cards.ts` ; leurs règles : `src/shared/game.ts` ; leurs effets
-  visuels : `src/client/vfx/effects.ts` ; leurs emblèmes : `src/client/components/CardArt.tsx`. La conception des
-  pouvoirs est expliquée dans `concepts/CARTES-GLOBALES.md` et `docs/PLAN-ODYSSEE.md`.
+- **Prix** : grille `PRICE` de `src/shared/catalog.ts` (centimes TTC, par rareté et par emplacement). Un prix déjà
+  pratiqué ne monte jamais.
+- **Objets** (rois, échiquiers, sorts) et **collections** : `src/shared/skins/`. Retirer un objet de la vente :
+  `retired: true` (jamais supprimer ni recycler un identifiant ; qui l'a acheté le garde).
+- **Packs** : `packProducts` de `src/shared/catalog.ts` ; `display` dit où la boutique le montre. Contenu du **Trésor
+  du Bazar** : `TRESOR`. Objet essayé à la première visite : `SHOP_FEATURED`.
+- **Un emplacement de plus** (dos de carte, jeu de pièces…) : `SLOT_DEFS` de `src/shared/skins/slots.ts`, plus une
+  migration (voir docs/REGLAGES.md).
+- **Cartes** : définitions et équilibrage (durées, rangées) dans `src/shared/cards.ts` ; leurs textes sont produits
+  par des gabarits du même fichier ; leurs règles : `src/shared/game.ts` ; leurs effets visuels :
+  `src/client/vfx/cardFx.ts` et `src/client/vfx/effects.ts` ; leurs emblèmes : `src/client/components/CardArt.tsx`.
+  La conception des pouvoirs est expliquée dans `concepts/CARTES-GLOBALES.md` et `docs/PLAN-ODYSSEE.md`.
 - **Leçons et problèmes** : `src/shared/lessons.ts` et `src/shared/puzzles.ts` (les tests vérifient chaque solution
-  avec le moteur).
+  avec le moteur). Ils se jouent avec les règles d'origine ; ceux que les règles du jour contrediraient sont masqués.
 - **Textes de l'accueil** : `src/client/odyssee/data.ts`.
-- **Nom du site** : `APP_NAME` dans `.env`, plus le logo dans `src/client/components/Layout.tsx`.
+- **Nom du site** : `BRAND` dans `src/shared/config/brand.ts` (reconstruire), et `APP_NAME` et `MAIL_FROM` pour le
+  serveur. Le logo et les icônes sont des images de `public/`.
 
 ## Développement
 
@@ -136,20 +165,31 @@ Prérequis : Node.js 22. Sans `DATABASE_URL`, la base intégrée (PGlite) est ut
 ```bash
 npm install
 npm run dev        # http://localhost:3000, rechargement à chaud, paiements en mode démo
-npm test           # moteur d'échecs (perft), règles des pouvoirs, choix des cartes, IA, pendules, leçons, problèmes, PGN (≈ 2 min)
-npm run typecheck
-npm run build && npm start   # version de production (avec NODE_ENV=production et SECRET_KEY)
+npm test           # toute la suite : moteur, pouvoirs, choix des cartes, IA, pendules, serveur, leçons, problèmes, PGN, réglages
+npm run test:rapide            # la suite sans l'IA à pleine profondeur ni la matrice des règles (pendant le travail)
+SPELLMATE_MATRICE=1,2,3,4,5 npm run test:matrice   # matrice complète des règles (défaut : 1, 3 et 5 cartes)
+npm run typecheck              # et npm run typecheck:concepts pour les maquettes de concepts/
+npm run temoins                # témoins v1 du moteur : textes des cartes, parties, tirages, salles, PGN
+npm run build && npm start     # version de production (avec NODE_ENV=production et SECRET_KEY)
 ```
 
-Tests contre un serveur lancé :
+Tests contre un serveur, de préférence un serveur jetable (site construit, base neuve, port libre) :
 
 ```bash
-npm run test:integration          # comptes, invitation sans compte, choix des cartes, mains visibles, pouvoirs, revanche, IA, boutique, RGPD
+node scripts/serveur-jetable.mjs -- node test/integration.mjs {base}   # comptes, invitation, choix des cartes, pouvoirs, revanche, IA, boutique, RGPD
+SPELLMATE_TEST_RULES='{"cardsPerPlayer":5}' node scripts/serveur-jetable.mjs -- node test/integration.mjs {base}   # avec d'autres règles
+node scripts/serveur-jetable.mjs -- node test/ranked.mjs {base}        # file classée et Elo
+node scripts/serveur-jetable.mjs --env=FEATURE_SHOP=0 -- node test/fonctions.mjs {base} shop=0   # boutique coupée
+npm run test:integration          # la même suite contre un serveur déjà lancé (http://localhost:3000)
 node test/glisser.mjs http://localhost:3000   # glisser-déposer et capture au glisser, plusieurs fois de suite
 node test/perf/mesure.mjs ref=<url> actuelle=<url>   # performance : chargement, repos, WebGL (versions de production)
-node test/ranked.mjs              # file classée et Elo
 node test/stripe-webhook.mjs http://localhost:3100 whsec_test   # serveur lancé avec PAYMENTS_MODE=stripe
 ```
+
+Bancs d'identité (site construit, comparaison à une référence) : `npm run identite` (captures, boîtes et DOM ;
+référence hors du dépôt, `/home/user/spellmate-ref`) et `npm run textes-pages` (texte des pages). Ils ne réécrivent
+jamais leur référence sans `--ecrire`, à ne lancer que sur décision. `npm run verifier-lot -- <lot>` contrôle les
+fichiers touchés par un lot de la passe « polymorphe » (`docs/polymorphie/LOTS.json`).
 
 En développement, `http://localhost:3000/test/vfx.html?card=rift&targets=a5` est un banc d'essai des effets
 (`window.cast('ice_wall', ['e4'], 'skin:inferno')` dans la console). Les prototypes de direction artistique sont dans
@@ -158,7 +198,9 @@ En développement, `http://localhost:3000/test/vfx.html?card=rift&targets=a5` es
 ### Architecture
 
 ```
-src/shared/          règles partagées navigateur/serveur : moteur d'échecs, pouvoirs, IA, PGN, leçons, problèmes
+src/shared/config/   tableau de bord des réglages : règles, mise en place, accueil, marque, interrupteurs, pages, bornes
+src/shared/text/     phrases dérivées des réglages (« trois cartes », « un sort par tour »…) et grammaire française
+src/shared/          règles partagées navigateur/serveur : moteur d'échecs, pouvoirs, IA, PGN, leçons, problèmes, boutique
 src/server/          Express + Socket.IO + PostgreSQL ou PGlite : comptes, salles de jeu, pendules, IA (threads), Stripe
 src/client/odyssee/  accueil (L'Odyssée), partie locale zéro clic, coque de partie plein écran
 src/client/ai/       IA dans un Web Worker (partie de l'accueil)
@@ -180,7 +222,11 @@ instances (adaptateur Redis de Socket.IO et affinité de session par partie).
 - Rien n'a encore été vérifié sur de vrais appareils (téléphones, cartes graphiques) : les tests automatiques tournent
   dans un navigateur sans écran, avec un rendu 3D logiciel. Le vrai paiement Stripe et l'envoi réel d'e-mails n'ont
   pas été testés avec de vrais comptes.
-- Le moteur d'analyse est un moteur maison (profondeur 4 à 6 en quelques secondes) : suffisant pour signaler les
-  gaffes, loin de Stockfish.
+- Les réglages autres que le défaut (5 cartes, 2 cartes par tour, carte à la place du coup…) n'ont été essayés que par
+  les tests, les suites de bout en bout et des captures, jamais en production ni par des joueurs. Changer une valeur
+  par défaut fait aussi échouer des tests qui photographient le jeu d'aujourd'hui (docs/REGLAGES.md, section 2).
+- Le moteur d'analyse est un moteur maison : il approfondit jusqu'à 6 secondes par position (profondeur 12 au plus) ;
+  sur la machine des tests automatiques, il atteint la profondeur 5 ou 6. La relecture d'une partie évalue chaque
+  position à la profondeur 3. Suffisant pour signaler les gaffes, loin de Stockfish.
 - Pas encore de connexion Google/Apple, de chat libre (seulement des émotes, pour éviter la modération) ni de
   traduction anglaise.

@@ -1,36 +1,89 @@
-// Règles du jeu et grimoire des huit pouvoirs (route /cartes), au langage de l'Odyssée.
+// Règles du jeu et grimoire des pouvoirs (route /cartes), au langage de l'Odyssée.
 // Les règles des cartes viennent de src/shared/cards.ts (règle exacte, durée, rareté, famille) : la page suit le
 // moteur sans recopier les textes. Le Duel (ancien catalogue) n'est pas présenté. Styles : Rules.css (préfixe rg-).
+// Les phrases chiffrées (cartes par main et par tour, durée du choix, contraintes du tirage, nombre de pouvoirs, frise
+// de la Trêve) sont tirées des règles des nouvelles parties (GAME_RULES, DEAL) et de CARDS, une fois, au chargement.
+// La marque vient de __SM__.marque (BRAND.name figé au build) et la règle du coup remplacé est écrite ici comme
+// cardEndsTurn (rulesCore.ts) : importer BRAND ou le noyau des règles ajouterait des morceaux à la page et au paquet
+// principal (table de préchargement).
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { CARDS, CATALOGS, RARITY_LABEL, cardsOf } from '../../shared/cards';
+import { CARDS, CATALOGS, FAMILY_LABEL, RARITY_LABEL, cardsOf } from '../../shared/cards';
 import type { CardDef, Catalog, Family } from '../../shared/cards';
+import { DEAL, GAME_RULES } from '../../shared/config/rules';
+import { cap, enLettres, liste, ordinal, pluriel } from '../../shared/text/fr';
+import {
+  cartesChacun, cartesDePouvoir, cartesDuCatalogue, constitutionMains, dureeChoix, dureeEffet, limitesMain, pouvoirs, premierApres,
+  prochainTour, regle50, repetition, sortAuPlus, sortParTour,
+} from '../../shared/text/regles';
 import { SpellCard } from '../components/SpellCard';
 import { CardScene, scenePaired } from '../components/CardScene';
 import { PageHead, PlacePage, useTitle } from './PageScene';
 import './Rules.css';
 
-const POWERS = cardsOf('climats');
+/** Le jeu décrit : règles des nouvelles parties. */
+const R = GAME_RULES;
+/** Pouvoirs présentés : le catalogue par défaut, sans les cartes retirées du jeu. */
+const POWERS = cardsOf('climats').filter(id => !CARDS[id].retired);
+const DEFS = POWERS.map(id => CARDS[id]);
+const N = POWERS.length;
+const famCount = (['climat', 'terrain', 'evenement'] as const).filter(f => DEFS.some(d => d.family === f)).length;
+
+/** Nom d'une carte avec son article : « le Mur de glace », « la Faille », « l’Ère glaciaire ». */
+function withArticle(def: CardDef): string {
+  return /^[aeiouyàâéèêëîïôûùœ]/i.test(def.name) ? `l’${def.name}` : `${def.genre === 'f' ? 'la' : 'le'} ${def.name}`;
+}
+/** « Le Mur de glace et la Faille » (en tête de phrase). */
+const names = (defs: CardDef[]) => cap(liste(defs.map(withArticle)));
+
+const TERRAINS = DEFS.filter(d => d.family === 'terrain');
+const RITUALS = DEFS.filter(d => d.ritual);
+const PERMANENTS = DEFS.filter(d => d.permanent);
+
+/** « Entre humains, avec pendule » : où une carte est proposée, si elle ne l'est pas partout. */
+function restriction(def: CardDef): string | null {
+  if (def.humanOnly && def.timedOnly) return 'Entre humains, avec pendule';
+  if (def.humanOnly) return 'Entre humains';
+  if (def.timedOnly) return 'Avec pendule';
+  return null;
+}
+
+/** « Le Sablier fou n’est proposé qu’entre humains, dans les parties avec pendule. », une phrase par condition. */
+function restrictedCards(defs: CardDef[]): string[] {
+  const groups = new Map<string, CardDef[]>();
+  for (const d of defs.filter(x => x.humanOnly || x.timedOnly)) {
+    const k = `${!!d.humanOnly}${!!d.timedOnly}`;
+    groups.set(k, [...(groups.get(k) ?? []), d]);
+  }
+  return [...groups.values()].map(g => {
+    const fem = g.every(d => d.genre === 'f');
+    const verb = g.length > 1 ? `ne sont proposé${fem ? 'es' : 's'}` : `n’est proposé${fem ? 'e' : ''}`;
+    const where = g[0].humanOnly && g[0].timedOnly ? 'qu’entre humains, dans les parties avec pendule' : g[0].humanOnly ? 'qu’entre humains' : 'que dans les parties avec pendule';
+    return `${names(g)} ${verb} ${where}.`;
+  });
+}
+
+const n = R.cardsPerPlayer;
+/** Contraintes du tirage qui jouent dans la réserve des pouvoirs (limitesMain : au plus N Climats par main). */
+const LIMITS = limitesMain(DEFS);
 
 const ESSENTIALS: { title: string; text: ReactNode }[] = [
   {
     title: 'Les échecs, tels quels',
-    text: 'Toutes les règles officielles s’appliquent : roque, prise en passant, promotion, pat, triple répétition, règle des 50 coups. On gagne par mat, au temps ou par abandon.',
+    text: `Toutes les règles officielles s’appliquent : roque, prise en passant, promotion, pat, ${repetition(R)}, ${regle50(R)}. On gagne par mat, au temps ou par abandon.`,
   },
   {
-    title: 'Trois cartes chacun, à découvert',
-    text: (
-      <>
-        Au début d’une partie, vous choisissez vos trois cartes ; sur l’accueil, elles sont tirées au hasard. Votre choix reste secret
-        jusqu’à ce que votre adversaire ait choisi, puis les deux mains restent visibles de tous jusqu’à la fin ; une carte jouée reste à
-        sa place, grisée.
-      </>
-    ),
+    title: `${cartesChacun(R, true)}, à découvert`,
+    text: DEAL.draft
+      ? `Au début d’une partie, ${constitutionMains(R)}. Votre choix reste secret jusqu’à ce que votre adversaire ait choisi, puis les deux mains restent visibles de tous jusqu’à la fin ; une carte jouée reste à sa place, grisée.`
+      : `Au début d’une partie, ${constitutionMains(R)}. Les deux mains restent visibles de tous jusqu’à la fin ; une carte jouée reste à sa place, grisée.`,
   },
   {
-    title: 'Un sort par tour, avant votre coup',
-    text: 'À votre tour, vous pouvez lancer une carte, puis vous jouez votre coup. Chaque carte ne sert qu’une fois. Seule exception : un Rituel remplace votre coup.',
+    title: R.cardEndsTurn ? sortParTour(R, true) : `${sortParTour(R, true)}, avant votre coup`,
+    text: R.cardEndsTurn
+      ? 'À votre tour, vous pouvez lancer une carte à la place de votre coup. Chaque carte ne sert qu’une fois.'
+      : `À votre tour, vous pouvez lancer ${R.cardsPerTurn === 1 ? 'une carte' : `jusqu’à ${enLettres(R.cardsPerTurn, 'f')} cartes`}, puis vous jouez votre coup. Chaque carte ne sert qu’une fois.${RITUALS.length ? ' Seule exception : un Rituel remplace votre coup.' : ''}`,
   },
   {
     title: 'Chaque pouvoir touche les deux camps',
@@ -46,38 +99,66 @@ const ESSENTIALS: { title: string; text: ReactNode }[] = [
   },
 ];
 
+/** Coups de l'adversaire entre l'annonce d'un Présage et son arrivée (un au délai de 2 demi-coups). */
+const replies = Math.max(1, Math.round(R.presageDelay / 2));
+
 const TEMPO: { key: string; family: string; text: string }[] = [
   {
     key: 'Présage',
     family: 'Climats',
-    text: 'Le sort est annoncé avant votre coup et arrive au début de votre tour suivant. En attendant, il est affiché pour tous : l’adversaire a toujours un coup pour s’y préparer.',
+    text: `Le sort est annoncé avant votre coup et arrive au début de ${R.presageDelay === 2 ? 'votre tour suivant' : prochainTour(R.presageDelay)}. En attendant, il est affiché pour tous : l’adversaire a toujours ${enLettres(replies)} ${pluriel(replies, 'coup')} pour s’y préparer.`,
   },
-  {
-    key: 'Tout de suite',
-    family: 'Terrains',
-    text: 'Le Mur de glace et la Faille agissent dès le lancement, avant votre coup : vous jouez déjà sur le terrain transformé.',
-  },
-  {
-    key: 'Rituel',
-    family: 'Événement',
-    text: 'La Grande Marée est votre coup : elle termine votre tour, et l’adversaire profite le premier de la nouvelle position.',
-  },
+  ...(TERRAINS.length
+    ? [{
+        key: 'Tout de suite',
+        family: 'Terrains',
+        text: R.cardEndsTurn
+          ? `${names(TERRAINS)} ${TERRAINS.length > 1 ? 'agissent' : 'agit'} dès le lancement, à la place de votre coup : l’adversaire joue déjà sur le terrain transformé.`
+          : `${names(TERRAINS)} ${TERRAINS.length > 1 ? 'agissent' : 'agit'} dès le lancement, avant votre coup : vous jouez déjà sur le terrain transformé.`,
+      }]
+    : []),
+  ...(RITUALS.length
+    ? [{
+        key: 'Rituel',
+        family: 'Événement',
+        text: RITUALS.length === 1
+          ? `${names(RITUALS)} est votre coup : ${RITUALS[0].genre === 'f' ? 'elle' : 'il'} termine votre tour, et l’adversaire profite le premier de la nouvelle position.`
+          : `Un Rituel (${liste(RITUALS.map(withArticle))}) est votre coup : il termine votre tour, et l’adversaire profite le premier de la nouvelle position.`,
+      }]
+    : []),
   {
     key: 'Durée en coups',
     family: 'Tous les effets',
-    text: 'Un coup, c’est le coup d’un seul joueur : « 4 coups (2 chacun) ». Le compte part de l’arrivée de l’effet et le plateau affiche les coups restants. Le Mur de glace, lui, reste jusqu’à la fin de la partie.',
+    text: `Un coup, c’est le coup d’un seul joueur : « ${dureeEffet(4)} ». Le compte part de l’arrivée de l’effet et le plateau affiche les coups restants.${
+      PERMANENTS.length === 1
+        ? ` ${names(PERMANENTS)}, ${PERMANENTS[0].genre === 'f' ? 'elle' : 'lui'}, reste jusqu’à la fin de la partie.`
+        : PERMANENTS.length > 1 ? ` ${names(PERMANENTS)} restent jusqu’à la fin de la partie.` : ''
+    }`,
   },
 ];
 
+// Frise de la Trêve : l'annonce (délai du Présage), les coups de l'effet, puis la reprise des captures.
 type Phase = 'pre' | 'on' | 'off';
+const TRUCE = CARDS.truce;
+const TRUCE_COUPS = TRUCE.coups ?? 0;
+const she = TRUCE.genre === 'f' ? 'Elle' : 'Il';
 const TIMELINE: { who: 'Vous' | 'Adversaire'; act: string; state: string; phase: Phase }[] = [
-  { who: 'Vous', act: 'Vous lancez la Trêve, puis vous jouez.', state: 'Annoncée', phase: 'pre' },
-  { who: 'Adversaire', act: 'Il répond : il la voit venir.', state: 'Arrive au coup suivant', phase: 'pre' },
-  { who: 'Vous', act: 'Elle arrive : vous jouez sans capturer.', state: '1er coup sur 3', phase: 'on' },
-  { who: 'Adversaire', act: 'Il joue sans capturer.', state: '2e coup sur 3', phase: 'on' },
-  { who: 'Vous', act: 'Vous jouez sans capturer.', state: '3e coup sur 3', phase: 'on' },
-  { who: 'Adversaire', act: 'Il peut capturer le premier.', state: 'Terminée', phase: 'off' },
+  ...Array.from({ length: R.presageDelay }, (_, i) => {
+    const me = i % 2 === 0;
+    const act = i === 0 ? `Vous lancez ${withArticle(TRUCE)}, puis vous jouez.` : me ? 'Vous jouez.' : i === 1 ? `Il répond : il ${TRUCE.genre === 'f' ? 'la' : 'le'} voit venir.` : 'Il joue.';
+    return { who: me ? 'Vous' : 'Adversaire', act, state: i === R.presageDelay - 1 ? 'Arrive au coup suivant' : 'Annoncée', phase: 'pre' } as const;
+  }),
+  ...Array.from({ length: TRUCE_COUPS }, (_, i) => {
+    const me = i % 2 === 0;
+    const act = i === 0 ? `${she} arrive : vous jouez sans capturer.` : me ? 'Vous jouez sans capturer.' : 'Il joue sans capturer.';
+    return { who: me ? 'Vous' : 'Adversaire', act, state: `${ordinal(i + 1)} coup sur ${TRUCE_COUPS}`, phase: 'on' } as const;
+  }),
+  premierApres(TRUCE_COUPS) === 'vous'
+    ? { who: 'Vous', act: 'Vous pouvez capturer le premier.', state: 'Terminée', phase: 'off' }
+    : { who: 'Adversaire', act: 'Il peut capturer le premier.', state: 'Terminée', phase: 'off' },
 ];
+/** Colonnes d'une grille de Rules.css, posées seulement si elles diffèrent de la valeur de la feuille. */
+const cols = (count: number, css: number): CSSProperties | undefined => (count === css ? undefined : ({ '--n': count } as CSSProperties));
 
 const FAMILIES: { id: Exclude<Family, 'duel'>; title: string; when: string; text: string }[] = [
   {
@@ -102,9 +183,11 @@ const FAMILIES: { id: Exclude<Family, 'duel'>; title: string; when: string; text
 
 const FORMULA_POINTS: Partial<Record<Catalog, string[]>> = {
   climats: [
-    'Trois cartes chacun, choisies parmi les huit pouvoirs au début de la partie.',
+    DEAL.draft
+      ? `${cartesChacun(R, true)}, ${pluriel(n, ['choisie', 'choisies'])} parmi les ${pouvoirs(N)} au début de la partie.`
+      : `${cartesChacun(R, true)}, ${pluriel(n, ['tirée', 'tirées'])} au hasard parmi les ${pouvoirs(N)}.`,
     'Les deux mains visibles, du premier au dernier coup.',
-    'Un sort par tour au plus, toujours facultatif.',
+    sortAuPlus(R),
   ],
   aucune: ['Les règles officielles, sans aucune carte.', 'Pour s’échauffer, travailler une ouverture ou jouer à l’ancienne.'],
 };
@@ -113,17 +196,22 @@ const DETAILS: ReactNode[] = [
   'Le roi est hors d’atteinte des pouvoirs : aucun effet ne le déplace, ne le gèle ni ne le détruit.',
   'Votre roi doit être à l’abri après votre coup, avec les effets tels qu’ils seront alors : l’arrivée d’un Climat ou la fermeture d’une Faille comptent déjà. Celui qui répond à un Présage se prépare donc au monde qui arrive.',
   'Un Climat ne sauve jamais du mat : il arrive trop tard. Le Mur de glace, la Faille ou la Grande Marée le peuvent.',
-  'Le Sablier fou n’est proposé qu’entre humains, dans les parties avec pendule.',
-  'Le choix des cartes dure 45 secondes : trois cartes différentes parmi les huit pouvoirs, sans autre contrainte. Si le temps s’écoule, celles qui vous manquent sont tirées au hasard. Sur l’accueil, le tirage favorise les cartes les moins rares, avec au plus deux Climats par main.',
+  ...restrictedCards(DEFS),
+  DEAL.draft
+    ? `Le choix des cartes dure ${dureeChoix()} : ${n === 1 ? 'une carte' : `${enLettres(n, 'f')} cartes différentes`} parmi les ${pouvoirs(N)}, ${DEAL.limitsInDraft && LIMITS ? `avec ${LIMITS}` : 'sans autre contrainte'}. Si le temps s’écoule, ${n === 1 ? 'elle est tirée' : 'celles qui vous manquent sont tirées'} au hasard. Sur l’accueil, le tirage favorise les cartes les moins rares${LIMITS ? `, avec ${LIMITS}` : ''}.`
+    : `Les cartes sont tirées au hasard : le tirage favorise les cartes les moins rares${LIMITS ? `, avec ${LIMITS}` : ''}.`,
   'Les animations des sorts ne vous coûtent pas de temps à la pendule.',
   'Pré-coups : pendant que votre adversaire réfléchit, jouez déjà vos coups suivants, autant que vous voulez. Ils apparaissent en fantômes numérotés et se jouent d’eux-mêmes, dans l’ordre ; si l’un n’est plus possible, tous s’annulent. Clic droit (ou toucher une case vide) pour les annuler. Les cartes, elles, ne se préparent pas.',
   <>
-    Pour choisir vos cartes et votre adversaire, passez par la page <Link to="/jouer">Jouer</Link>.
+    {`Pour choisir ${DEAL.draft ? 'vos cartes et votre adversaire' : 'votre adversaire'}, passez par la page `}
+    <Link to="/jouer">Jouer</Link>.
   </>,
 ];
 
+/** Arrivée d'un pouvoir : « Au prochain tour (annoncée) » (délai du Présage), « Immédiate ». */
+const PRESAGE_ARRIVAL = `${prochainTour(R.presageDelay).replace(/^votre /, 'Au ')} (annoncée)`;
 function arrival(def: CardDef) {
-  return def.presage ? 'Au prochain tour (annoncée)' : 'Immédiate';
+  return def.presage ? PRESAGE_ARRIVAL : 'Immédiate';
 }
 
 function SectionHead({ id, n, kicker, title, lede }: { id: string; n: string; kicker: string; title: ReactNode; lede?: ReactNode }) {
@@ -182,7 +270,7 @@ function Power({ def }: { def: CardDef }) {
         </div>
         <div>
           <dt>Votre coup</dt>
-          <dd>{def.ritual ? 'Remplacé par la carte' : 'Joué en plus'}</dd>
+          <dd>{def.ritual || R.cardEndsTurn ? 'Remplacé par la carte' : 'Joué en plus'}</dd>
         </div>
         <div>
           <dt>Durée</dt>
@@ -193,10 +281,13 @@ function Power({ def }: { def: CardDef }) {
           <dd>{RARITY_LABEL[def.rarity]}</dd>
         </div>
       </dl>
-      {def.humanOnly && <p className="rg-pnote">Entre humains, avec pendule</p>}
+      {restriction(def) && <p className="rg-pnote">{restriction(def)}</p>}
     </article>
   );
 }
+
+/** « Deux formules » : les catalogues proposés. */
+const FORMULAS = `${cap(enLettres(CATALOGS.length, 'f'))} ${pluriel(CATALOGS.length, 'formule')}`;
 
 export default function Rules() {
   useTitle('Règles et cartes');
@@ -207,21 +298,21 @@ export default function Rules() {
         aside="Règles et cartes"
         title={
           <>
-            Les échecs, <em>et huit pouvoirs</em>
+            Les échecs, <em>{`et ${pouvoirs(N)}`}</em>
           </>
         }
-        lede="Spellmate, ce sont les échecs que vous connaissez, plus trois cartes de pouvoir chacun. Les deux mains sont visibles, et chaque pouvoir change la partie pour les deux camps."
+        lede={`${__SM__.marque}, ce sont les échecs que vous connaissez, plus ${cartesDePouvoir(R)} chacun. Les deux mains sont visibles, et chaque pouvoir change la partie pour les deux camps.`}
       >
         <nav className="rg-toc" aria-label="Sur cette page">
           <a href="#essentiel">L’essentiel</a>
           <a href="#temps">Le temps des sorts</a>
-          <a href="#pouvoirs">Les huit pouvoirs</a>
-          <a href="#formules">Deux formules</a>
+          <a href="#pouvoirs">{`Les ${pouvoirs(N)}`}</a>
+          <a href="#formules">{FORMULAS}</a>
         </nav>
       </PageHead>
 
       <section id="essentiel" className="rg-sec" aria-labelledby="rg-essentiel">
-        <SectionHead id="rg-essentiel" n="I" kicker="L’essentiel" title="Six règles, rien de plus" />
+        <SectionHead id="rg-essentiel" n="I" kicker="L’essentiel" title={`${cap(enLettres(ESSENTIALS.length, 'f'))} ${pluriel(ESSENTIALS.length, 'règle')}, rien de plus`} />
         <ol className="rg-rules">
           {ESSENTIALS.map((r, i) => (
             <li key={r.title}>
@@ -247,7 +338,7 @@ export default function Rules() {
           }
           lede="Un pouvoir ne frappe jamais par surprise : le ciel s’annonce, la terre agit tout de suite, l’événement prend la place du coup."
         />
-        <div className="rg-tempo">
+        <div className="rg-tempo" style={cols(TEMPO.length, 4)}>
           {TEMPO.map(t => (
             <div key={t.key} className="rg-tk">
               <p className="rg-tkk">{t.key}</p>
@@ -258,10 +349,10 @@ export default function Rules() {
         </div>
         <figure className="rg-tl">
           <figcaption>
-            <b>Exemple : la Trêve</b>, un Climat de 3 coups (vous, lui, vous). Aucune capture n’est permise pendant ces trois coups,
-            sauf pour sortir d’un échec.
+            <b>{`Exemple : ${withArticle(TRUCE)}`}</b>
+            {`, un ${FAMILY_LABEL[TRUCE.family]} de ${dureeEffet(TRUCE_COUPS)}. Aucune capture n’est permise pendant ${TRUCE_COUPS === 1 ? 'ce coup' : `ces ${enLettres(TRUCE_COUPS)} coups`}, sauf pour sortir d’un échec.`}
           </figcaption>
-          <ol>
+          <ol style={cols(TIMELINE.length, 6)}>
             {TIMELINE.map((s, i) => (
               <li key={i} className={`rg-step ${s.phase} ${s.who === 'Vous' ? 'me' : 'them'}`}>
                 <span className="rg-who">
@@ -281,10 +372,11 @@ export default function Rules() {
         <SectionHead
           id="rg-pouvoirs"
           n="III"
-          kicker="Les huit pouvoirs"
+          kicker={`Les ${pouvoirs(N)}`}
           title={
             <>
-              Trois familles, <em>huit cartes</em>
+              {`${cap(enLettres(famCount, 'f'))} ${pluriel(famCount, 'famille')}, `}
+              <em>{cartesDuCatalogue(N)}</em>
             </>
           }
           lede="Voici la règle exacte de chaque carte, telle que la partie l’applique."
@@ -315,7 +407,7 @@ export default function Rules() {
         <SectionHead
           id="rg-formules"
           n="IV"
-          kicker="Deux formules"
+          kicker={FORMULAS}
           title={
             <>
               Avec les pouvoirs, <em>ou sans</em>
@@ -323,7 +415,7 @@ export default function Rules() {
           }
           lede="La formule se choisit avant la partie, dans les options de l’accueil ou sur la page Jouer."
         />
-        <div className="rg-formulas">
+        <div className="rg-formulas" style={cols(CATALOGS.length, 2)}>
           {CATALOGS.map((c, i) => (
             <div key={c.id} className={`rg-formula ${i === 0 ? 'main' : ''}`}>
               <div className="rg-ftop">

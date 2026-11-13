@@ -1,4 +1,5 @@
 // Problèmes : positions classiques et problèmes à cartes, problème du jour, série et progression locales.
+// Les problèmes que contrediraient les règles des nouvelles parties ne sont pas proposés (PUZZLES, requires).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { BoardStage, lastMoveOf } from '../features/BoardStage';
@@ -7,12 +8,18 @@ import { MiniBoard } from '../features/MiniBoard';
 import { dayKey, useStored } from '../features/storage';
 import { Check, Crumbs, Level, PageHead, useTitle } from '../features/ui';
 import { playSound } from '../sound';
+import { KEYS } from '../storageKeys';
+import { CARDS, cardsOf } from '../../shared/cards';
 import type { CardId } from '../../shared/cards';
 import type { PieceType } from '../../shared/chess';
+import { GAME_RULES } from '../../shared/config/rules';
+import { LOCALE, cap } from '../../shared/text/fr';
+import { colorName } from '../../shared/text/libelles';
+import { pouvoirs } from '../../shared/text/regles';
 import { GameState, legalMovesOf } from '../../shared/game';
 import { fenOf } from '../../shared/pgn';
 import {
-  PUZZLES, Puzzle, PuzzleAction, PuzzleTheme, THEME_LABEL, applyAction, dailyPuzzle, goalOf, puzzleById, puzzleStart,
+  PUZZLES, Puzzle, PuzzleAction, PuzzleTheme, THEME_LABEL, THEME_PLURAL, applyAction, dailyPuzzle, goalOf, puzzleById, puzzleStart,
   sameAction, solverOf, stepOptions,
 } from '../../shared/puzzles';
 
@@ -27,7 +34,7 @@ export interface PuzzleProgress {
   daily: Record<string, string>;
 }
 
-const KEY = 'sm:problemes';
+const KEY = KEYS.puzzles;
 const EMPTY: PuzzleProgress = { solved: {}, clean: {}, streak: 0, best: 0, daily: {} };
 
 function useProgress() {
@@ -48,21 +55,18 @@ function dailyStreak(daily: Record<string, string>): number {
   return n;
 }
 
-const DATE_LONG = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+const DATE_LONG = new Intl.DateTimeFormat(LOCALE, { weekday: 'long', day: 'numeric', month: 'long' });
 
+/** Filtres : tous, puis chaque thème qui a au moins un problème proposé, dans l'ordre de THEME_LABEL. */
 const FILTERS: { id: 'tous' | PuzzleTheme; label: string }[] = [
   { id: 'tous', label: 'Tous' },
-  { id: 'mat1', label: 'Mat en 1' },
-  { id: 'mat2', label: 'Mat en 2' },
-  { id: 'mat3', label: 'Mat en 3' },
-  { id: 'fourchette', label: 'Fourchettes' },
-  { id: 'clouage', label: 'Clouages' },
-  { id: 'enfilade', label: 'Enfilades' },
-  { id: 'deviation', label: 'Déviations' },
-  { id: 'decouverte', label: 'Découvertes' },
-  { id: 'finale', label: 'Mats élémentaires' },
-  { id: 'cartes', label: 'Cartes' },
+  ...(Object.keys(THEME_LABEL) as PuzzleTheme[]).filter(t => PUZZLES.some(q => q.themes.includes(t))).map(t => ({ id: t, label: THEME_PLURAL[t] })),
 ];
+
+/** Chapeau du sommaire : le nombre de pouvoirs en jeu ; la main adverse n'est citée que si elle est visible. */
+const SUB = `Des positions choisies à la main : mats en un, deux ou trois coups, fourchettes, clouages, enfilades, déviations, et des énigmes sur les ${pouvoirs(
+  cardsOf('climats').filter(id => !CARDS[id].retired).length,
+)}, où la bonne carte${GAME_RULES.handsVisible ? ' (ou celle de l’adversaire, toujours visible)' : ''} fait la différence.`;
 
 export default function Puzzles() {
   const { puzzle } = useParams();
@@ -107,7 +111,7 @@ function PuzzleIndex() {
       <PageHead
         kicker="Problèmes"
         title={<>Un regard, <em>un coup juste</em></>}
-        sub="Des positions choisies à la main : mats en un, deux ou trois coups, fourchettes, clouages, enfilades, déviations, et des énigmes sur les huit pouvoirs, où la bonne carte (ou celle de l’adversaire, toujours visible) fait la différence."
+        sub={SUB}
       />
 
       <section className="ft-daily panel" aria-labelledby="pdj">
@@ -153,7 +157,7 @@ function PuzzleIndex() {
               <span className="ft-tile-body">
                 <b>{q.title}</b>
                 <span>{q.themes.map(t => THEME_LABEL[t]).join(' · ')}</span>
-                <small><Check on={!!progress.solved[q.id]} /> {progress.solved[q.id] ? 'Résolu' : solverOf(q) === 'w' ? 'Les Blancs jouent' : 'Les Noirs jouent'} <Level n={q.level} /></small>
+                <small><Check on={!!progress.solved[q.id]} /> {progress.solved[q.id] ? 'Résolu' : `${cap(colorName(solverOf(q), 'les'))} jouent`} <Level n={q.level} /></small>
               </span>
             </Link>
           ))}

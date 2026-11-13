@@ -5,10 +5,18 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { MeUser } from '../../shared/protocol';
 import { api, errMsg } from '../api';
 import { Spinner } from '../components/Layout';
-import { useApp } from '../store';
+import { useApp, useFeature } from '../store';
 import { PageHead, PlacePage, StarMark, useTitle } from './PageScene';
 
 type Mode = 'login' | 'register' | 'forgot' | 'reset' | 'verify';
+
+/**
+ * Bornes du pseudo et du mot de passe : celles de USERNAME et PASSWORD (src/shared/config/limits.ts), vérifiées égales
+ * par test/lessons.test.ts. Les importer ferait de config/limits.ts un morceau à part (il est aussi lu par Jouer et la
+ * partie) et allongerait la table de préchargement du paquet principal.
+ */
+export const USERNAME = { min: 3, max: 20, hint: '3 à 20 caractères : lettres, chiffres, - et _' } as const;
+export const PASSWORD = { min: 8, hint: '8 caractères minimum.' } as const;
 
 export default function Auth({ mode }: { mode: Mode }) {
   const { setMe, refresh, toast, me } = useApp();
@@ -24,6 +32,8 @@ export default function Auth({ mode }: { mode: Mode }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const ranked = useFeature('ranked');
+  const shop = useFeature('shop');
 
   useEffect(() => {
     setError(null);
@@ -112,7 +122,7 @@ export default function Auth({ mode }: { mode: Mode }) {
           Un nouveau <em>sésame.</em>
         </>
       ),
-      lede: 'Choisissez un mot de passe d’au moins 8 caractères. Vos autres appareils seront déconnectés.',
+      lede: `Choisissez un mot de passe d’au moins ${PASSWORD.min} caractères. Vos autres appareils seront déconnectés.`,
     },
     verify: {
       title: (
@@ -131,24 +141,28 @@ export default function Auth({ mode }: { mode: Mode }) {
           <PageHead num="VI" place="Le Seuil" aside={titles[mode]} title={story[mode].title} lede={story[mode].lede} />
           {mode === 'register' && (
             <ul className="auth-perks">
-              <li>
-                <StarMark size={12} />
-                <span>
-                  <b>Classement Elo</b> et parties classées contre des joueurs de votre niveau.
-                </span>
-              </li>
+              {ranked && (
+                <li>
+                  <StarMark size={12} />
+                  <span>
+                    <b>Classement Elo</b> et parties classées contre des joueurs de votre niveau.
+                  </span>
+                </li>
+              )}
               <li>
                 <StarMark size={12} />
                 <span>
                   <b>Historique</b> de vos parties, à revoir et à analyser coup par coup.
                 </span>
               </li>
-              <li>
-                <StarMark size={12} />
-                <span>
-                  <b>Collection</b> de skins et de plateaux, visibles par vos adversaires.
-                </span>
-              </li>
+              {shop && (
+                <li>
+                  <StarMark size={12} />
+                  <span>
+                    <b>Collection</b> de skins et de plateaux, visibles par vos adversaires.
+                  </span>
+                </li>
+              )}
             </ul>
           )}
           {(mode === 'login' || mode === 'register') && (
@@ -207,15 +221,15 @@ export default function Auth({ mode }: { mode: Mode }) {
                     className="input"
                     autoComplete="nickname"
                     required
-                    minLength={3}
-                    maxLength={20}
+                    minLength={USERNAME.min}
+                    maxLength={USERNAME.max}
                     pattern="[A-Za-z0-9_\-]+"
                     aria-describedby="username-hint"
                     value={username}
                     onChange={e => setUsername(e.target.value)}
                   />
                   <small id="username-hint" className="faint">
-                    3 à 20 caractères : lettres, chiffres, - et _
+                    {USERNAME.hint}
                   </small>
                 </div>
               )}
@@ -235,14 +249,14 @@ export default function Auth({ mode }: { mode: Mode }) {
                     type="password"
                     autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                     required
-                    minLength={mode === 'login' ? 1 : 8}
+                    minLength={mode === 'login' ? 1 : PASSWORD.min}
                     aria-describedby={mode !== 'login' ? 'password-hint' : undefined}
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                   />
                   {mode !== 'login' && (
                     <small id="password-hint" className="faint">
-                      8 caractères minimum.
+                      {PASSWORD.hint}
                     </small>
                   )}
                 </div>

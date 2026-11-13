@@ -88,7 +88,7 @@ function newGame(): GameState {
 }
 
 /** Une sauvegarde est rejetée si sa forme ne correspond plus au moteur (cartes renommées, champs manquants). */
-function validState(x: unknown): x is GameState {
+export function validState(x: unknown): x is GameState {
   const s = x as GameState | null;
   if (!s || typeof s !== 'object' || !s.pos || !Array.isArray(s.pos.board) || s.pos.board.length !== 64) return false;
   if (s.pos.turn !== 'w' && s.pos.turn !== 'b') return false;
@@ -101,7 +101,7 @@ function validState(x: unknown): x is GameState {
   return true;
 }
 
-function loadSaved(): GameState | null {
+export function loadSaved(): GameState | null {
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (!raw) return null;

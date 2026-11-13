@@ -3,7 +3,6 @@ import { useRef, useState } from 'react';
 import type { CSSProperties, RefObject } from 'react';
 import { Board } from '../../src/client/components/Board';
 import { CardEmblem } from '../../src/client/components/CardArt';
-import { DemoBoard } from '../../src/client/components/DemoBoard';
 import { SpellCard } from '../../src/client/components/SpellCard';
 import { CARDS, RARITY_LABEL } from '../../src/shared/cards';
 import type { CardId } from '../../src/shared/cards';
@@ -13,7 +12,7 @@ import type { Effect } from '../../src/shared/game';
 import type { Position } from '../../src/shared/chess';
 import { Cabinet, Prochaine } from './cabinet';
 import { BOARDS, COLLECTION, ELO_CURVE, LEGAL, LEVELS, MASTERPIECE, PACK, RULES, SKINS, WINGS } from './data';
-import { HOUSE_BOARD, HOUSE_SKIN } from './maison';
+import { HOUSE_BOARD } from './maison';
 import { Arrow, Eyebrow, Lines, Star, useInView } from './ui';
 
 const STATIC_POS = initialPosition().pos;
@@ -42,7 +41,8 @@ interface HallProps {
 export const FAN = [-13, -3, 8];
 
 export function Hall({ hand, boardRef, live, paused, onPlay, onVisit }: HallProps) {
-  const [caption, setCaption] = useState('');
+  // Légende de la démonstration en direct (DemoBoard, supprimé au lot 8 : l'échiquier reste figé).
+  const [caption] = useState('');
   const inView = useInView(boardRef);
   const resume = !!paused;
   const move = paused ? Math.floor(paused.ply / 2) + 1 : 0;
@@ -99,7 +99,7 @@ export function Hall({ hand, boardRef, live, paused, onPlay, onVisit }: HallProp
             {paused ? (
               <Board pos={paused.pos} orientation="w" theme={HOUSE_BOARD} lastMove={paused.lastMove} effects={paused.effects} locked coords={false} />
             ) : live && inView ? (
-              <DemoBoard theme={HOUSE_BOARD} skin={HOUSE_SKIN} onCaption={setCaption} />
+              <Board pos={STATIC_POS} orientation="w" theme={HOUSE_BOARD} locked coords={false} />
             ) : (
               <Board pos={STATIC_POS} orientation="w" theme={HOUSE_BOARD} locked coords={false} />
             )}
@@ -418,7 +418,7 @@ export function Atelier() {
         <div className="noire" ref={caseRef} data-rv="curtain">
           <div className="noire-board">
             {inView ? (
-              <DemoBoard key={skin} mode="preview" skin={skin} theme={board} />
+              <Board pos={STATIC_POS} orientation="w" theme={board} locked coords={false} />
             ) : (
               <Board pos={STATIC_POS} orientation="w" theme={board} locked coords={false} />
             )}

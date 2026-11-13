@@ -20,3 +20,13 @@ src/shared/pgn.ts	spellmate	h.Variant = 'Spellmate';	# variante PGN : format d�
 src/client/ai/index.ts	spellmate	name: 'spellmate-ia'	# nom du fil de calcul (identifiant technique)
 src/client/features/engine.ts	spellmate	name: 'spellmate-analyse'	# nom du fil de calcul (identifiant technique)
 src/client/storageKeys.ts	spellmate	reload: 'spellmate:reload'	# clé de stockage : identifiant technique, ne jamais renommer
+src/shared/puzzles.ts	tour suivant	(« au début de votre tour suivant ») : délai de RULES_V1	# commentaire
+src/shared/puzzles.ts	tour suivant	arrive au début de votre tour suivant : le pion g7	# problème écrit pour RULES_V1, masqué si le délai du Présage diffère (requires.presageDelay)
+src/shared/lessons.ts	tour suivant	Il n’arrive qu’au début de votre tour suivant	# leçon écrite pour RULES_V1, masquée si le délai du Présage diffère (requires.presageDelay)
+src/shared/lessons.ts	un coup pour	a un coup pour s’y préparer	# leçon écrite pour RULES_V1, masquée si le délai du Présage diffère (requires.presageDelay)
+src/shared/cards.ts	tour suivant	n'arrive qu'au début du tour suivant du lanceur	# commentaire
+src/shared/game.ts	tour suivant	il le devient au début du tour suivant du lanceur	# commentaire
+src/client/components/SpellCard.tsx	tour suivant	'du tour suivant de votre adversaire'	# branche k = 1 d'une phrase dérivée du délai du Présage
+src/client/pages/Rules.tsx	tour suivant	'votre tour suivant'	# branche délai 2 d'une phrase dérivée (prochainTour sinon)
+src/client/odyssee/data.ts	tour suivant	'à votre tour suivant'	# branche k = 1 d'une phrase dérivée du délai du Présage
+src/client/odyssee/data.ts	tour suivant	* tour suivant » et « un coup »	# commentaire

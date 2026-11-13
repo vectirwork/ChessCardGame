@@ -63,7 +63,7 @@ export interface LocalGameOptions {
 
 export function useLocalGame(opts: LocalGameOptions = {}) {
   const { skin = 'skin:arcane', botSkin = 'skin:void', theme, botCardChance = 0.35 } = opts;
-  const [state, setState] = useState<GameState>(() => createGame(dealHands(false, false), false));
+  const [state, setState] = useState<GameState>(() => createGame(dealHands(false, Math.random, 'duel'), false, 'duel'));
   const [wrapEl, setWrapEl] = useState<HTMLDivElement | null>(null);
   const [hidden, setHidden] = useState<Set<number>>(new Set());
   const [selected, setSelected] = useState<number | null>(null);
@@ -191,7 +191,7 @@ export function useLocalGame(opts: LocalGameOptions = {}) {
   const reset = useCallback(() => {
     setSelected(null);
     setPartial([]);
-    apply(createGame(dealHands(false, false), false));
+    apply(createGame(dealHands(false, Math.random, 'duel'), false, 'duel'));
   }, [apply]);
 
   return {

@@ -7,7 +7,10 @@
 // (tsx : le script importe le moteur partagé pour choisir des coups légaux.)
 // Rien n'est recopié des règles : le nombre de cartes vient des règles de chaque partie (rulesOf de son état, connu dès
 // sa création) et de la vue du choix (count, pool, totalMs), les réserves de poolOf. Les scénarios sablier, mur,
-// redemarrage et drapeau choisissent une main précise : avec le tirage partout (DEAL.draft faux), ils sont sautés.
+// redemarrage et drapeau choisissent une main précise : avec le tirage partout (DEAL.draft faux), ils sont sautés ;
+// sablier et drapeau suivent un calendrier écrit pour un Présage à 2 demi-coups et la carte avant le coup, mur la
+// carte avant le coup : sautés sinon (SPELLMATE_TEST_RULES). IA_CARTES_PAR_TOUR=n (avec {"cardsPerTurn":n} et
+// IA_GAMES=10) exige que l'IA ait joué n cartes dans un même tour.
 // Variables : RESTART_CMD (commande qui redémarre l'instance en gardant sa base, pour « redemarrage »),
 //             IA_GAMES (nombre de parties contre l'IA, 4 par défaut), IA_PLIES (120), THINK_MS (réflexion avant
 //             l'arrêt du serveur, 2000).
@@ -659,8 +662,11 @@ async function drapeau() {
   void u;
 }
 
-/** Le serveur fait-il choisir les cartes ? Une invitation de test (clients sans audit), annulée aussitôt. */
-async function serverDrafts() {
+/**
+ * Le serveur fait-il choisir les cartes, et avec quelles règles crée-t-il ses parties ? Une invitation de test (clients
+ * sans audit), annulée aussitôt.
+ */
+async function serverProbe() {
   const [a, b] = [new BaseClient(BASE), new BaseClient(BASE)];
   for (const c of [a, b]) { await c.api('/me'); await c.connect(); }
   const r = await a.api('/games', { mode: 'invite', tc: '3+2', color: 'w', catalog: 'climats', name: 'Sonde' });
@@ -668,16 +674,26 @@ async function serverDrafts() {
   const j = await b.emit('game:join', { id: r.data.id, name: 'Sonde' });
   await a.emit('game:abort', { id: r.data.id });
   a.close(); b.close();
-  return !!j.view.draft;
+  return { drafts: !!j.view.draft, rules: rulesOf(j.view.state) };
 }
 
 const run = async () => {
-  drawing = !(await serverDrafts());
+  const probe = await serverProbe();
+  drawing = !probe.drafts;
   /** Scénario qui choisit une main précise : sauté si le serveur tire les mains. */
   const chosen = async (label, f) => (drawing ? log(`\n== ${label} : sauté (tirage partout, aucune main ne se choisit) ==`) : f());
-  if (WANT.has('drapeau')) await chosen('drapeau', drapeau);
-  if (all || WANT.has('sablier')) await chosen('sablier', sablier);
-  if (all || WANT.has('mur')) await chosen('mur', mur);
+  // Sablier et drapeau suivent un calendrier écrit coup par coup : carte avant le coup, arrivée du Présage deux
+  // demi-coups plus tard. Avec d'autres règles (SPELLMATE_TEST_RULES), ils sont sautés ; ia suit les règles de chaque
+  // partie.
+  const timed = probe.rules.presageDelay === 2 && !probe.rules.cardEndsTurn;
+  const scripted = async (label, f) =>
+    timed ? chosen(label, f) : log(`\n== ${label} : sauté (calendrier écrit pour un Présage à 2 demi-coups, la carte avant le coup) ==`);
+  if (WANT.has('drapeau')) await scripted('drapeau', drapeau);
+  if (all || WANT.has('sablier')) await scripted('sablier', sablier);
+  // Le Mur se pose avant le coup des Blancs : sauté si la carte remplace le coup.
+  if (all || WANT.has('mur')) {
+    await (probe.rules.cardEndsTurn ? log('\n== mur : sauté (scénario écrit pour la carte avant le coup) ==') : chosen('mur', mur));
+  }
   if (all || WANT.has('ia')) await ia();
   if (WANT.has('redemarrage')) await chosen('redemarrage', redemarrage);
   log(`\n${problems.length ? `${problems.length} problème(s) :\n - ` + problems.join('\n - ') : 'Aucun problème relevé.'}`);

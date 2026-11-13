@@ -2,6 +2,8 @@
 // - Caractérisation : les écarts de classement d'une partie classée terminée (endGame), tels que le serveur les
 //   calculait avant que la formule ne sorte de games.ts (valeurs écrites à la main, K 40 puis 20, échelle 400).
 // - elo() pur, et tolérance de l'appariement (250 points, plus 25 par seconde d'attente).
+// - Enregistrement de la fin d'une partie classée : nouvel essai si la base ne répond pas (PERSIST), rattrapage au
+//   démarrage des parties terminées dont le classement n'a pas été appliqué ; jamais deux fois (ratings_applied).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/server/db', () => ({
@@ -14,8 +16,9 @@ vi.mock('../src/server/bot-pool', () => ({
 }));
 
 import { sqIndex as sq } from '../src/shared/chess';
-import { abortRoom, applyMove, newRoom, resignRoom } from '../src/server/games';
-import { RATING, MATCHMAKING } from '../src/server/settings';
+import { q, tx } from '../src/server/db';
+import { abortRoom, applyMove, applyPendingRatings, newRoom, persistResult, resignRoom } from '../src/server/games';
+import { MATCHMAKING, PERSIST, RATING } from '../src/server/settings';
 import { elo, matchTolerance, ratingDiffs } from '../src/server/rating';
 import type { SeatArg } from './helpers/sieges';
 
@@ -109,5 +112,88 @@ describe('tolérance de l’appariement classé', () => {
     expect(matchTolerance(4000)).toBe(350);
     expect(matchTolerance(1500)).toBe(287.5);
     expect(matchTolerance(60_000)).toBe(250 + 60 * 25);
+  });
+});
+
+describe('enregistrement de la fin d’une partie classée', () => {
+  /** Client de transaction en doublure : requêtes reçues ; `applied` : ratings_applied déjà vrai en base. */
+  function fakeClient(applied = false) {
+    const queries: { sql: string; params: unknown[] }[] = [];
+    const client = {
+      queries,
+      query: async (sql: string, params: unknown[] = []) => {
+        queries.push({ sql, params });
+        return /ratings_applied = true/.test(sql) ? { rows: [], rowCount: applied ? 0 : 1 } : { rows: [], rowCount: 1 };
+      },
+    };
+    return client;
+  }
+  const userUpdates = (c: ReturnType<typeof fakeClient>) => c.queries.filter(x => /^UPDATE users/.test(x.sql)).map(x => x.params);
+
+  it('base injoignable : nouvel essai après PERSIST.retryMs, classement appliqué une fois', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const room = ratedGame(account('a', 1500, 10), account('b', 1500, 10), 'b');
+      await vi.advanceTimersByTimeAsync(0);
+      const client = fakeClient();
+      vi.mocked(tx).mockReset();
+      vi.mocked(tx)
+        .mockRejectedValueOnce(new Error('connexion refusée'))
+        .mockRejectedValueOnce(new Error('connexion refusée'))
+        .mockImplementation(async fn => fn(client as never));
+      const done = persistResult(room);
+      await vi.advanceTimersByTimeAsync(PERSIST.retryMs);
+      expect(tx).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(PERSIST.retryMs);
+      await expect(done).resolves.toBe(true);
+      expect(tx).toHaveBeenCalledTimes(3);
+      expect(userUpdates(client)).toEqual([[20, 'a'], [-20, 'b']]);
+      expect(log).toHaveBeenCalledWith(expect.stringMatching(/essai 1 sur/), expect.any(Error));
+    } finally {
+      log.mockRestore();
+      vi.mocked(tx).mockReset();
+      vi.mocked(tx).mockImplementation(async fn => fn({ query: async () => ({ rows: [], rowCount: 0 }) } as never));
+    }
+  });
+
+  it('au-delà de PERSIST.attempts essais : abandon signalé (la partie reste en mémoire)', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const room = ratedGame(account('a', 1500, 10), account('b', 1500, 10), 'b');
+      await vi.advanceTimersByTimeAsync(0);
+      vi.mocked(tx).mockReset();
+      vi.mocked(tx).mockRejectedValue(new Error('connexion refusée'));
+      const done = persistResult(room);
+      await vi.advanceTimersByTimeAsync(PERSIST.retryMs * PERSIST.attempts);
+      await expect(done).resolves.toBe(false);
+      expect(tx).toHaveBeenCalledTimes(PERSIST.attempts);
+      expect(log).toHaveBeenLastCalledWith(expect.stringMatching(new RegExp(`non enregistrée après ${PERSIST.attempts} essais`)), expect.any(Error));
+    } finally {
+      log.mockRestore();
+      vi.mocked(tx).mockReset();
+      vi.mocked(tx).mockImplementation(async fn => fn({ query: async () => ({ rows: [], rowCount: 0 }) } as never));
+    }
+  });
+
+  it('rattrapage au démarrage : classement des parties terminées non appliqué, jamais deux fois', async () => {
+    const pending = ratedGame(account('a', 1500, 10), account('b', 1500, 10), 'w').d;
+    const done = ratedGame(account('c', 1500, 10), account('d', 1500, 10), 'b').d;
+    await vi.advanceTimersByTimeAsync(0);
+    vi.mocked(q).mockResolvedValueOnce([{ data: pending }, { data: done }] as never);
+    const clients = [fakeClient(false), fakeClient(true)];
+    vi.mocked(tx).mockReset();
+    for (const c of clients) vi.mocked(tx).mockImplementationOnce(async fn => fn(c as never));
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      expect(await applyPendingRatings()).toBe(1);
+      expect(vi.mocked(q).mock.calls.at(-1)![0]).toMatch(/status = 'ended' AND rated AND NOT ratings_applied/);
+      expect(userUpdates(clients[0])).toEqual([[-20, 'a'], [20, 'b']]);
+      expect(userUpdates(clients[1])).toEqual([]);
+      expect(log).toHaveBeenCalledWith(expect.stringMatching(/Classement appliqué à 1 partie/));
+    } finally {
+      log.mockRestore();
+      vi.mocked(tx).mockReset();
+      vi.mocked(tx).mockImplementation(async fn => fn({ query: async () => ({ rows: [], rowCount: 0 }) } as never));
+    }
   });
 });

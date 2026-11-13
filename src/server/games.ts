@@ -30,7 +30,7 @@ import { botPool } from './bot-pool';
 import { DbClient, one, q, tx } from './db';
 import { matchTolerance, ratingDiffs } from './rating';
 import { gameId, randomToken } from './security';
-import { BOT_RUNTIME, FEATURES, LIMITS, MATCHMAKING, RATING, RELAY, TIMINGS, dealSettings } from './settings';
+import { BOT_RUNTIME, FEATURES, LIMITS, MATCHMAKING, PERSIST, RATING, RELAY, TIMINGS, dealSettings } from './settings';
 import { toSummary } from './summary';
 import { countryOfTimezone } from './timezones';
 
@@ -255,6 +255,7 @@ export function resumeRoom(room: Room) {
 }
 
 export async function restoreRooms() {
+  await applyPendingRatings();
   const rows = await q<{ data: RoomData }>(`SELECT data FROM games WHERE status <> 'ended'`);
   for (const { data } of rows) {
     if (rooms.has(data.id)) continue;
@@ -765,32 +766,79 @@ function endGame(room: Room, result?: Result) {
   const { w, b } = d.seats;
   if (d.rated && w?.userId && b?.userId && r.reason !== 'aborted') d.ratingDiff = ratingDiffs(w, b, r.winner);
   broadcast(room, { type: 'end' });
-  void persistResult(room).catch(e => console.error('Fin de partie :', e));
+  void persistResult(room);
 }
 
-async function persistResult(room: Room) {
-  const d = room.d;
-  const r = d.state.result!;
-  if (room.saveTimer) {
-    clearTimeout(room.saveTimer);
-    room.saveTimer = null;
+/**
+ * Classement d'une partie classée terminée, dans la transaction `c` : écarts (ratingDiff) et compteurs de parties.
+ * Garde-fou : même après un redémarrage ou un nouvel essai, il n'est appliqué qu'une fois par partie
+ * (ratings_applied). Renvoie vrai s'il vient d'être appliqué.
+ */
+async function applyRatings(c: DbClient, d: RoomData): Promise<boolean> {
+  const r = d.state.result;
+  if (!d.rated || !d.ratingDiff || !r || r.reason === 'aborted') return false;
+  const first = await c.query(`UPDATE games SET ratings_applied = true WHERE id = $1 AND NOT ratings_applied RETURNING id`, [d.id]);
+  if (!first.rowCount) return false;
+  for (const color of COLORS) {
+    const seat = d.seats[color]!;
+    if (!seat.userId) continue;
+    const outcome = r.winner === null ? 'draws' : r.winner === color ? 'wins' : 'losses';
+    await c.query(
+      `UPDATE users SET rating = greatest(${RATING.floor}, rating + $1), games_played = games_played + 1, ${outcome} = ${outcome} + 1 WHERE id = $2`,
+      [d.ratingDiff[color], seat.userId],
+    );
   }
-  await tx(async c => {
-    await saveRoom(room, c);
-    if (!d.rated || !d.ratingDiff || r.reason === 'aborted') return;
-    // Garde-fou : même après un redémarrage, le classement n'est appliqué qu'une fois par partie
-    const first = await c.query(`UPDATE games SET ratings_applied = true WHERE id = $1 AND NOT ratings_applied RETURNING id`, [d.id]);
-    if (!first.rowCount) return;
-    for (const color of COLORS) {
-      const seat = d.seats[color]!;
-      if (!seat.userId) continue;
-      const outcome = r.winner === null ? 'draws' : r.winner === color ? 'wins' : 'losses';
-      await c.query(
-        `UPDATE users SET rating = greatest(${RATING.floor}, rating + $1), games_played = games_played + 1, ${outcome} = ${outcome} + 1 WHERE id = $2`,
-        [d.ratingDiff![color], seat.userId],
-      );
+  return true;
+}
+
+/**
+ * Fin de partie enregistrée (salle terminée et classement, en une transaction). Si la base ne répond pas, nouvel
+ * essai après PERSIST.retryMs, PERSIST.attempts fois au plus ; la partie reste en mémoire en attendant. Exportée pour
+ * les tests.
+ */
+export async function persistResult(room: Room): Promise<boolean> {
+  const d = room.d;
+  for (let attempt = 1; ; attempt++) {
+    if (room.saveTimer) {
+      clearTimeout(room.saveTimer);
+      room.saveTimer = null;
     }
-  });
+    try {
+      await tx(async c => {
+        await saveRoom(room, c);
+        await applyRatings(c, d);
+      });
+      return true;
+    } catch (e) {
+      if (attempt >= PERSIST.attempts) {
+        console.error(`Fin de partie ${d.id} non enregistrée après ${attempt} essais :`, e);
+        return false;
+      }
+      console.error(`Fin de partie ${d.id} : enregistrement impossible (essai ${attempt} sur ${PERSIST.attempts}), nouvel essai :`, e);
+      await sleep(PERSIST.retryMs);
+    }
+  }
+}
+
+/**
+ * Rattrapage au démarrage : parties classées terminées en base dont le classement n'a pas été appliqué (fin de partie
+ * sauvegardée hors de persistResult, par exemple à l'arrêt du serveur pendant son enregistrement). Même garde-fou
+ * (ratings_applied) : jamais deux fois. Exportée pour les tests.
+ */
+export async function applyPendingRatings(): Promise<number> {
+  const rows = await q<{ data: RoomData }>(
+    `SELECT data FROM games WHERE status = 'ended' AND rated AND NOT ratings_applied AND white_diff IS NOT NULL AND black_diff IS NOT NULL`,
+  );
+  let n = 0;
+  for (const { data } of rows) {
+    try {
+      if (await tx(c => applyRatings(c, data))) n++;
+    } catch (e) {
+      console.error(`Classement de la partie ${data.id} (rattrapage) :`, e);
+    }
+  }
+  if (n) console.log(`Classement appliqué à ${n} partie(s) terminée(s) dont l'enregistrement avait été interrompu.`);
+  return n;
 }
 
 // ---------------------------------------------------------------------------------------------

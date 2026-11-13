@@ -123,6 +123,15 @@ export const BOT_THREADS = Object.freeze({
   restartWindowMs: 60_000,
 });
 
+/**
+ * Enregistrement d'une fin de partie (résultat et classement, en une transaction) : essais si la base ne répond pas,
+ * et délai entre deux. Le classement n'est jamais appliqué deux fois (ratings_applied).
+ */
+export const PERSIST = Object.freeze({
+  attempts: 5,
+  retryMs: 5_000,
+});
+
 /** Limites d'usage. */
 export const LIMITS = Object.freeze({
   /** Parties non terminées par créateur. */

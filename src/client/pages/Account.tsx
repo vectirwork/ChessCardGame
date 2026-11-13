@@ -12,8 +12,10 @@ import { api, errMsg } from '../api';
 import { CollectionSeal } from '../components/CollectionSeal';
 import { PageLoader, Spinner } from '../components/Layout';
 import { crestUrl } from '../components/pieces';
-import { CLASSIC_KINGS_PREF, equippedId, isEquipped, owns } from '../skins';
-import { useApp, useFeature, usePref } from '../store';
+import { usePref } from '../features/storage';
+import { equippedId, isEquipped, owns } from '../skins';
+import { KEYS } from '../storageKeys';
+import { useApp, useFeature } from '../store';
 import { PageHead, PlacePage, StarMark, useTitle } from './PageScene';
 import { ItemThumb, RarityGem } from './shop/ItemThumb';
 import { gemOf } from './shop/trial';
@@ -278,7 +280,7 @@ function CollectionTab({ me }: { me: MeUser }) {
   const shop = useFeature('shop');
   const [busy, setBusy] = useState<string | null>(null);
   const [later, setLater] = useState(false);
-  const [classic, setClassic] = usePref<boolean>(CLASSIC_KINGS_PREF, false);
+  const [classic, setClassic] = usePref<boolean>(KEYS.classicKings, false);
   const seal = sealOf(me.items);
   const equip = async (id: string) => {
     setBusy(id);

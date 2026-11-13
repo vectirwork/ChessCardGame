@@ -9,13 +9,6 @@ type Me = MeUser | null | undefined;
 /** Champ de MeUser qui porte l'objet de chaque emplacement (un champ absent de MeUser ne compile pas : equippedId). */
 const FIELD = Object.fromEntries(SLOTS.map(k => [k, SLOT_DEFS[k].meField])) as { [K in ItemKind]: (typeof SLOT_DEFS)[K]['meField'] };
 
-/**
- * Préférence locale « Rois adverses classiques » (usePref) : en partie, le roi adverse s'affiche en roi Arcane. Lue en
- * partie, à l'accueil et dans l'analyse ; réglée dans le compte. Définie dans features/history.ts, qui reste léger
- * (« Mes parties » n'importe pas le catalogue).
- */
-export { CLASSIC_KINGS_PREF } from './features/history';
-
 /** Objet porté dans un emplacement (défaut si non connecté, ou si le serveur ne l'envoie pas encore). */
 export function equippedId(me: Me, kind: ItemKind): string {
   return me?.[FIELD[kind]] || DEFAULT_ITEM[kind];

@@ -73,6 +73,7 @@ interface Settings {
   fr: typeof import('./src/shared/text/fr');
   regles: typeof import('./src/shared/text/regles');
   bot: typeof import('./src/shared/bot');
+  limits: typeof import('./src/shared/config/limits');
 }
 let settings: Promise<Settings> | undefined;
 export function loadSettings(): Promise<Settings> {
@@ -80,8 +81,8 @@ export function loadSettings(): Promise<Settings> {
   return (settings ??= Promise.all(
     ['./src/client/storageKeys.ts', './src/shared/config/brand.ts', './src/shared/config/rules.ts', './src/shared/config/routes.ts',
       './src/shared/protocol.ts', './src/shared/rules.ts', './src/shared/text/fr.ts', './src/shared/text/regles.ts',
-      './src/shared/bot.ts'].map(load),
-  ).then(([keys, brand, rules, routes, protocol, check, fr, regles, bot]) => ({ keys, brand, rules, routes, protocol, check, fr, regles, bot })));
+      './src/shared/bot.ts', './src/shared/config/limits.ts'].map(load),
+  ).then(([keys, brand, rules, routes, protocol, check, fr, regles, bot, limits]) => ({ keys, brand, rules, routes, protocol, check, fr, regles, bot, limits })));
 }
 
 /**
@@ -112,6 +113,16 @@ export interface BuildConstants {
   cleRechargement: string;
   /** PROTOCOL_VERSION, annoncée à la connexion du socket. */
   protocole: number;
+  /**
+   * Pseudo d'invité (GUEST_NAME, config/limits.ts) : longueur maximale, forme complète (source et drapeaux de
+   * l'expression `full`) et refus. Lu par Jouer et la feuille « Défier un ami » de l'accueil : un import de limits.ts
+   * en ferait un morceau de plus, partagé avec la page de partie (une requête de plus pour ces pages).
+   */
+  pseudoInvite: { max: number; motif: string; drapeaux: string; invalide: string; invalideDetail: string };
+  /** Pseudo d'un compte (USERNAME) : bornes, attribut `pattern` du champ (tiré de USERNAME.chars) et aide (Connexion). */
+  pseudoCompte: { min: number; max: number; pattern: string; aide: string };
+  /** Mot de passe (PASSWORD) : longueur minimale et aide (Connexion). */
+  motDePasse: { min: number; aide: string };
 }
 
 declare global {
@@ -119,7 +130,17 @@ declare global {
   const __SM__: Readonly<BuildConstants>;
 }
 
-export function buildConstants({ brand, rules, regles, keys, protocol, bot }: Settings): BuildConstants {
+/**
+ * Attribut `pattern` d'un champ, tiré d'une expression ancrée (USERNAME.chars) : sans ses ancres, que le navigateur
+ * ajoute, et avec le tiret final d'une classe échappé (le navigateur compile `pattern` avec le drapeau v, qui refuse
+ * un « - » nu en fin de classe).
+ */
+export function inputPattern(re: RegExp): string {
+  return re.source.replace(/^\^|\$$/g, '').replace(/-\]/g, '\\-]');
+}
+
+export function buildConstants({ brand, rules, regles, keys, protocol, bot, limits }: Settings): BuildConstants {
+  const { GUEST_NAME, USERNAME, PASSWORD } = limits;
   return {
     marque: brand.BRAND.name,
     marqueCapitales: brand.BRAND.nameCaps,
@@ -130,6 +151,15 @@ export function buildConstants({ brand, rules, regles, keys, protocol, bot }: Se
     niveauxIA: regles.nomsNiveaux(bot.BOT_LEVELS.map(l => bot.BOT_PROFILES[l].name), ','),
     cleRechargement: keys.KEYS.reload,
     protocole: protocol.PROTOCOL_VERSION,
+    pseudoInvite: {
+      max: GUEST_NAME.max,
+      motif: GUEST_NAME.full.source,
+      drapeaux: GUEST_NAME.full.flags,
+      invalide: GUEST_NAME.invalid,
+      invalideDetail: GUEST_NAME.invalidDetail,
+    },
+    pseudoCompte: { min: USERNAME.min, max: USERNAME.max, pattern: inputPattern(USERNAME.chars), aide: USERNAME.hint },
+    motDePasse: { min: PASSWORD.min, aide: PASSWORD.hint },
   };
 }
 

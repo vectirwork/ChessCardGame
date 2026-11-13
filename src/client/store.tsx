@@ -139,31 +139,6 @@ export function useFeature(k: FeatureKey): boolean {
   return useContext(FeaturesContext)[k];
 }
 
-/**
- * Préférence locale conservée dans le navigateur, sous « sm: » + nom (PREF_PREFIX).
- * @deprecated importer usePref de features/storage.ts avec une clé de KEYS (usePref(KEYS.classicKings, false)) :
- * même valeur stockée, synchronisée entre composants et onglets, hors du paquet principal.
- */
-export function usePref<T>(key: string, initial: T): [T, (v: T) => void] {
-  const [v, setV] = useState<T>(() => {
-    try {
-      const raw = localStorage.getItem('sm:' + key);
-      return raw === null ? initial : (JSON.parse(raw) as T);
-    } catch {
-      return initial;
-    }
-  });
-  const set = useCallback((x: T) => {
-    setV(x);
-    try {
-      localStorage.setItem('sm:' + key, JSON.stringify(x));
-    } catch {
-      // stockage indisponible
-    }
-  }, [key]);
-  return [v, set];
-}
-
 export function getGuestName(): string {
   try {
     return localStorage.getItem('sm:guestName') ?? '';

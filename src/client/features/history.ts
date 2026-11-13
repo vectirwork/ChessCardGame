@@ -24,7 +24,10 @@ import type { GameState, LogEntry, ResultReason } from '../../shared/game';
 import type { GameView, SeatView } from '../../shared/protocol';
 import { readJson, writeJson } from './storage';
 
-/** Préférence locale (usePref) : les rois des adversaires s'affichent en roi Arcane. Défaut : false. */
+/**
+ * Nom de la préférence locale « Rois adverses classiques » (les rois des adversaires s'affichent en roi Arcane ; défaut :
+ * false). Sa clé de stockage est KEYS.classicKings (PREF_PREFIX + ce nom), lue par usePref de features/storage.ts.
+ */
 export const CLASSIC_KINGS_PREF = 'rois-classiques';
 
 /** Roi Arcane (DEFAULT_KING du catalogue, vérifié par test/kings.test.ts). */

@@ -11,19 +11,13 @@ import { PageHead, PlacePage, StarMark, useTitle } from './PageScene';
 type Mode = 'login' | 'register' | 'forgot' | 'reset' | 'verify';
 
 /**
- * Bornes du pseudo et du mot de passe : copie de USERNAME et PASSWORD (src/shared/config/limits.ts), vérifiée égale par
- * test/lessons.test.ts (bornes, caractères, aides, et attribut `pattern` rendu). Les importer ferait de limits.ts un
- * morceau de plus (voir GUEST_NAME dans Play.tsx) ; le lot 9 remplacera la copie par l'import.
+ * Bornes du pseudo et du mot de passe : USERNAME et PASSWORD (src/shared/config/limits.ts), figés au build
+ * (__SM__.pseudoCompte, __SM__.motDePasse : vite.config.ts). Les importer ferait de limits.ts un morceau de plus,
+ * partagé avec la page de partie. `pattern` : l'attribut du champ, tiré de USERNAME.chars au build (sans ses ancres, le
+ * tiret final d'une classe échappé pour le drapeau v du navigateur) ; au défaut, « [A-Za-z0-9_\-]+ », comme avant.
  */
-export const USERNAME = { min: 3, max: 20, chars: /^[A-Za-z0-9_-]+$/, hint: '3 à 20 caractères : lettres, chiffres, - et _' } as const;
-export const PASSWORD = { min: 8, hint: '8 caractères minimum.' } as const;
-
-/**
- * Attribut `pattern` du pseudo, tiré de USERNAME.chars : sans ses ancres, que le navigateur ajoute, et avec le tiret final
- * d'une classe échappé, car les navigateurs compilent `pattern` avec le drapeau v, qui le refuse nu. Au défaut :
- * « [A-Za-z0-9_\-]+ », comme avant.
- */
-const USERNAME_PATTERN = USERNAME.chars.source.replace(/^\^|\$$/g, '').replace(/-\]/g, '\\-]');
+const USERNAME = __SM__.pseudoCompte;
+const PASSWORD = __SM__.motDePasse;
 
 export default function Auth({ mode }: { mode: Mode }) {
   const { setMe, refresh, toast, me } = useApp();
@@ -230,13 +224,13 @@ export default function Auth({ mode }: { mode: Mode }) {
                     required
                     minLength={USERNAME.min}
                     maxLength={USERNAME.max}
-                    pattern={USERNAME_PATTERN}
+                    pattern={USERNAME.pattern}
                     aria-describedby="username-hint"
                     value={username}
                     onChange={e => setUsername(e.target.value)}
                   />
                   <small id="username-hint" className="faint">
-                    {USERNAME.hint}
+                    {USERNAME.aide}
                   </small>
                 </div>
               )}
@@ -263,7 +257,7 @@ export default function Auth({ mode }: { mode: Mode }) {
                   />
                   {mode !== 'login' && (
                     <small id="password-hint" className="faint">
-                      {PASSWORD.hint}
+                      {PASSWORD.aide}
                     </small>
                   )}
                 </div>

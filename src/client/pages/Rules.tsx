@@ -11,7 +11,7 @@ import { useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { CARDS, CATALOGS, FAMILY_LABEL, RARITY_LABEL, cardsOf } from '../../shared/cards';
 import type { CardDef, Catalog, Family } from '../../shared/cards';
-import { DEAL, GAME_RULES } from '../../shared/config/rules';
+import { DEAL, GAME_RULES, RULES_BY_CONTEXT } from '../../shared/config/rules';
 import { cap, enLettres, liste, ordinal, pluriel } from '../../shared/text/fr';
 import {
   cartesChacun, cartesDePouvoir, cartesDuCatalogue, constitutionMains, dureeEffet, limitesMain, pouvoirs, premierApres,
@@ -68,6 +68,12 @@ const n = R.cardsPerPlayer;
 /** Contraintes du tirage qui jouent dans la réserve des pouvoirs (limitesMain : au plus N Climats par main). */
 const LIMITS = limitesMain(DEFS);
 
+/**
+ * Mains de l'accueil (GAME_RULES et RULES_BY_CONTEXT.accueil, comme rulesFor('accueil'), sans charger le moteur des
+ * règles dans la page) : la clause « sur l'accueil » de constitutionMains en dit le nombre s'il diffère.
+ */
+const ACCUEIL = { cardsPerPlayer: RULES_BY_CONTEXT.accueil?.cardsPerPlayer ?? R.cardsPerPlayer };
+
 const ESSENTIALS: { title: string; text: ReactNode }[] = [
   {
     title: 'Les échecs, tels quels',
@@ -76,8 +82,8 @@ const ESSENTIALS: { title: string; text: ReactNode }[] = [
   {
     title: `${cartesChacun(R, true)}, à découvert`,
     text: DEAL.draft
-      ? `Au début d’une partie, ${constitutionMains(R)}. Votre choix reste secret jusqu’à ce que votre adversaire ait choisi, puis les deux mains restent visibles de tous jusqu’à la fin ; une carte jouée reste à sa place, grisée.`
-      : `Au début d’une partie, ${constitutionMains(R)}. Les deux mains restent visibles de tous jusqu’à la fin ; une carte jouée reste à sa place, grisée.`,
+      ? `Au début d’une partie, ${constitutionMains(R, DEAL, ACCUEIL)}. Votre choix reste secret jusqu’à ce que votre adversaire ait choisi, puis les deux mains restent visibles de tous jusqu’à la fin ; une carte jouée reste à sa place, grisée.`
+      : `Au début d’une partie, ${constitutionMains(R, DEAL, ACCUEIL)}. Les deux mains restent visibles de tous jusqu’à la fin ; une carte jouée reste à sa place, grisée.`,
   },
   {
     title: R.cardEndsTurn ? sortParTour(R, true) : `${sortParTour(R, true)}, avant votre coup`,

@@ -81,3 +81,11 @@ describe('niveaux de l’IA tirés de BOT_LEVELS et BOT_PROFILES (Jouer, accueil
     for (const f of ['src/client/pages/Play.tsx', 'src/client/odyssee/data.ts']) expect(src(f), f).not.toMatch(/Apprenti, Sorcier|3 niveaux/);
   });
 });
+
+describe('Règles : la clause « sur l’accueil » suit les mains de l’accueil', () => {
+  it('Rules.tsx passe les mains de l’accueil (RULES_BY_CONTEXT.accueil, sinon GAME_RULES) à constitutionMains', () => {
+    const s = src('src/client/pages/Rules.tsx');
+    expect(s).toContain('const ACCUEIL = { cardsPerPlayer: RULES_BY_CONTEXT.accueil?.cardsPerPlayer ?? R.cardsPerPlayer };');
+    expect(s.match(/constitutionMains\(R, DEAL, ACCUEIL\)/g)).toHaveLength(2);
+  });
+});

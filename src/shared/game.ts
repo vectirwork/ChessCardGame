@@ -84,20 +84,20 @@ export type ResultReason =
   | 'aborted';
 
 /**
- * Cause d'une annulation (raison 'aborted'), posée par le serveur :
- * - 'first-move' : le joueur au trait n'a pas joué son premier coup dans le délai (TIMINGS.firstMoveMs) ;
- * - 'player' : un joueur a annulé la partie (ou abandonné avant son début, ou supprimé son compte) ;
- * - 'idle' : partie délaissée (invitation jamais acceptée, plus personne sur la page, aucune action depuis longtemps).
+ * Cause d'une annulation (raison 'aborted'), posée par le serveur seulement là où un client la lit et où le réglage par
+ * défaut ne la produit jamais :
+ * - 'first-move' : partie en direct de l'accueil (relais de l'IA coupé, FEATURE_HOME_RELAY=0) annulée parce que le
+ *   joueur au trait n'a pas joué son premier coup dans le délai (TIMINGS.firstMoveMs) ; l'accueil revient alors seul à
+ *   l'Oracle (abortedEmpty, useLiveGame.ts).
+ * Les autres annulations (voulue, délaissée, délai d'une invitation ou d'une partie de la file, reprise impossible)
+ * n'en portent pas : leur résultat garde la forme d'avant, octet pour octet (identité au défaut).
  */
-export type AbortCause = 'first-move' | 'player' | 'idle';
+export type AbortCause = 'first-move';
 
 export interface Result {
   winner: Color | null;
   reason: ResultReason;
-  /**
-   * Annulation seulement : sa cause. Absente pour toute autre fin, pour les parties d'avant, et pour une partie que le
-   * serveur annule à la reprise (carte retirée, règles illisibles).
-   */
+  /** Annulation seulement, et seulement dans le cas que décrit AbortCause : sa cause. */
   cause?: AbortCause;
 }
 

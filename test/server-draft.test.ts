@@ -241,7 +241,7 @@ describe('choix des cartes : serveur', () => {
     // Puis, sans premier coup, la partie est annulée comme avant.
     vi.advanceTimersByTime(FIRST_MOVE_MS);
     expect(idle.d.status).toBe('ended');
-    expect(idle.d.state.result).toEqual({ winner: null, reason: 'aborted', cause: 'first-move' });
+    expect(idle.d.state.result).toEqual({ winner: null, reason: 'aborted' });
   });
 
   it('contre l’IA : elle choisit aussitôt, sans Sablier fou ; le choix du joueur révèle les mains', () => {
@@ -267,7 +267,7 @@ describe('choix des cartes : serveur', () => {
     applyDraft(room, 'w', ['ice_wall', 'rift', 'tide'], true);
     expect(resignRoom(room, 'b')).toEqual({ ok: true });
     expect(room.d.status).toBe('ended');
-    expect(room.d.state.result).toEqual({ winner: null, reason: 'aborted', cause: 'player' });
+    expect(room.d.state.result).toEqual({ winner: null, reason: 'aborted' });
     expect(room.d.ratingDiff).toBeNull();
     expect(room.d.draft).toBeNull();
     // Plus aucun choix possible, et la minuterie de l'échéance est arrêtée.
@@ -277,7 +277,7 @@ describe('choix des cartes : serveur', () => {
     // Annulation explicite pendant le choix.
     const other = invite('5+0', 'climats', true);
     expect(abortRoom(other)).toEqual({ ok: true });
-    expect(other.d.state.result).toEqual({ winner: null, reason: 'aborted', cause: 'player' });
+    expect(other.d.state.result).toEqual({ winner: null, reason: 'aborted' });
     expect(other.d.ratingDiff).toBeNull();
     // Après la révélation et les premiers coups, l'abandon redevient une défaite (et compte au classement).
     const played = invite('5+0', 'climats', true);

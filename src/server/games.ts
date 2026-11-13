@@ -616,7 +616,7 @@ function armTimers(room: Room) {
   if (room.d.firstMoveDeadline) {
     const ms = Math.max(0, room.d.firstMoveDeadline - now());
     room.abortTimer = setTimeout(() => {
-      if (room.d.status === 'active' && !room.d.started) endGame(room, aborted('first-move'));
+      if (room.d.status === 'active' && !room.d.started) endGame(room, firstMoveAbort(room.d));
     }, ms);
   }
 }
@@ -772,10 +772,12 @@ function begin(room: Room) {
 }
 
 /**
- * Fin d'une partie annulée, avec sa cause (Result.cause) : le client de l'accueil revient seul à l'Oracle quand
- * personne n'a joué son premier coup à temps (abortedEmpty, useLiveGame.ts), jamais après une annulation voulue.
+ * Annulation faute de premier coup dans le délai. Partie en direct de l'accueil (relayée : elle n'a ce délai que relais
+ * coupé, FEATURE_HOME_RELAY=0) : avec sa cause (Result.cause), pour que l'accueil revienne seul à l'Oracle
+ * (abortedEmpty, useLiveGame.ts). Toute autre partie : le résultat d'avant, sans cause (identité au défaut).
  */
-const aborted = (cause: AbortCause): Result => ({ winner: null, reason: 'aborted', cause });
+const firstMoveAbort = (d: Pick<RoomData, 'relay'>): Result =>
+  d.relay ? { winner: null, reason: 'aborted', cause: 'first-move' satisfies AbortCause } : { winner: null, reason: 'aborted' };
 
 function endGame(room: Room, result?: Result) {
   const d = room.d;
@@ -982,7 +984,7 @@ export function armRelay(room: Room) {
     // sur la page depuis RELAY.abandonMs, la partie est annulée.
     if (room.away.w && room.away.b) {
       room.relayTimer = setTimeout(() => {
-        if (d.status === 'active' && room.away.w && room.away.b) endGame(room, aborted('idle'));
+        if (d.status === 'active' && room.away.w && room.away.b) endGame(room, { winner: null, reason: 'aborted' });
       }, RELAY.abandonMs);
     }
     return;
@@ -1140,7 +1142,7 @@ function applyCard(room: Room, color: Color, index: number, targets: number[]): 
  */
 export function resignRoom(room: Room, color: Color): Ack {
   if (room.d.status === 'waiting' || (room.d.status === 'active' && room.d.draft)) {
-    endGame(room, aborted('player'));
+    endGame(room, { winner: null, reason: 'aborted' });
     return { ok: true };
   }
   if (room.d.status !== 'active') return { ok: false, error: 'Partie terminée.' };
@@ -1152,7 +1154,7 @@ export function resignRoom(room: Room, color: Color): Ack {
 export function abortRoom(room: Room): Ack {
   if (room.d.status === 'ended') return { ok: false, error: 'Partie terminée.' };
   if (room.d.status === 'active' && room.d.started) return { ok: false, error: 'Trop tard pour annuler : vous pouvez abandonner.' };
-  endGame(room, aborted('player'));
+  endGame(room, { winner: null, reason: 'aborted' });
   return { ok: true };
 }
 
@@ -1752,15 +1754,15 @@ export function attachSockets(server: IO) {
     for (const [id, room] of rooms) {
       const d = room.d;
       if (d.status === 'ended' && !room.sockets.size && now() - room.endedAt > TIMINGS.endedRoomEvictMs) rooms.delete(id);
-      if (d.status === 'waiting' && now() - d.createdAt > TIMINGS.inviteTtlMs) endGame(room, aborted('idle'));
+      if (d.status === 'waiting' && now() - d.createdAt > TIMINGS.inviteTtlMs) endGame(room, { winner: null, reason: 'aborted' });
       if (d.status !== 'active') continue;
       const humans = COLORS.filter(c => d.seats[c] && d.seats[c]!.kind !== 'bot');
       const allAway = humans.every(c => room.away[c] !== null);
       const awayFor = Math.min(...humans.map(c => now() - (room.away[c] ?? now())));
       // Contre l'IA, le joueur parti depuis TIMINGS.botIdleMs : partie annulée
-      if (d.mode === 'bot' && allAway && awayFor > TIMINGS.botIdleMs) endGame(room, aborted('idle'));
+      if (d.mode === 'bot' && allAway && awayFor > TIMINGS.botIdleMs) endGame(room, { winner: null, reason: 'aborted' });
       // Sans pendule, aucune action depuis TIMINGS.untimedIdleMs : partie annulée
-      else if (!d.clock && now() - (d.lastActivity ?? d.createdAt) > TIMINGS.untimedIdleMs) endGame(room, aborted('idle'));
+      else if (!d.clock && now() - (d.lastActivity ?? d.createdAt) > TIMINGS.untimedIdleMs) endGame(room, { winner: null, reason: 'aborted' });
     }
   }, TIMINGS.housekeepingMs).unref();
 }
@@ -1773,7 +1775,7 @@ export async function detachUser(userId: string) {
       if (seat?.userId !== userId) continue;
       // Pendant le choix des cartes, la partie est annulée (sans effet sur le classement).
       if (room.d.status === 'active' && !room.d.draft) endGame(room, { winner: opposite(c), reason: 'abandon' });
-      else if (room.d.status !== 'ended') endGame(room, aborted('player'));
+      else if (room.d.status !== 'ended') endGame(room, { winner: null, reason: 'aborted' });
       // Siège anonymisé comme celui d'un invité : sans le roi, le sceau ni les sorts du compte supprimé.
       room.d.seats[c] = {
         ...seat, kind: 'guest', userId: null, username: null, name: 'Compte supprimé', skin: DEFAULT_SKIN, king: DEFAULT_KING, seal: null,

@@ -377,7 +377,7 @@ describe('interrupteurs coupés : refus du serveur', () => {
     expect(open.d.firstMoveDeadline).toBeNull();
   });
 
-  it('cause d’une annulation (Result.cause) : premier coup pas joué à temps, annulation voulue, partie délaissée', async () => {
+  it('cause d’une annulation (Result.cause) : seulement le premier coup pas joué à temps d’une partie de l’accueil, relais coupé', async () => {
     const { games, settings } = await load({ FEATURE_HOME_RELAY: '0' });
     const room = () =>
       games.newRoom({ mode: 'quick', rated: false, tc: 'none', catalog: 'climats', creator: 'g:p1', seats: { w: seat('g:p1'), b: seat('g:p2') }, deal: true, relay: true });
@@ -386,12 +386,17 @@ describe('interrupteurs coupés : refus du serveur', () => {
     expect(games.applyMove(late, 'w', 12, 28)).toEqual({ ok: true });
     await vi.advanceTimersByTimeAsync(settings.TIMINGS.firstMoveMs + 1);
     expect([late.d.state.ply, late.d.state.result]).toEqual([1, { winner: null, reason: 'aborted', cause: 'first-move' }]);
-    // Un joueur annule avant son premier coup : 'player'.
+    // Une partie ordinaire (le cas du réglage par défaut) : le résultat d'avant, sans cause.
+    const plain = games.newRoom({ mode: 'quick', rated: false, tc: 'none', catalog: 'aucune', creator: 'g:p1', seats: { w: seat('g:p1'), b: seat('g:p2') } });
+    expect(games.applyMove(plain, 'w', 12, 28)).toEqual({ ok: true });
+    await vi.advanceTimersByTimeAsync(settings.TIMINGS.firstMoveMs + 1);
+    expect(plain.d.state.result).toEqual({ winner: null, reason: 'aborted' });
+    // Annulation voulue avant le premier coup : sans cause (l'accueil garde son écran de fin).
     const quit = room();
     expect(games.applyMove(quit, 'w', 12, 28)).toEqual({ ok: true });
     expect(games.abortRoom(quit)).toEqual({ ok: true });
-    expect(quit.d.state.result).toEqual({ winner: null, reason: 'aborted', cause: 'player' });
-    // Toute autre fin : pas de cause.
+    expect(quit.d.state.result).toEqual({ winner: null, reason: 'aborted' });
+    // Toute autre fin : sans cause.
     const resigned = room();
     expect(games.applyMove(resigned, 'w', 12, 28)).toEqual({ ok: true });
     expect(games.applyMove(resigned, 'b', 52, 36)).toEqual({ ok: true });

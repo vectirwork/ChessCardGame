@@ -11,7 +11,7 @@ import { ApiError, NETWORK_ERROR, api, errMsg } from '../src/client/api';
 import { PageBoundary, page } from '../src/client/App';
 import { Footer, Header } from '../src/client/components/Layout';
 import { emitAck, reloadForNewVersion } from '../src/client/socket';
-import type { AckPayload, AckReply } from '../src/client/socket';
+import type { AckEvent, AckPayload, AckReply } from '../src/client/socket';
 import { AppProvider, useFeature } from '../src/client/store';
 import type { FeatureKey } from '../src/shared/config/features';
 import type { Ack, JoinReply } from '../src/shared/protocol';
@@ -78,6 +78,8 @@ describe('emitAck', () => {
     expectTypeOf(jouer).returns.toEqualTypeOf<Promise<Ack>>();
     expectTypeOf<AckPayload<'game:join'>>().toEqualTypeOf<{ id: string; name?: string; sit?: boolean }>();
     expectTypeOf<AckReply<'queue:join'>>().toEqualTypeOf<Ack>();
+    // Événements sans accusé de réception (emit simple) : hors d'emitAck
+    expectTypeOf<Extract<AckEvent, 'game:leave' | 'queue:leave' | 'home:hello' | 'game:emote'>>().toEqualTypeOf<never>();
   });
 });
 

@@ -56,7 +56,7 @@ export function reloadForNewVersion(): boolean {
 }
 
 // Actions avec accusé de réception, typées par le contrat ClientToServer (src/shared/protocol.ts).
-type AckEvent = { [K in keyof ClientToServer]: Parameters<ClientToServer[K]> extends [unknown, (r: never) => void] ? K : never }[keyof ClientToServer];
+export type AckEvent = { [K in keyof ClientToServer]: Parameters<ClientToServer[K]> extends [unknown, (r: never) => void] ? K : never }[keyof ClientToServer];
 export type AckPayload<K extends AckEvent> = Parameters<ClientToServer[K]>[0];
 export type AckReply<K extends AckEvent> = Parameters<Parameters<ClientToServer[K]>[1]>[0];
 

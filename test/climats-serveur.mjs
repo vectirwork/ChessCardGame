@@ -1,8 +1,13 @@
 // Vérification indépendante du catalogue Pouvoirs (identifiant 'climats') sur un vrai serveur (vérificateur,
 // flux A), mise à jour pour la décision du fondateur du 30 octobre (8 cartes, mains visibles, Mur permanent).
 // Usage : ./node_modules/.bin/tsx test/climats-serveur.mjs http://localhost:3171 [sablier] [mur] [ia] [redemarrage] [drapeau]
-// (sans scénario : sablier, mur, ia ; « redemarrage » et « drapeau » seulement sur demande)
+//         node scripts/serveur-jetable.mjs -- ./node_modules/.bin/tsx test/climats-serveur.mjs {base} sablier mur ia
+// (sans scénario : sablier, mur, ia ; « redemarrage » et « drapeau » seulement sur demande ; adresse : argument, sinon
+// SPELLMATE_BASE du serveur jetable)
 // (tsx : le script importe le moteur partagé pour choisir des coups légaux.)
+// Rien n'est recopié des règles : le nombre de cartes vient des règles de chaque partie (rulesOf de son état, connu dès
+// sa création) et de la vue du choix (count, pool, totalMs), les réserves de poolOf. Les scénarios sablier, mur,
+// redemarrage et drapeau choisissent une main précise : avec le tirage partout (DEAL.draft faux), ils sont sautés.
 // Variables : RESTART_CMD (commande qui redémarre l'instance en gardant sa base, pour « redemarrage »),
 //             IA_GAMES (nombre de parties contre l'IA, 4 par défaut), IA_PLIES (120), THINK_MS (réflexion avant
 //             l'arrêt du serveur, 2000).
@@ -15,13 +20,13 @@ import { execSync } from 'node:child_process';
 import { legalMovesOf, cardOptions, cardPlayable } from '../src/shared/game.ts';
 import { CARDS } from '../src/shared/cards.ts';
 import { chooseBotMove } from '../src/shared/bot.ts';
+import { poolOf, rulesOf } from '../src/shared/rulesCore.ts';
+import { Client as BaseClient, baseUrl, sleep, sq } from './lib/client.mjs';
 
-const BASE = process.argv[2] ?? 'http://localhost:3171';
-const WANT = new Set(process.argv.slice(3));
+const BASE = baseUrl(process.argv[2]?.startsWith('http') ? process.argv[2] : undefined);
+const WANT = new Set(process.argv.slice(process.argv[2]?.startsWith('http') ? 3 : 2));
 const all = WANT.size === 0;
-const sq = s => (s.charCodeAt(1) - 49) * 8 + (s.charCodeAt(0) - 97);
 const name = i => String.fromCharCode(97 + (i & 7)) + ((i >> 3) + 1);
-const sleep = ms => new Promise(r => setTimeout(r, ms));
 const log = (...a) => console.log(...a);
 const problems = [];
 const problem = (msg) => { problems.push(msg); console.log('PROBLÈME :', msg); };
@@ -29,23 +34,10 @@ const problem = (msg) => { problems.push(msg); console.log('PROBLÈME :', msg); 
 /** Vérité : mains de chaque camp, apprises de la première vue reçue (elles ne changent jamais). */
 const truth = new Map(); // gameId -> { w: string[], b: string[] }
 
-class Client {
-  constructor(label) { this.label = label; this.cookies = new Map(); this.updates = []; this.cursor = 0; }
-  cookie() { return [...this.cookies].map(([k, v]) => `${k}=${v}`).join('; '); }
-  async api(path, body, method) {
-    const res = await fetch(BASE + '/api' + path, {
-      method: method ?? (body ? 'POST' : 'GET'),
-      headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), cookie: this.cookie(), origin: BASE },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    for (const c of res.headers.getSetCookie()) {
-      const [kv] = c.split(';');
-      const i = kv.indexOf('=');
-      this.cookies.set(kv.slice(0, i), kv.slice(i + 1));
-    }
-    const data = await res.json().catch(() => null);
-    return { status: res.status, data };
-  }
+/** Client de test/lib (cookies, API), avec un nom, un curseur de lecture et l'audit de chaque vue reçue. */
+class Client extends BaseClient {
+  constructor(label) { super(BASE); this.label = label; this.cursor = 0; }
+  cookie() { return this.cookieHeader(); }
   connect() {
     this.socket?.close();
     this.socket = io(BASE, { transports: ['websocket'], reconnection: false, extraHeaders: { cookie: this.cookie() } });
@@ -101,7 +93,7 @@ function audit(client, view, where) {
   const t = truth.get(view.id);
   if ((s.snaps ?? []).length) problem(`${client.label} ${where} : instantanés hors Duel`);
   for (const c of ['w', 'b']) {
-    if (s.catalog === 'climats' && hands[c].length !== 3) problem(`${client.label} ${where} : main ${c} incomplète (${hands[c]})`);
+    if (s.catalog === 'climats' && hands[c].length !== rulesOf(s).cardsPerPlayer) problem(`${client.label} ${where} : main ${c} incomplète (${hands[c]})`);
     s.hands[c].forEach((h, i) => {
       if (!h.card || !CARDS[h.card]) problem(`${client.label} ${where} : carte ${c}[${i}] cachée ou inconnue (${h.card})`);
     });
@@ -122,14 +114,19 @@ async function guest() {
 }
 
 const shuffle = a => { const b = a.slice(); for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; };
-/** Mains possibles (3 cartes différentes) d'une réserve, dans un ordre au hasard. */
-function handsOf(pool) {
+/** Mains possibles (`n` cartes différentes) d'une réserve, dans un ordre au hasard. */
+function handsOf(pool, n) {
   const out = [];
-  for (let i = 0; i < pool.length; i++) for (let j = i + 1; j < pool.length; j++) for (let k = j + 1; k < pool.length; k++) out.push(shuffle([pool[i], pool[j], pool[k]]));
+  const pick = (from, hand) => {
+    if (hand.length === n) return void out.push(shuffle(hand));
+    for (let i = from; i < pool.length; i++) pick(i + 1, [...hand, pool[i]]);
+  };
+  pick(0, []);
   return shuffle(out);
 }
-const POOL = { timed: Object.keys(CARDS).filter(id => CARDS[id].catalogs.includes('climats')) };
-POOL.untimed = POOL.timed.filter(id => !CARDS[id].timedOnly);
+const POOL = { timed: poolOf('climats', { timed: true }), untimed: poolOf('climats', { timed: false }) };
+/** Le serveur tire les mains au lieu de les faire choisir (DEAL.draft faux) : connu à la première invitation. */
+let drawing = false;
 
 /** Choix prévus pour une invitation : le créateur prend `hand`, l'invité la même main (`mirror`) ou trois cartes au hasard. */
 const planned = new Map();
@@ -142,9 +139,12 @@ async function inviteWith(creator, pred, opts = {}) {
   const id = r.data.id;
   const j = await creator.join(id);
   assert.equal(j.ok, true);
-  const hand = handsOf(tc === 'none' ? POOL.untimed : POOL.timed).find(pred);
+  // Cartes par joueur : règles de la partie, photographiées dans son état dès sa création.
+  const count = rulesOf(j.view.state).cardsPerPlayer;
+  const pool = tc === 'none' ? POOL.untimed : POOL.timed;
+  const hand = handsOf(pool, count).find(pred);
   if (!hand) throw new Error('aucune main ne vérifie la condition');
-  planned.set(id, { creator, hand, mirror: !!opts.mirror, pool: tc === 'none' ? POOL.untimed : POOL.timed });
+  planned.set(id, { creator, hand, count, mirror: !!opts.mirror, pool });
   return { id, hand };
 }
 
@@ -164,10 +164,10 @@ async function draftBoth(id, white, black, wHand, bHand) {
   return u;
 }
 
-/** Choix seul (contre l'IA, qui a déjà choisi) : trois cartes au hasard dans la réserve, puis la révélation. */
+/** Choix seul (contre l'IA, qui a déjà choisi) : `count` cartes au hasard dans la réserve, puis la révélation. */
 async function draftAlone(client, id, view) {
   if (!view.draft) return view;
-  const cards = shuffle(view.draft.pool).slice(0, 3);
+  const cards = shuffle(view.draft.pool).slice(0, view.draft.count);
   const a = await client.emit('game:draft', { id, cards });
   assert.equal(a.ok, true, `choix refusé : ${a.error}`);
   const u = await client.next(x => x.event.type === 'reveal', 15000, 'révélation');
@@ -181,7 +181,8 @@ async function seatBob(bob, id) {
   assert.equal(j.view.you, 'b');
   const plan = planned.get(id);
   if (!plan || !j.view.draft) return j;
-  const other = handsOf(plan.pool)[0];
+  assert.equal(j.view.draft.count, plan.count, 'nombre de cartes du choix : celui des règles de la partie');
+  const other = handsOf(plan.pool, plan.count)[0];
   const u = await draftBoth(id, plan.creator, bob, plan.hand, plan.mirror ? plan.hand.slice() : other);
   return { ok: true, view: u.view };
 }
@@ -226,7 +227,7 @@ async function sablier() {
   const us = await spec.next(x => x.event.type === 'card', 8000, 'carte (spectateur)');
   for (const [who, u] of [['Bob', ub], ['spectateur', us]]) {
     const e = u.view.state.effects.find(x => x.card === 'hourglass');
-    assert.ok(e && e.pending && e.delay === 2, `${who} voit le Présage du Sablier avec son délai`);
+    assert.ok(e && e.pending && e.delay === rulesOf(u.view.state).presageDelay, `${who} voit le Présage du Sablier avec son délai`);
     assert.equal(u.view.state.hands.w[hIdx].card, 'hourglass');
     assert.equal(u.view.clock.rate.w, 1);
     assert.equal(u.view.clock.noIncrement, false);
@@ -277,7 +278,9 @@ async function sablier() {
   a = await alice.emit('game:move', { id, from: sq('f3'), to: sq('f7') });
   assert.ok(a.ok, a.error);
   const mv = await bob.next(x => x.event.type === 'move' || x.event.type === 'end', 8000, 'Dxf7');
-  if (mv.view.status === 'active') {
+  // La mise à jour du coup précède celle de la fin : c'est le résultat de l'état qui dit s'il y a mat (le statut est
+  // encore « active » dans la mise à jour du coup qui mate).
+  if (!mv.view.state.result) {
     // R4c : les Noirs ont une carte qui sauve du mat : la partie continue.
     const sb = mv.view.state;
     const saving = sb.hands.b.map((h, i) => [h.card, i]).filter(([, i]) => cardPlayable(sb, 'b', i)).map(([c]) => c);
@@ -577,10 +580,14 @@ async function redemarrageChoix(cmd) {
   let jb = await bob.join(id);
   if (jb.needName) jb = await bob.join(id, 'Bob');
   assert.ok(jb.view.draft, 'choix ouvert');
-  const W = ['ice_wall', 'blast', 'truce'];
+  const { count, pool, totalMs } = jb.view.draft;
+  const prefer = order => [...new Set([...order.filter(c => pool.includes(c)), ...pool])];
+  const W = prefer(['ice_wall', 'blast', 'truce']).slice(0, count);
+  const B = prefer(['rift', 'tide', 'ice_age']).slice(0, count);
+  const tentative = B.slice(0, Math.min(1, count - 1));
   picked.set(id, { w: W });
   assert.ok((await alice.emit('game:draft', { id, cards: W })).ok);
-  assert.ok((await bob.emit('game:draft', { id, cards: ['rift'], confirm: false })).ok);
+  assert.ok((await bob.emit('game:draft', { id, cards: tentative, confirm: false })).ok);
   await sleep(5000); // une partie de l'échéance s'écoule avant l'arrêt
   alice.close(); bob.close();
   const tStop = Date.now();
@@ -592,15 +599,15 @@ async function redemarrageChoix(cmd) {
   jb = await bob.join(id);
   assert.ok(ja.view.draft && jb.view.draft, 'le choix survit au redémarrage');
   assert.deepEqual(ja.view.draft.mine, W, 'choix validé gardé');
-  assert.deepEqual(jb.view.draft.mine, ['rift'], 'sélection provisoire gardée');
+  assert.deepEqual(jb.view.draft.mine, tentative, 'sélection provisoire gardée');
   assert.deepEqual(jb.view.draft.chosen, { w: true, b: false });
   assert.deepEqual(jb.view.state.hands, { w: [], b: [] }, 'toujours secret');
-  if (jb.view.draft.msLeft < 44_000) problem(`redémarrage pendant le choix : échéance pas relancée (${jb.view.draft.msLeft} ms)`);
+  if (jb.view.draft.msLeft < totalMs - 1000) problem(`redémarrage pendant le choix : échéance pas relancée (${jb.view.draft.msLeft} ms)`);
   else step(`choix des cartes repris après redémarrage, échéance relancée (${jb.view.draft.msLeft} ms)`);
-  assert.ok((await bob.emit('game:draft', { id, cards: ['rift', 'tide', 'ice_age'] })).ok);
+  assert.ok((await bob.emit('game:draft', { id, cards: B })).ok);
   const u = await alice.next(x => x.event.type === 'reveal', 8000, 'révélation après redémarrage');
   assert.deepEqual(u.view.state.hands.w.map(h => h.card), W);
-  assert.deepEqual(u.view.state.hands.b.map(h => h.card), ['rift', 'tide', 'ice_age']);
+  assert.deepEqual(u.view.state.hands.b.map(h => h.card), B);
   step('mains révélées après le redémarrage');
   await alice.emit('game:abort', { id });
   alice.close(); bob.close();
@@ -635,12 +642,27 @@ async function drapeau() {
   void u;
 }
 
+/** Le serveur fait-il choisir les cartes ? Une invitation de test (clients sans audit), annulée aussitôt. */
+async function serverDrafts() {
+  const [a, b] = [new BaseClient(BASE), new BaseClient(BASE)];
+  for (const c of [a, b]) { await c.api('/me'); await c.connect(); }
+  const r = await a.api('/games', { mode: 'invite', tc: '3+2', color: 'w', catalog: 'climats', name: 'Sonde' });
+  await a.emit('game:join', { id: r.data.id });
+  const j = await b.emit('game:join', { id: r.data.id, name: 'Sonde' });
+  await a.emit('game:abort', { id: r.data.id });
+  a.close(); b.close();
+  return !!j.view.draft;
+}
+
 const run = async () => {
-  if (WANT.has('drapeau')) await drapeau();
-  if (all || WANT.has('sablier')) await sablier();
-  if (all || WANT.has('mur')) await mur();
+  drawing = !(await serverDrafts());
+  /** Scénario qui choisit une main précise : sauté si le serveur tire les mains. */
+  const chosen = async (label, f) => (drawing ? log(`\n== ${label} : sauté (tirage partout, aucune main ne se choisit) ==`) : f());
+  if (WANT.has('drapeau')) await chosen('drapeau', drapeau);
+  if (all || WANT.has('sablier')) await chosen('sablier', sablier);
+  if (all || WANT.has('mur')) await chosen('mur', mur);
   if (all || WANT.has('ia')) await ia();
-  if (WANT.has('redemarrage')) await redemarrage();
+  if (WANT.has('redemarrage')) await chosen('redemarrage', redemarrage);
   log(`\n${problems.length ? `${problems.length} problème(s) :\n - ` + problems.join('\n - ') : 'Aucun problème relevé.'}`);
   process.exit(problems.length ? 1 : 0);
 };

@@ -451,7 +451,7 @@ export function decideTurn(s: GameState, level: BotLevel, opts: { cards?: boolea
  * Une valeur par Pouvoir, exigée par le compilateur (une nouvelle carte doit en recevoir une) ; une carte du Duel
  * (anciennes parties) vaut DRAFT_VALUE_DEFAUT.
  */
-const DRAFT_VALUE: Record<PowerCardId, number> = {
+export const DRAFT_VALUE: Readonly<Record<PowerCardId, number>> = {
   ice_wall: 5,
   blood_moon: 4.5,
   tide: 4,
@@ -465,7 +465,7 @@ const DRAFT_VALUE: Record<PowerCardId, number> = {
 /** Valeur d'une carte sans valeur propre (cartes du Duel). */
 const DRAFT_VALUE_DEFAUT = 3;
 /** Part de hasard du choix, selon le niveau : l'Apprenti choisit presque au hasard, l'Archimage varie peu. */
-const DRAFT_NOISE: Record<BotLevel, number> = { 1: 3, 2: 1.6, 3: 1 };
+export const DRAFT_NOISE: Readonly<Record<BotLevel, number>> = { 1: 3, 2: 1.6, 3: 1 };
 /**
  * Climats que l'IA prend au plus dans son choix : un seul Climat agit à la fois, un de plus serait gaspillé. Choix de
  * jeu de l'IA, distinct des contraintes du tirage (DEAL.handLimits), qui s'ajoutent si on les lui passe.

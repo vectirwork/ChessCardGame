@@ -119,8 +119,34 @@ Le lot 9 est découpé en 9a (client : poids, reliquats, mises en page hors déf
 outillage, cohérence, bout en bout), puis mesure de performance par l'orchestrateur seul, puis 9c (documentation,
 rapport). Plans : `plan/lots/9a.md`, `plan/lots/9b.md`.
 
-## Reste à faire (vague 5)
-5. Lot 9 (intégration, mesure de performance, documentation), seul sur la machine.
+## Fait et fusionné (vague 5 : lots 9a et 9b)
+- **Lot 9a, client** : feuille « Défier un ami » chargée à part (le protocole n'est plus préchargé par l'accueil),
+  textes de la boutique hors du morceau du catalogue (`skins/texts.ts`), bornes des pseudos et durée du choix figées au
+  build, `usePref` et `emitAck` migrés (surcharges dépréciées retirées), reliquats des lots 5 à 8 retirés ; au-delà de 3
+  cartes, noms des petites cartes lisibles au bureau et invite posée au-dessus des cartes sur mobile.
+- **Lot 9b, serveur et outillage** : `SLOT_COLUMN` tiré de `SLOT_DEFS`, cookie d'invité unique, alias et paramètre
+  miroir retirés, `rulesSummary` avec la mise en place ; résumé d'une partie avec ses règles et cause d'une annulation
+  (champs facultatifs, jamais écrits au défaut, version du protocole inchangée) ; tableau de bord complété
+  (`config/index.ts`), `test/coherence.test.ts`, maquettes réparées (`npm run typecheck:concepts` à 0 erreur), banc
+  d'identité plus strict sur le bruit faible, suites de bout en bout étendues (`test/fonctions.mjs` : boutique et classé
+  coupés, cadence archivée ; IA à deux cartes).
+- Raccords de l'orchestrateur après la fusion : le serveur importe les textes de la boutique de `skins/texts.ts`,
+  alias `RARITY_WEIGHT` retiré, leçon « Les cartes » avec les mains de l'accueil, profil public libellé avec les
+  règles de chaque partie, message de l'accueil quand un premier coup manque (relais coupé seulement).
+
+Contrôles après fusion (094b638) : `tsc` et `typecheck:concepts` sans erreur, 1 215 tests verts, matrice complète
+(194), `npm run temoins` vert, build réussi, `index.html` identique ; bancs d'identité et de textes identiques à la
+référence hors les écarts voulus ; `integration.mjs` vert au défaut, avec 5 cartes et 2 par tour, 1 carte, la carte à
+la place du coup, un Présage à 4 et le tirage partout ; `ranked.mjs` vert ; `fonctions.mjs` vert au défaut, boutique
+coupée et classé coupé.
+
+Poids final (gzip -9, fermeture des imports statiques, face à 6ae7064) : accueil 222 036 → 232 979 o (+4,9 %),
+paquet principal 100 989 → 101 774 o (+0,8 %), page de partie 197 449 → 206 200 o (+4,4 %).
+
+## Reste à faire
+1. Mesure de performance par l'orchestrateur, seul sur la machine (accueil, accueil mobile, Forêt, partie, Jouer,
+   Apprendre ; banc de l'IA).
+2. Lot 9c : `docs/REGLAGES.md` (« ce qu'on change demain » et table des réglages), README, rapport au fondateur.
 
 Le script de vague (réaliser, deux relectures adverses, corriger) est réutilisable : une copie de travail par lot,
 hors de `.claude`, branche `polymorphie/<lot>`.

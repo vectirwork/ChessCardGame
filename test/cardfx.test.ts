@@ -236,8 +236,8 @@ const VARIANTS: [string, 'w' | 'b'][] = [
   ['skin:sakura', 'w'],
 ];
 
-/** Joue une mise en scène et renvoie son relevé complet. */
-async function trace(card: CardId, mode: Mode, skinId: string, orientation: 'w' | 'b'): Promise<string> {
+/** Joue une mise en scène et renvoie son relevé complet. `extra` : crochets ajoutés au sort (secret). */
+async function trace(card: CardId, mode: Mode, skinId: string, orientation: 'w' | 'b', extra: { secret?: boolean } = {}): Promise<string> {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], now: 0 });
   vi.stubGlobal('window', { setTimeout: (f: () => void, ms: number) => setTimeout(f, ms), clearTimeout: (id: number) => clearTimeout(id) });
   const rand = mulberry(20261113);
@@ -255,6 +255,7 @@ async function trace(card: CardId, mode: Mode, skinId: string, orientation: 'w' 
         hide: ids => log(`hide ${ids}@${Date.now()}`),
         show: ids => log(`show ${ids}@${Date.now()}`),
         victimAtBottom: true,
+        ...extra,
       })
       .then(() => {
         done = true;
@@ -582,5 +583,142 @@ describe('registres par carte : exhaustifs', () => {
     expect(pick(PARTICLE_TRAITS, 'glow', 'accent')).toEqual(['void']);
     expect(pick(FLOURISH_TRAITS, 'motion', 'close')).toEqual(['laurel']);
     expect(pick(FLOURISH_TRAITS, 'color', 'secondary')).toEqual(['filigree']);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Correctifs du lot 4 (designDoc §6.2) : ambiances qui se chevauchent, échiquier capturé à la pose, cibles d'une
+// arrivée, annonce d'un Présage quand la main est cachée. Les empreintes ci-dessus ne jouent qu'un sort à la fois, sur
+// un seul échiquier, sans cible d'arrivée ni main cachée : elles ne gardent pas ces chemins.
+
+/** Minuteries et date factices, fenêtre, hasard semé (comme `trace`). */
+function fakeTime() {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], now: 0 });
+  vi.stubGlobal('window', { setTimeout: (f: () => void, ms: number) => setTimeout(f, ms), clearTimeout: (id: number) => clearTimeout(id) });
+  vi.spyOn(Math, 'random').mockImplementation(mulberry(20261113));
+}
+function realTime() {
+  vi.unstubAllGlobals();
+  vi.stubGlobal('document', { createElement: () => ({ width: 0, height: 0, getContext: nullContext }) });
+}
+
+/** Durée de l'ambiance d'un Pouvoir à son arrivée (ms) : de la pose à l'impact, puis `afterImpactS`. */
+async function arrivalMoodMs(card: CardId): Promise<number> {
+  const { CARD_FX } = await import('../src/client/vfx/cardFx');
+  const m = CARD_FX[card].mood!;
+  return Math.round((CARD_FX[card].impactAt + ('afterImpactS' in m ? m.afterImpactS : 0)) * 1000);
+}
+
+describe('ambiances : échiquier capturé à la pose, compteur par classe', () => {
+  it('deux arrivées qui se chevauchent (même classe) : la classe reste jusqu’à la fin de la seconde, retirée une fois', async () => {
+    fakeTime();
+    const moods: string[] = [];
+    const { stage } = fakeStage('w', false, s => /^[+-]vfx-/.test(s) && moods.push(s));
+    const skin = skinStyle('skin:arcane');
+    const ms = await arrivalMoodMs('blood_moon');
+    fx.playArrival(stage, ARRIVAL('blood_moon', 'skin:arcane'), skin);
+    vi.advanceTimersByTime(1000);
+    fx.playArrival(stage, ARRIVAL('blood_moon', 'skin:arcane'), skin);
+    vi.advanceTimersByTime(ms + 5000);
+    realTime();
+    // Avant le lot : la première minuterie retirait la classe à `ms`, au milieu de la seconde ambiance
+    expect(moods).toEqual(['+vfx-blood@0', '+vfx-blood@1000', `-vfx-blood@${1000 + ms}`]);
+    expect(ms).toBe(2550);
+  });
+
+  it('scène passée à un autre échiquier avant le retrait : la classe quitte l’échiquier qui l’a reçue, l’autre garde la sienne', async () => {
+    fakeTime();
+    const moods: string[] = [];
+    const A = fakeStage('w', false, s => /^[+-]vfx-/.test(s) && moods.push(`A${s}`));
+    const B = fakeStage('w', false, s => /^[+-]vfx-/.test(s) && moods.push(`B${s}`));
+    const skin = skinStyle('skin:arcane');
+    const ms = await arrivalMoodMs('blood_moon');
+    fx.playArrival(A.stage, ARRIVAL('blood_moon', 'skin:arcane'), skin);
+    // Partage des scènes (useVfx) : la même scène sert maintenant l'échiquier B
+    (A.stage as unknown as { wrap: unknown }).wrap = B.stage.wrap;
+    vi.advanceTimersByTime(1000);
+    fx.playArrival(A.stage, ARRIVAL('blood_moon', 'skin:arcane'), skin);
+    vi.advanceTimersByTime(ms + 5000);
+    realTime();
+    // Avant le lot : le retrait visait stage.wrap au moment du retrait (B), et A gardait sa teinte rouge
+    expect(moods).toEqual(['A+vfx-blood@0', 'B+vfx-blood@1000', `A-vfx-blood@${ms}`, `B-vfx-blood@${1000 + ms}`]);
+  });
+});
+
+describe('arrivée d’un Présage : la mise en scène reçoit les cibles de l’effet', () => {
+  /** Cases converties par la scène (stage.local), dans l'ordre : la première est la cible du sort (runScene). */
+  async function locals(e: Effect): Promise<number[]> {
+    fakeTime();
+    const { stage } = fakeStage('w', false, () => undefined);
+    const calls: number[] = [];
+    const local = stage.local.bind(stage);
+    (stage as unknown as { local: VfxStage['local'] }).local = (sq: number, z?: number) => {
+      calls.push(sq);
+      return local(sq, z);
+    };
+    fx.playArrival(stage, e, skinStyle('skin:arcane'));
+    vi.advanceTimersByTime(5000);
+    realTime();
+    return calls;
+  }
+
+  it('cases (squares), case (square) : la scène vise la première ; aucune cible : le centre, comme avant', async () => {
+    const rift = { ...ARRIVAL('rift', 'skin:arcane'), squares: [40, 41, 42, 43, 44, 45, 46, 47] };
+    expect((await locals(rift))[0]).toBe(40);
+    const wall = { ...ARRIVAL('ice_wall', 'skin:arcane'), square: 19 };
+    expect((await locals(wall))[0]).toBe(19);
+    // Sans cible : la Faille se joue sur sa case par défaut (28), comme toute arrivée d'avant le lot
+    expect((await locals(ARRIVAL('rift', 'skin:arcane')))[0]).toBe(28);
+  });
+});
+
+describe('annonce d’un Présage, main cachée (hooks.secret, préparé)', () => {
+  const strip = (t: string) => t.replace(/#[0-9a-f]{6}/g, '#');
+
+  it('ne trahit pas la carte : même annonce pour deux Présages différents ; teinte du skin seul, même hasard', async () => {
+    const hourglass = await trace('hourglass', 'cast', 'skin:arcane', 'w', { secret: true });
+    const blood = await trace('blood_moon', 'cast', 'skin:arcane', 'w', { secret: true });
+    expect(blood).toBe(hourglass);
+    // Mains visibles (le défaut) : l'annonce prend la teinte et l'éclair de sa carte
+    const shown = await trace('blood_moon', 'cast', 'skin:arcane', 'w');
+    expect(shown).not.toBe(blood);
+    // Seules les couleurs et l'éclair changent : mêmes objets, mêmes particules, même suite de Math.random
+    const flash = (t: string) => t.replace(/^flash .*$/gm, 'flash');
+    expect(flash(strip(shown))).toBe(flash(strip(blood)));
+    // Le Sablier fou n'a pas d'éclair propre (celui des cartes sans fiche) : seule la teinte change
+    expect(strip(await trace('hourglass', 'cast', 'skin:arcane', 'w'))).toBe(strip(hourglass));
+  });
+});
+
+describe('scène explicative du Sablier fou : sa vitesse suit l’équilibrage de la carte', () => {
+  async function hourglassScene() {
+    const { createElement } = await import('react');
+    const { renderToStaticMarkup } = await import('react-dom/server');
+    const { CardScene } = await import('../src/client/components/CardScene');
+    const { CARD_SCENES } = await import('../src/client/components/cardScenes');
+    const def = CARD_SCENES.hourglass!;
+    return { labels: def.pair!.labels, caption: def.caption, html: renderToStaticMarkup(createElement(CardScene, { id: 'hourglass', play: 'still' })) };
+  }
+
+  it('au défaut, les textes d’avant (« Deux fois plus vite », « ×2 ») ; avec une vitesse de 3, « trois fois » et « ×3 »', async () => {
+    vi.resetModules();
+    const d = await hourglassScene();
+    expect(d.labels).toEqual(['Pendule normale', 'Deux fois plus vite, sans incrément']);
+    expect(d.caption).toBe('Sablier fou : les deux pendules s’écoulent deux fois plus vite, et les coups ne rapportent plus d’incrément.');
+    expect(d.html).toContain('<b>×2</b> · +0 s');
+    vi.resetModules();
+    vi.doMock('../src/shared/cards', async importOriginal => {
+      const m = await importOriginal<typeof import('../src/shared/cards')>();
+      return { ...m, CARDS: { ...m.CARDS, hourglass: { ...m.CARDS.hourglass, clockRate: 3 } } };
+    });
+    try {
+      const t = await hourglassScene();
+      expect(t.labels).toEqual(['Pendule normale', 'Trois fois plus vite, sans incrément']);
+      expect(t.caption).toBe('Sablier fou : les deux pendules s’écoulent trois fois plus vite, et les coups ne rapportent plus d’incrément.');
+      expect(t.html).toContain('<b>×3</b> · +0 s');
+    } finally {
+      vi.doUnmock('../src/shared/cards');
+      vi.resetModules();
+    }
   });
 });

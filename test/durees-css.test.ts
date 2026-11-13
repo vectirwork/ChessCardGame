@@ -6,7 +6,7 @@
 //   classe est retirée 100 ms après la fin de ses deux animations, qui durent autant l'une que l'autre.
 // - Chute du roi maté (mate.ts, MATE_FALL_MS ; board.css, pi-fall-*) et coup de grâce (effects.ts, FINALE_S).
 // - Bandeau de sort (game.css, .gp-cast ; GamePage) : retiré à la fin de son animation.
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { skinStyle } from '../src/shared/catalog';
@@ -140,12 +140,17 @@ describe('bandeau de sort (game.css, .gp-cast)', () => {
   it('GamePage le retire à la fin de son animation', () => {
     const [ms] = animationMs(css('game.css'), 'gp-cast');
     expect(ms).toBe(1600);
-    // GamePage (lot de la partie) : la minuterie qui retire le bandeau, et le seuil d'âge qu'elle vérifie (un bandeau
-    // plus récent, d'un sort suivant, reste)
-    const src = readFileSync(new URL('../src/client/game/GamePage.tsx', import.meta.url), 'utf8');
-    const m = /setCasting\(c => \(c && Date\.now\(\) - c\.key > (\d+) \? null : c\)\), (\d+)\)/.exec(src);
+    // GamePage (lot de la partie, lot 5) : la minuterie qui retire le bandeau, et le seuil d'âge qu'elle vérifie (un
+    // bandeau plus récent, d'un sort suivant, reste). Relue dans le source : chaque durée peut être un nombre ou une
+    // constante nommée (`const X = 1600`, dans un module de src/client/game). Une minuterie réécrite autrement (hook…)
+    // demande de mettre ce test à jour.
+    const dir = new URL('../src/client/game/', import.meta.url);
+    const game = readdirSync(dir).filter(f => /\.tsx?$/.test(f)).map(f => readFileSync(new URL(f, dir), 'utf8')).join('\n');
+    const src = readFileSync(new URL('GamePage.tsx', dir), 'utf8');
+    const m = /setCasting\(c => \(c && Date\.now\(\) - c\.key > (\w+) \? null : c\)\), (\w+)\)/.exec(src);
     expect(m, 'minuterie du bandeau dans GamePage').not.toBeNull();
-    expect(Number(m![2])).toBe(ms);
-    expect(Number(m![1])).toBeLessThan(ms);
+    const value = (v: string) => (/^\d+$/.test(v) ? Number(v) : Number(new RegExp(`const ${v}\\s*=\\s*(\\d+)\\b`).exec(game)?.[1]));
+    expect(value(m![2])).toBe(ms);
+    expect(value(m![1])).toBeLessThan(ms);
   });
 });

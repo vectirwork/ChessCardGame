@@ -1,6 +1,8 @@
 // Réglages des effets (scène WebGL des sorts) : rythme, coût, durées couplées au CSS. Aucun import. Lu seulement par le
-// morceau des effets, chargé à la demande (stage.ts, effects.ts) : le partage des scènes entre échiquiers garde ses
-// délais dans useVfx.ts, chargé avec les échiquiers, pour ne rien ajouter à leur morceau.
+// morceau des effets, chargé à la demande (stage.ts, effects.ts). Ailleurs : délais du partage des scènes entre
+// échiquiers (garder 20 s, céder après 1,5 s, passer après 0,9 s) dans sharing.ts, chargé avec les échiquiers (les
+// importer d'ici y entraînerait tout ce module) ; fiche de chaque carte dans cardFx.ts, marques de l'échiquier dans
+// boardMarks.ts, traits des skins dans textures.ts.
 // Chaque valeur est celle d'avant ce module ; changer une durée marquée « CSS » demande de changer la feuille indiquée
 // (test/durees-css.test.ts les compare).
 

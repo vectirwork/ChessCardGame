@@ -8,7 +8,7 @@ import type { SkinStyle } from '../../shared/catalog';
 import { skinStyle } from '../../shared/catalog';
 import { CARDS } from '../../shared/cards';
 import type { CardId } from '../../shared/cards';
-import { cardFx } from './cardFx';
+import { GENERIC_FX, cardFx } from './cardFx';
 import type { CardFx, Mood, SceneKey } from './cardFx';
 import { CAST, HALF, N } from './config';
 import { Particles } from './particles';
@@ -397,8 +397,9 @@ export interface CastHooks {
   /** Le camp dont la pendule est visée est-il en bas de l'écran ? */
   victimAtBottom?: boolean;
   /**
-   * Main de l'adversaire cachée (rulesOf(state).handsVisible faux) : l'annonce d'un Présage ne prend pas la couleur de la
-   * carte, qui la trahirait. Préparé : les mains sont toujours visibles aujourd'hui, personne ne le passe.
+   * Main de l'adversaire cachée (rulesOf(state).handsVisible faux) : l'annonce d'un Présage ne prend ni la couleur ni
+   * l'éclair de la carte, qui la trahiraient (même annonce pour tous les Présages). Préparé : les mains sont toujours
+   * visibles aujourd'hui, aucun appelant ne le passe encore.
    */
   secret?: boolean;
 }
@@ -478,7 +479,9 @@ interface RunOpts {
 
 function runScene(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks: CastHooks, opts: RunOpts): Promise<void> {
   const reduced = stage.reduced || !stage.ok;
-  const fx = cardFx(info.card);
+  // Main cachée (hooks.secret) : l'annonce d'un Présage (opts.scene) ne lit rien de la fiche de la carte, dont l'éclair
+  // trahirait la carte ; sa teinte est neutralisée par announceScene
+  const fx = hooks.secret && opts.scene ? GENERIC_FX : cardFx(info.card);
   const impactAt = reduced ? CAST.reducedImpactS : opts.impactAt ?? fx.impactAt;
   // Famille de l'échiquier qui lance le sort (scène partagée de l'accueil, voir VfxStage.family)
   const family = stage.family;

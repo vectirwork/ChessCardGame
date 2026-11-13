@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, FocusEvent, PointerEvent, ReactNode } from 'react';
 import type { CardId } from '../../shared/cards';
 import { boardStyle } from '../../shared/catalog';
+import { nombre } from '../../shared/text/fr';
 import { CARD_SCENES, sceneXY } from './cardScenes';
 import type { CardSceneDef, PanelDecor, SceneArrow, SceneMark } from './cardScenes';
 import { pieceUrl } from './pieces';
@@ -284,7 +285,7 @@ export function CardScene({
             spinning={running && showAfter}
             tag={
               <>
-                <b>×2</b> · +0 s
+                <b>{`×${nombre(def.clocks.rate)}`}</b> · +0 s
               </>
             }
           >

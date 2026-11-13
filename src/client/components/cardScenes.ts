@@ -6,8 +6,10 @@
 //   Animée (survol, bulle d'une carte) : l'image de droite rejoue l'action, celle de gauche reste le point de départ.
 // - une seule image avec des flèches (Trêve, Lune de sang) : un coup interdit (flèche barrée) ou forcé.
 // Coordonnées propres à la scène : colonnes a, b, c…, rangées 1 (en bas) à `rows`.
+import { CARDS } from '../../shared/cards';
 import type { CardId, PowerCardId } from '../../shared/cards';
 import type { Color, PieceType } from '../../shared/chess';
+import { vitesse } from '../../shared/text/regles';
 
 export interface ScenePiece {
   id: string;
@@ -67,14 +69,20 @@ export interface CardSceneDef {
   steps: SceneStep[];
   /** Ce que montre la scène, en une phrase (texte alternatif et légende). */
   caption: string;
-  /** Sablier fou : des pendules au lieu d'un échiquier. */
-  clocks?: boolean;
+  /** Sablier fou : des pendules au lieu d'un échiquier ; `rate`, leur vitesse pendant le pouvoir (« ×2 »). */
+  clocks?: { rate: number };
   /**
    * Deux images, avant et après. `afterAt` : étape à partir de laquelle l'image de droite montre l'effet (marques,
    * points, teinte) quand elle s'anime ; par défaut, la dernière.
    */
   pair?: { labels: [string, string]; before: PanelDecor; after: PanelDecor; afterAt?: number };
 }
+
+/**
+ * Vitesse des pendules sous le Sablier fou, à l'équilibrage du jour (CARDS, comme le texte de la carte) : libellé,
+ * légende et pendule de sa scène la suivent (2 : « Deux fois plus vite », « ×2 »).
+ */
+const HOURGLASS_RATE = CARDS.hourglass.clockRate ?? 2;
 
 /** ← Scène de chaque Pouvoir (table exhaustive : un Pouvoir ajouté ne compile pas sans la sienne). */
 const SCENES: Readonly<Record<PowerCardId, CardSceneDef>> = {
@@ -213,12 +221,12 @@ const SCENES: Readonly<Record<PowerCardId, CardSceneDef>> = {
   hourglass: {
     cols: 2,
     rows: 2,
-    clocks: true,
+    clocks: { rate: HOURGLASS_RATE },
     pieces: [],
     arrows: [],
     steps: [{ hold: 2600 }],
-    pair: { labels: ['Pendule normale', 'Deux fois plus vite, sans incrément'], before: {}, after: {}, afterAt: 1 },
-    caption: 'Sablier fou : les deux pendules s’écoulent deux fois plus vite, et les coups ne rapportent plus d’incrément.',
+    pair: { labels: ['Pendule normale', `${vitesse(HOURGLASS_RATE, true)}, sans incrément`], before: {}, after: {}, afterAt: 1 },
+    caption: `Sablier fou : les deux pendules s’écoulent ${vitesse(HOURGLASS_RATE)}, et les coups ne rapportent plus d’incrément.`,
   },
 };
 

@@ -1162,3 +1162,26 @@
   cursor: pointer;
   pointer-events: auto;
 }
+
+/* Mains au-delà de la main de référence (GameShell : data-crowd et variables en ligne ; rien de tout cela jusqu'à
+   elle). Votre main rapetisse dans la place de la main de référence (layout.ts, handCardWidth) : --hw, largeur des
+   cartes ; --ho, chevauchement (négatif), qui grandit sur mobile si la main ne tient pas. La main adverse se
+   chevauche de 30 % (layout.ts, oppFanSpan) ; sa largeur (--ow) suit déjà la place libre. */
+.gs .gs-fan[data-crowd] .sc-hand {
+  --w: var(--hw);
+}
+.gs .gs-fan[data-crowd] .gs-fan-slot + .gs-fan-slot {
+  margin-left: var(--ho);
+}
+.gs .gs-opp-fan[data-crowd] .gs-opp-slot + .gs-opp-slot {
+  margin-left: calc(var(--w) * -0.3);
+}
+/* Petites cartes (pastille courte) : la pastille suit la largeur de la carte */
+.gs .gs-fan[data-crowd] .sc-turn.is-compact {
+  font-size: min(9px, max(7.5px, calc(var(--w) * 0.13)));
+}
+/* Mobile : la bande de la main adverse nombreuse est plus longue ; l'intitulé passe sur deux lignes plutôt que de
+   sortir de l'écran (360 px, 6 cartes) */
+.gs.is-mobile .gs-opp-fan[data-crowd] .gs-opp-fan-label {
+  white-space: normal;
+}

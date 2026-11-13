@@ -11,26 +11,39 @@
 //   la même bulle, en lecture seule. Une carte pas jouable s'ouvre aussi : la bulle dit pourquoi (`notes`) ;
 // - tant que le joueur n'a ouvert aucune carte, une invite au-dessus de la main (mémorisée dans localStorage) ;
 // - après un lancement (`cast`), un message au-dessus de la main (Présage : « Annoncé : arrive au début de votre
-//   prochain tour. Jouez maintenant votre coup. ») ;
+//   prochain tour. Jouez maintenant votre coup. »), selon les règles de la partie (`rules`, `castsLeft`) ;
 // - les cartes de l'adversaire en éventail retourné (180°), plus petites, avec leur intitulé ; bulle à l'endroit.
+//
+// Nombre de cartes : N se déduit des mains reçues (la plus longue des deux). Poses et arrivée de l'éventail : fanPose et
+// fanArrival (layout.ts). Jusqu'à la main de référence (REF_HAND), rien de nouveau dans le DOM ; au-delà, les éventails
+// portent data-crowd et des variables en ligne (--hw, --ho), que lisent des règles propres de shell.css.
 //
 // L'échiquier :
 // - soit l'appelant le fournit (`board`) : la coque le place elle-même à la géométrie de `gameLayout()` ;
 // - soit l'appelant le place lui-même au même endroit (accueil : l'échiquier-astre est animé par le moteur).
 //
 // Styles : ./shell.css (classes gs-*), bulle et faces de carte dans styles/cards.css.
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import gsap from 'gsap';
 import { CARDS, isCardId } from '../../../shared/cards';
 import type { CardId } from '../../../shared/cards';
+import { GAME_RULES } from '../../../shared/config/rules';
+import type { Rules } from '../../../shared/config/rules';
 import type { HandCard } from '../../../shared/game';
+import { mainLabel } from '../../../shared/text/regles';
 import { CardBubble, SpellCard } from '../../components/SpellCard';
 import { castMessage } from './cards';
-import { OPP_FAN_SPAN, gameLayout } from './layout';
-import type { GameLayout } from './layout';
+import { REF_HAND, fanArrival, fanPose, handCardWidth, oppCardWidth } from './layout';
+import { useGameLayout } from './useGameLayout';
 import './shell.css';
+
+/**
+ * Règles de la partie que lit la coque : intitulé de la main, message après un lancement, pastilles des cartes et,
+ * si elles le portent (`tuning`, règles complètes rulesOf(state)), textes des bulles selon l'équilibrage de la partie.
+ */
+export type ShellRules = Pick<Rules, 'cardsPerTurn' | 'cardEndsTurn' | 'presageDelay'> & { tuning?: Rules['tuning'] };
 
 export interface ShellPlayer {
   name: string;
@@ -118,8 +131,16 @@ export interface GameShellProps {
   /** Première intention de jouer une carte (survol, focus ou toucher d'une de vos cartes) : l'appelant peut préparer
    *  la scène des sorts (WebGL) à ce moment-là plutôt qu'à l'arrivée sur la page. */
   onCardIntent?: () => void;
-  /** Carte lancée ce tour par le joueur, en attendant son coup (castThisTurn) : message au-dessus de la main. */
+  /** Carte lancée ce tour par le joueur (la dernière de castsThisTurn), en attendant son coup : message au-dessus de
+   *  la main. */
   cast?: CardId | null;
+  /** Cartes que le joueur peut encore lancer ce tour (castsLeft) : « Un autre sort, ou jouez votre coup. ». 0 par défaut. */
+  castsLeft?: number;
+  /** Règles de la partie (rulesOf(state)). Par défaut, celles des nouvelles parties (GAME_RULES). */
+  rules?: ShellRules;
+  /** Sous une main vide : « Partie sans cartes » par défaut ; null : rien (salle d'attente ou choix d'une partie avec
+   *  cartes, dont les mains ne sont pas encore distribuées). */
+  emptyHand?: ReactNode;
   /** La main du bas n'est pas celle du visiteur (spectateur) : lecture seule, sans invite. */
   readOnlyHand?: boolean;
   handLabel?: string;
@@ -131,12 +152,6 @@ export interface GameShellProps {
   onEscape?: () => void;
   className?: string;
 }
-
-const FAN = [
-  { r: -7, y: 14 },
-  { r: 0, y: 0 },
-  { r: 7, y: 14 },
-];
 
 /** Invite « Touchez une carte… » : vue une fois qu'une carte a été ouverte. */
 const SEEN_KEY = 'sm:cartes:lues';
@@ -153,23 +168,6 @@ const LIFT = 26;
 
 export function OracleEye() {
   return <span className="gs-eye" aria-hidden="true" />;
-}
-
-function useLayout() {
-  const [l, setL] = useState(() => gameLayout(window.innerWidth, window.innerHeight));
-  useEffect(() => {
-    const on = () => setL(gameLayout(window.innerWidth, window.innerHeight));
-    window.addEventListener('resize', on);
-    return () => window.removeEventListener('resize', on);
-  }, []);
-  return l;
-}
-
-/** Largeur d'une carte adverse : l'éventail tient entre l'échiquier et le bord droit (ordinateur, layout.ts). */
-function oppCardWidth(l: GameLayout): number {
-  if (l.mobile) return 34;
-  const side = window.innerWidth - (l.x + l.G / 2) - 34 - 20;
-  return Math.floor(Math.max(44, Math.min(76, (side - 8) / OPP_FAN_SPAN)));
 }
 
 const ICONS: Record<ShellIcon, ReactNode> = {
@@ -221,15 +219,24 @@ type Peek = { who: 'self' | 'opp'; i: number } | null;
 
 export function GameShell(p: GameShellProps) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const layout = useLayout();
+  const layout = useGameLayout();
   const { active } = p;
+  // Nombre de cartes de la partie : la plus longue des deux mains (aucune prop de plus)
+  const n = Math.max(p.hand.length, p.opponent.hand.length);
+  const crowd = n > REF_HAND;
+  // Au-delà de la main de référence, vos cartes rapetissent ; sous 96 px, moment en icône et pastille courte
+  const handWidth = crowd ? handCardWidth(n, layout, layout.vw, layout.vh) : null;
+  const narrow = !!handWidth && handWidth.w < 96;
+  const rules = p.rules ?? GAME_RULES;
+  // Intitulé de la main par défaut, calculé une fois par objet de règles (pas à chaque rendu)
+  const defaultLabel = useMemo(() => mainLabel(rules), [rules]);
 
   // Arrivée : les cartes montent en éventail, le statut glisse
   useLayoutEffect(() => {
     if (!active || !rootRef.current) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const ctx = gsap.context(() => {
-      gsap.from('.gs-fan-slot', { y: 340, rotation: (i: number) => [-28, 0, 28][i] ?? 0, opacity: 0, duration: 1.15, ease: 'expo.out', stagger: 0.09 });
+      gsap.from('.gs-fan-slot', { y: 340, rotation: (i: number) => fanArrival(i, n), opacity: 0, duration: 1.15, ease: 'expo.out', stagger: 0.09 });
       gsap.from('.gs-in', { y: 22, opacity: 0, duration: 0.9, ease: 'expo.out', stagger: 0.06, delay: 0.05 });
     }, rootRef);
     return () => ctx.revert();
@@ -413,36 +420,39 @@ export function GameShell(p: GameShellProps) {
     return () => document.removeEventListener('pointerdown', onDown, true);
   }, [openIdx, oppOpen]);
 
-  // Échap : bulle ouverte d'abord, puis le comportement de l'appelant (ciblage, retour)
+  // Échap : bulle ouverte d'abord, puis le comportement de l'appelant (ciblage, retour). Un seul écouteur, posé tant
+  // que la coque est active ; il lit l'état du dernier rendu.
+  const onEscapeKey = useRef<(e: KeyboardEvent) => void>(() => undefined);
+  onEscapeKey.current = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    if (oppOpen !== null) {
+      const back = focusInBubble();
+      setOppOpen(null);
+      if (back) focusCard(oppOpen, true);
+      return;
+    }
+    if (openIdx !== null) {
+      closeSelf(openIdx);
+      return;
+    }
+    if (peek) {
+      setPeek(null);
+      return;
+    }
+    if (sel !== null && focusInBubble()) {
+      cancelSelection();
+      return;
+    }
+    if (onEscape) onEscape();
+    else if (prompt) prompt.onCancel();
+    else onBack();
+  };
   useEffect(() => {
     if (!active) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return;
-      if (oppOpen !== null) {
-        const back = focusInBubble();
-        setOppOpen(null);
-        if (back) focusCard(oppOpen, true);
-        return;
-      }
-      if (openIdx !== null) {
-        closeSelf(openIdx);
-        return;
-      }
-      if (peek) {
-        setPeek(null);
-        return;
-      }
-      if (sel !== null && focusInBubble()) {
-        cancelSelection();
-        return;
-      }
-      if (onEscape) onEscape();
-      else if (prompt) prompt.onCancel();
-      else onBack();
-    };
+    const onKey = (e: KeyboardEvent) => onEscapeKey.current(e);
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  });
+  }, [active]);
 
   // Place des bulles : au-dessus de la carte (votre main), sous la main adverse ; jamais sur l'échiquier mobile
   useLayoutEffect(() => {
@@ -524,6 +534,7 @@ export function GameShell(p: GameShellProps) {
         mode={mode}
         owner={owner}
         used={hand[i].used}
+        rules={rules}
         note={note}
         aim={mode === 'aim' ? prompt?.text : undefined}
         onCast={
@@ -552,6 +563,7 @@ export function GameShell(p: GameShellProps) {
         mode={mode}
         owner="opponent"
         used={oppHand[i].used}
+        rules={rules}
         onCancel={
           mode === 'open'
             ? () => {
@@ -579,7 +591,7 @@ export function GameShell(p: GameShellProps) {
     fanNote = (
       <p className="gs-fan-note is-cast" role="status" style={{ '--h': castDef.hue } as CSSProperties}>
         <b>{castDef.name}</b>
-        <span>{castMessage(castDef.id)}</span>
+        <span>{castMessage(castDef.id, rules, p.castsLeft ?? 0)}</span>
       </p>
     );
   } else if (showInvite) {
@@ -590,13 +602,13 @@ export function GameShell(p: GameShellProps) {
       </p>
     );
   } else {
-    fanNote = <span className="gs-fan-label gs-in">{p.handLabel ?? 'Votre main · un sort par tour'}</span>;
+    fanNote = <span className="gs-fan-label gs-in">{p.handLabel ?? defaultLabel}</span>;
   }
 
   // ----- Main adverse : éventail retourné (180°), faces visibles, cartes jouées grisées -----
   const oppLabel = p.opponent.handLabel ?? 'Cartes de votre adversaire';
   const oppFan = oppHand.length > 0 && (
-    <div className="gs-opp-fan" ref={oppFanRef} style={{ '--ow': `${oppCardWidth(layout)}px` } as CSSProperties}>
+    <div className="gs-opp-fan" ref={oppFanRef} data-crowd={crowd ? n : undefined} style={{ '--ow': `${oppCardWidth(layout, layout.vw, n)}px` } as CSSProperties}>
       <span className="gs-opp-fan-label" id="gs-opp-fan-label">
         {oppLabel}
       </span>
@@ -607,7 +619,7 @@ export function GameShell(p: GameShellProps) {
           const on = oppBubble?.i === i;
           return (
             <div key={i} className="gs-opp-slot">
-              <div className={`gs-opp-card ${on ? 'is-on' : ''}`} style={{ '--fr': `${FAN[i % 3].r}deg`, '--fy': `${FAN[i % 3].y}px` } as CSSProperties}>
+              <div className={`gs-opp-card ${on ? 'is-on' : ''}`} style={poseStyle(i, n)}>
                 <SpellCard
                   ref={el => {
                     oppRefs.current[i] = el;
@@ -616,6 +628,7 @@ export function GameShell(p: GameShellProps) {
                   size="hand"
                   owner="opponent"
                   used={h.used}
+                  rules={rules}
                   tilt={false}
                   onClick={how => onOppCard(i, how)}
                   onHover={hov => setPeek(cur => (hov ? { who: 'opp', i } : cur?.who === 'opp' && cur.i === i ? null : cur))}
@@ -708,7 +721,14 @@ export function GameShell(p: GameShellProps) {
         </div>
         {layout.mobile && oppFan && <div className="gs-opp-strip gs-in">{oppFan}</div>}
 
-        <div className={`gs-fan ${readOnlyHand ? 'is-readonly' : ''}`} ref={fanRef} aria-label={readOnlyHand ? p.handLabel : 'Vos cartes'} role="group">
+        <div
+          className={`gs-fan ${readOnlyHand ? 'is-readonly' : ''}`}
+          ref={fanRef}
+          aria-label={readOnlyHand ? p.handLabel : 'Vos cartes'}
+          role="group"
+          data-crowd={crowd ? n : undefined}
+          style={handWidth ? crowdStyle(handWidth) : undefined}
+        >
           {fanNote}
           {p.selfExtra && <div className="gs-self-extra gs-in">{p.selfExtra}</div>}
           {hand.map((h, i) => {
@@ -717,7 +737,7 @@ export function GameShell(p: GameShellProps) {
             const lifted = sel === i || openIdx === i;
             return (
               <div key={i} className="gs-fan-slot">
-                <div className={`gs-fan-card ${lifted ? 'is-sel' : ''}`} style={{ '--fr': `${FAN[i % 3].r}deg`, '--fy': `${FAN[i % 3].y}px` } as CSSProperties}>
+                <div className={`gs-fan-card ${lifted ? 'is-sel' : ''}`} style={poseStyle(i, n)}>
                   <SpellCard
                     ref={el => {
                       cardRefs.current[i] = el;
@@ -725,6 +745,8 @@ export function GameShell(p: GameShellProps) {
                     id={card}
                     size="hand"
                     used={h.used}
+                    rules={rules}
+                    narrow={narrow}
                     selected={sel === i}
                     dim={!h.used && !readOnlyHand && !playable[i]}
                     onClick={how => onSelfCard(i, how)}
@@ -737,7 +759,7 @@ export function GameShell(p: GameShellProps) {
               </div>
             );
           })}
-          {hand.length === 0 && <span className="gs-no-cards gs-in">Partie sans cartes</span>}
+          {hand.length === 0 && p.emptyHand !== null && <span className="gs-no-cards gs-in">{p.emptyHand ?? 'Partie sans cartes'}</span>}
         </div>
       </div>
       {p.banner && (
@@ -775,6 +797,18 @@ export function GameShell(p: GameShellProps) {
     </div>
   );
 }
+
+/** Pose d'une carte de l'éventail (variables --fr, --fy de shell.css). */
+function poseStyle(i: number, n: number): CSSProperties {
+  const f = fanPose(i, n);
+  return { '--fr': `${f.r}deg`, '--fy': `${f.y}px` } as CSSProperties;
+}
+
+/** Main au-delà de la main de référence : largeur des cartes et chevauchement (shell.css, .gs-fan[data-crowd]). */
+function crowdStyle(h: { w: number; overlap: number }): CSSProperties {
+  return { '--hw': `${round(h.w)}px`, '--ho': `${round(-h.overlap)}px` } as CSSProperties;
+}
+const round = (x: number) => Math.round(x * 100) / 100;
 
 /** Nom lisible d'une carte (pour les annonces). */
 export const cardName = (id: string) => (id in CARDS ? CARDS[id as keyof typeof CARDS].name : '');

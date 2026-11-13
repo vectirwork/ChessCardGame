@@ -5,6 +5,8 @@
 // Fonctions : pendules exactes, coups optimistes, cartes et ciblage, file d'animation des sorts (garde-fou
 // castSafely), salle d'attente et lien d'invitation, pseudo des invités, spectateurs, nulle, abandon, annulation,
 // réclamation de victoire, revanche, émotes, fin de partie, Présages annoncés et catalogue de la partie.
+// Les consignes, l'intitulé de la main et le message après un lancement suivent les règles de la partie
+// (rulesOf(state) : cartes par tour, carte à la place du coup, délai des Présages), jamais celles du jour.
 // Rois : chaque camp porte le roi de son siège (view.seats[c].king, pris à l'assise, vu des deux joueurs et des
 // spectateurs) ; la préférence « Rois adverses classiques » remet les autres en roi Arcane. L'échiquier reste celui
 // de celui qui regarde (me.equippedBoard).
@@ -16,15 +18,18 @@ import { CARDS } from '../../shared/cards';
 import type { Catalog } from '../../shared/cards';
 import { skinStyle } from '../../shared/catalog';
 import type { CardInfo, GameState, HandCard } from '../../shared/game';
-import { RESULT_TEXT, cardOptions, cardPlayable, catalogOf, legalMovesOf, playMove, sideInCheck } from '../../shared/game';
+import { cardOptions, cardPlayable, catalogOf, legalMovesOf, playMove, resultText, sideInCheck } from '../../shared/game';
 import type { Ack, GameUpdate, GameView, JoinReply } from '../../shared/protocol';
 import { EMOTES } from '../../shared/protocol';
+import { castsLeft, rulesOf } from '../../shared/rulesCore';
+import { consigneTour, mainLabel } from '../../shared/text/regles';
 import { Board, BoardHandle, checkSquare } from '../components/Board';
+import { cardTexts } from '../components/SpellCard';
 import { MATE_FALL_MS, matedKing } from '../components/mate';
 import { Modal, Spinner } from '../components/Layout';
 import { CLASSIC_KINGS_PREF, rememberView, seatKings, shownKings } from '../features/history';
 import { castSafely } from '../odyssee/castSafely';
-import { GameShell, PowersPanel, PremoveNote, castMessage, castThisTurn, gameLayout, handNotes } from '../odyssee/shell';
+import { GameShell, PowersPanel, PremoveNote, castMessage, castsThisTurn, handNotes, railTop as railTopOf, useGameLayout } from '../odyssee/shell';
 import type { ShellAction, ShellPrompt } from '../odyssee/shell';
 import { emitAck, getSocket } from '../socket';
 import { playCardSound, playSound, setSoundEnabled, soundEnabled } from '../sound';
@@ -32,11 +37,14 @@ import { getGuestName, setGuestName, useApp, usePref } from '../store';
 import { useVfx } from '../vfx/useVfx';
 import { AwayNotice, CastBanner, DrawOffer, EndCard, FirstMoveCountdown, JoinSheet, WaitingCard, rematchLabel, resultTitle } from './overlays';
 import { CardDraft } from './CardDraft';
+import type { RevealEvent } from './draftText';
+import { emoteTimers } from './emotes';
+import type { ShownEmote } from './emotes';
 import { deNom } from './names';
 import type { Casting } from './overlays';
 import {
-  Avatar, Captured, Clock, EmoteBubble, MoveList, SeatName, catalogDescription, catalogTag, colorName, modeLabel,
-  seatSub, tcLabel,
+  Avatar, Captured, Clock, EmoteBubble, MoveList, SeatName, catalogDescription, catalogTag, colorName, firstMoveNumber,
+  modeLabel, seatSub, tcLabel, turnEndingCards,
 } from './parts';
 
 type Queued = GameUpdate & { at: number };
@@ -47,18 +55,6 @@ type Queued = GameUpdate & { at: number };
  */
 const known = (hand: HandCard[]): HandCard[] => hand.map(h => (h.card && !CARDS[h.card] ? { ...h, card: null as unknown as HandCard['card'] } : h));
 type IdleWin = Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
-
-/** Géométrie du mode immersif (la même que celle de la coque), suivie au redimensionnement. */
-function useStageLayout() {
-  const read = () => ({ vw: window.innerWidth, vh: window.innerHeight, ...gameLayout(window.innerWidth, window.innerHeight) });
-  const [l, setL] = useState(read);
-  useEffect(() => {
-    const on = () => setL(read());
-    window.addEventListener('resize', on);
-    return () => window.removeEventListener('resize', on);
-  }, []);
-  return l;
-}
 
 /** Plein écran immersif : en-tête du site masqué, pas de défilement (html.is-immersive, styles/global.css). */
 function useImmersive(on: boolean) {
@@ -84,7 +80,9 @@ export default function GamePage() {
   const [hidden, setHidden] = useState<Set<number>>(new Set());
   const [casting, setCasting] = useState<Casting | null>(null);
   const [animating, setAnimating] = useState(false);
-  const [emotes, setEmotes] = useState<Record<Color, string | null>>({ w: null, b: null });
+  const [emotes, setEmotes] = useState<Record<Color, ShownEmote | null>>({ w: null, b: null });
+  /** Dernière fin du choix annoncée par le serveur (événement `reveal`) : la révélation dit qui a reçu des cartes au hasard. */
+  const [revealEv, setRevealEv] = useState<RevealEvent | null>(null);
   const [showEnd, setShowEnd] = useState(false);
   const [sound, setSound] = useState(soundEnabled());
   const [movesOpen, setMovesOpen] = useState(false);
@@ -92,7 +90,8 @@ export default function GamePage() {
   const [announce, setAnnounce] = useState<{ text: string; key: number } | null>(null);
   const [warm, setWarm] = useState(false);
   const [classicKings] = usePref<boolean>(CLASSIC_KINGS_PREF, false);
-  const layout = useStageLayout();
+  // Géométrie du mode immersif, la même que celle de la coque (un seul écouteur de redimensionnement pour les deux)
+  const layout = useGameLayout();
   const boardRef = useRef<BoardHandle>(null);
   /** Pré-coups en attente (Board) : affichés dans le statut, avec de quoi les annuler. */
   const [premoves, setPremoves] = useState(0);
@@ -173,7 +172,7 @@ export default function GamePage() {
     async (u: Queued, info: CardInfo, prev: GameView | null) => {
       const seat = u.view.seats[info.caster];
       const mine = u.view.you === info.caster;
-      const by = seat?.name ?? (info.caster === 'w' ? 'Les Blancs' : 'Les Noirs');
+      const by = seat?.name ?? `Les ${colorName(info.caster)}`;
       setCasting({ card: info.card, by, mine, key: Date.now() });
       if (!mine && CARDS[info.card]) setAnnounce({ text: `${by} lance ${CARDS[info.card].name}`, key: Date.now() });
       setAnimating(true);
@@ -220,6 +219,8 @@ export default function GamePage() {
         if (ev.type === 'card' && !skipFx) {
           await playCardEvent(u, ev.info, prev);
         } else {
+          // Fin du choix : l'événement accompagne la vue qui révèle les mains (même rendu, CardDraft lit les deux)
+          if (ev.type === 'reveal') setRevealEv({ auto: ev.auto, filled: ev.filled });
           applyView(u.view, u.at);
           if (ev.type === 'card') {
             playCardSound(ev.info.card);
@@ -278,8 +279,13 @@ export default function GamePage() {
     setShowEnd(false);
     setSelCard(null);
     setFlipped(false);
+    setRevealEv(null);
+    // Bulles déjà vides (premier passage) : même objet, pas de rendu de plus
+    setEmotes(e => (e.w || e.b ? { w: null, b: null } : e));
     // Nouvelle partie (revanche) : la scène 3D sera recréée au repos, pas pendant l'arrivée de la coque
     setWarm(false);
+    // Émotes : une minuterie par camp, annulée par l'émote suivante, à la revanche et au départ de la page
+    const emoteTimer = emoteTimers((c, e) => setEmotes(x => ({ ...x, [c]: e })));
     const onUpdate = (u: GameUpdate) => {
       if (u.view.id !== id) return;
       queue.current.push({ ...u, at: Date.now() });
@@ -291,9 +297,8 @@ export default function GamePage() {
     };
     const onEmote = (p: { gameId: string; color: Color; key: string }) => {
       if (p.gameId !== id || !Object.hasOwn(EMOTES, p.key)) return;
-      setEmotes(e => ({ ...e, [p.color]: EMOTES[p.key] }));
+      emoteTimer.show(p.color, EMOTES[p.key]);
       playSound('notify');
-      setTimeout(() => setEmotes(e => ({ ...e, [p.color]: null })), 2800);
     };
     const onConnect = () => void join();
     s.on('game:update', onUpdate);
@@ -307,11 +312,25 @@ export default function GamePage() {
       s.off('game:emote', onEmote);
       s.off('connect', onConnect);
       s.emit('game:leave', { id });
+      emoteTimer.clear();
     };
   }, [id, join, navigate, process]);
 
   // ----- Dérivés -----
   const state: GameState | null = view?.state ?? null;
+  // Règles de la partie (celles qu'elle porte, sinon RULES_V1) : consignes, main, message après un lancement, textes
+  // des cartes, numérotation des coups. Les phrases sont calculées une fois par objet de règles.
+  const rules = rulesOf(state ?? {});
+  const ruleTexts = useMemo(
+    () => ({
+      main: mainLabel(rules),
+      consigne: consigneTour(rules),
+      first: firstMoveNumber(rules),
+      // Carte qui termine le tour (même règle que le moteur) : après celle des Noirs, le numéro du coup avance
+      endsTurn: turnEndingCards(rules),
+    }),
+    [rules],
+  );
   // Pendant le choix des cartes (view.draft), personne n'a le trait : l'échiquier reste verrouillé.
   const myTurn = !!view && !!state && view.status === 'active' && !view.draft && you === state.pos.turn && !state.result;
   const legal = useMemo(() => (myTurn && state && !animating ? legalMovesOf(state) : []), [myTurn, state, animating]);
@@ -365,7 +384,9 @@ export default function GamePage() {
   );
   // Pourquoi une carte n'est pas jouable maintenant : dit par sa bulle
   const notes = useMemo(() => (you && state ? handNotes(state, you, myTurn, playable) : []), [state, you, myTurn, playable]);
-  const castNow = you && state && myTurn ? castThisTurn(state, you) : null;
+  // Cartes lancées ce tour, en attendant le coup : la dernière fait le message au-dessus de la main
+  const casts = you && state && myTurn ? castsThisTurn(state, you) : [];
+  const castNow = casts.length ? casts[casts.length - 1] : null;
   const selectedDef = selCard !== null && myHand[selCard]?.card ? CARDS[myHand[selCard].card!] : null;
   const options = useMemo(() => {
     if (selCard === null || !state || !you || !selectedDef || selectedDef.targets === 0) return null;
@@ -509,7 +530,8 @@ export default function GamePage() {
   const oppAway = you ? view.away[opposite(you)] : null;
   const ended = view.status === 'ended' && !!state.result;
   const turn = state.pos.turn;
-  const moveNo = Math.floor(state.ply / 2) + 1;
+  // Numéro du coup en cours, tel que la position le porte (position de départ quelconque comprise)
+  const moveNo = state.pos.fullmove;
   const vsHuman = view.mode !== 'bot';
   const turnSeat = view.seats[turn];
   const isActive = (c: Color) => view.status === 'active' && turn === c && !state.result;
@@ -519,7 +541,7 @@ export default function GamePage() {
   const boardBottom = layout.y + layout.G / 2;
   const railLeft = layout.x + layout.G / 2 + 28;
   // Avec cartes, la main adverse (éventail retourné, sous la pendule) occupe le haut de la colonne.
-  const railTop = hasCards ? 300 : 178;
+  const railTop = railTopOf(hasCards);
   const selfBottom = Math.max(28, layout.vh - boardBottom);
   const railBottom = selfBottom + (spectator && hasCards ? 250 : 184);
   const showRail = !layout.mobile && layout.vw - 30 - railLeft >= 132 && layout.vh - railTop - railBottom >= 120;
@@ -533,7 +555,9 @@ export default function GamePage() {
   else if (myTurn) title = check !== null ? 'Échec au roi.' : 'À vous de jouer.';
   else title = turnSeat?.kind === 'bot' ? `${turnSeat.name} réfléchit…` : `Au tour ${turnSeat?.name ? deNom(turnSeat.name) : 'de votre adversaire'}.`;
 
-  const firstMove = !view.started && view.firstMoveDeadline && view.status === 'active' && myTurn ? <FirstMoveCountdown deadline={view.firstMoveDeadline} /> : null;
+  // Échéances du serveur ramenées à l'horloge du navigateur, si le serveur donne son heure (view.serverNow)
+  const skew = view.serverNow !== undefined ? receivedAt - view.serverNow : 0;
+  const firstMove = !view.started && view.firstMoveDeadline && view.status === 'active' && myTurn ? <FirstMoveCountdown deadline={view.firstMoveDeadline + skew} total={view.firstMoveMs} /> : null;
   let hint: ReactNode = null;
   if (view.status === 'waiting') {
     hint = you ? (
@@ -561,19 +585,23 @@ export default function GamePage() {
   } else if (myTurn) {
     const line = mustPlayCard
       ? 'Aucun coup légal : seule une carte peut vous sauver.'
-      : state.cardPlayed
-        ? castNow
-          ? castMessage(castNow)
-          : 'Sort lancé : jouez maintenant votre coup.'
-        : hasCards && playable.some(Boolean)
-          ? layout.mobile
-            ? 'Une carte avant le coup, ou jouez directement.'
-            : 'Lancez une carte avant votre coup, ou jouez directement.'
-          : 'Jouez votre coup.';
+      : castNow
+        ? castMessage(castNow, rules, castsLeft(state))
+        : state.cardPlayed
+          ? 'Sort lancé : jouez maintenant votre coup.'
+          : hasCards && playable.some(Boolean)
+            ? rules.cardEndsTurn
+              ? layout.mobile
+                ? 'Une carte à la place du coup, ou jouez directement.'
+                : 'Lancez une carte à la place de votre coup, ou jouez directement.'
+              : layout.mobile
+                ? 'Une carte avant le coup, ou jouez directement.'
+                : 'Lancez une carte avant votre coup, ou jouez directement.'
+            : 'Jouez votre coup.';
     hint = (
       <>
         {line}
-        {firstMove ?? (hasCards && <small>Une seule carte par tour, toujours avant le coup.</small>)}
+        {firstMove ?? (hasCards && <small>{ruleTexts.consigne}</small>)}
       </>
     );
   } else if (view.status === 'active') {
@@ -585,11 +613,13 @@ export default function GamePage() {
     );
   }
 
-  const prompt: ShellPrompt | null = selectedDef
+  // Consigne de ciblage et règle selon l'équilibrage de la partie (cardTexts), comme dans la bulle
+  const selectedTexts = selectedDef ? cardTexts(selectedDef, rules) : null;
+  const prompt: ShellPrompt | null = selectedDef && selectedTexts
     ? {
         name: selectedDef.name,
         hue: selectedDef.hue,
-        text: selectedDef.targets ? selectedDef.prompts[partial.length] ?? '' : selectedDef.description,
+        text: selectedDef.targets ? selectedTexts.prompts[partial.length] ?? '' : selectedTexts.description,
         onCast: selectedDef.targets === 0 ? () => castCard(selCard!, []) : undefined,
         onCancel: cancelCard,
       }
@@ -601,7 +631,7 @@ export default function GamePage() {
     ? {
         text: (
           <p>
-            {state.result!.reason === 'aborted' ? 'Elle ne compte ni au classement ni dans l’historique.' : `${RESULT_TEXT[state.result!.reason] ?? 'Partie terminée'}.`}
+            {state.result!.reason === 'aborted' ? 'Elle ne compte ni au classement ni dans l’historique.' : `${resultText(state.result!.reason, rules) ?? 'Partie terminée'}.`}
             {diff !== null && <span className={`gp-diff ${diff >= 0 ? 'up' : 'down'}`}>{` ${diff >= 0 ? '+' : ''}${diff} Elo`}</span>}
           </p>
         ),
@@ -650,7 +680,7 @@ export default function GamePage() {
   if (view.drawOffer && you && view.drawOffer !== you && view.status === 'active') {
     banner = <DrawOffer onAccept={() => void send('game:draw', { action: 'accept' })} onDecline={() => void send('game:draw', { action: 'decline' })} />;
   } else if (oppAway && view.status === 'active') {
-    banner = <AwayNotice since={oppAway} claimAfter={view.claimAfterMs} onClaim={() => void send('game:claim', {})} />;
+    banner = <AwayNotice since={oppAway + skew} claimAfter={view.claimAfterMs} onClaim={() => void send('game:claim', {})} />;
   } else if (rematchAsked) {
     banner = (
       <div className="gp-offer" role="alert">
@@ -672,6 +702,7 @@ export default function GamePage() {
       you={you}
       names={{ w: view.seats.w?.name, b: view.seats.b?.name }}
       mobile={layout.mobile}
+      rules={rules}
     />
   );
 
@@ -736,7 +767,7 @@ export default function GamePage() {
           {you === bottom && emoteMenu}
         </div>
       )}
-      <EmoteBubble text={emotes[bottom]} />
+      <EmoteBubble key={emotes[bottom]?.key} text={emotes[bottom]?.text ?? null} />
     </div>
   );
 
@@ -768,13 +799,20 @@ export default function GamePage() {
         premove={you && view.status === 'active' && !view.draft && !state.result ? you : null}
         onPremoves={setPremoves}
       />
-      {casting && <CastBanner key={casting.key} c={casting} />}
+      {casting && <CastBanner key={casting.key} c={casting} rules={rules} />}
       {iAmCreatorWaiting && <WaitingCard id={id} view={view} catalog={catalog} onCancel={() => void send('game:abort', {})} />}
       {showEnd && ended && !layout.mobile && endCard}
     </div>
   );
 
   const badge = `${modeLabel(view)} · ${tcLabel(view.clock)}${view.mirror && hasCards ? ' · miroir' : ''}`;
+  // Partie en direct de l'accueil, regardée d'ici : l'IA joue pour un joueur qui ne joue pas (relais)
+  const relayed = (['w', 'b'] as Color[]).filter(c => view.standIn?.[c] && view.status === 'active' && !state.result);
+  const info = relayed.length ? (
+    <p className="gp-standin" role="status">
+      L’IA joue pour {relayed.map(c => view.seats[c]?.name ?? `les ${colorName(c)}`).join(' et ')}.
+    </p>
+  ) : undefined;
 
   return (
     <>
@@ -797,6 +835,7 @@ export default function GamePage() {
         prompt={prompt}
         actions={actions}
         banner={banner}
+        info={info}
         powers={powers}
         opponent={{
           name: oppSeat?.name ?? 'En attente…',
@@ -810,20 +849,24 @@ export default function GamePage() {
               <div className={`gp-opp-extra ${isActive(top) ? 'is-turn' : ''}`}>
                 <Captured state={state} color={top} />
                 <Clock clock={view.clock} color={top} receivedAt={receivedAt} active={isActive(top)} compact={layout.mobile} />
-                <EmoteBubble text={emotes[top]} />
+                <EmoteBubble key={emotes[top]?.key} text={emotes[top]?.text ?? null} />
               </div>
             </>
           ),
         }}
         hand={hasCards && view.status !== 'waiting' ? (you ? myHand : known(state.hands[bottom])) : []}
+        // Main vide d'une partie avec cartes (salle d'attente, choix des cartes) : pas de « Partie sans cartes »
+        emptyHand={hasCards ? null : undefined}
+        rules={rules}
         playable={playable}
         notes={notes}
         selected={selCard}
         onPickCard={pickCard}
         onCardIntent={onCardIntent}
         cast={castNow}
+        castsLeft={castsLeft(state)}
         readOnlyHand={!you}
-        handLabel={you ? 'Votre main · un sort par tour' : `Cartes ${selfSeat?.name ? deNom(selfSeat.name) : `des ${colorName(bottom)}`}`}
+        handLabel={you ? ruleTexts.main : `Cartes ${selfSeat?.name ? deNom(selfSeat.name) : `des ${colorName(bottom)}`}`}
         toast={announce}
         onEscape={() => {
           if (selCard !== null) cancelCard();
@@ -833,11 +876,11 @@ export default function GamePage() {
       />
       {selfBlock}
       {/* Choix des cartes au début de la partie (D5), puis mains révélées : plein écran, rien en dehors de ces moments. */}
-      <CardDraft view={view} receivedAt={receivedAt} onAbort={() => void send('game:abort', {})} />
+      <CardDraft view={view} receivedAt={receivedAt} reveal={revealEv} onAbort={() => void send('game:abort', {})} />
       {showRail && (
         <aside className="gp-rail" style={{ left: railLeft, top: railTop, bottom: railBottom } as CSSProperties} aria-label="Coups joués">
           <p className="gp-label">Coups</p>
-          <MoveList log={state.log} />
+          <MoveList log={state.log} first={ruleTexts.first} endsTurn={ruleTexts.endsTurn} />
         </aside>
       )}
       {showEnd && ended && layout.mobile && endCard}
@@ -846,7 +889,7 @@ export default function GamePage() {
           <div className="gp-sheet">
             <p className="gp-kick">Coup {moveNo}</p>
             <h2 className="gp-card-title">Coups joués</h2>
-            <MoveList log={state.log} className="is-sheet" />
+            <MoveList log={state.log} first={ruleTexts.first} endsTurn={ruleTexts.endsTurn} className="is-sheet" />
             <div className="gp-card-actions">
               <button type="button" className="btn-line" onClick={() => setMovesOpen(false)}>
                 Fermer

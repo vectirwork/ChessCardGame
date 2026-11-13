@@ -123,6 +123,13 @@
   display: none;
 }
 
+/* Partie en direct de l'accueil regardée d'ici : l'IA joue pour un joueur absent (relais) */
+.gp-standin {
+  margin: 12px 0 0;
+  font-size: 13.5px;
+  color: var(--soft);
+}
+
 /* --- Pendules --- */
 .gp-clock {
   position: relative;
@@ -177,6 +184,19 @@
   font-weight: 700;
   background: linear-gradient(90deg, var(--cyan), var(--violet));
   color: #0b0a1c;
+}
+/* Sablier fou : l'incrément de la cadence est suspendu (« +2 » barré), en face de la pastille de vitesse */
+.gp-noinc {
+  position: absolute;
+  top: -9px;
+  left: -8px;
+  padding: 0 6px;
+  border: 1px solid rgba(127, 231, 255, 0.75);
+  border-radius: 99px;
+  background: rgba(6, 7, 20, 0.92);
+  color: var(--cyan);
+  font-size: 11px;
+  font-weight: 700;
 }
 .gp-clock.is-compact {
   min-width: 70px;
@@ -1175,7 +1195,8 @@
 }
 .pl-levels {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* Une colonne par niveau de l'IA (--n, posé par la page Jouer ; 3 par défaut) */
+  grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr));
   gap: 8px;
 }
 .pl-level {

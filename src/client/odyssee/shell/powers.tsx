@@ -11,11 +11,14 @@ import { createPortal } from 'react-dom';
 import type { Color } from '../../../shared/chess';
 import { CARDS } from '../../../shared/cards';
 import type { Effect } from '../../../shared/game';
+import { compte, ordinalLettres } from '../../../shared/text/fr';
+import { prochainTour } from '../../../shared/text/regles';
 import { CardEmblem } from '../../components/CardArt';
 import { CardScene, scenePaired } from '../../components/CardScene';
+import { cardTexts } from '../../components/SpellCard';
+import type { CardRules } from '../../components/SpellCard';
 import { deNom } from '../../game/names';
 
-const plural = (n: number, w: string) => `${n} ${w}${n > 1 ? 's' : ''}`;
 const COLOR_NAME: Record<Color, string> = { w: 'Blancs', b: 'Noirs' };
 
 export interface PowersProps {
@@ -25,6 +28,8 @@ export interface PowersProps {
   /** Nom de chaque camp (« L'Oracle », « Bruno »…), pour dire qui a lancé le pouvoir. */
   names?: Partial<Record<Color, string>>;
   mobile: boolean;
+  /** Règles de la partie (rulesOf(state)) : règle de chaque pouvoir selon l'équilibrage de la partie (cardTexts). */
+  rules?: CardRules;
 }
 
 /** Qui a lancé le pouvoir et, s'il est seulement annoncé, quand il arrive. */
@@ -32,11 +37,18 @@ export function powerTiming(e: Effect, you: Color | null, names?: PowersProps['n
   const mine = you !== null && e.caster === you;
   const caster = mine ? 'Vous' : names?.[e.caster] ?? `Les ${COLOR_NAME[e.caster]}`;
   if (e.pending) {
-    // Annoncé : il arrive au début du prochain tour de son lanceur (après le coup de l'autre camp)
+    // Annoncé : il arrive au début d'un tour de son lanceur (le prochain, au délai des Présages par défaut), après le
+    // coup de l'autre camp. `delay` : demi-coups restants avant l'arrivée.
     let when: string;
-    if (mine) when = 'arrive au début de votre prochain tour';
-    else if (!you) when = 'arrive au début de leur prochain tour';
-    else when = (e.delay ?? 1) > 1 ? 'arrive après votre prochain coup' : 'arrive après votre coup';
+    const tour = prochainTour(e.delay ?? 2);
+    if (mine) when = `arrive au début de ${tour}`;
+    else if (!you) when = `arrive au début de ${tour.replace(/^votre /, 'leur ')}`;
+    else {
+      // Vu par l'adversaire du lanceur : après combien de ses coups (le coup en cours compris s'il a le trait)
+      const delay = e.delay ?? 1;
+      const k = Math.ceil(delay / 2);
+      when = k > 1 ? `arrive après votre ${ordinalLettres(k)} coup à venir` : delay > 1 ? 'arrive après votre prochain coup' : 'arrive après votre coup';
+    }
     return `${caster} · annoncé, ${when}`;
   }
   return mine ? 'Votre sort' : `Sort ${deNom(caster)}`;
@@ -46,7 +58,7 @@ export function powerTiming(e: Effect, you: Color | null, names?: PowersProps['n
 export function powerLeft(e: Effect): string {
   if (e.pending) return 'à venir';
   if (e.permanent) return 'toute la partie';
-  return `encore ${plural(e.remaining, 'coup')}`;
+  return `encore ${compte(e.remaining, 'coup')}`;
 }
 
 function Pips({ e }: { e: Effect }) {
@@ -101,7 +113,7 @@ function Detail({ e, n, you, names, active = false, sheet = false }: { e: Effect
   );
 }
 
-export function PowersPanel({ effects, you, names, mobile }: PowersProps) {
+export function PowersPanel({ effects, you, names, mobile, rules }: PowersProps) {
   const [open, setOpen] = useState<number | null>(null);
   const chipsRef = useRef<HTMLUListElement>(null);
   /** Ordinateur : la scène d'un pouvoir s'anime tant que la souris est sur sa ligne. */
@@ -149,7 +161,7 @@ export function PowersPanel({ effects, you, names, mobile }: PowersProps) {
                   {/* La fiche a été ouverte pour voir ce pouvoir : sa scène se joue */}
                   <Detail e={openFx.e} n={openFx.n} you={you} names={names} active sheet />
                 </div>
-                <p className="gs-pw-desc">{CARDS[openFx.e.card].description}</p>
+                <p className="gs-pw-desc">{cardTexts(CARDS[openFx.e.card], rules).description}</p>
                 <button type="button" className="btn-line gs-sheet-close" onClick={() => setOpen(null)}>
                   Fermer
                 </button>
@@ -171,7 +183,7 @@ export function PowersPanel({ effects, you, names, mobile }: PowersProps) {
             key={e.id}
             className={`gs-pw-row ${e.pending ? 'is-pending' : ''}`}
             style={{ '--h': CARDS[e.card].hue } as CSSProperties}
-            title={CARDS[e.card].description}
+            title={cardTexts(CARDS[e.card], rules).description}
             onMouseEnter={() => setHovered(e.id)}
             onMouseLeave={() => setHovered(h => (h === e.id ? null : h))}
           >

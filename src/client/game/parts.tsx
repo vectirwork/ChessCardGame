@@ -5,13 +5,17 @@ import type { CSSProperties, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Color, PieceType, VALUE, sanToFrench } from '../../shared/chess';
 import { CARDS, CATALOGS } from '../../shared/cards';
-import type { Catalog } from '../../shared/cards';
-import { BOT_PROFILES } from '../../shared/bot';
+import type { CardId, Catalog } from '../../shared/cards';
+import type { Rules } from '../../shared/config/rules';
 import type { GameState, LogEntry } from '../../shared/game';
 import { describeCardPlay } from '../../shared/game';
 import type { ClockView, GameView, SeatView } from '../../shared/protocol';
-import { TIME_CONTROLS } from '../../shared/protocol';
+import { tcLabel as tcText } from '../../shared/protocol';
+import { cardEndsTurn } from '../../shared/rulesCore';
 import { DEFAULT_KING, kingStyle, normKing } from '../../shared/catalog';
+import { mmss } from '../../shared/text/fr';
+import { catalogLabel as catalogName, colorName as colorWord, modeLabel as modeText } from '../../shared/text/libelles';
+import { vitesse } from '../../shared/text/regles';
 import { CollectionSeal } from '../components/CollectionSeal';
 import { crestUrl, pieceUrl } from '../components/pieces';
 import { OracleEye } from '../odyssee/shell';
@@ -21,10 +25,10 @@ import { playSound } from '../sound';
 // ---------------------------------------------------------------------------------------------
 // Libellés
 
-export const colorName = (c: Color) => (c === 'w' ? 'Blancs' : 'Noirs');
+export const colorName = (c: Color) => colorWord(c);
 
 export function catalogLabel(c: Catalog): string {
-  return CATALOGS.find(x => x.id === c)?.label ?? 'Duel';
+  return catalogName(c, CATALOGS);
 }
 
 /** Catalogue en quelques mots (« Pouvoirs », « sans cartes ») pour les surtitres. */
@@ -38,28 +42,17 @@ export function catalogDescription(c: Catalog): string {
 
 /** Nature de la partie, pour le badge du haut. La file amicale est une partie « quick » non classée. */
 export function modeLabel(view: GameView): string {
-  if (view.mode === 'bot') return "Contre l'IA";
-  if (view.mode === 'invite') return 'Entre amis';
-  return view.rated ? 'Partie classée' : 'Partie amicale';
+  return modeText(view.mode, view.rated);
 }
 
+/** Cadence d'une pendule (« 3 + 2 », « Sans limite ») ; hors liste, sans arrondir les minutes (« 1,5 + 0 »). */
 export function tcLabel(clock: ClockView | null): string {
-  if (!clock) return 'Sans limite';
-  const t = TIME_CONTROLS.find(x => x.tc && x.tc.initial === clock.initial && x.tc.increment === clock.increment);
-  if (t) return t.label;
-  return `${Math.round(clock.initial / 60)} + ${clock.increment}`;
+  return tcText(clock ? { initial: clock.initial, increment: clock.increment } : null);
 }
 
-/** Cadence en toutes lettres (« 10 min + 5 s »). */
+/** Cadence en toutes lettres (« 10 min + 5 s par coup », « 30 s »). */
 export function tcLong(clock: ClockView | null): string {
-  if (!clock) return 'sans limite de temps';
-  const m = Math.round(clock.initial / 60);
-  return clock.increment ? `${m} min + ${clock.increment} s par coup` : `${m} min`;
-}
-
-export function levelName(seat: SeatView | null): string {
-  const l = seat?.level;
-  return l === 1 || l === 2 || l === 3 ? BOT_PROFILES[l].name : 'Sorcier';
+  return tcText(clock ? { initial: clock.initial, increment: clock.increment } : null, 'long');
 }
 
 /** Sous-titre d'un joueur : niveau de l'IA, classement, invité. */
@@ -81,12 +74,11 @@ export function seatSub(seat: SeatView | null, color: Color, diff?: number | nul
 // ---------------------------------------------------------------------------------------------
 // Pendules (exactes : temps restant à l'envoi, moins le temps écoulé depuis la réception, au rythme du joueur)
 
+/** Temps d'une pendule : dixièmes sous 10 s (« 9,4 »), « m:ss » ensuite, « h:mm:ss » au-delà d'une heure. */
 export function formatClock(ms: number): string {
   const t = Math.max(0, ms);
   if (t < 10_000) return `${Math.floor(t / 1000)},${Math.floor((t % 1000) / 100)}`;
-  const s = Math.ceil(t / 1000);
-  const m = Math.floor(s / 60);
-  return `${m}:${String(s % 60).padStart(2, '0')}`;
+  return mmss(Math.ceil(t / 1000), { heures: true });
 }
 
 export function useClock(clock: ClockView | null, color: Color, receivedAt: number): number | null {
@@ -117,6 +109,8 @@ export function Clock({ clock, color, receivedAt, active, compact }: { clock: Cl
   }, [ms, active]);
   if (ms === null) return null;
   const warp = !!clock && clock.rate[color] > 1;
+  // Sablier fou : les coups ne rapportent plus d'incrément, le « +2 » de la cadence est barré
+  const noInc = !!clock?.noIncrement && clock.increment > 0;
   return (
     <div
       className={`gp-clock ${active ? 'is-on' : ''} ${low ? 'is-low' : ''} ${warp ? 'is-warp' : ''} ${compact ? 'is-compact' : ''}`}
@@ -124,8 +118,13 @@ export function Clock({ clock, color, receivedAt, active, compact }: { clock: Cl
       aria-label={`Pendule des ${colorName(color)} : ${formatClock(ms)}`}
     >
       {warp && (
-        <span className="gp-warp" title="Le temps s'écoule deux fois plus vite">
+        <span className="gp-warp" title={`Le temps s'écoule ${vitesse(clock!.rate[color])}`}>
           ×{clock!.rate[color]}
+        </span>
+      )}
+      {noInc && (
+        <span className="gp-noinc" title="Pas d’incrément pour le moment">
+          <s>+{clock!.increment}</s>
         </span>
       )}
       <span className="gp-clock-t">{formatClock(ms)}</span>
@@ -214,14 +213,38 @@ type MoveLine =
   | { k: 'pair'; n: number; w?: Extract<LogEntry, { k: 'move' }>; b?: Extract<LogEntry, { k: 'move' }> }
   | { k: 'card'; e: Extract<LogEntry, { k: 'card' }> };
 
-export function moveLines(log: LogEntry[]): MoveLine[] {
+/**
+ * Numéro du premier coup d'une partie : 1 depuis la position standard, sinon celui de sa position de départ (FEN,
+ * sixième champ).
+ */
+export function firstMoveNumber(r: Pick<Rules, 'startFen'>): number {
+  const n = Number(r.startFen?.trim().split(/\s+/)[5]);
+  return Number.isInteger(n) && n > 0 ? n : 1;
+}
+
+/**
+ * Cartes qui terminent le tour de leur lanceur dans une partie à ces règles, comme le moteur (game.ts, endsTurnHere) :
+ * un Rituel, toute carte si elle remplace le coup (cardEndsTurn), jamais le Retour arrière (Duel), qui rend le trait
+ * en annulant un coup. Une carte inconnue du client ne termine rien.
+ */
+export function turnEndingCards(r: Pick<Rules, 'cardEndsTurn'>): (card: CardId) => boolean {
+  return card => !!CARDS[card] && card !== 'rewind' && cardEndsTurn(CARDS[card], r);
+}
+
+/**
+ * Lignes de la liste des coups ; `first` : numéro du premier coup (firstMoveNumber). Le numéro suit celui de la
+ * position (fullmove) : il avance après un coup des Noirs, et après une carte des Noirs qui termine leur tour
+ * (`endsTurn` : Grande Marée, toute carte si elle remplace le coup), qui passe le trait comme un coup.
+ */
+export function moveLines(log: LogEntry[], first = 1, endsTurn?: (card: CardId) => boolean): MoveLine[] {
   const out: MoveLine[] = [];
-  let n = 1;
+  let n = first;
   let cur: Extract<MoveLine, { k: 'pair' }> | null = null;
   for (const e of log) {
     if (e.k === 'card') {
       out.push({ k: 'card', e });
       cur = null;
+      if (e.c === 'b' && !e.undone && endsTurn?.(e.card)) n++;
       continue;
     }
     if (e.c === 'w') {
@@ -241,14 +264,14 @@ export function moveLines(log: LogEntry[]): MoveLine[] {
   return out;
 }
 
-export function MoveList({ log, className = '' }: { log: LogEntry[]; className?: string }) {
+export function MoveList({ log, first = 1, endsTurn, className = '' }: { log: LogEntry[]; first?: number; endsTurn?: (card: CardId) => boolean; className?: string }) {
   const ref = useRef<HTMLOListElement>(null);
   useEffect(() => {
     const el = ref.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }, [log.length]);
   if (!log.length) return <p className={`gp-moves-empty ${className}`}>Les coups et les sorts s'inscriront ici.</p>;
-  const lines = moveLines(log);
+  const lines = moveLines(log, first, endsTurn);
   return (
     <ol className={`gp-moves ${className}`} ref={ref} aria-label="Coups joués">
       {lines.map((l, i) => {

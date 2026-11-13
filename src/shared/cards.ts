@@ -464,6 +464,11 @@ export type CardTextRules = Pick<Rules, 'presageDelay'> & { tuning: Readonly<Par
 
 /** Durée en coups d'un effet des Pouvoirs, au singulier ou au pluriel : « 3 coups », « 1 coup ». */
 const coups = (n: number) => compte(n, 'coup');
+/** Lieu d'une case : « entre la 3e et la 6e rangée », sinon « sur la 4e ou la 5e rangée ». */
+const surRangees = (ranks: readonly number[]) => {
+  const r = rangees(ranks);
+  return r.startsWith('entre ') ? r : `sur ${r}`;
+};
 
 /**
  * Gabarits des textes des Pouvoirs, à partir de l'équilibrage de la carte (`t` : coups, rangées, vitesse) et du délai
@@ -500,9 +505,9 @@ const TEMPLATES: Record<PowerCardId, (t: CardTuning, delay: number, genre: CardD
     prompts: [],
   }),
   ice_wall: t => ({
-    description: `Une case vide ${rangees(t.ranks!)} devient infranchissable pour les deux camps, jusqu’à la fin de la partie : aucune pièce ne peut s’y arrêter ni la traverser. Un cavalier peut sauter par-dessus.`,
+    description: `Une case vide ${surRangees(t.ranks!)} devient infranchissable pour les deux camps, jusqu’à la fin de la partie : aucune pièce ne peut s’y arrêter ni la traverser. Un cavalier peut sauter par-dessus.`,
     duration: 'Jusqu’à la fin de la partie',
-    prompts: [`Choisissez une case vide ${rangees(t.ranks!)}`],
+    prompts: [`Choisissez une case vide ${surRangees(t.ranks!)}`],
   }),
   rift: t => ({
     description: `Choisissez ${rangees(t.ranks!)}. Pendant ${coups(t.coups!)}, toutes ses cases vides deviennent un gouffre : aucune pièce ne peut s’y arrêter ni le traverser. Les cavaliers passent par-dessus.`,

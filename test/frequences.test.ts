@@ -49,7 +49,7 @@ function loiPonderee(t: Tirage, contraint: boolean): Map<string, number> {
       visiter(suite, reste, (p * w(id)) / total);
     }
   };
-  visiter([], [...t.pool], 1);
+  visiter([], contraint ? t.pool.filter(id => valide([id], t.limits)) : [...t.pool], 1);
   return loi;
 }
 
@@ -127,4 +127,20 @@ describe('fréquences du tirage (énumération exacte)', () => {
       compare(exacte, obs, N);
     });
   }
+
+  it('autres réglages : 5 cartes par main, autres poids, autres contraintes (le tirage lit les règles et DEAL donnés)', () => {
+    const N = 20_000;
+    const pool = cardPool('climats', true);
+    const autres = [
+      { ...DEFAUT, n: 5 },
+      { ...DEFAUT, n: 2, weights: { commune: 1, rare: 2, épique: 5, légendaire: 1 } },
+      { ...DEFAUT, n: 3, limits: { maxPerRarity: { rare: 1 }, maxPerFamily: { climat: 1 } }, attempts: 2 },
+    ];
+    for (const [i, t] of autres.entries()) {
+      const exacte = frequences(loiExacte({ ...t, pool }));
+      const deal = { handLimits: t.limits, rarityWeight: t.weights, redrawAttempts: t.attempts };
+      const obs = observees(N, 101 + i, rand => dealHands(true, false, rand, 'climats', { rules: { cardsPerPlayer: t.n }, deal }).w);
+      compare(exacte, obs, N);
+    }
+  });
 });

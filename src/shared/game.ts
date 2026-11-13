@@ -210,7 +210,8 @@ export function dealHands(
   const weight = (id: CardId) => deal.rarityWeight[CARDS[id].rarity];
   /** Tirage pondéré sans remise ; `constrained` : on écarte au fur et à mesure les cartes qui rendraient la main invalide. */
   const weighted = (constrained: boolean) => {
-    let bag = pool.slice();
+    // Contraint : seules les cartes qui gardent la main valide restent dans le sac, dès la première.
+    let bag = constrained ? pool.filter(id => validHand([id], limits)) : pool.slice();
     const hand: CardId[] = [];
     while (hand.length < n && bag.length) {
       let r = rand() * bag.reduce((t, id) => t + weight(id), 0);

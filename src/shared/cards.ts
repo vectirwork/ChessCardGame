@@ -97,7 +97,7 @@ export const CATALOG_RULES: Readonly<Record<Catalog, Readonly<CatalogRules>>> = 
 /** Catalogue d'une nouvelle partie quand rien n'est précisé ou que la demande est inconnue (Pouvoirs). */
 export const DEFAULT_CATALOG: Catalog = 'climats';
 /** Catalogue des parties enregistrées sans champ `catalog` (créées avant les catalogues) : le Duel. Rien d'autre. */
-export const LEGACY_CATALOG: Catalog = 'duel';
+export const LEGACY_CATALOG: CardCatalog = 'duel';
 
 /** `x` est-il un identifiant de catalogue connu (proposé ou non) ? */
 export function isCatalog(x: unknown): x is Catalog {

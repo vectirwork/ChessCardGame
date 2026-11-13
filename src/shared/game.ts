@@ -30,7 +30,7 @@ import type { DealSettings, HandLimits, Rules } from './config/rules';
 import {
   basicFenError, cardEndsTurn, castsLeft, poolOf, rulesFor, rulesOf, stampRules, tuneOf, validHand,
 } from './rules';
-import { compte } from './text/fr';
+import { cap, compte } from './text/fr';
 import { limitesMain, refusBudget } from './text/regles';
 
 export interface Effect {
@@ -275,7 +275,7 @@ export function draftRefusal(
   if (new Set(cards).size !== cards.length) return 'Choisissez des cartes différentes.';
   if (limits && !validHand(cards as CardId[], limits)) {
     const l = limitesMain(pool.map(id => CARDS[id]), limits);
-    return l ? `${l.charAt(0).toUpperCase()}${l.slice(1)}.` : 'Cette main n’est pas permise.';
+    return l ? `${cap(l)}.` : 'Cette main n’est pas permise.';
   }
   return null;
 }
@@ -365,7 +365,7 @@ export function createGame(hands: Record<Color, CardId[]>, timed: boolean, catal
  * (Duel) si toutes les cartes en sont, sinon le catalogue par défaut (Pouvoirs). Mains vides : Duel.
  */
 export function inferCatalog(hands: Record<Color, readonly CardId[]>): Catalog {
-  return [...hands.w, ...hands.b].some(id => !CARDS[id].catalogs.includes(LEGACY_CATALOG as never)) ? DEFAULT_CATALOG : LEGACY_CATALOG;
+  return [...hands.w, ...hands.b].some(id => !CARDS[id].catalogs.includes(LEGACY_CATALOG)) ? DEFAULT_CATALOG : LEGACY_CATALOG;
 }
 
 /** Partie à partir d'une position FEN (tests, tutoriel, problèmes, analyse) ; la position remplace celle des règles. */

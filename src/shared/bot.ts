@@ -13,7 +13,7 @@ import type { HandLimits } from './config/rules';
 import {
   GameState, cardOptions, cardPlayable, legalMovesOf, magicYields, modsSequence, playCard,
 } from './game';
-import { castsLeft, rulesFor, rulesOf, validHand } from './rules';
+import { cardEndsTurn, castsLeft, rulesFor, rulesOf, validHand } from './rules';
 
 /** Niveaux de l'IA, du plus faible au plus fort. Ne jamais recycler un niveau : il est enregistré dans les sièges. */
 export const BOT_LEVELS = [1, 2, 3] as const;
@@ -351,12 +351,16 @@ export function chooseBotCard(
     return { index, targets: randomTargets(s, me, index) };
   }
   const base = Math.min(profile.depth, 2);
-  const presageDepth = base + Math.max(1, Math.round(rulesOf(s).presageDelay / 2));
-  const depthFor = (card: CardId) => (CARDS[card].presage ? presageDepth : CARDS[card].ritual ? base - 1 : base);
+  const rules = rulesOf(s);
+  const presageDepth = base + Math.max(1, Math.round(rules.presageDelay / 2));
+  // Une carte qui termine le tour (Rituel ; toute carte si la règle le dit) compte comme le coup : la recherche qui
+  // suit part de l'adversaire, un demi-coup de moins, et la ligne de base garde l'horizon d'avant.
+  const ends = (card: CardId) => cardEndsTurn(CARDS[card], rules);
+  const depthFor = (card: CardId) => (CARDS[card].presage ? presageDepth : base) - (ends(card) ? 1 : 0);
   // Lignes de base, une par horizon (calculées à la demande).
   const baselines = new Map<number, number | null>();
   const baseline = (card: CardId) => {
-    const d = CARDS[card].ritual ? base : depthFor(card);
+    const d = depthFor(card) + (ends(card) ? 1 : 0);
     if (!baselines.has(d)) baselines.set(d, mustPlay ? -MATE : scoreFor(s, me, d, deadline));
     return baselines.get(d)!;
   };

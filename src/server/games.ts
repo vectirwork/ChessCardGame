@@ -5,24 +5,30 @@ import { z } from 'zod';
 import { Color, PieceType, opposite } from '../shared/chess';
 import { BOT_LOOK, DEFAULT_KING, DEFAULT_SKIN, normKing, sealOf } from '../shared/catalog';
 import {
-  CARDS_PER_PLAYER, CardInfo, DRAFT_MS, GameState, MoveInfo, Result, canStillMate, cardPool, catalogOf, clockRate,
-  completeDraft, createGame, dealHands, draftRefusal, incrementSuspended, playCard, playMove, viewState, withHands,
+  CardInfo, GameState, MoveInfo, Result, canStillMate, cardPool, catalogOf, clockRate, completeDraft, createGame,
+  dealHands, draftRefusal, incrementSuspended, legalMovesOf, playCard, playMove, viewState, withHands,
 } from '../shared/game';
 import type {
-  ClientToServer, DraftView, GameEvent, GameMode, GameStatus, GameView, JoinReply, SeatView, ServerToClient,
+  ClientToServer, DraftView, GameEvent, GameMode, GameStatus, GameView, JoinReply, SeatView, ServerToClient, TimeControl,
 } from '../shared/protocol';
-import { EMOTES, QUICK_CONTROLS, TIME_CONTROLS, tcFromId } from '../shared/protocol';
-import { CATALOG_RULES, CardId, Catalog, DEFAULT_CATALOG, isCardId, offeredCatalog } from '../shared/cards';
+import { EMOTES, OFFERED_CONTROLS, QUICK_CONTROLS, tcFromId } from '../shared/protocol';
+import { CARDS, CATALOG_RULES, CardId, Catalog, DEFAULT_CATALOG, isCardId, offeredCatalog } from '../shared/cards';
 import { HOME } from '../shared/config/home';
 import { GUEST_NAME } from '../shared/config/limits';
+import { BOUNDS } from '../shared/config/rules';
+import type { RulesContext } from '../shared/config/rules';
+import { RULES_V1, cardEndsTurn, parseRules, rulesFor, rulesOf } from '../shared/rules';
+import type { Rules } from '../shared/rules';
+import { cardsOfReply } from '../shared/botProtocol';
+import type { BotCard, BotReply } from '../shared/botProtocol';
 import rateLimit from 'express-rate-limit';
 import { Identity, identityFromCookies, userById } from './auth';
-import { BOT_LEVELS, BOT_PROFILES, BotLevel, DEFAULT_BOT_LEVEL, chooseBotDraft } from '../shared/bot';
+import { BOT_LEVELS, BOT_PROFILES, BotLevel, DEFAULT_BOT_LEVEL, botLevelOr, chooseBotDraft } from '../shared/bot';
 import { botPool } from './bot-pool';
 import { DbClient, one, q, tx } from './db';
 import { matchTolerance, ratingDiffs } from './rating';
 import { gameId, randomToken } from './security';
-import { BOT_RUNTIME, LIMITS, MATCHMAKING, RATING, RELAY, TIMINGS } from './settings';
+import { BOT_RUNTIME, LIMITS, MATCHMAKING, RATING, RELAY, TIMINGS, dealSettings } from './settings';
 import { toSummary } from './summary';
 import { countryOfTimezone } from './timezones';
 
@@ -99,7 +105,7 @@ export interface RoomData {
   lastActivity?: number;
   /**
    * Partie en direct de l'accueil : si un joueur ne joue pas, l'IA joue pour lui (`standIn`) jusqu'à ce qu'il reprenne
-   * la main (il joue un coup, ou game:takeover).
+   * la main (il joue un coup, ou game:takeover). Ses mains sont tirées au hasard (setupOf : la revanche les tire aussi).
    */
   relay?: boolean;
   standIn?: Record<Color, boolean>;
@@ -126,6 +132,8 @@ export class Room {
   activityAt: Record<Color, number> = { w: 0, b: 0 };
   rematchPending = false;
   endedAt = 0;
+  /** Échecs consécutifs de l'IA à jouer (décision en erreur, délai dépassé, coup refusé) : voir maybeBot. */
+  botFailures = 0;
   constructor(public d: RoomData) {}
 }
 
@@ -218,6 +226,17 @@ export function resumeRoom(room: Room) {
   if (hasRetiredCard(room.d.state)) {
     endGame(room, { winner: null, reason: 'aborted' });
     return;
+  }
+  // Règles enregistrées illisibles (schéma d'une version plus récente, données abîmées, valeurs injouables) : la
+  // partie ne peut pas être arbitrée, elle est annulée avec un message au journal. Lisibles : les mêmes, gelées.
+  if (room.d.state.rules !== undefined) {
+    const rules = parseRules(room.d.state.rules);
+    if (!rules) {
+      console.error(`Partie ${room.d.id} annulée à la reprise : ses règles enregistrées sont illisibles (schéma inconnu ou valeurs injouables).`);
+      endGame(room, { winner: null, reason: 'aborted' });
+      return;
+    }
+    room.d.state = { ...room.d.state, rules };
   }
   resumeClock(room.d);
   if (room.d.started === undefined) room.d.started = isStarted(room.d.state);
@@ -394,19 +413,22 @@ export function commitMove(d: RoomData, color: Color, state: GameState, info: Mo
 }
 
 /**
- * Pendule et état après une carte. Renvoie vrai si le trait a changé (Rituel, Retour arrière du Duel).
- * - Rituel : c'est un coup (incrément, démarrage de la partie) ; l'adversaire est crédité de la cinématique.
+ * Pendule et état après une carte. Renvoie vrai si le trait a changé (carte qui termine le tour, Retour arrière du
+ * Duel).
+ * - Carte qui termine le tour (cardEndsTurn : un Rituel, ou toute carte si les règles de la partie le disent) : c'est
+ *   un coup (incrément, démarrage de la partie) ; l'adversaire est crédité de la cinématique.
  * - Autre carte : le lanceur, toujours au trait, est crédité de la cinématique de lancement.
  */
 export function commitCard(d: RoomData, color: Color, state: GameState, info: CardInfo): boolean {
   const turnChanges = state.pos.turn !== color;
+  const asMove = cardEndsTurn(CARDS[info.card], rulesOf(state));
   // La vitesse de la pendule dépend de l'état : le temps écoulé est figé avant de le changer.
   settleClock(d);
-  if (turnChanges) stopClock(d, color, !!info.ritual && !incrementSuspended(d.state));
+  if (turnChanges) stopClock(d, color, asMove && !incrementSuspended(d.state));
   d.state = state;
   d.lastActivity = now();
   if (turnChanges) {
-    if (info.ritual) {
+    if (asMove) {
       d.drawOffer = null;
       if (isStarted(d.state)) d.started = true;
     }
@@ -424,12 +446,24 @@ export function commitCard(d: RoomData, color: Color, state: GameState, info: Ca
 // test/server-draft.test.ts. Les choix restent dans `RoomData.draft` jusqu'à la révélation ; la vue n'en montre
 // que ce que `draftView` laisse passer.
 
-/** Choix des cartes d'une nouvelle partie avec cartes (null : sans cartes, ou réserve trop petite pour choisir). */
-export function newDraft(catalog: Catalog, timed: boolean, vsBot: boolean): DraftData | null {
+/**
+ * Choix des cartes d'une nouvelle partie (null : catalogue sans cartes). `count` : cartes par joueur des règles de la
+ * partie. Une réserve trop petite pour en choisir `count` est une erreur de configuration (checkRules la refuse au
+ * build et la signale au démarrage) : refus explicite, plus de tirage silencieux à la place du choix.
+ */
+export function newDraft(catalog: Catalog, timed: boolean, vsBot: boolean, count: number = rulesFor('classee').cardsPerPlayer): DraftData | null {
   const pool = cardPool(catalog, timed, { vsBot });
-  if (pool.length < CARDS_PER_PLAYER) return null;
+  if (!pool.length) return null;
+  if (pool.length < count) {
+    throw new Error(`Choix des cartes impossible : la réserve n'a que ${pool.length} cartes pour ${count} cartes par joueur (voir checkRules).`);
+  }
   return { pool, deadline: null, picks: { w: null, b: null }, tentative: { w: [], b: [] } };
 }
+
+/** Cartes à choisir dans cette partie : celles de ses règles (RULES_V1 pour les parties d'avant le versionnement). */
+const draftCount = (d: RoomData) => rulesOf(d.state).cardsPerPlayer;
+/** Contraintes du tirage appliquées aussi au choix (DEAL.limitsInDraft), sinon aucune (décision Q4). */
+const draftLimits = () => (dealSettings().limitsInDraft ? dealSettings().handLimits : undefined);
 
 /**
  * Ouvre (ou rouvre, après un redémarrage) le choix d'une partie active : échéance entière à partir de maintenant,
@@ -438,10 +472,12 @@ export function newDraft(catalog: Catalog, timed: boolean, vsBot: boolean): Draf
 export function openDraft(d: RoomData): boolean {
   const dr = d.draft;
   if (!dr || d.status !== 'active') return false;
-  dr.deadline = now() + DRAFT_MS;
+  dr.deadline = now() + dealSettings().draftMs;
   for (const c of COLORS) {
     const seat = d.seats[c];
-    if (seat?.kind === 'bot' && !dr.picks[c]) dr.picks[c] = chooseBotDraft(dr.pool, seat.level ?? DEFAULT_BOT_LEVEL);
+    if (seat?.kind === 'bot' && !dr.picks[c]) {
+      dr.picks[c] = chooseBotDraft(dr.pool, botLevelOr(seat.level), Math.random, { count: draftCount(d), limits: draftLimits() });
+    }
   }
   return !!(dr.picks.w && dr.picks.b);
 }
@@ -452,13 +488,14 @@ export const resumeDraft = openDraft;
 export type DraftOutcome = { ok: false; error: string } | { ok: true; validated: boolean; complete: boolean };
 
 /**
- * Choix de `color` : validé (`confirm`, exactement 3 cartes, définitif, idempotent) ou provisoire (0 à 3 cartes).
- * `validated` : un nouveau choix vient d'être validé ; `complete` : les deux camps ont validé.
+ * Choix de `color` : validé (`confirm`, exactement `count` cartes, définitif, idempotent) ou provisoire (de 0 à
+ * `count` cartes), `count` étant le nombre de cartes des règles de la partie (draftCount). `validated` : un nouveau
+ * choix vient d'être validé ; `complete` : les deux camps ont validé.
  */
 export function submitDraft(d: RoomData, color: Color, cards: readonly unknown[], confirm: boolean): DraftOutcome {
   const dr = d.draft;
   if (d.status !== 'active' || !dr?.deadline) return { ok: false, error: 'Aucun choix de cartes en cours.' };
-  const err = draftRefusal(dr.pool, cards, !confirm);
+  const err = draftRefusal(dr.pool, cards, !confirm, draftCount(d), draftLimits());
   if (err) return { ok: false, error: err };
   const chosen = cards.slice() as CardId[];
   const done = dr.picks[color];
@@ -474,24 +511,37 @@ export function submitDraft(d: RoomData, color: Color, cards: readonly unknown[]
   return { ok: true, validated: true, complete: !!(dr.picks.w && dr.picks.b) };
 }
 
+/** Fin du choix : camps qui n'avaient pas validé (`auto`), et parmi eux ceux qui ont reçu des cartes au hasard. */
+export interface DraftClosure {
+  auto: Color[];
+  /** Camps dont la sélection provisoire avait moins de cartes que la partie n'en demande : complétés au hasard. */
+  filled: Color[];
+}
+
 /**
  * Fin du choix : chaque camp reçoit ses cartes validées, ou sa sélection provisoire complétée au hasard. Les mains
- * sont données à l'état (révélées), le choix est retiré. Renvoie les camps complétés au hasard.
+ * sont données à l'état (révélées), le choix est retiré. Une sélection provisoire déjà complète est gardée telle
+ * quelle : ce camp est dans `auto` (il n'avait pas validé), pas dans `filled` (aucune carte tirée au hasard).
  */
-export function closeDraft(d: RoomData, rand: () => number = Math.random): Color[] {
+export function closeDraft(d: RoomData, rand: () => number = Math.random): DraftClosure {
   const dr = d.draft;
-  if (!dr) return [];
+  if (!dr) return { auto: [], filled: [] };
+  const count = draftCount(d);
   const auto: Color[] = [];
+  const filled: Color[] = [];
   const hands: Record<Color, CardId[]> = { w: [], b: [] };
   for (const c of COLORS) {
     const picked = dr.picks[c];
-    if (!picked) auto.push(c);
-    hands[c] = picked ?? completeDraft(dr.pool, dr.tentative[c], rand);
+    if (!picked) {
+      auto.push(c);
+      if (dr.tentative[c].length < count) filled.push(c);
+    }
+    hands[c] = picked ?? completeDraft(dr.pool, dr.tentative[c], rand, count, draftLimits());
   }
   d.state = withHands(d.state, hands);
   d.draft = null;
   d.lastActivity = now();
-  return auto;
+  return { auto, filled };
 }
 
 /** Ce qu'un joueur (ou un spectateur, `you` null) voit du choix en cours : jamais les cartes de l'adversaire. */
@@ -500,9 +550,10 @@ export function draftView(d: RoomData, you: Color | null): DraftView | null {
   if (!dr || d.status !== 'active' || !dr.deadline) return null;
   return {
     pool: dr.pool.slice(),
-    count: CARDS_PER_PLAYER,
+    count: draftCount(d),
     deadline: dr.deadline,
     msLeft: Math.max(0, dr.deadline - now()),
+    totalMs: dealSettings().draftMs,
     chosen: { w: !!dr.picks.w, b: !!dr.picks.b },
     mine: you ? (dr.picks[you] ?? dr.tentative[you]).slice() : [],
   };
@@ -512,11 +563,11 @@ export function draftView(d: RoomData, you: Color | null): DraftView | null {
 function closeDraftRoom(room: Room) {
   const d = room.d;
   if (!d.draft || d.status !== 'active') return;
-  const auto = closeDraft(d);
+  const { auto, filled } = closeDraft(d);
   updateFirstMoveDeadline(room);
   startClock(d);
   armTimers(room);
-  broadcast(room, { type: 'reveal', auto });
+  broadcast(room, { type: 'reveal', auto, filled });
   maybeBot(room);
 }
 
@@ -606,17 +657,53 @@ export function botSeat(level: BotLevel): Seat {
   };
 }
 
+/** Contexte de règles d'une nouvelle partie (RULES_BY_CONTEXT) : accueil, contre l'IA, invitation, classée, amicale. */
+export function contextOf(o: { mode: GameMode; rated: boolean; relay?: boolean }): RulesContext {
+  if (o.relay) return 'accueil';
+  if (o.mode === 'bot') return 'ia';
+  if (o.mode === 'invite') return 'invitation';
+  return o.rated ? 'classee' : 'amicale';
+}
+
+export interface NewRoomOptions {
+  mode: GameMode;
+  rated: boolean;
+  /** Identifiant de cadence (TIME_CONTROLS, archivées comprises). Inconnu : refusé, sauf si `clock` est donnée. */
+  tc: string;
+  catalog: Catalog;
+  creator: string;
+  seats: Record<Color, Seat | null>;
+  /** Mains tirées au hasard, sans choix des cartes (parties de l'accueil). Sinon : le choix si DEAL.draft. */
+  deal?: boolean;
+  /** L'IA joue pour un joueur qui ne joue pas (parties de l'accueil). */
+  relay?: boolean;
+  /** Contexte des règles (défaut : contextOf, d'après le mode). */
+  ctx?: RulesContext;
+  /** Règles imposées (tests) ; défaut : rulesFor(ctx), les règles du moment. */
+  rules?: Rules;
+  /** Pendule imposée (revanche : celle de la partie d'origine, même si sa cadence a été retirée depuis). */
+  clock?: TimeControl | null;
+}
+
 /**
- * Nouvelle partie. Avec cartes, elle commence par le choix des cartes (D5) : mains vides jusqu'à la révélation.
- * Le mode miroir n'existe plus (le paramètre `mirror` des anciens clients est ignoré). Exportée pour les tests.
+ * Nouvelle partie, avec les règles du moment de son contexte (rulesFor, photographiées dans l'état seulement si elles
+ * diffèrent de RULES_V1) et la mise en place du moment (dealSettings) : choix des cartes (D5, mains vides jusqu'à la
+ * révélation) ou tirage. Un catalogue qui n'est plus proposé (Duel : anciennes parties, tests) suit RULES_V1. Une
+ * cadence inconnue est refusée (plus de partie « sans pendule » silencieuse). Le mode miroir n'existe plus (le
+ * paramètre `mirror` des anciens clients est ignoré). Exportée pour les tests.
  */
-export function newRoom(opts: { mode: GameMode; rated: boolean; tc: string; catalog: Catalog; creator: string; seats: Record<Color, Seat | null>; /** Mains tirées au hasard, sans choix des cartes (parties de l'accueil). */ deal?: boolean; /** L'IA joue pour un joueur qui ne joue pas (parties de l'accueil). */ relay?: boolean }): Room {
-  const tc = tcFromId(opts.tc) ?? null;
+export function newRoom(opts: NewRoomOptions): Room {
+  const tc = opts.clock !== undefined ? opts.clock : tcFromId(opts.tc);
+  if (tc === undefined) throw new Error(`Cadence inconnue : ${opts.tc}.`);
+  const rules = opts.rules ?? (CATALOG_RULES[opts.catalog]?.offered === false ? RULES_V1 : rulesFor(opts.ctx ?? contextOf(opts)));
+  const deal = dealSettings();
   let id = gameId();
   while (rooms.has(id)) id = gameId();
   // Réserve : contre l'IA, pas de Sablier fou (il ne pénaliserait que l'humain) ; sans pendule non plus.
   const vsBot = opts.mode === 'bot';
-  const draft = opts.deal ? null : newDraft(opts.catalog, !!tc, vsBot);
+  const drawn = opts.deal || !deal.draft;
+  const draft = drawn ? null : newDraft(opts.catalog, !!tc, vsBot, rules.cardsPerPlayer);
+  const hands = draft ? { w: [], b: [] } : dealHands(!!tc, false, Math.random, opts.catalog, { vsBot, rules, deal });
   const room = new Room({
     id,
     mode: opts.mode,
@@ -627,7 +714,7 @@ export function newRoom(opts: { mode: GameMode; rated: boolean; tc: string; cata
     catalog: opts.catalog,
     creator: opts.creator,
     seats: opts.seats,
-    state: createGame(draft ? { w: [], b: [] } : dealHands(!!tc, false, Math.random, opts.catalog, { vsBot }), !!tc, opts.catalog),
+    state: createGame(hands, !!tc, opts.catalog, { rules }),
     draft,
     clock: tc ? { initial: tc.initial, increment: tc.increment, w: tc.initial * 1000, b: tc.initial * 1000, running: null, since: now() } : null,
     drawOffer: null,
@@ -707,37 +794,77 @@ async function persistResult(room: Room) {
 // ---------------------------------------------------------------------------------------------
 // IA
 
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+/** Un coup légal au hasard, sans carte (repli de l'IA après trop d'échecs). */
+function randomReply(s: GameState): BotReply {
+  const moves = legalMovesOf(s);
+  const m = moves[Math.floor(Math.random() * moves.length)];
+  return { id: 0, card: null, cards: [], move: m ? { from: m.from, to: m.to, promo: m.promo } : null };
+}
+
+/**
+ * Joue la décision de l'IA pour `color` : ses cartes dans l'ordre (reply.cards, ou reply.card d'un fil plus ancien),
+ * avec BOT_RUNTIME.cardPauseMs entre deux cartes et avant le coup (le temps de l'animation), puis le coup. `still` :
+ * l'IA joue-t-elle toujours (vérifié après chaque pause) ? Une carte refusée arrête les cartes suivantes ; le coup est
+ * alors abandonné (`keepMove` faux) ou tenté quand même (relais, comme avant).
+ */
+async function playReply(room: Room, color: Color, reply: BotReply, still: () => boolean, o: { label: string; keepMove: boolean }) {
+  const cards: BotCard[] = cardsOfReply(reply);
+  let move = reply.move;
+  for (let i = 0; i < cards.length; i++) {
+    if (!applyCard(room, color, cards[i].index, cards[i].targets).ok) {
+      if (!o.keepMove) move = null;
+      break;
+    }
+    if (i < cards.length - 1 || move) await sleep(BOT_RUNTIME.cardPauseMs);
+    if (!still()) return;
+  }
+  if (move && still()) {
+    const r = applyMove(room, color, move.from, move.to, move.promo as PieceType | undefined);
+    if (!r.ok) console.error(`${o.label}, coup refusé :`, r.error);
+  }
+}
+
+/**
+ * L'IA joue si elle a le trait : décision d'un fil de calcul (botPool), petite pause pour un rythme naturel, puis ses
+ * cartes et son coup (playReply). Un niveau inconnu (partie enregistrée par une autre version) prend le défaut. Une
+ * tentative qui ne joue rien alors que l'IA garde le trait (fil en panne, délai dépassé, décision refusée) est un
+ * échec ; après BOT_RUNTIME.maxFailures échecs consécutifs, l'IA joue un coup légal au hasard (la partie avance
+ * toujours) ; si même ce coup échoue, elle ne relance plus.
+ */
 function maybeBot(room: Room) {
   const d = room.d;
   if (d.status !== 'active' || room.botBusy || d.draft) return;
   const seat = d.seats[d.state.pos.turn];
   if (seat?.kind !== 'bot') return;
   room.botBusy = true;
+  const color = d.state.pos.turn;
   const ply = d.state.ply;
   const logLen = d.state.log.length;
   const started = now();
   const stale = () => d.status !== 'active' || d.state.ply !== ply || d.state.log.length !== logLen;
-  void botPool
-    .decide(d.state, seat.level!)
+  const fallback = room.botFailures >= BOT_RUNTIME.maxFailures;
+  if (fallback) console.error(`IA : ${room.botFailures} échecs de suite dans la partie ${d.id}, coup légal au hasard.`);
+  void (fallback ? Promise.resolve(randomReply(d.state)) : botPool.decide(d.state, botLevelOr(seat.level)))
     .then(async reply => {
       if (reply.error) console.error('IA :', reply.error);
       // Petite pause pour un rythme naturel
       const wait = Math.max(0, BOT_RUNTIME.pauseMinMs + Math.random() * BOT_RUNTIME.pauseJitterMs - (now() - started));
-      await new Promise(r => setTimeout(r, wait));
+      await sleep(wait);
       if (stale()) return;
-      const color = d.state.pos.turn;
-      if (reply.card) {
-        if (!applyCard(room, color, reply.card.index, reply.card.targets).ok) reply.move = null;
-        else if (reply.move) await new Promise(r => setTimeout(r, BOT_RUNTIME.cardPauseMs));
-      }
-      if (reply.move && d.status === 'active' && d.state.pos.turn === color) {
-        const r = applyMove(room, color, reply.move.from, reply.move.to, reply.move.promo as PieceType | undefined);
-        if (!r.ok) console.error('IA, coup refusé :', r.error);
-      }
+      await playReply(room, color, reply, () => d.status === 'active' && d.state.pos.turn === color, { label: 'IA', keepMove: false });
     })
     .catch(e => console.error('IA :', e))
     .finally(() => {
       room.botBusy = false;
+      // Rien n'a été joué alors que l'IA garde le trait : un échec de plus. Sinon, le compte repart de zéro.
+      const stuck = d.status === 'active' && d.state.pos.turn === color && d.state.ply === ply && d.state.log.length === logLen;
+      room.botFailures = stuck ? room.botFailures + 1 : 0;
+      if (stuck && fallback) {
+        console.error(`IA : aucun coup possible dans la partie ${d.id}, l'IA ne relance plus.`);
+        return;
+      }
       // Si l'état a changé pendant le calcul (ou si l'IA doit rejouer), on relance.
       if (d.status === 'active' && d.seats[d.state.pos.turn]?.kind === 'bot') setTimeout(() => maybeBot(room), BOT_RUNTIME.retryMs);
     });
@@ -798,13 +925,8 @@ function relayPlay(room: Room, c: Color) {
     .then(async reply => {
       if (reply.error) console.error('Relais de l’IA :', reply.error);
       if (!still()) return;
-      if (reply.card && applyCard(room, c, reply.card.index, reply.card.targets).ok && reply.move) {
-        await new Promise(r => setTimeout(r, BOT_RUNTIME.cardPauseMs));
-      }
-      if (reply.move && d.status === 'active' && d.state.pos.turn === c && d.standIn?.[c]) {
-        const r = applyMove(room, c, reply.move.from, reply.move.to, reply.move.promo as PieceType | undefined);
-        if (!r.ok) console.error('Relais de l’IA, coup refusé :', r.error);
-      }
+      const playing = () => d.status === 'active' && d.state.pos.turn === c && !!d.standIn?.[c];
+      await playReply(room, c, reply, playing, { label: 'Relais de l’IA', keepMove: true });
     })
     .catch(e => console.error('Relais de l’IA :', e))
     .finally(() => {
@@ -889,8 +1011,16 @@ export function abortRoom(room: Room): Ack {
 }
 
 /**
- * Revanche : sièges copiés, couleurs inversées, classement et équipement (sorts, roi, sceau) relus en base. Renvoie la
- * nouvelle salle (null si la revanche existe déjà). Exportée pour les tests.
+ * Mise en place d'une salle, reprise par la revanche : mains tirées (`deal`) et relais de l'IA. Rien de plus n'est
+ * écrit dans la salle : seules les parties de l'accueil tirent leurs mains, et elles sont toutes relayées.
+ */
+export const setupOf = (d: Pick<RoomData, 'relay'>) => ({ deal: !!d.relay, relay: !!d.relay });
+
+/**
+ * Revanche : sièges copiés, couleurs inversées, classement et équipement (sorts, roi, sceau) relus en base. Pendule de
+ * la partie d'origine (d.clock, même si sa cadence a été retirée depuis), sa mise en place (setupOf), et les règles
+ * du moment (décision Q3 : c'est une nouvelle partie). Renvoie la nouvelle salle (null si la revanche existe déjà).
+ * Exportée pour les tests.
  */
 export async function createRematch(room: Room): Promise<Room | null> {
   const d = room.d;
@@ -923,7 +1053,14 @@ export async function createRematch(room: Room): Promise<Room | null> {
   }
   // Revanche d'une ancienne partie Duel : le Duel n'est plus proposé, elle se joue avec les Pouvoirs.
   const catalog = offeredCatalog(roomCatalog(d));
-  const next = newRoom({ mode: d.mode, rated: d.rated, tc: d.tc, catalog, creator: d.creator, seats });
+  const clock = d.clock ? { initial: d.clock.initial, increment: d.clock.increment } : null;
+  let next: Room;
+  try {
+    next = newRoom({ mode: d.mode, rated: d.rated, tc: d.tc, catalog, creator: d.creator, seats, clock, ...setupOf(d) });
+  } catch (e) {
+    room.rematchPending = false;
+    throw e;
+  }
   d.rematch.next = next.d.id;
   for (const s of room.sockets) s.emit('game:redirect', { from: d.id, to: next.d.id });
   broadcast(room, { type: 'sync' });
@@ -1082,7 +1219,7 @@ const guestNameSchema = z.string().trim().min(GUEST_NAME.min).max(GUEST_NAME.max
 /** Choix des cartes (`game:draft`) : le contenu des cartes est vérifié ensuite contre la réserve (draftRefusal). */
 const draftSchema = z.object({
   id: z.string().max(32),
-  cards: z.array(z.string().max(32)).max(CARDS_PER_PLAYER),
+  cards: z.array(z.string().max(32)).max(BOUNDS.cardsPerPlayer[1]),
   confirm: z.boolean().optional(),
 });
 
@@ -1469,7 +1606,7 @@ gamesRouter.post('/', createLimiter, async (req, res) => {
   const parsed = z
     .object({
       mode: z.enum(['invite', 'bot']),
-      tc: z.string().refine(id => TIME_CONTROLS.some(t => t.id === id), 'Cadence inconnue.'),
+      tc: z.string().refine(id => OFFERED_CONTROLS.includes(id), 'Cadence inconnue.'),
       color: z.enum(['w', 'b', 'random']).default('random'),
       level: botLevelSchema.optional(),
       // Mode miroir : plus proposé (chacun choisit ses cartes) ; accepté des anciens clients et ignoré.

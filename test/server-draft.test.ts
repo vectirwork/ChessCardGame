@@ -1,6 +1,9 @@
 // Choix des cartes au début d'une vraie partie (décision D5, docs/PLAN-V2.md) : moteur (réserve, validation,
 // complément au hasard, mains données), IA (heuristique avec hasard) et serveur (src/server/games.ts : secret,
-// idempotence, échéance de 45 s, IA, abandon, redémarrage, anciennes parties, sans cartes).
+// idempotence, échéance (DEAL.draftMs), IA, abandon, redémarrage, anciennes parties, sans cartes).
+// Les salles sont créées avec RULES_V1 (3 cartes) : ces tests décrivent le choix tel qu'il est au réglage historique,
+// et passent quel que soit GAME_RULES (les autres nombres de cartes : test/server-regles.test.ts). Délais lus dans
+// DEAL et TIMINGS, jamais recopiés.
 // Le temps est simulé (horloge factice de vitest) ; la base et les threads de l'IA sont remplacés par des doublures.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -16,9 +19,10 @@ vi.mock('../src/server/bot-pool', () => ({
 import { sqIndex as q } from '../src/shared/chess';
 import { CARDS, CardId, cardsOf } from '../src/shared/cards';
 import { chooseBotDraft } from '../src/shared/bot';
-import {
-  CARDS_PER_PLAYER, DRAFT_MS, cardPool, completeDraft, createGame, dealHands, draftRefusal, positionKey, withHands,
-} from '../src/shared/game';
+import { cardPool, completeDraft, createGame, dealHands, draftRefusal, positionKey, withHands } from '../src/shared/game';
+import { DEAL } from '../src/shared/config/rules';
+import { RULES_V1 } from '../src/shared/rules';
+import { TIMINGS } from '../src/server/settings';
 import {
   Room, RoomData, abortRoom, applyDraft, applyMove, closeDraft, draftView, newRoom, resignRoom, resumeRoom, submitDraft,
 } from '../src/server/games';
@@ -26,6 +30,9 @@ import { botPool } from '../src/server/bot-pool';
 
 const T0 = 1_800_000_000_000;
 const POUVOIRS = cardsOf('climats');
+const DRAFT_MS = DEAL.draftMs;
+const FIRST_MOVE_MS = TIMINGS.firstMoveMs;
+const CARDS_PER_PLAYER = RULES_V1.cardsPerPlayer;
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -58,7 +65,7 @@ const bot = (level: 1 | 2 | 3 = 2): SeatArg => ({
 
 function invite(tc = '5+0', catalog: 'climats' | 'aucune' = 'climats', rated = false): Room {
   const ids = rated ? ['a1', 'b2'] : [null, null];
-  return newRoom({ mode: rated ? 'quick' : 'invite', rated, tc, catalog, creator: 'g:1', seats: { w: human(1, ids[0]), b: human(2, ids[1]) } });
+  return newRoom({ mode: rated ? 'quick' : 'invite', rated, tc, catalog, creator: 'g:1', seats: { w: human(1, ids[0]), b: human(2, ids[1]) }, rules: RULES_V1 });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -79,26 +86,26 @@ describe('choix des cartes : moteur', () => {
 
   it('validation : 3 cartes différentes de la réserve, sans autre contrainte (trois Climats permis)', () => {
     const pool = cardPool('climats', true);
-    expect(draftRefusal(pool, ['truce', 'blood_moon', 'blast'])).toBeNull();
-    expect(draftRefusal(pool, ['ice_wall', 'rift', 'tide'])).toBeNull();
-    expect(draftRefusal(pool, ['ice_wall', 'rift'])).toMatch(/3 cartes/);
-    expect(draftRefusal(pool, ['ice_wall', 'rift', 'tide', 'truce'])).toMatch(/3 cartes/);
-    expect(draftRefusal(pool, ['ice_wall', 'ice_wall', 'tide'])).toMatch(/différentes/);
-    expect(draftRefusal(pool, ['ice_wall', 'rift', 'freeze'])).toMatch(/proposée/);
-    expect(draftRefusal(pool, ['ice_wall', 'rift', '__proto__'])).toMatch(/proposée/);
-    expect(draftRefusal(pool, ['ice_wall', 'rift', 42])).toMatch(/proposée/);
-    expect(draftRefusal(cardPool('climats', true, { vsBot: true }), ['hourglass', 'rift', 'tide'])).toMatch(/proposée/);
+    expect(draftRefusal(pool, ['truce', 'blood_moon', 'blast'], false, CARDS_PER_PLAYER)).toBeNull();
+    expect(draftRefusal(pool, ['ice_wall', 'rift', 'tide'], false, CARDS_PER_PLAYER)).toBeNull();
+    expect(draftRefusal(pool, ['ice_wall', 'rift'], false, CARDS_PER_PLAYER)).toMatch(/3 cartes/);
+    expect(draftRefusal(pool, ['ice_wall', 'rift', 'tide', 'truce'], false, CARDS_PER_PLAYER)).toMatch(/3 cartes/);
+    expect(draftRefusal(pool, ['ice_wall', 'ice_wall', 'tide'], false, CARDS_PER_PLAYER)).toMatch(/différentes/);
+    expect(draftRefusal(pool, ['ice_wall', 'rift', 'freeze'], false, CARDS_PER_PLAYER)).toMatch(/proposée/);
+    expect(draftRefusal(pool, ['ice_wall', 'rift', '__proto__'], false, CARDS_PER_PLAYER)).toMatch(/proposée/);
+    expect(draftRefusal(pool, ['ice_wall', 'rift', 42], false, CARDS_PER_PLAYER)).toMatch(/proposée/);
+    expect(draftRefusal(cardPool('climats', true, { vsBot: true }), ['hourglass', 'rift', 'tide'], false, CARDS_PER_PLAYER)).toMatch(/proposée/);
     // Sélection provisoire : de 0 à 3 cartes.
-    expect(draftRefusal(pool, [], true)).toBeNull();
-    expect(draftRefusal(pool, ['tide'], true)).toBeNull();
-    expect(draftRefusal(pool, ['tide', 'tide'], true)).toMatch(/différentes/);
+    expect(draftRefusal(pool, [], true, CARDS_PER_PLAYER)).toBeNull();
+    expect(draftRefusal(pool, ['tide'], true, CARDS_PER_PLAYER)).toBeNull();
+    expect(draftRefusal(pool, ['tide', 'tide'], true, CARDS_PER_PLAYER)).toMatch(/différentes/);
   });
 
   it('complément au hasard : garde la sélection en tête, complète sans doublon, dans la réserve', () => {
     const pool = cardPool('climats', false);
     for (let k = 0; k < 200; k++) {
       const partial: CardId[] = k % 3 === 0 ? [] : k % 3 === 1 ? ['rift'] : ['tide', 'ice_wall'];
-      const hand = completeDraft(pool, partial, seeded(k + 7));
+      const hand = completeDraft(pool, partial, seeded(k + 7), CARDS_PER_PLAYER);
       expect(hand).toHaveLength(CARDS_PER_PLAYER);
       expect(hand.slice(0, partial.length)).toEqual(partial);
       expect(new Set(hand).size).toBe(CARDS_PER_PLAYER);
@@ -106,7 +113,7 @@ describe('choix des cartes : moteur', () => {
     }
     // Uniforme : chaque carte sort.
     const seen = new Set<CardId>();
-    for (let k = 0; k < 100; k++) completeDraft(pool, [], seeded(k + 1)).forEach(c => seen.add(c));
+    for (let k = 0; k < 100; k++) completeDraft(pool, [], seeded(k + 1), CARDS_PER_PLAYER).forEach(c => seen.add(c));
     expect([...seen].sort()).toEqual([...pool].sort());
   });
 
@@ -128,8 +135,8 @@ describe('choix des cartes : IA', () => {
       const pool = cardPool('climats', true, { vsBot: true });
       const hands = new Set<string>();
       for (let k = 0; k < 300; k++) {
-        const hand = chooseBotDraft(pool, level, seeded(k * 31 + level));
-        expect(draftRefusal(pool, hand)).toBeNull();
+        const hand = chooseBotDraft(pool, level, seeded(k * 31 + level), { count: CARDS_PER_PLAYER });
+        expect(draftRefusal(pool, hand, false, CARDS_PER_PLAYER)).toBeNull();
         expect(hand.filter(c => CARDS[c].family === 'climat').length).toBeLessThanOrEqual(2);
         hands.add([...hand].sort().join());
       }
@@ -140,7 +147,7 @@ describe('choix des cartes : IA', () => {
   it('préfère les cartes qu’elle exploite le mieux (l’Archimage prend souvent le Mur de glace)', () => {
     const pool = cardPool('climats', true, { vsBot: true });
     let wall = 0;
-    for (let k = 0; k < 200; k++) if (chooseBotDraft(pool, 3, seeded(k + 3)).includes('ice_wall')) wall++;
+    for (let k = 0; k < 200; k++) if (chooseBotDraft(pool, 3, seeded(k + 3), { count: CARDS_PER_PLAYER }).includes('ice_wall')) wall++;
     expect(wall).toBeGreaterThan(150);
   });
 });
@@ -160,7 +167,7 @@ describe('choix des cartes : serveur', () => {
     expect(d.clock?.running).toBeNull();
     expect(applyMove(room, 'w', q('e2'), q('e4'))).toEqual({ ok: false, error: 'Choisissez d’abord vos cartes.' });
     const v = draftView(d, 'w')!;
-    expect(v).toMatchObject({ pool: POUVOIRS, count: 3, deadline: T0 + DRAFT_MS, msLeft: DRAFT_MS, chosen: { w: false, b: false }, mine: [] });
+    expect(v).toMatchObject({ pool: POUVOIRS, count: 3, deadline: T0 + DRAFT_MS, msLeft: DRAFT_MS, totalMs: DRAFT_MS, chosen: { w: false, b: false }, mine: [] });
     vi.advanceTimersByTime(10_000);
     expect(draftView(d, 'b')!.msLeft).toBe(DRAFT_MS - 10_000);
   });
@@ -201,7 +208,7 @@ describe('choix des cartes : serveur', () => {
     expect(d.state.hands.w.map(h => h.card)).toEqual(['rift', 'truce', 'tide']);
     expect(d.state.hands.b.map(h => h.card)).toEqual(['ice_age', 'blood_moon', 'hourglass']);
     expect(d.state.keys).toEqual([positionKey(d.state)]);
-    expect(d.firstMoveDeadline).toBe(T0 + 20_000 + 45_000);
+    expect(d.firstMoveDeadline).toBe(T0 + 20_000 + FIRST_MOVE_MS);
     expect(draftView(d, 'w')).toBeNull();
     expect(applyDraft(room, 'w', ['rift', 'truce', 'tide'], true)).toEqual({ ok: false, error: 'Aucun choix de cartes en cours.' });
     expect(applyMove(room, 'w', q('e2'), q('e4')).ok).toBe(true);
@@ -225,14 +232,14 @@ describe('choix des cartes : serveur', () => {
     expect(d.state.hands.w.map(h => h.card)).toEqual(['blast', 'rift', 'tide']);
     const b = d.state.hands.b.map(h => h.card);
     expect(b.slice(0, 2)).toEqual(['ice_wall', 'truce']);
-    expect(draftRefusal(POUVOIRS, b)).toBeNull();
-    expect(d.firstMoveDeadline).toBe(T0 + DRAFT_MS + 45_000);
+    expect(draftRefusal(POUVOIRS, b, false, CARDS_PER_PLAYER)).toBeNull();
+    expect(d.firstMoveDeadline).toBe(T0 + DRAFT_MS + FIRST_MOVE_MS);
     // Personne n'a choisi : trois cartes chacun au hasard.
     const idle = invite();
     vi.advanceTimersByTime(DRAFT_MS);
-    for (const c of ['w', 'b'] as const) expect(draftRefusal(POUVOIRS, idle.d.state.hands[c].map(h => h.card))).toBeNull();
+    for (const c of ['w', 'b'] as const) expect(draftRefusal(POUVOIRS, idle.d.state.hands[c].map(h => h.card), false, CARDS_PER_PLAYER)).toBeNull();
     // Puis, sans premier coup, la partie est annulée comme avant.
-    vi.advanceTimersByTime(45_000);
+    vi.advanceTimersByTime(FIRST_MOVE_MS);
     expect(idle.d.status).toBe('ended');
     expect(idle.d.state.result).toEqual({ winner: null, reason: 'aborted' });
   });
@@ -240,7 +247,7 @@ describe('choix des cartes : serveur', () => {
   it('contre l’IA : elle choisit aussitôt, sans Sablier fou ; le choix du joueur révèle les mains', () => {
     const decide = vi.mocked(botPool.decide);
     decide.mockClear();
-    const room = newRoom({ mode: 'bot', rated: false, tc: '3+2', catalog: 'climats', creator: 'g:1', seats: { w: bot(3), b: human(1) } });
+    const room = newRoom({ mode: 'bot', rated: false, tc: '3+2', catalog: 'climats', creator: 'g:1', seats: { w: bot(3), b: human(1) }, rules: RULES_V1 });
     const d = room.d;
     expect(d.draft?.pool).not.toContain('hourglass');
     expect(draftView(d, 'b')?.chosen).toEqual({ w: true, b: false });
@@ -302,11 +309,11 @@ describe('choix des cartes : serveur', () => {
     expect(back.d.draft).toBeNull();
     expect(back.d.state.hands.w.map(h => h.card)).toEqual(['blood_moon', 'ice_age', 'truce']);
     expect(back.d.state.hands.b.map(h => h.card).slice(0, 2)).toEqual(['tide', 'rift']);
-    expect(back.d.firstMoveDeadline).toBe(t + DRAFT_MS + 45_000);
+    expect(back.d.firstMoveDeadline).toBe(t + DRAFT_MS + FIRST_MOVE_MS);
   });
 
   it('redémarrage d’une partie contre l’IA dont le joueur avait validé : révélation à la reprise', () => {
-    const room = newRoom({ mode: 'bot', rated: false, tc: 'none', catalog: 'climats', creator: 'g:1', seats: { w: human(1), b: bot(1) } });
+    const room = newRoom({ mode: 'bot', rated: false, tc: 'none', catalog: 'climats', creator: 'g:1', seats: { w: human(1), b: bot(1) }, rules: RULES_V1 });
     const saved: RoomData = JSON.parse(JSON.stringify(room.d));
     saved.draft!.picks.w = ['ice_wall', 'rift', 'tide'];
     vi.clearAllTimers();
@@ -336,12 +343,12 @@ describe('choix des cartes : serveur', () => {
   it('sans cartes : pas de choix, la partie commence comme avant', () => {
     const room = invite('5+0', 'aucune');
     expect(room.d.draft).toBeNull();
-    expect(room.d.firstMoveDeadline).toBe(T0 + 45_000);
+    expect(room.d.firstMoveDeadline).toBe(T0 + FIRST_MOVE_MS);
     expect(applyMove(room, 'w', q('e2'), q('e4')).ok).toBe(true);
   });
 
   it('invitation en attente : le choix ne s’ouvre qu’à l’arrivée du deuxième joueur', () => {
-    const room = newRoom({ mode: 'invite', rated: false, tc: 'none', catalog: 'climats', creator: 'g:1', seats: { w: human(1), b: null } });
+    const room = newRoom({ mode: 'invite', rated: false, tc: 'none', catalog: 'climats', creator: 'g:1', seats: { w: human(1), b: null }, rules: RULES_V1 });
     expect(room.d.status).toBe('waiting');
     expect(room.d.draft?.deadline).toBeNull();
     expect(room.d.draft?.pool).not.toContain('hourglass'); // sans pendule
@@ -353,6 +360,6 @@ describe('choix des cartes : serveur', () => {
     resumeRoom(back);
     expect(back.d.draft?.deadline).toBeNull();
     // closeDraft n'est jamais appelé avant l'ouverture : il donnerait des mains au hasard.
-    expect(closeDraft({ ...back.d, draft: null })).toEqual([]);
+    expect(closeDraft({ ...back.d, draft: null })).toEqual({ auto: [], filled: [] });
   });
 });

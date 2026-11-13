@@ -1,31 +1,34 @@
 import { describe, expect, it } from 'vitest';
 import { CardId } from '../src/shared/cards';
 import { Color, F_RELAXED, Move, sqName } from '../src/shared/chess';
-import { BOT_PROFILES, BotLevel, analyse, chooseBotCard, chooseBotMove } from '../src/shared/bot';
-import { Effect, createGame, createGameFromFen, legalMovesOf } from '../src/shared/game';
+import { BOT_PROFILES, BotLevel, analyse, chooseBotCard, chooseBotMove, decideTurn } from '../src/shared/bot';
+import { deepFreeze } from '../src/shared/config/rules';
+import { Effect, createGame, createGameFromFen, legalMovesOf, playCard, playMove } from '../src/shared/game';
+import { RULES_V1, castsLeft } from '../src/shared/rules';
 import { decide } from '../src/server/bot-worker';
+import { think } from '../src/client/ai/think';
 
 describe('IA et analyse', () => {
   it('trouve un mat en un coup et le signale', () => {
-    const s = createGameFromFen('6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1', { w: [], b: [] }, false);
+    const s = createGameFromFen('6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1', { w: [], b: [] }, false, 'duel');
     const a = analyse(s, 4, 3000);
     expect(a.best && sqName(a.best.from) + sqName(a.best.to)).toBe('a1a8');
     expect(a.mate).toBe(1);
     expect(a.pv[0]).toEqual(a.best);
   });
   it('évalue la position initiale comme équilibrée et donne une suite', () => {
-    const a = analyse(createGame({ w: [], b: [] }, false), 3, 3000);
+    const a = analyse(createGame({ w: [], b: [] }, false, 'duel'), 3, 3000);
     expect(Math.abs(a.scoreWhite)).toBeLessThan(80);
     expect(a.pv.length).toBeGreaterThanOrEqual(2);
   });
   it('voit qu’une dame en prise se perd (point de vue des Blancs, Noirs au trait)', () => {
-    const s = createGameFromFen('4k3/8/8/3q4/8/8/3R4/4K3 w - - 0 1', { w: [], b: [] }, false);
+    const s = createGameFromFen('4k3/8/8/3q4/8/8/3R4/4K3 w - - 0 1', { w: [], b: [] }, false, 'duel');
     const a = analyse(s, 3, 3000);
     expect(a.best && sqName(a.best.to)).toBe('d5');
     expect(a.scoreWhite).toBeGreaterThan(300);
   });
   it("l'IA joue un coup légal", () => {
-    expect(chooseBotMove(createGame({ w: [], b: [] }, false), 2)).not.toBeNull();
+    expect(chooseBotMove(createGame({ w: [], b: [] }, false, 'duel'), 2)).not.toBeNull();
   });
 });
 
@@ -115,5 +118,62 @@ describe('IA et Pouvoirs', () => {
       // Marge pour une machine chargée (tests en parallèle).
       expect(Date.now() - t).toBeLessThan(BOT_PROFILES[level].thinkMs + 600);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Décision d'un tour (decideTurn), partagée par le serveur (bot-worker) et le navigateur (think).
+
+describe('decideTurn', () => {
+  it('serveur et navigateur rendent la même décision, au format { card, cards, move }', () => {
+    const s = climats('k6r/8/8/8/6P1/6PK/6P1/8 w - - 0 40', ['hourglass', 'truce', 'ice_wall']);
+    const serveur = decide(s, 3);
+    const navigateur = think(s, 3);
+    expect(serveur.cards).toHaveLength(1);
+    expect(serveur.card).toEqual(serveur.cards![0]);
+    expect(navigateur.card).toEqual(serveur.card);
+    expect(navigateur.cards).toEqual(serveur.cards);
+    expect(uci(navigateur.move)).toBe(uci(serveur.move as Move));
+    // Partie finie : rien ; coup seul demandé : aucune carte.
+    expect(decide({ ...s, result: { winner: 'b', reason: 'resign' } }, 2)).toEqual({ card: null, cards: [], move: null });
+    const seul = decideTurn(climats('r2q1rk1/pp2bppp/2n1pn2/3p4/3P4/2NBPN2/PP3PPP/R2Q1RK1 w - - 0 10', ['ice_wall']), 2, { cards: false });
+    expect(seul.cards).toEqual([]);
+    expect(seul.move).not.toBeNull();
+  });
+
+  it('plusieurs cartes par tour : jamais plus que castsLeft, chacune jouable, puis un coup légal', () => {
+    const deux = deepFreeze({ ...RULES_V1, cardsPerTurn: 2 });
+    const positions = [
+      'k6r/8/8/8/6P1/6PK/6P1/8 w - - 0 40',
+      'r2q1rk1/pp2bppp/2n1pn2/3p4/3P4/2NBPN2/PP3PPP/R2Q1RK1 w - - 0 10',
+      '6k1/2q2ppp/8/1B6/8/7P/5PP1/3R2K1 w - - 0 30',
+    ];
+    for (const fen of positions) {
+      const s = createGameFromFen(fen, { w: ['ice_wall', 'truce', 'rift'], b: [] }, true, 'climats', { rules: deux });
+      s.ply = 30;
+      for (const level of [2, 3] as BotLevel[]) {
+        const d = decideTurn(s, level);
+        expect(d.cards.length, fen).toBeLessThanOrEqual(castsLeft(s));
+        let t = s;
+        for (const c of d.cards) {
+          const r = playCard(t, 'w', c.index, c.targets, '');
+          expect(r.ok, fen).toBe(true);
+          if (r.ok) t = r.state;
+        }
+        if (t.pos.turn === 'w' && !t.result) {
+          expect(d.move, fen).not.toBeNull();
+          expect(playMove(t, d.move!.from, d.move!.to, d.move!.promo).ok, fen).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('carte qui termine le tour : pas de coup après elle', () => {
+    const place = deepFreeze({ ...RULES_V1, cardEndsTurn: true });
+    // Mat imminent sauf un Mur (h4, h5 ou h6) : la carte est forcée (R4c) et remplace le coup.
+    const s = createGameFromFen('k6r/8/8/8/6P1/6PK/6P1/8 w - - 0 40', { w: ['ice_wall'], b: [] }, true, 'climats', { rules: place });
+    const d = decideTurn(s, 2);
+    expect(d.cards).toHaveLength(1);
+    expect(d.move).toBeNull();
   });
 });

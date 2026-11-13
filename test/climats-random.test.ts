@@ -23,7 +23,9 @@ function rng(seed: number) {
 }
 
 describe('tirage pondéré (R9)', () => {
-  it('jamais deux Légendaires ni trois Climats dans une main ; fréquences proches de la table (Déflagration épique)', () => {
+  // Les fréquences de chaque carte sont vérifiées contre la loi exacte du tirage dans test/frequences.test.ts (elles
+  // remplacent la table recopiée ici avant le lot 1).
+  it('jamais deux Légendaires ni trois Climats dans une main', () => {
     const rand = rng(7);
     const N = 40000;
     const seen: Partial<Record<CardId, number>> = {};
@@ -36,13 +38,7 @@ describe('tirage pondéré (R9)', () => {
       }
       for (const id of w) seen[id] = (seen[id] ?? 0) + 1;
     }
-    // Part des mains qui contiennent la carte, avec pendule et entre humains (8 cartes, 400 000 tirages).
-    const table: Record<string, number> = {
-      ice_wall: 52.3, rift: 52.3, truce: 42.7, tide: 41.7, hourglass: 33.1, ice_age: 33.0, blood_moon: 22.4, blast: 22.5,
-    };
-    for (const [id, pct] of Object.entries(table)) {
-      expect(Math.abs(((seen[id as CardId] ?? 0) / N) * 100 - pct), id).toBeLessThan(2);
-    }
+    expect(Object.keys(seen).sort()).toEqual([...cardsOf('climats')].sort());
   });
 
   it('Sablier fou exclu sans pendule et contre l’IA ; miroir ; catalogues Duel et sans cartes', () => {

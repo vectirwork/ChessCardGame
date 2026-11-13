@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { sqIndex as q, toFen } from '../src/shared/chess';
 import type { CardId } from '../src/shared/cards';
 import { GameState, createGame, playCard, playMove } from '../src/shared/game';
+import { RULES_V1 } from '../src/shared/rules';
 import {
   START_FEN, TreeNode, findSanMove, initialStateOf, mainline, parsePgnText, readPgn, sanOf, stateFromFen,
   treeFromLog, validateFen, writePgn,
@@ -189,5 +190,117 @@ describe('FEN', () => {
     expect(validateFen('4k3/8/8/8/8/8/8/4K3 w KQ - 0 1')).toMatch(/roque/);
     expect(validateFen('4k3/9/8/8/8/8/8/4K3 w - - 0 1')).not.toBeNull();
     expect(validateFen('4k3/8/8/8/8/8/8/4K3 x - - 0 1')).toMatch(/trait/);
+  });
+});
+
+describe('défauts corrigés au lot 1 (relecture des PGN exportés)', () => {
+  /** Partie Pouvoirs : Déflagration annoncée puis arrivée, et une prise qui explose (« exd5* »). */
+  function partieDeflagration(): GameState {
+    let s = createGame({ w: ['blast'], b: [] }, true, 'climats');
+    s = play(s, 'e2e4', 'd7d5');
+    const r = playCard(s, 'w', 0, [], '');
+    if (!r.ok) throw new Error(r.error);
+    s = play(r.state, 'g1f3', 'g8f6', 'e4d5');
+    return s;
+  }
+  it('cleanSan retire l’astérisque d’une prise qui explose : « exd5* » se relit', () => {
+    const s = partieDeflagration();
+    const { root, complete } = treeFromLog(initialStateOf(s), s.log);
+    expect(complete).toBe(true);
+    const text = writePgn({ Event: 'Déflagration' }, root);
+    expect(text).toContain('exd5*');
+    const g = readPgn(text);
+    // Les mains du PGN sont reconstituées carte par carte : on compare la position et le journal, pas les clés.
+    const fin = mainline(g.root).at(-1)!.state;
+    expect(toFen(fin.pos)).toBe(toFen(s.pos));
+    expect(fin.log).toEqual(s.log);
+    expect(writePgn(g.headers, g.root, g.result)).toBe(text);
+  });
+  it('Sablier fou : relu si la partie avait une pendule (TimeControl) ou si l’en-tête manque, refusé avec « - »', () => {
+    let s = createGame({ w: ['hourglass'], b: [] }, true, 'climats');
+    const r = playCard(s, 'w', 0, [], '');
+    if (!r.ok) throw new Error(r.error);
+    s = play(r.state, 'e2e4', 'e7e5');
+    const { root } = treeFromLog(initialStateOf(s), s.log);
+    const fin = (text: string) => mainline(readPgn(text).root).at(-1)!.state;
+    expect(fin(writePgn({ Event: 'Sablier', TimeControl: '180+2' }, root)).log).toEqual(s.log);
+    expect(fin(writePgn({ Event: 'Sablier' }, root)).log).toEqual(s.log);
+    expect(fin(writePgn({ Event: 'Sablier' }, root)).effects).toEqual(s.effects.map(e => ({ ...e, skin: '' })));
+    expect(readPgn(writePgn({ Event: 'Sablier', TimeControl: '180+2' }, root)).root.state.timed).toBe(true);
+    expect(() => readPgn(writePgn({ Event: 'Sablier', TimeControl: '-' }, root))).toThrow(/Sablier fou/);
+  });
+  it('sans carte qui demande une pendule, la relecture donne le même état qu’avant (timed: false), cadence ou non', () => {
+    const s = play(createGame({ w: ['truce'], b: [] }, true, 'climats'), 'e2e4', 'e7e5');
+    const { root } = treeFromLog(initialStateOf(s), s.log);
+    const entetes: Record<string, string>[] = [{ TimeControl: '180+2' }, {}, { TimeControl: '?' }, { TimeControl: '-' }];
+    for (const h of entetes) {
+      expect(readPgn(writePgn({ Event: 'x', ...h }, root)).root.state.timed).toBe(false);
+    }
+    // Carte à pendule dans une variante seulement : la partie avait une pendule.
+    const v = `[Event "x"]\n[Variant "Spellmate"]\n[Catalog "climats"]\n\n1. e4 (1. {[%spell hourglass]} d4) e5 *`;
+    expect(readPgn(v).root.state.timed).toBe(true);
+  });
+});
+
+describe('carte à la place du coup (cardEndsTurn) dans le PGN', () => {
+  it('toute carte qui a passé le trait est suivie du coup nul « -- » ; aller-retour identique', () => {
+    const rules = { ...RULES_V1, cardEndsTurn: true };
+    let s = createGame({ w: ['ice_wall', 'truce'], b: ['ice_wall', 'blood_moon'] }, true, 'climats', { rules });
+    const card = (c: 'w' | 'b', i: number, t: string[]) => {
+      const r = playCard(s, c, i, t.map(q), '');
+      if (!r.ok) throw new Error(r.error);
+      s = r.state;
+    };
+    s = play(s, 'e2e4');
+    card('b', 0, ['d4']);
+    s = play(s, 'g1f3', 'e7e5');
+    card('w', 0, ['c4']);
+    s = play(s, 'b8c6');
+    const { root, complete } = treeFromLog(initialStateOf(s), s.log);
+    expect(complete).toBe(true);
+    const text = writePgn({ Event: 'Mur' }, root);
+    // Texte coupé à 80 colonnes : on compare la suite des coups sur une ligne.
+    expect(text.split('\n\n')[1].replace(/\n/g, ' ').trim()).toBe('1. e4 {[%spell ice_wall d4]} 1... -- 2. Nf3 e5 {[%spell ice_wall c4]} 3. -- Nc6 *');
+    const g = readPgn(text);
+    expect(g.root.state.rules).toEqual(rules);
+    const fin = mainline(g.root).at(-1)!.state;
+    expect(toFen(fin.pos)).toBe(toFen(s.pos));
+    expect(fin.log).toEqual(s.log);
+    expect(writePgn(g.headers, g.root, g.result)).toBe(text);
+  });
+});
+
+describe('règles de la partie dans le PGN (en-tête SpellmateRules)', () => {
+  it('au défaut (RULES_V1) : aucun en-tête', () => {
+    const s = play(createGame({ w: [], b: [] }, true, 'aucune'), 'e2e4');
+    const { root } = treeFromLog(initialStateOf(s), s.log);
+    expect(writePgn({}, root)).not.toContain('SpellmateRules');
+  });
+  it('règles différentes : écrites, relues, la relecture suit ces règles (pas celles du jour)', () => {
+    const rules = { ...RULES_V1, fiftyHalfmoves: 4, presageDelay: 4 };
+    let s = createGame({ w: [], b: [] }, false, 'aucune', { rules });
+    s = play(s, 'g1f3', 'g8f6', 'f3g1');
+    expect(s.result).toBeNull();
+    s = play(s, 'f6g8');
+    expect(s.result).toEqual({ winner: null, reason: 'fifty' });
+    const { root, complete } = treeFromLog(initialStateOf(s), s.log);
+    expect(complete).toBe(true);
+    const text = writePgn({ Event: 'Règles' }, root, '1/2-1/2');
+    expect(text).toContain('[SpellmateRules "{\\"schema\\":1,');
+    const g = readPgn(text);
+    expect(g.root.state.rules).toEqual(rules);
+    expect(mainline(g.root).at(-1)!.state.result).toEqual({ winner: null, reason: 'fifty' });
+    expect(writePgn(g.headers, g.root, g.result)).toBe(text);
+  });
+  it('schéma inconnu, en-tête illisible ou règles injouables : erreur explicite', () => {
+    const avec = (v: string) => `[Event "x"]\n[SpellmateRules "${v.replace(/"/g, '\\"')}"]\n\n1. e4 *`;
+    expect(() => readPgn(avec(JSON.stringify({ ...RULES_V1, schema: 2 })))).toThrow(/version inconnue \(schéma 2\)/);
+    expect(() => readPgn(avec('{pas du json'))).toThrow(/illisible/);
+    // En-tête abîmé (pas un objet, schéma absent ou d'un autre type) : invalide, pas « version inconnue ».
+    for (const v of ['42', '{"cardsPerPlayer":5}', '[1]', 'null', '{"schema":"1"}', '{"schema":0}']) {
+      expect(() => readPgn(avec(v)), v).toThrow('En-tête SpellmateRules invalide : ces règles ne sont pas jouables.');
+    }
+    expect(() => readPgn(avec(JSON.stringify({ ...RULES_V1, presageDelay: 3 })))).toThrow(/pas jouables/);
+    expect(readPgn(avec(JSON.stringify(RULES_V1))).root.state.rules).toBeUndefined();
   });
 });

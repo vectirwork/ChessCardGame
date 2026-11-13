@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { PREMIUM_COLLECTIONS, SLOTS, collectionItems, normItem, sealOf } from '../shared/catalog';
 import type { ItemKind } from '../shared/catalog';
+import { BRAND } from '../shared/config/brand';
 import type { LeaderboardResponse, LeaderboardRow, ProfileResponse, PublicProfile } from '../shared/protocol';
 import {
   SLOT_COLUMN, clearSessionCookie, createEmailToken, createSession, emailSchema, passwordSchema, requireUser, toMe, userById,
@@ -107,7 +108,7 @@ accountRouter.get('/export', async (req, res) => {
   const purchases = await q('SELECT * FROM purchases WHERE user_id = $1', [u.id]);
   const sessions = await q('SELECT created_at, expires_at, user_agent, ip FROM sessions WHERE user_id = $1', [u.id]);
   const { password_hash: _ignored, ...profile } = u;
-  res.setHeader('Content-Disposition', 'attachment; filename="mes-donnees-spellmate.json"');
+  res.setHeader('Content-Disposition', `attachment; filename="mes-donnees-${BRAND.name.toLowerCase()}.json"`);
   res.json({ exportedAt: new Date().toISOString(), profile, games, purchases, sessions });
 });
 

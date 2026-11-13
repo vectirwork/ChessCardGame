@@ -101,7 +101,9 @@
         {"motif": "test/regles-matrice.test.ts"},
         {"motif": "test/compat-parties.test.ts"},
         {"motif": "test/frequences.test.ts"},
-        {"motif": "scripts/banc-ia.mjs"}
+        {"motif": "scripts/banc-ia.mjs"},
+        {"motif": "src/shared/rulesCore.ts", "note": "noyau des règles sans la validation (créé par le lot 1 pour garder la validation hors du morceau de l’accueil)"},
+        {"motif": "test/garde-fous/dette-1.txt", "note": "dette du garde-fou que le lot vide (décision de l’orchestrateur, vague 1)"}
       ],
       "partage": [
         {"motif": "test/fixtures/v1/generer.ts", "note": "générateur des témoins seulement (signatures, ECARTS_VOULUS d'une correction décidée) ; témoins JSON figés, au lot 0a ; cédé au lot 3"}
@@ -138,7 +140,8 @@
         {"motif": "test/boutique.mjs"},
         {"motif": "test/rois.mjs"},
         {"motif": "test/echiquiers.mjs"},
-        {"motif": "test/fixtures/rois/**"}
+        {"motif": "test/fixtures/rois/**"},
+        {"motif": "test/garde-fous/dette-2.txt", "note": "dette du garde-fou que le lot vide (décision de l’orchestrateur, vague 1)"}
       ],
       "partage": [
         {"motif": "test/kings.test.ts", "note": "cédé au lot 7 pour la partie lieux"},
@@ -176,7 +179,8 @@
         {"motif": "test/rating.test.ts"},
         {"motif": "test/integration.mjs"},
         {"motif": "test/ranked.mjs"},
-        {"motif": "test/climats-serveur.mjs"}
+        {"motif": "test/climats-serveur.mjs"},
+        {"motif": "test/garde-fous/dette-3.txt", "note": "dette du garde-fou que le lot vide (décision de l’orchestrateur, vague 1)"}
       ],
       "partage": [
         {"motif": "src/server/games.ts", "note": "cédés au lot 9 pour le raccord SLOT_DEFS"},
@@ -210,7 +214,8 @@
         {"motif": "test/vfx.html"},
         {"motif": "test/sorts.mjs"},
         {"motif": "test/cardfx.test.ts"},
-        {"motif": "test/durees-css.test.ts"}
+        {"motif": "test/durees-css.test.ts"},
+        {"motif": "test/garde-fous/dette-4.txt", "note": "dette du garde-fou que le lot vide (décision de l’orchestrateur, vague 1)"}
       ],
       "partage": [
         {"motif": "test/fixtures/v1/existantes.json", "note": "reçu du lot 2 ; classement des captures existantes seulement (sorts) ; cédé au lot 9"}
@@ -233,7 +238,8 @@
         {"motif": "test/v2-correction.test.ts"},
         {"motif": "test/v2-revue.test.ts"},
         {"motif": "test/coque-layout.test.ts"},
-        {"motif": "test/choix-cartes.test.ts"}
+        {"motif": "test/choix-cartes.test.ts"},
+        {"motif": "test/garde-fous/dette-5.txt", "note": "dette du garde-fou que le lot vide (décision de l’orchestrateur, vague 1)"}
       ],
       "partage": []
     },
@@ -264,7 +270,8 @@
         {"motif": "test/og.html"},
         {"motif": "test/routes.test.ts"},
         {"motif": "test/marque.test.ts"},
-        {"motif": "test/socle-client.test.ts"}
+        {"motif": "test/socle-client.test.ts"},
+        {"motif": "test/garde-fous/dette-6.txt", "note": "dette du garde-fou que le lot vide (décision de l’orchestrateur, vague 1)"}
       ],
       "partage": []
     },
@@ -285,7 +292,8 @@
         {"motif": "src/client/odyssee/odyssee.css"},
         {"motif": "src/client/odyssee/scenery.tsx", "note": "sélection par identifiant seulement"},
         {"motif": "src/client/odyssee/engine.ts", "note": "ajouts d'export seulement"},
-        {"motif": "test/accueil.test.ts"}
+        {"motif": "test/accueil.test.ts"},
+        {"motif": "test/garde-fous/dette-7.txt", "note": "dette du garde-fou que le lot vide (décision de l’orchestrateur, vague 1)"}
       ],
       "partage": [{"motif": "test/kings.test.ts", "note": "reçu du lot 2 ; adaptation à PLACES seulement"}]
     },
@@ -321,7 +329,8 @@
         {"motif": "src/shared/lessons.ts"},
         {"motif": "src/shared/puzzles.ts"},
         {"motif": "test/lessons.test.ts"},
-        {"motif": "test/puzzles.test.ts"}
+        {"motif": "test/puzzles.test.ts"},
+        {"motif": "test/garde-fous/dette-8.txt", "note": "dette du garde-fou que le lot vide (décision de l’orchestrateur, vague 1)"}
       ],
       "partage": []
     },
@@ -336,7 +345,8 @@
         {"motif": "test/coherence.test.ts"},
         {"motif": "test/perf/mesure.mjs"},
         {"motif": "test/glisser.mjs"},
-        {"motif": "package.json"}
+        {"motif": "package.json"},
+        {"motif": "test/garde-fous/dette-9.txt", "note": "dette du garde-fou que le lot vide (décision de l’orchestrateur, vague 1)"}
       ],
       "partage": [
         {"motif": "src/server/auth.ts", "note": "SLOT_COLUMN dérivé de SLOT_DEFS"},

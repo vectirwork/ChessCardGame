@@ -9,10 +9,12 @@ import {
   dealHands, draftRefusal, incrementSuspended, legalMovesOf, playCard, playMove, viewState, withHands,
 } from '../shared/game';
 import type {
-  ClientToServer, DraftView, GameEvent, GameMode, GameStatus, GameView, JoinReply, SeatView, ServerToClient, TimeControl,
+  AckCode, ClientToServer, DraftView, GameEvent, GameMode, GameStatus, GameView, JoinReply, SeatView, ServerToClient,
+  TimeControl,
 } from '../shared/protocol';
-import { EMOTES, OFFERED_CONTROLS, QUICK_CONTROLS, tcFromId } from '../shared/protocol';
+import { EMOTES, OFFERED_CONTROLS, PROTOCOL_VERSION, QUICK_CONTROLS, tcFromId } from '../shared/protocol';
 import { CARDS, CATALOG_RULES, CardId, Catalog, DEFAULT_CATALOG, isCardId, offeredCatalog } from '../shared/cards';
+import type { FeatureKey } from '../shared/config/features';
 import { HOME } from '../shared/config/home';
 import { GUEST_NAME } from '../shared/config/limits';
 import { BOUNDS } from '../shared/config/rules';
@@ -28,7 +30,7 @@ import { botPool } from './bot-pool';
 import { DbClient, one, q, tx } from './db';
 import { matchTolerance, ratingDiffs } from './rating';
 import { gameId, randomToken } from './security';
-import { BOT_RUNTIME, LIMITS, MATCHMAKING, RATING, RELAY, TIMINGS, dealSettings } from './settings';
+import { BOT_RUNTIME, FEATURES, LIMITS, MATCHMAKING, RATING, RELAY, TIMINGS, dealSettings } from './settings';
 import { toSummary } from './summary';
 import { countryOfTimezone } from './timezones';
 
@@ -874,8 +876,8 @@ function maybeBot(room: Room) {
 // Relais de l'IA (parties en direct de l'accueil)
 //
 // Un joueur qui ne joue pas (aucun coup, l'échiquier pas touché) : l'IA joue pour lui, sans le faire attendre ni
-// faire attendre l'autre, jusqu'à ce qu'il reprenne la main. Premier coup : RELAY.firstMoveMs (10 s) ; ensuite
-// RELAY.idleMs (30 s) sans le moindre signe de présence (game:activity). Relayé, il joue de lui-même dès qu'il veut :
+// faire attendre l'autre, jusqu'à ce qu'il reprenne la main. Premier coup : RELAY.firstMoveMs ; ensuite
+// RELAY.idleMs sans le moindre signe de présence (game:activity). Relayé, il joue de lui-même dès qu'il veut :
 // son coup lui rend la main. Si les deux joueurs sont relayés, l'IA ne joue pas contre elle-même : la partie attend ;
 // personne n'est plus là depuis RELAY.abandonMs, elle est annulée.
 
@@ -883,7 +885,8 @@ export function armRelay(room: Room) {
   if (room.relayTimer) clearTimeout(room.relayTimer);
   room.relayTimer = null;
   const d = room.d;
-  if (!d.relay || d.status !== 'active' || d.state.result) return;
+  // Relais coupé (FEATURE_HOME_RELAY=0) : l'IA ne joue plus pour personne ; la partie suit les délais ordinaires.
+  if (!d.relay || !FEATURES.homeRelay || d.status !== 'active' || d.state.result) return;
   const c = d.state.pos.turn;
   const seat = d.seats[c];
   if (!seat || seat.kind === 'bot') return;
@@ -911,7 +914,7 @@ export function armRelay(room: Room) {
 function relayPlay(room: Room, c: Color) {
   const d = room.d;
   room.relayTimer = null;
-  if (!d.relay || d.status !== 'active' || d.state.pos.turn !== c || room.relayBusy) return;
+  if (!d.relay || !FEATURES.homeRelay || d.status !== 'active' || d.state.pos.turn !== c || room.relayBusy) return;
   if (d.standIn?.[opposite(c)] && !d.standIn?.[c]) return;
   if (!d.standIn?.[c]) {
     d.standIn = { w: !!d.standIn?.w, b: !!d.standIn?.b, [c]: true } as Record<Color, boolean>;
@@ -947,7 +950,64 @@ function takeOver(room: Room, c: Color) {
 // ---------------------------------------------------------------------------------------------
 // Actions
 
-type Ack = { ok: boolean; error?: string };
+type Ack = { ok: boolean; error?: string; code?: AckCode };
+
+// ---------------------------------------------------------------------------------------------
+// Interrupteurs (FEATURES : défauts de src/shared/config/features.ts, FEATURE_* de l'environnement). Le serveur refuse
+// ce qui est coupé, avec le code 'feature-off' ; au défaut, tout est ouvert et rien de ceci ne répond jamais.
+
+/** Message de refus d'une fonction coupée (seulement celles que le serveur refuse lui-même). */
+const FEATURE_OFF: Partial<Record<FeatureKey, string>> = {
+  ranked: 'Les parties classées sont fermées pour le moment.',
+  friendlyQueue: 'La recherche de partie amicale est fermée pour le moment.',
+  invites: 'Les invitations sont fermées pour le moment.',
+  botGames: 'Les parties contre l’IA sont fermées pour le moment.',
+  guestPlay: 'Connectez-vous pour jouer : le jeu sans compte est fermé pour le moment.',
+  live: 'Les parties en direct sont fermées pour le moment.',
+  homeDuel: 'Les parties de l’accueil sont fermées pour le moment.',
+  newGames: 'Le site est en maintenance : aucune nouvelle partie pour le moment. Les parties en cours continuent.',
+};
+
+/** Refus « fonction coupée » (code 'feature-off'). */
+export const featureOff = (k: FeatureKey): Ack & { error: string } => ({
+  ok: false,
+  error: FEATURE_OFF[k] ?? 'Cette fonction est fermée pour le moment.',
+  code: 'feature-off',
+});
+
+/** Interrupteur d'une sorte de partie : accueil (relais), contre l'IA, invitation, classée, amicale (comme contextOf). */
+export function featureOfGame(o: { mode: GameMode; rated: boolean; relay?: boolean }): FeatureKey {
+  if (o.relay) return 'homeDuel';
+  if (o.mode === 'bot') return 'botGames';
+  if (o.mode === 'invite') return 'invites';
+  return o.rated ? 'ranked' : 'friendlyQueue';
+}
+
+/**
+ * Peut-on créer une partie de cette sorte pour ce joueur ? null si oui ; sinon le refus : maintenance (newGames),
+ * sorte de partie coupée, ou invité alors que le jeu sans compte est coupé (guestPlay). Création par POST /games, file,
+ * accueil et revanche.
+ */
+export function creationRefusal(o: { mode: GameMode; rated: boolean; relay?: boolean }, identity: Identity): (Ack & { error: string }) | null {
+  if (!FEATURES.newGames) return featureOff('newGames');
+  const k = featureOfGame(o);
+  if (!FEATURES[k]) return featureOff(k);
+  if (!identity.user && !FEATURES.guestPlay) return featureOff('guestPlay');
+  return null;
+}
+
+/**
+ * Version du protocole annoncée par le client à la connexion (`io({ auth: { v } })`) différente de celle du serveur :
+ * l'onglet date d'une autre version du site. Absente : client d'avant la version du protocole, accepté (il ne saurait
+ * pas recharger).
+ */
+export function protocolMismatch(auth: unknown): boolean {
+  const v = (auth as { v?: unknown } | null | undefined)?.v;
+  return v !== undefined && v !== null && v !== PROTOCOL_VERSION;
+}
+
+/** Refus de toute action d'un client d'une autre version (code 'outdated') : il doit recharger la page. */
+export const OUTDATED: Ack & { error: string } = { ok: false, error: 'Le site a été mis à jour : rechargez la page.', code: 'outdated' };
 
 /** Coup reçu d'un joueur ou de l'IA (exporté pour les tests). */
 export function applyMove(room: Room, color: Color, from: number, to: number, promo?: PieceType): Ack {
@@ -1121,6 +1181,8 @@ function queueSize() {
  */
 export async function joinQueue(sock: Pick<Sock, 'data' | 'emit'>, tc: string, rated: boolean, guestName?: string, catalog: Catalog = DEFAULT_CATALOG): Promise<Ack> {
   const identity = sock.data.identity;
+  const off = creationRefusal({ mode: 'quick', rated }, identity);
+  if (off) return off;
   if (rated && !identity.user) return { ok: false, error: 'Connectez-vous pour jouer en partie classée.' };
   if (!QUICK_CONTROLS.includes(tc)) return { ok: false, error: 'Cadence inconnue.' };
   let name: string | undefined;
@@ -1163,15 +1225,16 @@ export async function joinQueue(sock: Pick<Sock, 'data' | 'emit'>, tc: string, r
   return { ok: true };
 }
 
-/** Une entrée de file ne survit pas si elle ne trouve personne en MATCHMAKING.entryTtlMs (10 minutes). */
+/** Une entrée de file ne survit pas si elle ne trouve personne en MATCHMAKING.entryTtlMs. */
 setInterval(() => {
   for (const [tc, list] of queues) queues.set(tc, list.filter(e => now() - e.since < MATCHMAKING.entryTtlMs));
 }, MATCHMAKING.sweepMs).unref();
 
 // ---------------------------------------------------------------------------------------------
-// Accueil : deux visiteurs arrivés depuis moins de 30 s, l'échiquier du haut sous les yeux, jouent l'un contre l'autre
-// sur cet échiquier, sans rien demander (retour du fondateur du 7 novembre). Partie amicale, sans pendule, mains tirées
-// au hasard comme sur l'accueil (HOME) ; un joueur qui ne joue pas est relayé par l'IA (RELAY).
+// Accueil : deux visiteurs arrivés depuis moins de HOME.pairWindowMs, l'échiquier du haut sous les yeux, jouent l'un
+// contre l'autre sur cet échiquier, sans rien demander (retour du fondateur du 7 novembre). Partie amicale, sans
+// pendule, mains tirées au hasard comme sur l'accueil (HOME) ; un joueur qui ne joue pas est relayé par l'IA (RELAY).
+// Interrupteurs : homeDuel (appariement), homeRelay (relais), guestPlay (invités), newGames (maintenance).
 
 interface HomeVisitor {
   sock: Sock;
@@ -1185,6 +1248,12 @@ interface HomeVisitor {
 /** Fenêtre d'arrivée : au-delà, le visiteur joue contre l'Oracle, on ne vient plus le chercher (HOME.pairWindowMs). */
 export const HOME_WINDOW_MS = HOME.pairWindowMs;
 const homeVisitors = new Map<string, HomeVisitor>();
+
+/**
+ * Ce visiteur peut-il être apparié sur l'accueil ? Non si le duel de l'accueil est coupé (homeDuel), en maintenance
+ * (newGames), ou pour un invité si le jeu sans compte est coupé (guestPlay) : ses messages home:* sont ignorés.
+ */
+const homeAllowed = (sock: Sock) => !creationRefusal({ mode: 'quick', rated: false, relay: true }, sock.data.identity);
 
 function pairHomeVisitors() {
   const t = now();
@@ -1245,10 +1314,12 @@ const freeSeat = (room: Room): Color | null => (!room.d.seats.w ? 'w' : !room.d.
  * spectateur au lieu d'écraser le siège. Renvoie sa couleur, null (spectateur) ou 'needName' (invité sans pseudo
  * valable). Exportée pour les tests.
  */
-export async function takeSeat(room: Room, identity: Identity, p: { name?: string; sit?: boolean }): Promise<Color | null | 'needName'> {
+export async function takeSeat(room: Room, identity: Identity, p: { name?: string; sit?: boolean }): Promise<Color | null | 'needName' | 'guestOff'> {
   const color = colorOf(room, identity);
   if (color || room.d.status !== 'waiting' || p.sit === false || !freeSeat(room)) return color;
   let name: string | undefined;
+  // Jeu sans compte coupé (FEATURE_GUEST_PLAY=0) : un invité ne s'assoit pas.
+  if (!identity.user && !FEATURES.guestPlay) return 'guestOff';
   if (!identity.user) {
     const parsed = guestNameSchema.safeParse(p.name ?? '');
     if (!parsed.success) return 'needName';
@@ -1300,6 +1371,16 @@ export function attachSockets(server: IO) {
 
   io.on('connection', raw => {
     const sock = raw as Sock;
+    // Onglet d'une autre version du site : prévenu (server:outdated, le client recharge), et chacune de ses actions
+    // est refusée (code 'outdated') jusqu'au rechargement.
+    if (protocolMismatch(sock.handshake.auth)) {
+      sock.emit('server:outdated', { version: PROTOCOL_VERSION });
+      sock.use(([, ...args], _next) => {
+        const ack = args.at(-1);
+        if (typeof ack === 'function') (ack as (r: Ack) => void)(OUTDATED);
+      });
+      return;
+    }
     const identity = sock.data.identity;
     const myKey = keyOf(identity);
     void sock.join(`id:${myKey}`);
@@ -1340,6 +1421,16 @@ export function attachSockets(server: IO) {
       void sock.join(`game:${room.d.id}`);
       const seated = await takeSeat(room, identity, p);
       if (seated === 'needName') return ack({ ok: true, needName: true, view: viewFor(room, null) });
+      // Invité qui ne peut pas s'asseoir (guestPlay coupé), ou spectateur alors que les parties en direct sont coupées
+      // (live) : refusé, il ne reste pas dans la salle.
+      const refuse = (r: Ack) => {
+        room.sockets.delete(sock);
+        joined.delete(room);
+        void sock.leave(`game:${room.d.id}`);
+        ack(r);
+      };
+      if (seated === 'guestOff') return refuse(featureOff('guestPlay'));
+      if (!seated && !FEATURES.live) return refuse(featureOff('live'));
       updatePresence(room);
       ack({ ok: true, view: viewFor(room, seated) });
     };
@@ -1455,6 +1546,9 @@ export function attachSockets(server: IO) {
           sock.emit('game:redirect', { from: d.id, to: d.rematch.next });
           return { ok: true };
         }
+        // Une revanche est une nouvelle partie : refusée si sa sorte (ou toute création) est coupée.
+        const off = creationRefusal(d, identity);
+        if (off) return off;
         d.rematch[color] = true;
         const opp = opposite(color);
         if (d.seats[opp]?.kind === 'bot' || d.rematch[opp]) await createRematch(room);
@@ -1489,20 +1583,20 @@ export function attachSockets(server: IO) {
     });
 
     sock.on('home:hello', p => {
-      if (!allow()) return;
+      if (!allow() || !homeAllowed(sock)) return;
       const prev = homeVisitors.get(sock.id);
       homeVisitors.set(sock.id, { sock, key: myKey, since: now(), tz: String(p?.tz ?? '').slice(0, 64), ready: !!p?.ready, searching: !!prev?.searching });
       pairHomeVisitors();
     });
     sock.on('home:search', p => {
-      if (!allow()) return;
+      if (!allow() || !homeAllowed(sock)) return;
       const v = homeVisitors.get(sock.id);
       if (v) v.searching = !!p?.search;
       else if (p?.search) homeVisitors.set(sock.id, { sock, key: myKey, since: now(), tz: String(p?.tz ?? '').slice(0, 64), ready: false, searching: true });
       if (p?.search) pairHomeVisitors();
     });
     sock.on('home:ready', p => {
-      if (!allow()) return;
+      if (!allow() || !homeAllowed(sock)) return;
       const v = homeVisitors.get(sock.id);
       if (!v) return;
       v.ready = !!p?.ready;
@@ -1537,9 +1631,9 @@ export function attachSockets(server: IO) {
       const humans = COLORS.filter(c => d.seats[c] && d.seats[c]!.kind !== 'bot');
       const allAway = humans.every(c => room.away[c] !== null);
       const awayFor = Math.min(...humans.map(c => now() - (room.away[c] ?? now())));
-      // Contre l'IA, le joueur parti depuis TIMINGS.botIdleMs (30 min) : partie annulée
+      // Contre l'IA, le joueur parti depuis TIMINGS.botIdleMs : partie annulée
       if (d.mode === 'bot' && allAway && awayFor > TIMINGS.botIdleMs) endGame(room, { winner: null, reason: 'aborted' });
-      // Sans pendule, aucune action depuis TIMINGS.untimedIdleMs (3 jours) : partie annulée
+      // Sans pendule, aucune action depuis TIMINGS.untimedIdleMs : partie annulée
       else if (!d.clock && now() - (d.lastActivity ?? d.createdAt) > TIMINGS.untimedIdleMs) endGame(room, { winner: null, reason: 'aborted' });
     }
   }, TIMINGS.housekeepingMs).unref();
@@ -1623,6 +1717,8 @@ gamesRouter.post('/', createLimiter, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Requête invalide.' });
   const o = parsed.data;
   const identity = req.identity;
+  const off = creationRefusal({ mode: o.mode, rated: false }, identity);
+  if (off) return res.status(503).json({ error: off.error, code: off.code });
   const open = [...rooms.values()].filter(r => r.d.status !== 'ended' && r.d.creator === keyOf(identity)).length;
   if (open >= LIMITS.maxOpenRooms) {
     return res.status(429).json({ error: 'Vous avez déjà trop de parties ouvertes : terminez-en ou annulez-en une.' });
@@ -1645,6 +1741,10 @@ gamesRouter.post('/', createLimiter, async (req, res) => {
 /** Parties en cours du visiteur (pour les reprendre). */
 /** Parties en cours, pour les spectateurs (« Parties en direct »). Les parties entre humains d'abord. */
 gamesRouter.get('/live', (_req, res) => {
+  if (!FEATURES.live) {
+    const off = featureOff('live');
+    return res.status(503).json({ error: off.error, code: off.code });
+  }
   const list = [...rooms.values()]
     .filter(r => r.d.status === 'active' && r.d.started)
     .map(r => ({

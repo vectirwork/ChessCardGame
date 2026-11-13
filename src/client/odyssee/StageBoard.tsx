@@ -3,23 +3,27 @@
 // Une seule instance pour les lieux II à VI : au changement de lieu (`resetSignal`), elle n'est plus remontée (≈ 200
 // nœuds recréés, scène 3D détachée puis rattachée, plateau retramé en pleine traversée) mais remise à neuf : sort en
 // attente, effets, scène 3D et position repartent de zéro, et la démonstration reprend comme au premier montage.
-// Il distribue les huit pouvoirs (catalogue « climats ») aux deux camps ; un autre catalogue reste accepté.
+// Il distribue toutes les cartes du catalogue de l'accueil (HOME.catalog, les Pouvoirs) aux deux camps, aux règles
+// historiques (RULES_V1 : une carte par tour, avant le coup) quelles que soient celles des nouvelles parties.
 // Sobriété (D6) : la scène 3D est partagée d'un lieu à l'autre (un seul contexte WebGL, gardé par useVfx) ; la
 // démonstration se met en pause quand l'onglet est caché, pendant les traversées, et quand le visiteur ne fait plus
-// rien depuis IDLE_MS (elle reprend au premier geste).
+// rien depuis HOME.idleMs (elle reprend au premier geste).
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Board } from '../components/Board';
 import type { BoardHandle } from '../components/Board';
 import { MATE_FALL_MS, matedKing } from '../components/mate';
 import { CARDS, cardsOf, isCardId } from '../../shared/cards';
-import type { CardId, Catalog } from '../../shared/cards';
+import type { CardCatalog, CardId } from '../../shared/cards';
 import { VALUE, fileOf, rankOf } from '../../shared/chess';
 import type { Color, Position } from '../../shared/chess';
 import { skinStyle } from '../../shared/catalog';
 import { cardOptions, cardPlayable, createGame, legalMovesOf, playCard, playMove } from '../../shared/game';
 import type { GameState } from '../../shared/game';
+import { HOME } from '../../shared/config/home';
+import { RULES_V1, rulesOf } from '../../shared/rulesCore';
 import { useVfx } from '../vfx/useVfx';
 import { castSafely } from './castSafely';
+import { PERSP } from './engine';
 
 export interface Act {
   /** Identifiant : un changement déclenche un sort immédiat. */
@@ -32,13 +36,12 @@ export interface Act {
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-/** Sans défilement, souris, toucher ni clavier depuis ce délai, la démonstration s'arrête après son geste en cours. */
-const IDLE_MS = 30000;
+/** Sans défilement, souris, toucher ni clavier depuis HOME.idleMs, la démonstration s'arrête après son geste en cours. */
 let lastInput = performance.now();
 const onInput = () => {
   lastInput = performance.now();
 };
-const idle = () => performance.now() - lastInput > IDLE_MS;
+const idle = () => performance.now() - lastInput > HOME.idleMs;
 
 /** Un sort ne part qu'après ce délai sans défilement : pendant le geste, la scène 3D plein écran et les pièces
  *  dressées (un calque composé chacune) se disputeraient chaque image avec le défilement (téléphones). Un coup de la
@@ -51,12 +54,13 @@ const onScrollInput = () => {
   lastScroll = performance.now();
 };
 
-let demoCatalog: Exclude<Catalog, 'aucune'> = 'climats';
-
-/** Position de départ de la démonstration : toutes les cartes du catalogue, dans les deux camps. */
-const fresh = (): GameState => {
-  const ids = cardsOf(demoCatalog);
-  return createGame({ w: [...ids], b: [...ids] }, true, demoCatalog);
+/**
+ * Position de départ de la démonstration : toutes les cartes du catalogue, dans les deux camps, aux règles historiques
+ * (RULES_V1, rien d'écrit dans la partie) : la boucle joue une carte par tour, avant un coup.
+ */
+const fresh = (catalog: CardCatalog): GameState => {
+  const ids = cardsOf(catalog);
+  return createGame({ w: [...ids], b: [...ids] }, true, catalog, { rules: RULES_V1 });
 };
 
 /** L'échiquier montre-t-il exactement cette position (pièces visibles, hors pièces qui s'effacent) ? */
@@ -137,12 +141,6 @@ function settleFresh(wrap: HTMLElement, current: () => Position): () => void {
   return stop;
 }
 
-/** Accès aux champs internes de la scène d'effets (perspective, calque) sans modifier le module partagé. */
-interface StageInternals {
-  perspective: number;
-  canvas: HTMLCanvasElement | null;
-}
-
 function pickMove(s: GameState) {
   const moves = legalMovesOf(s);
   let best = moves[0];
@@ -178,8 +176,8 @@ function targetsFor(s: GameState, color: Color, index: number): number[] | null 
 }
 
 /** Prépare un coup de sort lisible : quelques coups d'ouverture, puis la carte demandée. */
-function prepareCast(card: CardId, skin: string) {
-  let s = fresh();
+function prepareCast(card: CardId, skin: string, catalog: CardCatalog) {
+  let s = fresh(catalog);
   for (let i = 0; i < 4; i++) {
     const m = pickMove(s);
     if (!m) break;
@@ -198,8 +196,8 @@ function prepareCast(card: CardId, skin: string) {
 
 interface Props {
   act: Act;
-  /** Catalogue des cartes montrées : les Pouvoirs (« climats »). */
-  catalog: Exclude<Catalog, 'aucune'>;
+  /** Catalogue des cartes montrées : celui de l'accueil (HOME.catalog, les Pouvoirs). */
+  catalog: CardCatalog;
   theme: string;
   /** Change à chaque lieu (son index) : position neuve, effets et scène 3D vidés, démonstration reprise de zéro, d'un
    *  coup (comme un échiquier neuf, sans transition), pendant que l'échiquier traverse la nuée. */
@@ -220,10 +218,13 @@ interface Props {
 
 /** Mémoïsé : l'accueil se re-rend à chaque seuil du défilement (chapitre, amarrage), sans rien changer ici. */
 export const StageBoard = memo(function StageBoard({ act, catalog, theme, resetSignal, paused, tilt, still, playSignal, onCast, onCanvas, kingW, kingB }: Props) {
-  demoCatalog = catalog;
+  // Catalogue lu par référence (les boucles et les remises à neuf prennent toujours le dernier)
+  const catalogRef = useRef(catalog);
+  catalogRef.current = catalog;
+  const freshNow = () => fresh(catalogRef.current);
   const ref = useRef<BoardHandle>(null);
   const [wrap, setWrap] = useState<HTMLDivElement | null>(null);
-  const [state, setState] = useState<GameState>(fresh);
+  const [state, setState] = useState<GameState>(freshNow);
   const [hidden, setHidden] = useState<Set<number>>(new Set());
   const vfx = useVfx(wrap, 'w', 'odyssee-stage');
   const actRef = useRef(act);
@@ -262,9 +263,9 @@ export const StageBoard = memo(function StageBoard({ act, catalog, theme, resetS
   // (gardée pour le lieu suivant, puis libérée)
   useEffect(() => {
     if (!vfx) return;
-    const st = vfx.stage as unknown as StageInternals;
-    st.canvas?.classList.add('o-stage-canvas');
-    onCanvas?.(st.canvas);
+    const { canvas } = vfx.stage;
+    canvas?.classList.add('o-stage-canvas');
+    onCanvas?.(canvas);
     return () => {
       onCanvas?.(null);
       window.clearInterval(holdRef.current);
@@ -294,7 +295,7 @@ export const StageBoard = memo(function StageBoard({ act, catalog, theme, resetS
     stopLoopRef.current();
     epochRef.current++;
     tiltUntil.current = 0;
-    const s = fresh();
+    const s = freshNow();
     sRef.current = s;
     setState(s);
     setHidden(new Set());
@@ -310,10 +311,9 @@ export const StageBoard = memo(function StageBoard({ act, catalog, theme, resetS
   /** Garde la scène 3D à l'inclinaison du plateau CSS tant qu'un sort ou un effet est visible. */
   const holdTilt = async (ms: number) => {
     if (!vfx || still) return;
-    const st = vfx.stage as unknown as StageInternals;
     const w = wrap ? wrap.getBoundingClientRect().width / Math.max(1, wrap.offsetWidth) : 1;
     // Le plateau est réduit par le calque « astre » : la perspective de la scène 3D doit l'être aussi
-    st.perspective = 1400 * w;
+    vfx.stage.perspective = PERSP * w;
     const now = performance.now();
     const covered = tiltUntil.current > now + 120;
     vfx.stage.cinematic(ms / 1000, tiltRef.current, 1);
@@ -335,13 +335,13 @@ export const StageBoard = memo(function StageBoard({ act, catalog, theme, resetS
     const card = a.cards[0];
     epochRef.current++;
     if (!card) {
-      const s = fresh();
+      const s = freshNow();
       sRef.current = s;
       setState(s);
       vfx.stage.syncMarkers(s.effects, s.pos);
       return;
     }
-    const prep = prepareCast(card, a.skin);
+    const prep = prepareCast(card, a.skin, catalogRef.current);
     if (!prep) return;
     const epoch = epochRef.current;
     const family = vfx.stage.family;
@@ -363,6 +363,7 @@ export const StageBoard = memo(function StageBoard({ act, catalog, theme, resetS
       hide: ids => epoch === epochRef.current && setHidden(new Set(ids)),
       show: () => epoch === epochRef.current && setHidden(new Set()),
       victimAtBottom: prep.color === 'b',
+      secret: !rulesOf(prep.before).handsVisible,
     });
   }, [vfx, still, act.key, playSignal]);
 
@@ -440,6 +441,7 @@ export const StageBoard = memo(function StageBoard({ act, catalog, theme, resetS
           hide: ids => epoch === epochRef.current && setHidden(new Set(ids)),
           show: () => epoch === epochRef.current && setHidden(new Set()),
           victimAtBottom: color === 'b',
+          secret: !rulesOf(s).handsVisible,
         });
         if (dead) return false;
         setHidden(new Set());
@@ -465,7 +467,7 @@ export const StageBoard = memo(function StageBoard({ act, catalog, theme, resetS
         if (s.result || s.ply > 44) {
           // Un mat se montre : le roi tombe (Board, mated), reste couché un instant, puis la partie repart à zéro
           await wait(s.result?.reason === 'checkmate' ? MATE_FALL_MS + 600 : 900);
-          apply(fresh(), epochRef.current);
+          apply(freshNow(), epochRef.current);
           continue;
         }
         const a = actRef.current;
@@ -500,7 +502,7 @@ export const StageBoard = memo(function StageBoard({ act, catalog, theme, resetS
         const cur = sRef.current;
         const m = pickMove(cur);
         if (!m) {
-          apply(fresh(), epochRef.current);
+          apply(freshNow(), epochRef.current);
           continue;
         }
         const r = playMove(cur, m.from, m.to, m.promo);

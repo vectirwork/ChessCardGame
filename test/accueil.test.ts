@@ -1,12 +1,20 @@
 // Accueil (L'Odyssée, lot 7) : sauvegarde locale de la partie contre l'Oracle, géométrie de l'échiquier dans les deux
 // orientations, attributs des lieux, textes de l'accueil.
-// Caractérisation d'abord (verte sur le code d'avant le lot 7) : ce que l'accueil produit aujourd'hui, au caractère près.
+// Caractérisation d'abord (verte sur le code d'avant le lot 7) : ce que l'accueil produisait, au caractère près ; puis
+// les mêmes valeurs lues dans PLACES, HOME et les règles, et les textes pour 1 et 5 cartes.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cellOf, squareAt } from '../src/client/components/boardGeometry';
-import { LEVELS, MODES, PLACES, principle } from '../src/client/odyssee/data';
-import { loadSaved, validState } from '../src/client/odyssee/useLiveGame';
+import {
+  LEVELS, MODES, MORE_SLOTS, PAGE_TEXTS, PLACE, PLACES, doorKicker, doorNum, doorsLabel, liveTexts, placeAttrs, placeIndex, principle,
+} from '../src/client/odyssee/data';
+import type { TextRules } from '../src/client/odyssee/data';
+import { BOT, PLAYER, loadSaved, validState } from '../src/client/odyssee/useLiveGame';
+import { GAME_RULES, RULES_V1 } from '../src/shared/config/rules';
+import { HOME } from '../src/shared/config/home';
+import { createGame, dealHands } from '../src/shared/game';
+import { rulesFor, setRulesOverride } from '../src/shared/rulesCore';
 
 const ROOT = path.resolve(__dirname, '..');
 const fixture = JSON.parse(readFileSync(path.join(ROOT, 'test/fixtures/v1/accueil-v1.json'), 'utf8')) as {
@@ -29,6 +37,7 @@ function stubStorage(init: Record<string, string> = {}) {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
+  setRulesOverride(null);
 });
 
 describe('sauvegarde de la partie contre l’Oracle (format v1)', () => {
@@ -64,6 +73,47 @@ describe('sauvegarde de la partie contre l’Oracle (format v1)', () => {
     vi.setSystemTime(fixture.valeur.savedAt);
     stubStorage({ [fixture.cle]: JSON.stringify({ ...fixture.valeur, v: 2 }) });
     expect(loadSaved()).toBeNull();
+  });
+
+  it('refusée si ses règles ne sont plus celles de l’accueil, ou si ses mains n’ont pas leur nombre de cartes', () => {
+    // Mains de 4 cartes avec les règles par défaut (3 cartes) : refusée
+    const longue = clone(fixture.valeur.state);
+    longue.hands.w.push({ card: 'truce', used: false });
+    expect(validState(longue)).toBe(false);
+    // Règles photographiées différentes de celles de l'accueil : refusée
+    const autres = clone(fixture.valeur.state);
+    (autres as Record<string, unknown>).rules = { ...RULES_V1, cardsPerTurn: 2 };
+    expect(validState(autres)).toBe(false);
+    // Accueil réglé à 5 cartes : l'ancienne sauvegarde v1 (3 cartes, règles V1) repart de zéro
+    setRulesOverride({ cardsPerPlayer: 5 });
+    expect(validState(clone(fixture.valeur.state))).toBe(false);
+    // … et une partie neuve de l'accueil à ces règles est acceptée
+    const rules = rulesFor('accueil');
+    const neuve = JSON.parse(
+      JSON.stringify(createGame(dealHands(HOME.timed, false, Math.random, HOME.catalog, { vsBot: HOME.vsBot, rules }), HOME.timed, HOME.catalog, { rules })),
+    );
+    expect(neuve.hands.w).toHaveLength(5);
+    expect(validState(neuve)).toBe(true);
+  });
+
+  it('format v1 conservé : rien de nouveau n’est écrit dans une partie neuve au défaut', () => {
+    const rules = rulesFor('accueil');
+    expect(rules).toBe(RULES_V1);
+    const s = createGame(dealHands(HOME.timed, false, Math.random, HOME.catalog, { vsBot: HOME.vsBot, rules }), HOME.timed, HOME.catalog, { rules });
+    expect('rules' in s).toBe(false);
+    expect('cardsThisTurn' in s).toBe(false);
+    expect(validState(JSON.parse(JSON.stringify(s)))).toBe(true);
+    expect([PLAYER, BOT]).toEqual(['w', 'b']);
+  });
+
+  it('tirage contre l’Oracle : vsBot ne change rien au défaut (le Sablier fou, seule carte réservée aux humains, demande une pendule)', () => {
+    const seed = (n: number) => () => {
+      n = (n * 1103515245 + 12345) % 2 ** 31;
+      return n / 2 ** 31;
+    };
+    for (let k = 1; k < 40; k++) {
+      expect(dealHands(false, false, seed(k), 'climats', { vsBot: true })).toEqual(dealHands(false, false, seed(k), 'climats'));
+    }
   });
 });
 
@@ -105,20 +155,43 @@ const SECTIONS = [
 ];
 
 describe('lieux de la descente', () => {
-  it('PLACES : six lieux, dans l’ordre des sections', () => {
+  it('PLACES : six lieux, dans l’ordre des sections, numérotés en chiffres romains', () => {
     expect(PLACES.map(p => p.id)).toEqual(SECTIONS.map(s => s.pose));
     expect(PLACES.map(p => p.num)).toEqual(['I', 'II', 'III', 'IV', 'V', 'VI']);
+    expect(PLACES.map(p => p.anchor)).toEqual(SECTIONS.map(s => s.id));
+    expect(PLACE.bazar).toBe(PLACES[4]);
+    expect(placeIndex('seuil')).toBe(5);
   });
-  it('attributs des sections (id, data-pose, data-scene, data-place)', () => {
-    const src = readFileSync(path.join(ROOT, 'src/client/odyssee/OdysseeHome.tsx'), 'utf8');
+  it('placeAttrs(id) : les attributs écrits avant le lot 7, dans le même ordre, le même objet à chaque appel', () => {
     for (const s of SECTIONS) {
-      expect(src).toContain(`id="${s.id}" data-pose="${s.pose}" data-scene="${s.n}" data-place="${s.n}"`);
+      const a = placeAttrs(s.pose as (typeof PLACES)[number]['id']);
+      expect(Object.entries(a)).toEqual([
+        ['id', s.id],
+        ['data-pose', s.pose],
+        ['data-scene', String(s.n)],
+        ['data-place', String(s.n)],
+      ]);
+      expect(placeAttrs(s.pose as (typeof PLACES)[number]['id'])).toBe(a);
     }
+  });
+  it('OdysseeHome n’écrit plus ces attributs à la main ; scenery choisit le décor par identifiant', () => {
+    const src = readFileSync(path.join(ROOT, 'src/client/odyssee/OdysseeHome.tsx'), 'utf8');
+    expect(src).not.toMatch(/data-scene="\d"|data-place="\d"|PLACES\[\d\]/);
+    for (const s of SECTIONS) expect(src).toContain(`{...placeAttrs('${s.pose}')}`);
+    const scenery = readFileSync(path.join(ROOT, 'src/client/odyssee/scenery.tsx'), 'utf8');
+    expect(scenery).toMatch(/const Scene = SCENES\[id\]/);
+  });
+  it('Bazar : aucune étagère de plus au défaut (les emplacements de SLOT_DEFS ont chacun la leur)', () => {
+    expect(MORE_SLOTS).toEqual([]);
   });
 });
 
+/** Règles de démonstration des textes, sans passer par checkRules (seuls les champs lus par les textes comptent). */
+const avec = (p: Partial<TextRules>): TextRules => ({ ...GAME_RULES, ...p });
+
 describe('textes de l’accueil au réglage par défaut', () => {
   it('principe (Forêt de givre)', () => {
+    expect(principle(GAME_RULES)).toEqual(principle());
     expect(principle().map(p => [p.n, p.title, p.text])).toEqual([
       ['01', 'Les échecs, intacts.', 'Roque, prise en passant, promotion, pendule : toutes les règles, sans exception. Votre jeu reste votre meilleure arme.'],
       [
@@ -140,5 +213,59 @@ describe('textes de l’accueil au réglage par défaut', () => {
       { level: 2, name: 'Sorcier', text: 'Calcule, protège ses pièces, garde une carte pour la fin.' },
       { level: 3, name: 'Archimage', text: 'Calcule en profondeur et punit chaque sort gaspillé.' },
     ]);
+    expect(doorsLabel(MODES.length)).toBe('Trois portes');
+    expect(MODES.map((_, i) => doorNum(i))).toEqual(['I', 'II', 'III']);
+    expect([doorKicker(0), doorKicker(1)]).toEqual(['Première porte', 'Deuxième porte']);
+  });
+  it('partie ouverte : accroche, mini-main, consignes de la coque', () => {
+    const t = liveTexts(RULES_V1);
+    expect(t.lede).toBe("Une vraie partie d'échecs, trois cartes de pouvoir, un sort par tour.");
+    expect(t.hand).toBe('Vos trois sorts');
+    expect(t.touch(false)).toBe('Touchez-en un pour le lire et le lancer, puis jouez votre coup.');
+    expect(t.touch(true)).toBe('Touchez-en un pour le lire et le lancer ; les autres sorts s’ajoutent à votre coup.');
+    expect(t.before).toBe('Lancez une carte avant votre coup, ou jouez directement.');
+    expect(t.budget).toBe('Une seule carte par tour. Revenez à la page quand vous voulez : la partie vous attend.');
+    expect(PAGE_TEXTS.sortsEnMain).toBe('Trois sorts');
+  });
+});
+
+describe('textes de l’accueil selon les règles (1 et 5 cartes, 2 par tour, carte à la place du coup)', () => {
+  it('une carte par joueur', () => {
+    const r = avec({ cardsPerPlayer: 1 });
+    const t = liveTexts(r);
+    expect(t.lede).toBe("Une vraie partie d'échecs, une carte de pouvoir, un sort par tour.");
+    expect(t.hand).toBe('Votre sort');
+    expect(t.touch(false)).toBe('Touchez-le pour le lire et le lancer, puis jouez votre coup.');
+    expect(t.touch(true)).toBe('Touchez-le pour le lire et le lancer, à la place de votre coup.');
+    const p = principle(r);
+    expect(p[1].title).toBe('Une carte, visible.');
+    expect(p[1].text).toBe(
+      "Au début d'une partie, vous choisissez votre carte ; sur l'accueil, elle est tirée au hasard. Visible des deux joueurs, elle ne sert qu'une fois.",
+    );
+  });
+  it('cinq cartes par joueur', () => {
+    const r = avec({ cardsPerPlayer: 5 });
+    expect(liveTexts(r).lede).toBe("Une vraie partie d'échecs, cinq cartes de pouvoir, un sort par tour.");
+    expect(liveTexts(r).hand).toBe('Vos cinq sorts');
+    expect(principle(r)[1].title).toBe('Cinq cartes, visibles.');
+    expect(principle(r)[1].text).toBe(
+      "Au début d'une partie, vous choisissez vos cinq cartes ; sur l'accueil, elles sont tirées au hasard. Visibles des deux joueurs, chacune ne sert qu'une fois.",
+    );
+  });
+  it('deux cartes par tour, carte à la place du coup, Présage à 4 demi-coups', () => {
+    const deux = avec({ cardsPerTurn: 2 });
+    expect(liveTexts(deux).lede).toBe("Une vraie partie d'échecs, trois cartes de pouvoir, deux sorts par tour.");
+    expect(liveTexts(deux).budget).toBe('Deux cartes par tour au plus. Revenez à la page quand vous voulez : la partie vous attend.');
+    expect(principle(deux)[2]).toMatchObject({
+      title: 'Deux sorts par tour.',
+      text: 'Avant votre coup, lancez jusqu’à deux cartes : chacune change la partie pour les deux camps. Certaines s’annoncent un tour à l’avance.',
+    });
+    const place = avec({ cardEndsTurn: true, presageDelay: 4 });
+    expect(liveTexts(place).before).toBe('Lancez une carte à la place de votre coup, ou jouez directement.');
+    expect(liveTexts(place).touch(false)).toBe('Touchez-en un pour le lire et le lancer, à la place de votre coup.');
+    expect(principle(place)[2]).toMatchObject({
+      title: 'Un sort par tour, à la place du coup.',
+      text: 'À la place de votre coup, lancez une carte : elle change la partie pour les deux camps. Certaines s’annoncent deux tours à l’avance.',
+    });
   });
 });

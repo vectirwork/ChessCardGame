@@ -1,11 +1,35 @@
-import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { createElement } from 'react';
+import type { ReactElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cardsOf } from '../src/shared/cards';
+import type { CardId } from '../src/shared/cards';
+import { GAME_RULES, RULES_V1 } from '../src/shared/config/rules';
+import type { Rules as RuleSet } from '../src/shared/config/rules';
 import { F_RELAXED, fromFen, sqIndex, sqName } from '../src/shared/chess';
-import { GameState, legalMovesOf, playMove, sideInCheck } from '../src/shared/game';
+import { GameState, createGame, legalMovesOf, playCard, playMove, sideInCheck } from '../src/shared/game';
+import { treeFromLog } from '../src/shared/pgn';
+import { rulesOf } from '../src/shared/rulesCore';
 import {
-  LESSONS, LESSON_GROUPS, LessonStep, freeMove, lessonById, loneKingReply, matedBy, stepStart, studentOf,
+  ALL_LESSONS, LESSONS, LESSON_GROUPS, LessonStep, freeMove, lessonById, lessonsFor, loneKingReply, matedBy, stepStart, studentOf,
 } from '../src/shared/lessons';
-import { applyAction, stepOptions } from '../src/shared/puzzles';
+import { V1_TUNING, applyAction, hand, meetsRequires, stepOptions } from '../src/shared/puzzles';
+import { TIME_CONTROLS, tcLabel } from '../src/shared/protocol';
+import Rules from '../src/client/pages/Rules';
+import Play from '../src/client/pages/Play';
+import Learn from '../src/client/pages/Learn';
+import Puzzles from '../src/client/pages/Puzzles';
+import Auth, { PASSWORD as AUTH_PASSWORD, USERNAME as AUTH_USERNAME } from '../src/client/pages/Auth';
+import { GUEST_NAME as PLAY_GUEST_NAME } from '../src/client/pages/Play';
+import { GUEST_NAME, PASSWORD, USERNAME } from '../src/shared/config/limits';
+import MyGames from '../src/client/pages/MyGames';
+import { HISTORY_KEY, localGame, rememberLocalGame } from '../src/client/features/history';
+import { AppProvider, FeaturesContext } from '../src/client/store';
+import { FEATURES } from '../src/shared/config/features';
 
 /** Toutes les étoiles peuvent-elles être ramassées ? (parcours en largeur sur les coups libres) */
 function starsReachable(step: LessonStep, stars: string[]): boolean {
@@ -35,12 +59,12 @@ function starsReachable(step: LessonStep, stars: string[]): boolean {
 
 describe('leçons', () => {
   it('identifiants uniques, groupes connus, textes présents', () => {
-    expect(LESSONS.length).toBeGreaterThanOrEqual(15);
-    expect(new Set(LESSONS.map(l => l.id)).size).toBe(LESSONS.length);
-    for (const l of LESSONS) {
+    expect(ALL_LESSONS.length).toBeGreaterThanOrEqual(15);
+    expect(new Set(ALL_LESSONS.map(l => l.id)).size).toBe(ALL_LESSONS.length);
+    for (const l of ALL_LESSONS) {
       expect(LESSON_GROUPS).toContain(l.group);
       expect(l.steps.length).toBeGreaterThan(0);
-      expect(lessonById(l.id)).toBe(l);
+      if (LESSONS.includes(l)) expect(lessonById(l.id)).toBe(l);
       for (const s of l.steps) {
         expect(s.text.length, l.id).toBeGreaterThan(20);
         expect(() => fromFen(s.fen)).not.toThrow();
@@ -48,12 +72,12 @@ describe('leçons', () => {
     }
     // Chaque pièce, les coups spéciaux, échec, mat et pat, et les cartes
     for (const id of ['tour', 'fou', 'dame', 'roi', 'cavalier', 'pion', 'roque', 'prise-en-passant', 'promotion', 'echec', 'mat', 'pat', 'cartes', 'catalogues', 'deux-camps', 'presage-rituel', 'mur-magie', 'mains-visibles']) {
-      expect(lessonById(id), id).toBeDefined();
+      expect(ALL_LESSONS.some(l => l.id === id), id).toBe(true);
     }
   });
 
   it('chaque étape est réalisable avec le moteur', () => {
-    for (const l of LESSONS) {
+    for (const l of ALL_LESSONS) {
       l.steps.forEach((step, i) => {
         const where = `${l.id} étape ${i + 1}`;
         const start = stepStart(step);
@@ -89,7 +113,7 @@ describe('leçons', () => {
   });
 
   it('les étapes à pièce contiennent des pièces de l’élève qui peuvent bouger', () => {
-    for (const l of LESSONS) {
+    for (const l of ALL_LESSONS) {
       for (const step of l.steps) {
         if (step.goal.kind === 'info') continue;
         const s = stepStart(step);
@@ -99,9 +123,9 @@ describe('leçons', () => {
     }
   });
 
-  it('les leçons de cartes n’utilisent que les huit pouvoirs, jamais le Duel', () => {
+  it('les leçons de cartes n’utilisent que les pouvoirs, jamais le Duel', () => {
     const allowed = cardsOf('climats');
-    for (const l of LESSONS) {
+    for (const l of ALL_LESSONS) {
       for (const step of l.steps) {
         expect(step.catalog, l.id).not.toBe('duel');
         const s = stepStart(step);
@@ -181,5 +205,503 @@ describe('leçons', () => {
     const hanging = stepStart({ ...l.steps[3], fen: '8/8/8/3k4/4Q3/8/8/4K3 b - - 0 1' });
     const r = loneKingReply(hanging)!;
     expect(sqName(r.to)).toBe('e4');
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Réglage par défaut : photographies des textes (lot 8). Elles ont été relevées sur le code d'avant la dérivation des
+// textes ; un réglage changé (GAME_RULES, DEAL, CARDS, BRAND) doit les faire changer, rien d'autre.
+
+const sha = (x: unknown) => createHash('sha256').update(JSON.stringify(x)).digest('hex').slice(0, 16);
+
+/** Contenu d'une leçon tel qu'il existait avant le lot 8 (sans les champs ajoutés depuis). */
+const photo = (list: typeof LESSONS) => list.map(l => ({
+  id: l.id, title: l.title, group: l.group, summary: l.summary,
+  steps: l.steps.map(s => ({
+    fen: s.fen, text: s.text, goal: s.goal, success: s.success, hint: s.hint, marks: s.marks, arrows: s.arrows, last: s.last,
+    hands: s.hands, effects: s.effects, catalog: s.catalog, panel: s.panel,
+  })),
+}));
+
+describe('leçons au réglage par défaut', () => {
+  it('textes, positions, mains et objectifs identiques à la photographie', () => {
+    expect(sha(photo(ALL_LESSONS))).toBe('d8b079be811b03f8');
+    // Au défaut, toutes les leçons sont proposées.
+    expect(LESSONS).toEqual(ALL_LESSONS);
+  });
+
+  it('textes chiffrés des leçons (mains, tour, rangées, durées, coups permis)', () => {
+    const step = (id: string, i: number) => lessonById(id)!.steps[i];
+    expect(lessonById('cartes')!.summary).toBe('Trois cartes chacun, visibles des deux joueurs ; une par tour, avant le coup.');
+    expect(step('cartes', 0).text).toBe(
+      'Spellmate, ce sont les échecs, plus trois cartes de pouvoir par joueur. Au début d’une partie, vous choisissez vos trois cartes ; sur l’accueil, elles sont tirées au hasard. Les deux mains sont visibles : vous voyez les cartes de l’adversaire, il voit les vôtres, et une carte jouée reste grisée à sa place. À votre tour, vous pouvez jouer une carte avant votre coup : une seule par tour, et chaque carte ne sert qu’une fois.',
+    );
+    expect(step('cartes', 1).text).toContain('Un Mur se pose sur une case vide, de la 3e à la 6e rangée.');
+    expect(lessonById('catalogues')!.summary).toBe('Avec les huit pouvoirs ou sans cartes ; Climats, Terrains, Événement.');
+    expect(step('catalogues', 0).text).toBe('Chaque partie choisit son jeu. Par défaut, les Pouvoirs : huit cartes qui changent la partie pour les deux camps. Ou sans cartes : les échecs classiques, rien d’autre.');
+    expect(step('catalogues', 1).text).toMatch(/^Les huit pouvoirs forment trois familles\. /);
+    expect(step('presage-rituel', 1).text).toBe('Annoncez la Trêve (aucune capture pendant 3 coups, sauf pour sortir d’un échec), puis jouez un coup. Les Noirs répondent ; la Trêve arrive ensuite.');
+    expect(step('presage-rituel', 1).success).toBe('La Trêve est arrivée : regardez la liste des effets sous l’échiquier. Elle vaut pour vous aussi : vous ne prendrez rien pendant 3 coups.');
+    expect(step('presage-rituel', 2).text).toContain('Tous les pions des deux camps sur leurs 2e à 5e rangées avancent d’une case');
+    expect(step('mains-visibles', 0).text).toContain('elle peut ouvrir un gouffre sur la 4e ou la 5e rangée, même pour parer un échec.');
+    expect(step('mat-dame', 3).text).toBe('À vous, sans aide : matez le roi noir, qui se défend. Vous avez 30 coups.');
+    expect(step('mat-dame', 3).goal).toEqual({ kind: 'hunt', maxMoves: 30 });
+    expect(step('mat-tour', 2).text).toBe('À vous : matez le roi noir avec la tour. Vous avez 40 coups.');
+    expect(step('mat-tour', 2).goal).toEqual({ kind: 'hunt', maxMoves: 40 });
+  });
+});
+
+describe('leçons : règles du contenu (lot 8)', () => {
+  it('chaque leçon se joue avec RULES_V1, sans règles écrites dans la partie', () => {
+    for (const l of ALL_LESSONS) for (const st of l.steps) expect(stepStart(st).rules, l.id).toBeUndefined();
+  });
+
+  it('mains des leçons : au plus RULES_V1.cardsPerPlayer cartes, tronquées au nombre de cartes des nouvelles parties', () => {
+    for (const l of ALL_LESSONS) {
+      for (const st of l.steps) {
+        for (const c of ['w', 'b'] as const) {
+          expect((st.hands?.[c] ?? []).length, l.id).toBeLessThanOrEqual(Math.min(RULES_V1.cardsPerPlayer, GAME_RULES.cardsPerPlayer));
+        }
+      }
+    }
+    expect(hand(['ice_wall', 'rift', 'tide'], 1)).toEqual(['ice_wall']);
+    expect(hand(['ice_wall', 'rift', 'tide'], 5)).toEqual(['ice_wall', 'rift', 'tide']);
+    expect(hand(['ice_wall', 'rift', 'tide'])).toEqual(['ice_wall', 'rift', 'tide'].slice(0, GAME_RULES.cardsPerPlayer));
+  });
+
+  it('requires masque ce qui contredit les règles des nouvelles parties', () => {
+    const ids = (r: Parameters<typeof lessonsFor>[0]) => lessonsFor(r).map(l => l.id);
+    expect(ids(GAME_RULES)).toEqual(LESSONS.map(l => l.id));
+    expect(ids({ ...RULES_V1, handsVisible: false })).not.toContain('mains-visibles');
+    expect(ids({ ...RULES_V1, cardEndsTurn: true })).not.toContain('cartes');
+    expect(ids({ ...RULES_V1, cardEndsTurn: true })).not.toContain('presage-rituel');
+    expect(ids({ ...RULES_V1, cardEndsTurn: true })).toContain('mur-magie');
+    expect(ids({ ...RULES_V1, cardsPerTurn: 2 })).toEqual(ALL_LESSONS.map(l => l.id));
+    expect(meetsRequires(undefined, { ...RULES_V1, handsVisible: false, cardEndsTurn: true, cardsPerTurn: 3 })).toBe(true);
+    expect(meetsRequires({ cardsPerTurn: 1 }, { ...RULES_V1, cardsPerTurn: 2 })).toBe(false);
+    // Délai du Présage autre que celui du contenu (RULES_V1 : 2 demi-coups)
+    expect(ids({ ...RULES_V1, presageDelay: 4 })).not.toContain('presage-rituel');
+    expect(ids({ ...RULES_V1, presageDelay: 4 })).toContain('cartes');
+    expect(meetsRequires({ presageDelay: 2 }, { ...RULES_V1, presageDelay: 2 })).toBe(true);
+  });
+
+  it('requires.tuning : une carte rééquilibrée dans CARDS masque le contenu qui cite ou exploite son équilibrage V1', () => {
+    const ids = (r: Parameters<typeof lessonsFor>[0]) => lessonsFor(r).map(l => l.id);
+    const retuned = (id: CardId, t: NonNullable<RuleSet['tuning'][CardId]>) => ({ ...RULES_V1, tuning: { ...RULES_V1.tuning, [id]: t } });
+    // Au défaut, l'équilibrage de CARDS est celui de RULES_V1 : rien n'est masqué (GAME_RULES sans tuning : CARDS)
+    expect(ids(GAME_RULES)).toEqual(ALL_LESSONS.map(l => l.id));
+    expect(ids(retuned('ice_wall', { ranks: [3, 4] }))).not.toContain('cartes');
+    expect(ids(retuned('truce', { coups: 4 }))).not.toContain('presage-rituel');
+    expect(ids(retuned('tide', { ranks: [1, 2, 3] }))).not.toContain('presage-rituel');
+    expect(ids(retuned('rift', { coups: 4, ranks: [2, 3] }))).not.toContain('mains-visibles');
+    // Seule la durée change : les rangées citées restent justes, mais la carte est rééquilibrée
+    expect(ids(retuned('rift', { coups: 6, ranks: V1_TUNING.rift!.ranks }))).not.toContain('mains-visibles');
+    // Une carte que la leçon ne cite ni n'exploite : rien ne change
+    expect(ids(retuned('hourglass', { coups: 6, clockRate: 3 }))).toEqual(ALL_LESSONS.map(l => l.id));
+  });
+
+  it('toute carte jouée dans une leçon est déclarée dans requires.tuning', () => {
+    for (const l of ALL_LESSONS) {
+      for (const st of l.steps) {
+        if (st.goal.kind !== 'line') continue;
+        for (const x of st.goal.line) for (const o of stepOptions(x)) {
+          if (o.kind === 'card') expect(l.requires?.tuning, `${l.id} : ${o.card} jouée, à déclarer dans requires.tuning`).toContain(o.card);
+        }
+      }
+    }
+  });
+
+  it('la carte de l’élève est en tête de sa main : chaque suite reste jouable avec 1 ou 2 cartes par joueur', () => {
+    for (const n of [1, 2]) {
+      for (const l of ALL_LESSONS) {
+        for (const [i, st] of l.steps.entries()) {
+          if (st.goal.kind !== 'line') continue;
+          const cut = { ...st, hands: st.hands && { w: st.hands.w && hand(st.hands.w, n), b: st.hands.b && hand(st.hands.b, n) } };
+          let s = stepStart(cut);
+          for (const x of st.goal.line) {
+            if (x === '*') {
+              const m = legalMovesOf(s)[0];
+              s = (playMove(s, m.from, m.to, m.promo) as { state: GameState }).state;
+              continue;
+            }
+            const next = applyAction(s, stepOptions(x)[0]);
+            expect(next, `${l.id} étape ${i + 1}, ${n} carte(s) par main : ${x}`).not.toBeNull();
+            s = next!;
+          }
+        }
+      }
+    }
+  });
+});
+
+describe('leçons : chargement hors de Vite', () => {
+  it('src/shared/lessons.ts (qui lit __SM__.marque) n’est importé ni par le serveur, ni par les scripts, ni par src/shared', () => {
+    const files = (dir: string): string[] =>
+      readdirSync(dir).flatMap(f => {
+        const p = join(dir, f);
+        return statSync(p).isDirectory() ? files(p) : /\.(ts|tsx|mts|mjs|js|cjs)$/.test(f) ? [p] : [];
+      });
+    const offenders = [...files('src/server'), ...files('scripts'), ...files('src/shared')].filter(f => /(?:from\s+|import\(\s*)['"][^'"]*\/lessons(?:\.[jt]s)?['"]/.test(readFileSync(f, 'utf8')));
+    expect(offenders, 'lessons.ts ne se charge que sous Vite : voir son en-tête').toEqual([]);
+  });
+});
+
+describe('historique et Analyse : règles des parties locales', () => {
+  const store = new Map<string, string>();
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    store.clear();
+  });
+  const stub = () => {
+    vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v) });
+    vi.stubGlobal('window', { dispatchEvent: () => true });
+  };
+  const hands = { w: ['ice_wall', 'rift', 'tide'] as CardId[], b: ['ice_wall', 'rift', 'truce'] as CardId[] };
+  const meta = { white: 'Vous', black: 'L’Oracle', you: 'w' as const };
+
+  it('une partie à deux cartes par tour garde ses règles ; l’Analyse la rejoue en entier avec elles, pas avec RULES_V1', () => {
+    stub();
+    const rules: RuleSet = { ...RULES_V1, cardsPerTurn: 2 };
+    let s = createGame(hands, false, 'climats', { rules });
+    for (const [i, t] of [[0, 'e5'], [1, 'a4']] as const) {
+      const r = playCard(s, 'w', i, [sqIndex(t)], 'skin:arcane');
+      expect(r.ok, t).toBe(true);
+      s = (r as { state: GameState }).state;
+    }
+    const r = playMove(s, sqIndex('d2'), sqIndex('d3'));
+    expect(r.ok).toBe(true);
+    s = (r as { state: GameState }).state;
+    rememberLocalGame(s, { ...meta, id: 'local-deux' });
+    const g = localGame('local-deux')!;
+    expect(g.rules).toEqual(rules);
+    // Relecture de l'Analyse : createGame(mains, pendule, catalogue, { rules: rulesOf(partie enregistrée) })
+    const replay = (with_: RuleSet) => treeFromLog(createGame(g.local!.hands, g.local!.timed, g.local!.catalog, { rules: with_ }), g.local!.log);
+    expect(replay(rulesOf(g)).complete).toBe(true);
+    expect(replay(RULES_V1).complete).toBe(false);
+  });
+
+  it('au défaut, l’historique n’écrit pas de règles, et l’Analyse rejoue en RULES_V1', () => {
+    stub();
+    let s = createGame(hands, false, 'climats', { rules: RULES_V1 });
+    s = (playCard(s, 'w', 0, [sqIndex('e5')], 'skin:arcane') as { state: GameState }).state;
+    s = (playMove(s, sqIndex('d2'), sqIndex('d3')) as { state: GameState }).state;
+    rememberLocalGame(s, { ...meta, id: 'local-v1' });
+    const raw = JSON.parse(store.get(HISTORY_KEY)!) as Record<string, unknown>[];
+    expect('rules' in raw[0]).toBe(false);
+    expect(rulesOf(localGame('local-v1')!)).toBe(RULES_V1);
+  });
+});
+
+/** Rendu serveur d'une page (sans effets) : texte visible, une ligne par nœud de texte. */
+function pageText(url: string, path: string, el: ReactElement): string {
+  const html = renderToStaticMarkup(
+    createElement(AppProvider, null, createElement(MemoryRouter, { initialEntries: [url] }, createElement(Routes, null, createElement(Route, { path, element: el })))),
+  );
+  return html
+    .replace(/<[^>]+>/g, '\n')
+    .replace(/&#x27;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .split('\n')
+    .map(x => x.trim())
+    .filter(Boolean)
+    .join('\n');
+}
+/** Attributs lus par les lecteurs d'écran (aria-label). */
+function pageLabels(url: string, path: string, el: ReactElement): string[] {
+  const html = renderToStaticMarkup(
+    createElement(AppProvider, null, createElement(MemoryRouter, { initialEntries: [url] }, createElement(Routes, null, createElement(Route, { path, element: el })))),
+  );
+  return [...html.matchAll(/aria-label="([^"]*)"/g)].map(m => m[1].replace(/&#x27;/g, "'"));
+}
+
+describe('pages au réglage par défaut : textes chiffrés et libellés', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('Règles et cartes', () => {
+    const t = pageText('/cartes', '/cartes', createElement(Rules));
+    for (const s of [
+      'et huit pouvoirs',
+      'Spellmate, ce sont les échecs que vous connaissez, plus trois cartes de pouvoir chacun. Les deux mains sont visibles, et chaque pouvoir change la partie pour les deux camps.',
+      'Les huit pouvoirs\nDeux formules',
+      'Six règles, rien de plus',
+      'Toutes les règles officielles s’appliquent : roque, prise en passant, promotion, pat, triple répétition, règle des 50 coups. On gagne par mat, au temps ou par abandon.',
+      'Trois cartes chacun, à découvert\nAu début d’une partie, vous choisissez vos trois cartes ; sur l’accueil, elles sont tirées au hasard. Votre choix reste secret jusqu’à ce que votre adversaire ait choisi, puis les deux mains restent visibles de tous jusqu’à la fin ; une carte jouée reste à sa place, grisée.',
+      'Un sort par tour, avant votre coup\nÀ votre tour, vous pouvez lancer une carte, puis vous jouez votre coup. Chaque carte ne sert qu’une fois. Seule exception : un Rituel remplace votre coup.',
+      'Le sort est annoncé avant votre coup et arrive au début de votre tour suivant. En attendant, il est affiché pour tous : l’adversaire a toujours un coup pour s’y préparer.',
+      'Le Mur de glace et la Faille agissent dès le lancement, avant votre coup : vous jouez déjà sur le terrain transformé.',
+      'La Grande Marée est votre coup : elle termine votre tour, et l’adversaire profite le premier de la nouvelle position.',
+      'Exemple : la Trêve\n, un Climat de 3 coups (vous, lui, vous). Aucune capture n’est permise pendant ces trois coups, sauf pour sortir d’un échec.',
+      'Vous\nVous lancez la Trêve, puis vous jouez.\nAnnoncée\nAdversaire\nIl répond : il la voit venir.\nArrive au coup suivant\nVous\nElle arrive : vous jouez sans capturer.\n1er coup sur 3\nAdversaire\nIl joue sans capturer.\n2e coup sur 3\nVous\nVous jouez sans capturer.\n3e coup sur 3\nAdversaire\nIl peut capturer le premier.\nTerminée',
+      'Les huit pouvoirs\nTrois familles,\nhuit cartes',
+      'Entre humains, avec pendule',
+      'Trois cartes chacun, choisies parmi les huit pouvoirs au début de la partie.\nLes deux mains visibles, du premier au dernier coup.\nUn sort par tour au plus, toujours facultatif.',
+      'Le Sablier fou n’est proposé qu’entre humains, dans les parties avec pendule.',
+      'Le choix des cartes dure 45 secondes : trois cartes différentes parmi les huit pouvoirs, sans autre contrainte. Si le temps s’écoule, celles qui vous manquent sont tirées au hasard. Sur l’accueil, le tirage favorise les cartes les moins rares, avec au plus deux Climats par main.',
+      'Pour choisir vos cartes et votre adversaire, passez par la page\nJouer',
+    ]) expect(t).toContain(s);
+    expect(t.match(/Entre humains, avec pendule/g)).toHaveLength(1);
+  });
+
+  it('Jouer : portes, niveaux de l’IA, cadences, aide du choix des cartes', () => {
+    const bot = pageText('/jouer?mode=bot', '/jouer', createElement(Play));
+    for (const s of [
+      'Les échecs, plus trois cartes de pouvoir chacun, que vous choisissez au début de la partie. Une IA, un ami, ou le premier joueur venu : la partie s’ouvre en plein écran.',
+      'I\nContre l\'IA\n3 niveaux\nApprenti, Sorcier ou Archimage : une IA qui calcule et garde ses sorts pour le bon moment.',
+      'II\nDéfier un ami\nSans compte', 'III\nPartie amicale\nOuverte à tous', 'IV\nPartie classée\nElo',
+      'Porte I · contre l\'IA',
+      'Apprenti\nJoue vite, lance ses sorts au hasard.\n≈ 800 Elo\nSorcier\nCalcule, protège ses pièces, garde une carte pour la fin.\n≈ 1300 Elo\nArchimage\nCalcule en profondeur et punit chaque sort gaspillé.\n≈ 1800 Elo',
+      'Vous choisirez vos trois cartes au début de la partie, en 45 secondes : votre choix reste secret jusqu’à ce que votre adversaire ait choisi aussi.',
+      '1 + 0\nBullet\n3 + 2\nBlitz\n5 + 0\nBlitz\n10 + 0\nRapide\n15 + 10\nRapide\nSans limite\nLibre',
+      'Contre le Sorcier · 10 + 0',
+    ]) expect(bot).toContain(s);
+    expect(pageText('/jouer?mode=invite', '/jouer', createElement(Play))).toContain('Porte II · entre amis');
+    expect(pageText('/jouer?mode=invite', '/jouer', createElement(Play))).toContain('Pouvoirs · 10 + 0');
+    const friendly = pageText('/jouer?mode=friendly', '/jouer', createElement(Play));
+    expect(friendly).toContain('Cadence\n3 + 2\nBlitz\n5 + 0\nBlitz\n10 + 0\nRapide\n15 + 10\nRapide\nVotre pseudo (facultatif)');
+    expect(friendly).toContain('Amicale · 10 + 0 · Pouvoirs');
+    expect(pageText('/jouer?mode=ranked', '/jouer', createElement(Play))).toContain('Porte IV · classement Elo');
+  });
+
+  it('Apprendre : sommaire et encarts', () => {
+    const t = pageText('/apprendre', '/apprendre', createElement(Learn));
+    expect(t).toContain('De la marche des pièces aux mats élémentaires, puis les cartes de Spellmate.');
+    expect(t).toContain('0 / 22 leçons');
+    // Pluriels corrigés (lot 8) : « 1 étape » (mur-magie, mains-visibles), « 1 leçon terminée sur 22 » ; 0 reste au
+    // pluriel, comme avant (« 0 leçons terminées sur 22 », identique au défaut).
+    expect(t.match(/^1 étape$/gm)).toHaveLength(2);
+    expect(t).not.toMatch(/^1 étapes$/m);
+    expect(t).toContain('3 étapes');
+    expect(pageLabels('/apprendre', '/apprendre', createElement(Learn))).toContain('0 leçons terminées sur 22');
+    expect(t.split('\n').filter(x => /^[IV]+$/.test(x))).toEqual(['I', 'II', 'III', 'IV', 'V']);
+    const cat = pageText('/apprendre/catalogues', '/apprendre/:lesson', createElement(Learn));
+    expect(cat).toContain('Pouvoirs\n· 8 cartes');
+  });
+
+  it('Apprendre : « 1 leçon terminée », « 2 leçons terminées »', () => {
+    for (const [ids, label] of [[['tour'], '1 leçon terminée sur 22'], [['tour', 'fou'], '2 leçons terminées sur 22']] as const) {
+      const progress = Object.fromEntries(ids.map(id => [id, { step: 0, done: true }]));
+      vi.stubGlobal('localStorage', { getItem: (k: string) => (k === 'sm:apprendre' ? JSON.stringify(progress) : null), setItem: () => undefined });
+      expect(pageLabels('/apprendre', '/apprendre', createElement(Learn))).toContain(label);
+    }
+  });
+
+  it('Problèmes : chapeau et filtres', () => {
+    vi.setSystemTime(new Date(2026, 10, 13, 12));
+    const t = pageText('/problemes', '/problemes', createElement(Puzzles));
+    vi.useRealTimers();
+    expect(t).toContain('et des énigmes sur les huit pouvoirs, où la bonne carte (ou celle de l’adversaire, toujours visible) fait la différence.');
+    expect(t).toContain('Tous\n49\nMat en 1\n16\nMat en 2\n12\nMat en 3\n4\nFourchettes\n6\nClouages\n4\nEnfilades\n3\nDéviations\n6\nDécouvertes\n2\nMats élémentaires\n7\nCartes\n8');
+    expect(t).toContain('Problème du jour · vendredi 13 novembre');
+  });
+
+  it('Connexion et inscription : bornes du pseudo et du mot de passe', () => {
+    const reg = pageText('/x', '/x', createElement(Auth, { mode: 'register' }));
+    expect(reg).toContain('3 à 20 caractères : lettres, chiffres, - et _');
+    expect(reg).toContain('8 caractères minimum.');
+    const reset = pageText('/x', '/x', createElement(Auth, { mode: 'reset' }));
+    expect(reset).toContain('Choisissez un mot de passe d’au moins 8 caractères. Vos autres appareils seront déconnectés.');
+    expect(pageLabels('/x', '/x', createElement(Auth, { mode: 'login' }))).toEqual([]);
+  });
+
+  it('Mes parties : « 1 coup » au singulier (lot 8), libellés de la liste locale', () => {
+    const played = [
+      { id: 'local-a', at: Date.now(), you: 'w', white: 'Vous', black: 'L’Oracle', winner: 'b', reason: 'resign', catalog: 'climats', plies: 2, vsBot: true, local: { log: [], hands: { w: [], b: [] }, timed: false, catalog: 'climats' } },
+      { id: 'abc123', at: Date.now(), you: 'b', white: 'Aurore', black: 'Basile', winner: 'draw', reason: 'fifty', catalog: 'duel', plies: 7, timeControl: '10+0' },
+    ];
+    vi.stubGlobal('localStorage', { getItem: (k: string) => (k === 'sm:parties' ? JSON.stringify(played) : null), setItem: () => undefined });
+    const t = pageText('/parties', '/parties', createElement(MyGames));
+    expect(t).toContain('Abandon · 1 coup\nSur cet appareil · Pouvoirs');
+    expect(t).toContain('Règle des 50 coups · 4 coups\nEn ligne · Duel (ancienne formule) · 10+0');
+  });
+
+  it('Jouer et Connexion : copies des bornes égales à config/limits.ts, caractères compris', () => {
+    // Copies (un import ferait de limits.ts un morceau de plus, voir Play.tsx) : tout changement de limits.ts doit y être
+    // reporté, ce test le rappelle.
+    expect(PLAY_GUEST_NAME.full.source).toBe(GUEST_NAME.full.source);
+    expect(PLAY_GUEST_NAME.full.flags).toBe(GUEST_NAME.full.flags);
+    expect(PLAY_GUEST_NAME.max).toBe(GUEST_NAME.max);
+    expect(PLAY_GUEST_NAME.invalidDetail).toBe(GUEST_NAME.invalidDetail);
+    expect({ ...AUTH_USERNAME, chars: AUTH_USERNAME.chars.source + AUTH_USERNAME.chars.flags }).toEqual({
+      min: USERNAME.min, max: USERNAME.max, hint: USERNAME.hint, chars: USERNAME.chars.source + USERNAME.chars.flags,
+    });
+    expect(AUTH_PASSWORD).toEqual({ min: PASSWORD.min, hint: PASSWORD.hint });
+  });
+
+  it('Jouer et Connexion : attributs des champs du pseudo identiques au défaut, `pattern` fidèle à USERNAME.chars', () => {
+    const html = (url: string, el: ReactElement) =>
+      renderToStaticMarkup(createElement(AppProvider, null, createElement(MemoryRouter, { initialEntries: [url] }, createElement(Routes, null, createElement(Route, { path: '*', element: el })))));
+    const reg = html('/inscription', createElement(Auth, { mode: 'register' }));
+    const input = /<input id="username"[^>]*>/.exec(reg)?.[0] ?? '';
+    expect(input).toContain('minLength="3"');
+    expect(input).toContain('maxLength="20"');
+    expect(input).toContain('pattern="[A-Za-z0-9_\\-]+"');
+    // Le navigateur compile `pattern` avec le drapeau v, ancré : même verdict que USERNAME.chars (serveur)
+    const pattern = /pattern="([^"]*)"/.exec(input)![1];
+    const browser = new RegExp(`^(?:${pattern})$`, 'v');
+    for (const x of ['abc', 'A_b-9', 'x-', '-x', 'é', 'a b', 'a.b', 'a/b', '[x]', 'a\\b', '']) expect(browser.test(x), x).toBe(USERNAME.chars.test(x));
+    // Jouer : pseudo d'invité borné par GUEST_NAME ; niveaux de l'IA sans --n au défaut (3, la valeur de game.css)
+    const bot = html('/jouer?mode=bot', createElement(Play));
+    expect(bot).toContain(`id="pl-pseudo" class="input" maxLength="${GUEST_NAME.max}"`);
+    expect(bot).toContain('<div class="pl-levels" role="radiogroup" aria-label="Niveau de l’IA">');
+  });
+
+  it('libellés de cadence identiques pour les 6 cadences (Jouer, Mes parties, Direct, Analyse, historique)', () => {
+    expect(TIME_CONTROLS.map(t => tcLabel(t.id))).toEqual(['1 + 0', '3 + 2', '5 + 0', '10 + 0', '15 + 10', 'Sans limite']);
+    expect(TIME_CONTROLS.map(t => tcLabel(t.id, 'family'))).toEqual(['Bullet 1 + 0', 'Blitz 3 + 2', 'Blitz 5 + 0', 'Rapide 10 + 0', 'Rapide 15 + 10', 'Sans limite']);
+    expect(TIME_CONTROLS.map(t => tcLabel(t.tc, 'compact'))).toEqual(['1+0', '3+2', '5+0', '10+0', '15+10', 'Sans limite']);
+    // Copies supprimées par le lot 8 : MyGames (identifiant → libellé), Live (famille et libellé), Analyse et historique
+    // (pendule → « m+i »). Mêmes chaînes.
+    for (const t of TIME_CONTROLS) {
+      expect(tcLabel(t.id)).toBe(t.label);
+      expect(tcLabel(t.id, 'family')).toBe(t.tc ? `${t.family} ${t.label}` : t.label);
+      expect(tcLabel(t.tc, 'compact')).toBe(t.tc ? `${Math.round(t.tc.initial / 60)}+${t.tc.increment}` : 'Sans limite');
+    }
+    expect(tcLabel('inconnue')).toBe('inconnue');
+    expect(tcLabel(undefined)).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Autres réglages : les pages, les leçons et les problèmes suivent GAME_RULES et DEAL (modules relus avec une
+// configuration remplacée par vi.doMock ; React et le routeur, hors de src, restent les mêmes).
+
+type ConfigRules = typeof import('../src/shared/config/rules');
+
+async function withSettings(rules: Partial<ConfigRules['GAME_RULES']>, deal: Partial<ConfigRules['DEAL']> = {}) {
+  vi.resetModules();
+  vi.doMock('../src/shared/config/rules', async orig => {
+    const m = await orig<ConfigRules>();
+    return { ...m, GAME_RULES: Object.freeze({ ...m.GAME_RULES, ...rules }), DEAL: Object.freeze({ ...m.DEAL, ...deal }) };
+  });
+  const store = await import('../src/client/store');
+  const render = (url: string, path: string, el: ReactElement) =>
+    renderToStaticMarkup(
+      createElement(store.AppProvider, null, createElement(MemoryRouter, { initialEntries: [url] }, createElement(Routes, null, createElement(Route, { path, element: el })))),
+    );
+  const text = (html: string) => html.replace(/<[^>]+>/g, '\n').replace(/&#x27;/g, "'").split('\n').map(x => x.trim()).filter(Boolean).join('\n');
+  const Rules = (await import('../src/client/pages/Rules')).default;
+  const Play = (await import('../src/client/pages/Play')).default;
+  return {
+    render,
+    text,
+    lessons: await import('../src/shared/lessons'),
+    puzzles: await import('../src/shared/puzzles'),
+    rulesHtml: render('/cartes', '/cartes', createElement(Rules)),
+    rules: text(render('/cartes', '/cartes', createElement(Rules))),
+    play: text(render('/jouer?mode=bot', '/jouer', createElement(Play))),
+  };
+}
+
+describe('autres réglages : textes, grilles et contenu', () => {
+  afterEach(() => {
+    vi.doUnmock('../src/shared/config/rules');
+    vi.resetModules();
+  });
+
+  it('une carte par joueur : « une carte », « votre carte », mains tronquées', async () => {
+    const x = await withSettings({ cardsPerPlayer: 1 });
+    expect(x.rules).toContain('Une carte chacun, à découvert\nAu début d’une partie, vous choisissez votre carte ; sur l’accueil, elle est tirée au hasard.');
+    expect(x.rules).toContain('Une carte chacun, choisie parmi les huit pouvoirs au début de la partie.');
+    expect(x.rules).toContain('Le choix des cartes dure 45 secondes : une carte parmi les huit pouvoirs, sans autre contrainte. Si le temps s’écoule, elle est tirée au hasard.');
+    expect(x.rules).toContain('plus une carte de pouvoir chacun.');
+    expect(x.play).toContain('Les échecs, plus une carte de pouvoir chacun, que vous choisissez au début de la partie.');
+    expect(x.play).toContain('Vous choisirez votre carte au début de la partie, en 45 secondes');
+    const cartes = x.lessons.lessonById('cartes')!;
+    expect(cartes.summary).toBe('Une carte chacun, visibles des deux joueurs ; une par tour, avant le coup.');
+    expect(cartes.steps[0].text).toContain('plus une carte de pouvoir par joueur. Au début d’une partie, vous choisissez votre carte ; sur l’accueil, elle est tirée au hasard.');
+    expect(cartes.steps[0].hands).toEqual({ w: ['ice_wall'], b: ['ice_age'] });
+    for (const p of x.puzzles.ALL_PUZZLES) for (const c of ['w', 'b'] as const) expect((p.hands?.[c] ?? []).length, p.id).toBeLessThanOrEqual(1);
+    // La carte de la solution est en tête : le problème reste juste
+    expect(x.puzzles.puzzleById('carte-mur-sauve')!.hands).toEqual({ w: ['ice_wall'], b: ['ice_wall'] });
+  });
+
+  it('deux cartes par tour : phrases du tour ; problèmes uniques à une carte seulement masqués', async () => {
+    const x = await withSettings({ cardsPerTurn: 2 });
+    expect(x.rules).toContain('Deux sorts par tour, avant votre coup\nÀ votre tour, vous pouvez lancer jusqu’à deux cartes, puis vous jouez votre coup.');
+    expect(x.rules).toContain('Deux sorts par tour au plus, toujours facultatifs.');
+    expect(x.lessons.lessonById('cartes')!.summary).toBe('Trois cartes chacun, visibles des deux joueurs ; deux au plus par tour, avant le coup.');
+    expect(x.lessons.lessonById('cartes')!.steps[0].text).toContain('À votre tour, vous pouvez jouer une carte avant votre coup : deux au plus par tour, et chaque carte ne sert qu’une fois.');
+    const ids = x.puzzles.PUZZLES.map(p => p.id);
+    // Uniques jusqu'à une carte par tour seulement (requires.cardsPerTurn : 1) ; les autres le restent avec deux
+    for (const id of ['carte-mur-enferme', 'carte-faille', 'carte-maree']) expect(ids).not.toContain(id);
+    for (const id of ['carte-mur-sauve', 'carte-ere-glaciaire', 'carte-lune', 'carte-deflagration', 'carte-main-visible', 'couloir']) expect(ids).toContain(id);
+  });
+
+  it('la carte remplace le coup : « Remplacé par la carte », contenu « carte puis coup » masqué', async () => {
+    const x = await withSettings({ cardEndsTurn: true });
+    expect(x.rules).toContain('Un sort par tour, à la place du coup\nÀ votre tour, vous pouvez lancer une carte à la place de votre coup. Chaque carte ne sert qu’une fois.');
+    expect(x.rules.match(/Remplacé par la carte/g)).toHaveLength(8);
+    expect(x.rules).toContain('Un sort par tour au plus, à la place du coup, toujours facultatif.');
+    // Présage et frise de la Trêve : la carte est le coup
+    expect(x.rules).toContain('Le sort est annoncé à la place de votre coup et arrive au début de votre tour suivant.');
+    expect(x.rules).toContain('Vous\nVous lancez la Trêve : c’est votre coup.\nAnnoncée\nAdversaire\nIl répond : il la voit venir.');
+    expect(x.rules).not.toContain('puis vous jouez');
+    expect(x.rules).not.toContain('avant votre coup');
+    expect(x.lessons.LESSONS.map(l => l.id)).not.toContain('cartes');
+    expect(x.lessons.LESSONS.map(l => l.id)).not.toContain('presage-rituel');
+    expect(x.puzzles.PUZZLES.map(p => p.id)).not.toContain('carte-faille');
+    expect(x.puzzles.PUZZLES.map(p => p.id)).toContain('carte-maree');
+  });
+
+  it('Présage à 4 demi-coups : arrivée, frise de la Trêve à 8 étapes (grille --n)', async () => {
+    const x = await withSettings({ presageDelay: 4 });
+    expect(x.rules).toContain('Le sort est annoncé avant votre coup et arrive au début de votre deuxième tour à venir. En attendant, il est affiché pour tous : l’adversaire a toujours deux coups pour s’y préparer.');
+    expect(x.rules).toContain('Au deuxième tour à venir (annoncée)');
+    expect(x.rulesHtml).toContain('<ol style="--n:8">');
+    expect(x.rules).toContain('Vous\nVous lancez la Trêve, puis vous jouez.\nAnnoncée\nAdversaire\nIl répond : il la voit venir.\nAnnoncée\nVous\nVous jouez.\nAnnoncée\nAdversaire\nIl joue.\nArrive au coup suivant\nVous\nElle arrive : vous jouez sans capturer.\n1er coup sur 3');
+    // Le contenu qui enseigne l'arrivée « au début de votre tour suivant » (RULES_V1) est masqué
+    expect(x.lessons.LESSONS.map(l => l.id)).not.toContain('presage-rituel');
+    expect(x.puzzles.PUZZLES.map(p => p.id)).not.toContain('carte-ere-glaciaire');
+    expect(x.lessons.LESSONS.map(l => l.id)).toContain('cartes');
+    expect(x.puzzles.PUZZLES.map(p => p.id)).toContain('carte-maree');
+  });
+
+  it('Mes parties : une partie retenue sans règles (RULES_V1) garde son libellé de fin, quelles que soient les règles du jour', async () => {
+    const x = await withSettings({ fiftyHalfmoves: 150 });
+    const played = [
+      { id: 'local-a', at: Date.now(), you: 'w', white: 'Vous', black: 'L’Oracle', winner: 'draw', reason: 'fifty', catalog: 'climats', plies: 100, vsBot: true, local: { log: [], hands: { w: [], b: [] }, timed: false, catalog: 'climats' } },
+      { id: 'local-b', at: Date.now(), you: 'w', white: 'Vous', black: 'L’Oracle', winner: 'draw', reason: 'fifty', catalog: 'climats', plies: 150, vsBot: true, rules: { ...RULES_V1, fiftyHalfmoves: 150 }, local: { log: [], hands: { w: [], b: [] }, timed: false, catalog: 'climats' } },
+    ];
+    vi.stubGlobal('localStorage', { getItem: (k: string) => (k === 'sm:parties' ? JSON.stringify(played) : null), setItem: () => undefined });
+    const MyGamesX = (await import('../src/client/pages/MyGames')).default;
+    const t = x.text(x.render('/parties', '/parties', createElement(MyGamesX)));
+    vi.unstubAllGlobals();
+    expect(t).toContain('Règle des 50 coups · 50 coups');
+    expect(t).toContain('Règle des 75 coups · 75 coups');
+  });
+
+  it('sans choix des cartes : mains tirées au hasard partout', async () => {
+    const x = await withSettings({}, { draft: false });
+    expect(x.rules).toContain('Au début d’une partie, vos trois cartes sont tirées au hasard. Les deux mains restent visibles de tous jusqu’à la fin ; une carte jouée reste à sa place, grisée.');
+    expect(x.rules).toContain('Trois cartes chacun, tirées au hasard parmi les huit pouvoirs.');
+    expect(x.rules).toContain('Les cartes sont tirées au hasard : le tirage favorise les cartes les moins rares, avec au plus deux Climats par main.');
+    expect(x.rules).toContain('Pour choisir votre adversaire, passez par la page');
+    expect(x.play).toContain('Les échecs, plus trois cartes de pouvoir chacun, tirées au hasard au début de la partie.');
+    expect(x.play).toContain('Vos trois cartes sont tirées au hasard au début de la partie.');
+    expect(x.lessons.lessonById('cartes')!.steps[0].text).toContain('Au début d’une partie, vos trois cartes sont tirées au hasard.');
+  });
+});
+
+describe('Jouer : portes selon les fonctions du site', () => {
+  const play = (features: Partial<import('../src/shared/config/features').Features>) =>
+    pageText('/jouer?mode=ranked', '/jouer', createElement(FeaturesContext.Provider, { value: { ...FEATURES, ...features } }, createElement(Play)));
+
+  it('une porte coupée disparaît et les suivantes sont renumérotées', () => {
+    const t = play({ invites: false });
+    expect(t).not.toContain('Défier un ami');
+    expect(t).toContain('II\nPartie amicale');
+    expect(t).toContain('III\nPartie classée');
+    expect(t).toContain('Porte III · classement Elo');
+  });
+
+  it('porte demandée fermée : la première porte ouverte ; maintenance : aucune porte', () => {
+    expect(play({ ranked: false })).toContain('Porte I · contre l\'IA');
+    const closed = play({ newGames: false });
+    expect(closed).toContain('Pas de nouvelle partie pour le moment.');
+    expect(closed).not.toContain('Contre l\'IA');
   });
 });

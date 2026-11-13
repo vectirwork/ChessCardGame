@@ -7,12 +7,14 @@ import { api } from '../api';
 import { CollectionSeal } from '../components/CollectionSeal';
 import { PageLoader } from '../components/Layout';
 import { useApp } from '../store';
+import { cap, compte, ordinalLettres, romain } from '../../shared/text/fr';
 import { PageHead, PlacePage, StarMark, ordinal, useTitle } from './PageScene';
 
 /** Ligne du classement : un serveur d'avant les sceaux ne les envoie pas. */
 type Row = Omit<LeaderboardRow, 'seal'> & { seal?: string | null };
 
-const PLACE_LABEL = ['Premier', 'Deuxième', 'Troisième'];
+/** Places du podium (« I », « Premier »…). */
+const PODIUM = 3;
 
 export default function Leaderboard() {
   useTitle('Classement');
@@ -23,7 +25,7 @@ export default function Leaderboard() {
       .then(r => setRows(r.players))
       .catch(() => setRows([]));
   }, []);
-  const podium = rows?.slice(0, 3) ?? [];
+  const podium = rows?.slice(0, PODIUM) ?? [];
   const myRank = rows && me ? rows.findIndex(r => r.username === me.username) : -1;
   return (
     <PlacePage place="hall" className="lb">
@@ -67,7 +69,7 @@ export default function Leaderboard() {
             {podium.map((r, i) => (
               <li key={r.username} className={`lb-step s${i + 1} ${me?.username === r.username ? 'me' : ''}`}>
                 <span className="lb-medal" aria-hidden="true">
-                  {['I', 'II', 'III'][i]}
+                  {romain(i + 1)}
                 </span>
                 <span className="avatar lg" aria-hidden="true">
                   {r.username[0]?.toUpperCase()}
@@ -78,7 +80,7 @@ export default function Leaderboard() {
                 </Link>
                 <b className="lb-rating">{r.rating}</b>
                 <span className="lb-sub">
-                  {PLACE_LABEL[i]} · {r.games_played} {r.games_played > 1 ? 'parties' : 'partie'}
+                  {cap(ordinalLettres(i + 1))} · {compte(r.games_played, 'partie')}
                 </span>
               </li>
             ))}
@@ -97,7 +99,7 @@ export default function Leaderboard() {
               <tbody>
                 {rows.map((r, i) => (
                   <tr key={r.username} className={me?.username === r.username ? 'me' : ''}>
-                    <td className="rank">{i < 3 ? <span className={`lb-rank r${i + 1}`}>{i + 1}</span> : i + 1}</td>
+                    <td className="rank">{i < PODIUM ? <span className={`lb-rank r${i + 1}`}>{i + 1}</span> : i + 1}</td>
                     <td>
                       <Link to={`/joueur/${r.username}`} className="lb-who">
                         {r.username}

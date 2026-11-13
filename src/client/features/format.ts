@@ -1,29 +1,13 @@
-// Mise en forme partagée par les pages des fonctions classiques.
+// Mise en forme partagée par les pages des fonctions classiques (Analyse, Mes parties, Direct).
+// Les libellés communs à tout le site sont ailleurs, en un seul exemplaire : cadence (tcLabel, protocol.ts), catalogue,
+// nature d'une partie, couleur et nom de carte (text/libelles.ts), pluriels et nombres (text/fr.ts).
 import { Color, sanToFrench } from '../../shared/chess';
-import { CARDS, CATALOGS, Catalog, isCardId } from '../../shared/cards';
-import { RESULT_TEXT, ResultReason, describeCardPlay } from '../../shared/game';
-import type { LogEntry } from '../../shared/game';
+import type { Rules } from '../../shared/config/rules';
+import { RESULT_TEXT, resultText } from '../../shared/game';
+import type { ResultReason } from '../../shared/game';
+import { LOCALE } from '../../shared/text/fr';
 
 export const frSan = (san: string) => sanToFrench(san);
-
-/** Libellé d'une entrée du journal (coup en notation française, ou carte). */
-export function entryLabel(e: LogEntry): string {
-  if (e.k === 'move') return frSan(e.san);
-  return describeCardPlay(e.card, e.targets);
-}
-
-/** Nom d'une carte ; une carte retirée du jeu (ancienne partie) garde son identifiant. */
-export function cardName(id: string): string {
-  return isCardId(id) ? CARDS[id].name : id;
-}
-
-/**
- * Libellé du jeu d'une partie : « Pouvoirs » ou « Sans cartes ». Le Duel n'est plus proposé : une partie créée
- * avant (catalogue absent ou 'duel') est signalée comme telle.
- */
-export function catalogLabel(c: Catalog | string | undefined | null): string {
-  return CATALOGS.find(x => x.id === c)?.label ?? 'Duel (ancienne formule)';
-}
 
 const MATE_CP = 2000;
 
@@ -51,8 +35,6 @@ export function whiteShare(scoreWhite: number, mate: number | null): number {
   return Math.max(0.03, Math.min(0.97, 0.5 + x / 2));
 }
 
-export const REASON_TEXT = RESULT_TEXT;
-
 /** « Victoire », « Défaite », « Nulle » du point de vue de `you` ; sinon « 1-0 »… */
 export function outcomeFor(winner: Color | 'draw' | null | undefined, you: Color | null): { text: string; tone: 'win' | 'loss' | 'draw' | 'none' } {
   if (winner === undefined || winner === null) return { text: 'Non terminée', tone: 'none' };
@@ -61,9 +43,15 @@ export function outcomeFor(winner: Color | 'draw' | null | undefined, you: Color
   return winner === you ? { text: 'Victoire', tone: 'win' } : { text: 'Défaite', tone: 'loss' };
 }
 
-export function reasonText(reason: string | null | undefined): string {
+/**
+ * Libellé d'une fin de partie. Avec les règles de la partie (`rulesOf(état)`, ou celles qu'une partie enregistrée a
+ * gardées) : « Règle des 75 coups » si elle en avait changé ; sans elles (listes sans état), celles des nouvelles
+ * parties (RESULT_TEXT). Une raison inconnue est rendue telle quelle.
+ */
+export function reasonText(reason: string | null | undefined, rules?: Pick<Rules, 'fiftyHalfmoves' | 'repetitions'>): string {
   if (!reason) return '';
-  return RESULT_TEXT[reason as ResultReason] ?? reason;
+  if (!Object.hasOwn(RESULT_TEXT, reason)) return reason;
+  return rules ? resultText(reason as ResultReason, rules) : RESULT_TEXT[reason as ResultReason];
 }
 
 export function scoreText(winner: Color | 'draw' | null | undefined): string {
@@ -73,8 +61,8 @@ export function scoreText(winner: Color | 'draw' | null | undefined): string {
   return '*';
 }
 
-const DATE_FMT = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
-const TIME_FMT = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' });
+const DATE_FMT = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'short', year: 'numeric' });
+const TIME_FMT = new Intl.DateTimeFormat(LOCALE, { hour: '2-digit', minute: '2-digit' });
 
 export function formatDate(d: Date | number | string): string {
   const x = new Date(d);
@@ -85,10 +73,6 @@ export function formatDate(d: Date | number | string): string {
   if (same) return `Aujourd’hui, ${TIME_FMT.format(x)}`;
   if (yest) return `Hier, ${TIME_FMT.format(x)}`;
   return DATE_FMT.format(x);
-}
-
-export function plural(n: number, one: string, many = one + 's'): string {
-  return `${n} ${n > 1 ? many : one}`;
 }
 
 /** Numéro de coup lisible depuis un nombre de demi-coups. */

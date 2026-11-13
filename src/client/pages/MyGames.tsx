@@ -3,21 +3,19 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, errMsg } from '../api';
-import { catalogLabel, formatDate, movesFromPlies, outcomeFor, reasonText } from '../features/format';
+import { formatDate, movesFromPlies, outcomeFor, reasonText } from '../features/format';
 import { HISTORY_KEY, PlayedGame, forgetGame } from '../features/history';
 import { useStored } from '../features/storage';
 import { PageHead, useTitle } from '../features/ui';
 import { useApp } from '../store';
+import { CATALOGS } from '../../shared/cards';
 import type { Color } from '../../shared/chess';
-import { TIME_CONTROLS } from '../../shared/protocol';
-import type { GameMode, GameSummary } from '../../shared/protocol';
-
-const MODE: Record<GameMode, string> = { bot: 'Contre l’IA', quick: 'Partie rapide', invite: 'Invitation' };
-
-function tcLabel(id: string | undefined): string {
-  if (!id) return '';
-  return TIME_CONTROLS.find(t => t.id === id)?.label ?? id;
-}
+import { RULES_V1 } from '../../shared/config/rules';
+import type { Rules } from '../../shared/config/rules';
+import { tcLabel } from '../../shared/protocol';
+import type { GameSummary } from '../../shared/protocol';
+import { compte } from '../../shared/text/fr';
+import { catalogLabel, colorName, modeLabel } from '../../shared/text/libelles';
 
 interface Row {
   id: string;
@@ -31,6 +29,12 @@ interface Row {
   date: number | string;
   plies?: number;
   tags: string[];
+  /**
+   * Règles de la partie, pour le libellé de sa fin : celles que l'historique de l'appareil a gardées, RULES_V1 s'il n'en a
+   * pas gardé (il ne les écrit que si elles en diffèrent). Absentes pour une partie que l'appareil n'a pas retenue (le
+   * serveur ne les envoie pas dans la liste) : libellé des règles des nouvelles parties.
+   */
+  rules?: Rules;
 }
 
 export default function MyGames() {
@@ -57,10 +61,13 @@ export default function MyGames() {
     };
   }, [me]);
 
+  const history = Array.isArray(local) ? local : [];
+  /** Règles des parties retenues par cet appareil (RULES_V1 si l'entrée n'en porte pas). */
+  const keptRules = new Map(history.filter(g => g && typeof g.id === 'string').map(g => [g.id, g.rules ?? RULES_V1]));
   const serverRows: Row[] = (server ?? []).map(g => ({
     id: g.id,
-    white: g.white ?? 'Blancs',
-    black: g.black ?? 'Noirs',
+    white: g.white ?? colorName('w'),
+    black: g.black ?? colorName('b'),
     whiteRating: g.whiteRating,
     blackRating: g.blackRating,
     you: me ? (g.white === me.username ? 'w' : g.black === me.username ? 'b' : null) : null,
@@ -68,10 +75,11 @@ export default function MyGames() {
     reason: g.reason,
     date: g.createdAt,
     plies: g.plies,
-    tags: [g.rated ? 'Classée' : MODE[g.mode] ?? '', tcLabel(g.timeControl)].filter(Boolean),
+    rules: keptRules.get(g.id),
+    tags: [modeLabel(g.mode, g.rated, 'liste'), tcLabel(g.timeControl)].filter(Boolean),
   }));
   const serverIds = new Set(serverRows.map(r => r.id));
-  const localRows: Row[] = (Array.isArray(local) ? local : [])
+  const localRows: Row[] = history
     .filter(g => g && typeof g.id === 'string' && !serverIds.has(g.id))
     .map(g => ({
       id: g.id,
@@ -82,7 +90,12 @@ export default function MyGames() {
       reason: g.reason,
       date: g.at,
       plies: g.plies,
-      tags: [g.local ? 'Sur cet appareil' : g.vsBot ? MODE.bot : 'En ligne', g.catalog ? catalogLabel(g.catalog) : '', g.timeControl ?? ''].filter(Boolean),
+      rules: g.rules ?? RULES_V1,
+      tags: [
+        g.local ? 'Sur cet appareil' : g.vsBot ? modeLabel('bot', false, 'liste') : 'En ligne',
+        g.catalog ? catalogLabel(g.catalog, CATALOGS, true) : '',
+        g.timeControl ?? '',
+      ].filter(Boolean),
     }));
 
   const openLink = (e: FormEvent) => {
@@ -159,7 +172,7 @@ function GameList({ rows, onForget }: { rows: Row[]; onForget?: (id: string) => 
               <span className={`ft-pl b ${r.you === 'b' ? 'me' : ''}`}><i aria-hidden="true" />{r.black}{r.blackRating ? <small> {r.blackRating}</small> : null}</span>
             </span>
             <span className="ft-game-meta">
-              <span>{[reasonText(r.reason), r.plies ? `${movesFromPlies(r.plies)} coups` : ''].filter(Boolean).join(' · ')}</span>
+              <span>{[reasonText(r.reason, r.rules), r.plies ? compte(movesFromPlies(r.plies), 'coup') : ''].filter(Boolean).join(' · ')}</span>
               <small>{r.tags.join(' · ')}</small>
             </span>
             <span className="ft-game-date">{formatDate(r.date)}</span>

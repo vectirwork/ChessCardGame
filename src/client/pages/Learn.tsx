@@ -1,5 +1,6 @@
 // Apprendre : leçons interactives sur un vrai échiquier (consigne, coup attendu, réaction, indice).
-// Progression conservée dans le navigateur (clé sm:apprendre).
+// Progression conservée dans le navigateur (KEYS.learn). Les leçons que contrediraient les règles des nouvelles parties
+// ne sont pas proposées (LESSONS, requires).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -11,7 +12,9 @@ import { MiniBoard } from '../features/MiniBoard';
 import { useStored } from '../features/storage';
 import { Check, Crumbs, PageHead, useTitle } from '../features/ui';
 import { playSound } from '../sound';
+import { KEYS } from '../storageKeys';
 import { CARDS, CATALOGS, CardId, FAMILY_LABEL, Family, cardsOf } from '../../shared/cards';
+import { compte, romain } from '../../shared/text/fr';
 import { PieceType, sqIndex } from '../../shared/chess';
 import { GameState, legalMovesOf, playMove } from '../../shared/game';
 import {
@@ -21,7 +24,9 @@ import { parseUci } from '../../shared/pgn';
 import { PuzzleAction, applyAction, sameAction, stepOptions } from '../../shared/puzzles';
 
 type Progress = Record<string, { step: number; done?: boolean }>;
-const KEY = 'sm:apprendre';
+const KEY = KEYS.learn;
+/** Cartes en jeu d'un catalogue (sans les cartes retirées). */
+const inPlay = (c: Parameters<typeof cardsOf>[0]) => cardsOf(c).filter(id => !CARDS[id].retired);
 
 export default function Learn() {
   const { lesson } = useParams();
@@ -59,10 +64,11 @@ function LessonIndex() {
       <PageHead
         kicker="Apprendre"
         title={<>Les échecs, <em>pas à pas</em></>}
-        sub="De la marche des pièces aux mats élémentaires, puis les cartes de Spellmate. Chaque leçon se joue sur l’échiquier, à votre rythme ; votre progression reste dans ce navigateur."
+        sub={`De la marche des pièces aux mats élémentaires, puis les cartes de ${__SM__.marque}. Chaque leçon se joue sur l’échiquier, à votre rythme ; votre progression reste dans ce navigateur.`}
       >
         <div className="ft-head-row">
-          <div className="ft-meter" aria-label={`${done} leçons terminées sur ${LESSONS.length}`}>
+          {/* « 1 leçon terminée » (pluriel corrigé) ; 0 reste au pluriel, comme avant : « 0 leçons terminées » */}
+          <div className="ft-meter" aria-label={`${done} ${done === 1 ? 'leçon terminée' : 'leçons terminées'} sur ${LESSONS.length}`}>
             <span style={{ width: `${(done / LESSONS.length) * 100}%` }} />
           </div>
           <span className="faint">{done} / {LESSONS.length} leçons</span>
@@ -73,13 +79,13 @@ function LessonIndex() {
           )}
         </div>
       </PageHead>
-      {LESSON_GROUPS.map((g, gi) => (
+      {LESSON_GROUPS.filter(g => LESSONS.some(l => l.group === g)).map((g, gi) => (
         <section key={g} className="ft-group" aria-labelledby={`g${gi}`}>
-          <h2 id={`g${gi}`} className="ft-group-title"><span className="ft-num">{['I', 'II', 'III', 'IV', 'V'][gi]}</span>{g}</h2>
+          <h2 id={`g${gi}`} className="ft-group-title"><span className="ft-num">{romain(gi + 1)}</span>{g}</h2>
           <div className="ft-tiles">
             {LESSONS.filter(l => l.group === g).map(l => {
               const p = progress[l.id];
-              const state = p?.done ? 'Terminée' : p ? `Étape ${Math.min(p.step + 1, l.steps.length)} sur ${l.steps.length}` : `${l.steps.length} étapes`;
+              const state = p?.done ? 'Terminée' : p ? `Étape ${Math.min(p.step + 1, l.steps.length)} sur ${l.steps.length}` : compte(l.steps.length, 'étape');
               return (
                 <Link key={l.id} to={`/apprendre/${l.id}`} className={`ft-tile ${p?.done ? 'done' : ''}`}>
                   <MiniBoard fen={previewFen(l)} className="ft-tile-board" label={`Position de la leçon ${l.title}`} />
@@ -290,7 +296,7 @@ function LessonView({ lesson }: { lesson: Lesson }) {
     if (g.kind === 'hunt') {
       sound(s, n);
       const moves = r.moves + 1;
-      if (matedBy(n, student)) return succeed({ ...r, s: n, moves }, `Mat en ${moves} coup${moves > 1 ? 's' : ''}.`);
+      if (matedBy(n, student)) return succeed({ ...r, s: n, moves }, `Mat en ${compte(moves, 'coup')}.`);
       if (n.result?.reason === 'stalemate') return fail({ ...r, s: n, moves }, 'Pat : le roi noir n’a plus de coup sans être en échec. Partie nulle ! Laissez-lui toujours une case tant que vous ne donnez pas le mat.');
       if (n.result) return fail({ ...r, s: n, moves }, 'La partie est terminée sans mat. Recommencez.');
       if (moves >= g.maxMoves) return fail({ ...r, s: n, moves }, `Les ${g.maxMoves} coups sont écoulés. Recommencez : coupez le roi, puis resserrez l’étau.`);
@@ -389,7 +395,7 @@ function LessonView({ lesson }: { lesson: Lesson }) {
           <p className="ft-instr">{step.text}</p>
           {step.panel && <LessonPanelView panel={step.panel} />}
           {step.goal.kind === 'stars' && run.status === 'play' && (
-            <p className="ft-meta">Étoiles restantes : {run.stars.length} · {run.moves} coup{run.moves > 1 ? 's' : ''}</p>
+            <p className="ft-meta">Étoiles restantes : {run.stars.length} · {compte(run.moves, 'coup')}</p>
           )}
           {step.goal.kind === 'hunt' && (
             <p className="ft-meta">Coups joués : {run.moves} / {step.goal.maxMoves}</p>
@@ -452,7 +458,7 @@ function LessonPanelView({ panel }: { panel: LessonPanel }) {
       <dl className="ft-defs">
         {CATALOGS.map(c => (
           <div key={c.id}>
-            <dt>{c.label}{c.id !== 'aucune' && <small> · {cardsOf(c.id).length} cartes</small>}</dt>
+            <dt>{c.label}{inPlay(c.id).length > 0 && <small>{` · ${compte(inPlay(c.id).length, 'carte')}`}</small>}</dt>
             <dd>{c.description}</dd>
           </div>
         ))}
@@ -460,8 +466,8 @@ function LessonPanelView({ panel }: { panel: LessonPanel }) {
     );
   }
   if (panel === 'families') {
-    const fams: Family[] = ['climat', 'terrain', 'evenement'];
-    const climats = cardsOf('climats');
+    const climats = inPlay('climats');
+    const fams = (Object.keys(FAMILY_LABEL) as Family[]).filter(f => climats.some(id => CARDS[id].family === f));
     return (
       <div className="ft-fams">
         {fams.map(f => (
@@ -473,7 +479,7 @@ function LessonPanelView({ panel }: { panel: LessonPanel }) {
       </div>
     );
   }
-  const list = cardsOf('climats').filter(id => (panel === 'presage' ? CARDS[id].presage : CARDS[id].ritual));
+  const list = inPlay('climats').filter(id => (panel === 'presage' ? CARDS[id].presage : CARDS[id].ritual));
   return (
     <div className="ft-fams">
       <h3>{panel === 'presage' ? 'Cartes à Présage' : 'Cartes à Rituel'}</h3>

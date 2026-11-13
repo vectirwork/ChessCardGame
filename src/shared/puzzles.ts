@@ -2,16 +2,27 @@
 // Une étape de solution est un coup UCI (« e2e4 », « e7e8q ») ou une carte (« @ice_wall:f3 », « @truce ») ;
 // plusieurs réponses acceptées se séparent par « | ». Le camp au trait du FEN est celui qui résout ;
 // les étapes de l'adversaire sont jouées automatiquement.
-// Problèmes à cartes : les huit pouvoirs (catalogue « Pouvoirs »), mains visibles des deux camps. Un problème peut
+// Problèmes à cartes : les pouvoirs du catalogue « Pouvoirs », mains visibles des deux camps. Un problème peut
 // commencer avec un pouvoir déjà en jeu (`effects` : une carte jouée avant la position).
+//
+// Le contenu est écrit pour les règles historiques (RULES_V1 : mains de 3, 1 carte par tour, avant le coup) et se
+// joue toujours avec elles ; ses chiffres (rangées du Mur…) en sont tirés. Ce qui contredirait les règles des nouvelles
+// parties (GAME_RULES) est masqué (`requires`), et les mains sont tronquées à leur nombre de cartes (`hand`).
 
 import { Color, PieceType, rankOf, sqIndex } from './chess';
 import { CARDS, CardId, Catalog, isCardId } from './cards';
+import { GAME_RULES, RULES_V1 } from './config/rules';
+import type { CardTuning, GameRulesSettings, Rules } from './config/rules';
 import { Effect, GameState, cloneState, createGameFromFen, playCard, playMove, positionKey } from './game';
+import { rulesOf } from './rulesCore';
+import { cap } from './text/fr';
+import { colorName } from './text/libelles';
+import { rangees } from './text/regles';
 
 export type PuzzleTheme =
   | 'mat1' | 'mat2' | 'mat3' | 'fourchette' | 'clouage' | 'enfilade' | 'deviation' | 'decouverte' | 'finale' | 'cartes';
 
+/** Thèmes des problèmes, dans l'ordre des filtres de la page Problèmes. */
 export const THEME_LABEL: Record<PuzzleTheme, string> = {
   mat1: 'Mat en 1',
   mat2: 'Mat en 2',
@@ -24,6 +35,80 @@ export const THEME_LABEL: Record<PuzzleTheme, string> = {
   finale: 'Mat élémentaire',
   cartes: 'Cartes',
 };
+
+/** Thèmes au pluriel : filtres de la page Problèmes (« Fourchettes », « Mats élémentaires »). */
+export const THEME_PLURAL: Record<PuzzleTheme, string> = {
+  mat1: 'Mat en 1',
+  mat2: 'Mat en 2',
+  mat3: 'Mat en 3',
+  fourchette: 'Fourchettes',
+  clouage: 'Clouages',
+  enfilade: 'Enfilades',
+  deviation: 'Déviations',
+  decouverte: 'Découvertes',
+  finale: 'Mats élémentaires',
+  cartes: 'Cartes',
+};
+
+/**
+ * Règles que suppose un problème ou une leçon. Le contenu est masqué quand les règles des nouvelles parties
+ * (GAME_RULES, et l'équilibrage des cartes de CARDS) les contredisent : il se joue avec RULES_V1, mais enseignerait
+ * autre chose que le jeu du moment.
+ */
+export interface ContentRequires {
+  /** Il montre ou exploite la main adverse : mains visibles. */
+  handsVisible?: true;
+  /**
+   * Solution unique pour 1 carte par tour seulement (avec 2 cartes, une autre suite réussit). Sans ce champ, l'unicité est
+   * vérifiée jusqu'à 2 cartes par tour (test/puzzles.test.ts).
+   */
+  cardsPerTurn?: 1;
+  /** La carte se joue avant le coup, dans le même tour (suites « carte puis coup ») : pas de carte qui remplace le coup. */
+  cardBefore?: true;
+  /** Il décrit ou exploite l'arrivée d'un Présage (« au début de votre tour suivant ») : délai de RULES_V1 (2 demi-coups). */
+  presageDelay?: 2;
+  /**
+   * Cartes dont il cite ou exploite l'équilibrage de RULES_V1 (durée, rangées) : toute carte jouée dans sa solution, et
+   * celles dont ses textes citent les chiffres. Masqué si CARDS les a rééquilibrées.
+   */
+  tuning?: readonly CardId[];
+}
+
+/** Règles contre lesquelles on juge un contenu : celles des nouvelles parties ; sans `tuning`, l'équilibrage de CARDS. */
+export type ContentRules = Pick<GameRulesSettings, 'handsVisible' | 'cardsPerTurn' | 'cardEndsTurn' | 'presageDelay'> & {
+  tuning?: Rules['tuning'];
+};
+
+/** Même équilibrage (durée, rangées, vitesse des pendules) ? */
+function sameTuning(a: CardTuning | undefined, b: CardTuning | undefined): boolean {
+  return a?.coups === b?.coups && a?.clockRate === b?.clockRate && String(a?.ranks ?? '') === String(b?.ranks ?? '');
+}
+
+/** Les règles `r` permettent-elles ce contenu ? */
+export function meetsRequires(req: ContentRequires | undefined, r: ContentRules): boolean {
+  if (!req) return true;
+  if (req.handsVisible && !r.handsVisible) return false;
+  if (req.cardsPerTurn !== undefined && r.cardsPerTurn !== req.cardsPerTurn) return false;
+  if (req.cardBefore && r.cardEndsTurn) return false;
+  if (req.presageDelay !== undefined && r.presageDelay !== req.presageDelay) return false;
+  // Équilibrage du moment : celui de `r`, sinon celui de CARDS (qu'une carte porte directement : coups, ranks, clockRate)
+  if (req.tuning?.some(id => !sameTuning(V1_TUNING[id], r.tuning ? r.tuning[id] : CARDS[id]))) return false;
+  return true;
+}
+
+/**
+ * Main d'un problème ou d'une leçon, écrite pour les mains de RULES_V1 : tronquée au nombre de cartes des nouvelles
+ * parties. Identique au défaut. La carte de la solution est toujours en tête, de sorte que la solution reste jouable
+ * avec une seule carte par joueur (vérifié par test/puzzles.test.ts et test/lessons.test.ts).
+ */
+export function hand(ids: CardId[], n: number = GAME_RULES.cardsPerPlayer): CardId[] {
+  return ids.slice(0, Math.max(0, n));
+}
+
+/** Équilibrage des cartes dans les règles du contenu (RULES_V1) : rangées et durées des textes. */
+export const V1_TUNING: Rules['tuning'] = RULES_V1.tuning;
+
+const wallRanks = V1_TUNING.ice_wall?.ranks ?? [];
 
 export interface Puzzle {
   id: string;
@@ -44,6 +129,14 @@ export interface Puzzle {
   hands?: Partial<Record<Color, CardId[]>>;
   /** Pouvoirs déjà en jeu au début du problème (la carte du lanceur est marquée comme jouée). */
   effects?: EffectSpec[];
+  /** Règles supposées (problème masqué si les règles des nouvelles parties les contredisent). */
+  requires?: ContentRequires;
+  /**
+   * Date d'ajout (« AAAA-MM-JJ »), OBLIGATOIRE pour tout problème ajouté après les 49 premiers (test/puzzles.test.ts) :
+   * il entre dans le calendrier du problème du jour le lendemain, si bien qu'un déploiement ne change jamais le problème
+   * du jour en cours de journée. Sans elle, le calendrier changerait le jour même.
+   */
+  since?: string;
 }
 
 /** Pouvoir déjà en jeu au début d'un problème ou d'une étape de leçon : une carte jouée avant la position. */
@@ -69,7 +162,8 @@ export function withEffects(s: GameState, specs: EffectSpec[]): GameState {
   for (const sp of specs) {
     const def = CARDS[sp.card];
     const permanent = !!def.permanent;
-    const total = permanent ? 0 : def.coups ?? 1;
+    // Durée dans les règles de la partie (RULES_V1 pour le contenu), comme pour une carte lancée (tuneOf)
+    const total = permanent ? 0 : (rulesOf(n).tuning[sp.card] ?? def).coups ?? 1;
     const e: Effect = {
       id: n.nextEffectId++, card: sp.card, caster: sp.by, countsOn: sp.by,
       remaining: permanent ? 0 : sp.remaining ?? total, total, skin: 'skin:arcane', global: true,
@@ -94,7 +188,8 @@ export function withEffects(s: GameState, specs: EffectSpec[]): GameState {
   return n;
 }
 
-export const PUZZLES: Puzzle[] = [
+/** Tous les problèmes, masqués compris (tests, outils). Le site lit PUZZLES. */
+export const ALL_PUZZLES: Puzzle[] = [
   // ------------------------------------------------------------------------------------------
   // Mats en 1
   {
@@ -364,19 +459,21 @@ export const PUZZLES: Puzzle[] = [
   },
 
   // ------------------------------------------------------------------------------------------
-  // Cartes : les huit pouvoirs (catalogue « Pouvoirs »), mains visibles des deux côtés
+  // Cartes : les pouvoirs du catalogue « Pouvoirs », mains visibles des deux côtés
   {
     id: 'carte-mur-sauve', title: 'Le Mur qui sauve', themes: ['cartes', 'mat1'], level: 1, mate: 1,
     fen: '6k1/5ppp/4p3/8/4q3/8/7P/3R2BK w - - 0 1', solution: ['@ice_wall:f3', 'd1d8'],
-    hands: { w: ['ice_wall', 'rift', 'tide'], b: ['ice_wall', 'truce', 'ice_age'] },
+    hands: { w: hand(['ice_wall', 'rift', 'tide']), b: hand(['ice_wall', 'truce', 'ice_age']) },
+    requires: { handsVisible: true, cardBefore: true, tuning: ['ice_wall'] },
     goal: 'Les Blancs sont en échec, sans aucun coup. Une carte, puis le mat.',
-    hint: 'Un Mur se pose entre la 3e et la 6e rangée : une seule case de la diagonale convient.',
+    hint: `Un Mur se pose ${rangees(wallRanks)} : une seule case de la diagonale convient.`,
     moral: 'Sans coup légal, on doit jouer une carte qui en redonne un. Et le Mur noir n’y peut rien : on ne mure pas la 8e rangée.',
   },
   {
     id: 'carte-mur-enferme', title: 'Le Mur qui enferme', themes: ['cartes', 'mat1'], level: 2, mate: 1,
     fen: '6K1/5R2/8/8/1p6/k7/5R2/8 w - - 0 1', solution: ['@ice_wall:b3', 'f7a7'],
-    hands: { w: ['ice_wall', 'rift', 'truce'] },
+    hands: { w: hand(['ice_wall', 'rift', 'truce']) },
+    requires: { cardsPerTurn: 1, cardBefore: true, tuning: ['ice_wall'] },
     goal: 'Les Blancs jouent une carte, puis matent.',
     hint: 'La tour f2 tient déjà la 2e rangée. Il ne manque qu’une case à fermer.',
     moral: 'Un Mur de glace ferme une case de fuite jusqu’à la fin de la partie : le roi n’y passera plus.',
@@ -384,7 +481,8 @@ export const PUZZLES: Puzzle[] = [
   {
     id: 'carte-faille', title: 'La Faille qui coupe', themes: ['cartes', 'mat1'], level: 2, mate: 1,
     fen: '6k1/R4ppp/8/8/4b3/8/5PPP/6K1 w - - 0 1', solution: ['@rift:d5', 'a7a8'],
-    hands: { w: ['rift', 'truce', 'tide'] },
+    hands: { w: hand(['rift', 'truce', 'tide']) },
+    requires: { cardsPerTurn: 1, cardBefore: true, tuning: ['rift'] },
     goal: 'Les Blancs jouent une carte, puis matent.',
     hint: 'Le fou e4 garde a8 par la grande diagonale. Où la couper ?',
     moral: 'La Faille ouvre un gouffre sur toute une rangée : les lignes qui la traversent sont coupées, pour les deux camps.',
@@ -392,7 +490,8 @@ export const PUZZLES: Puzzle[] = [
   {
     id: 'carte-ere-glaciaire', title: 'Le pion gelé', themes: ['cartes', 'mat2'], level: 3, mate: 2,
     fen: '6k1/pp3pp1/7p/8/8/8/1r2R1PP/4RQK1 w - - 0 1', solution: ['@ice_age', 'e2e8', 'g8h7', 'f1d3'],
-    hands: { w: ['ice_age', 'truce', 'rift'] },
+    hands: { w: hand(['ice_age', 'truce', 'rift']) },
+    requires: { cardBefore: true, presageDelay: 2, tuning: ['ice_age'] },
     goal: 'Les Blancs jouent une carte et matent en 2.',
     hint: 'Après Te8+ Rh7, le roi noir compte sur un seul défenseur : le pion g7.',
     moral: 'Annoncée, l’Ère glaciaire arrive au début de votre tour suivant : le pion g7 ne peut plus s’interposer en g6.',
@@ -400,7 +499,8 @@ export const PUZZLES: Puzzle[] = [
   {
     id: 'carte-maree', title: 'La marée descend', themes: ['cartes', 'mat2'], level: 2, mate: 2,
     fen: '6k1/R4pp1/7p/3R4/8/6P1/3B1P1P/7K w - - 0 1', solution: ['@tide', 'g8h8', 'd5d8'],
-    hands: { w: ['tide', 'ice_wall', 'truce'] },
+    hands: { w: hand(['tide', 'ice_wall', 'truce']) },
+    requires: { cardsPerTurn: 1, tuning: ['tide'] },
     goal: 'Les Blancs matent en 2 : une carte tient lieu du premier coup.',
     hint: 'Les pions f7 et g7 bouchent la 7e rangée. Si tous les pions avançaient d’une case…',
     moral: 'La Grande Marée remplace votre coup et pousse les pions des deux camps : la 7e rangée s’est vidée, la tour a7 la tient.',
@@ -408,7 +508,7 @@ export const PUZZLES: Puzzle[] = [
   {
     id: 'carte-lune', title: 'La Lune retournée', themes: ['cartes', 'mat2', 'deviation'], level: 2, mate: 2,
     fen: '3r2k1/p4ppp/8/3p4/8/1B6/5PPP/R3R1K1 w - - 0 1', solution: ['b3d5', 'd8d5', 'e1e8'],
-    hands: { b: ['blood_moon'] },
+    hands: { b: hand(['blood_moon']) },
     effects: [{ card: 'blood_moon', by: 'b', remaining: 2 }],
     goal: 'La Lune de sang des Noirs est levée : qui peut prendre doit prendre. Les Blancs matent en 2.',
     hint: 'Vous aussi devez prendre. Choisissez la prise qui oblige la tour d8 à quitter la dernière rangée.',
@@ -417,7 +517,7 @@ export const PUZZLES: Puzzle[] = [
   {
     id: 'carte-deflagration', title: 'Prenez petit', themes: ['cartes'], level: 2,
     fen: '6k1/pp3ppp/8/3n4/r3P3/8/PP3PPP/3Q2K1 w - - 0 1', solution: ['e4d5'],
-    hands: { w: ['blast'] },
+    hands: { w: hand(['blast']) },
     effects: [{ card: 'blast', by: 'w', remaining: 4 }],
     goal: 'Votre Déflagration vient d’arriver : chaque prise coûte la pièce qui prend. Les Blancs jouent et gagnent du matériel.',
     hint: 'Dxa4 gagne une tour… et perd la dame avec elle. Prenez avec votre plus petite pièce.',
@@ -426,12 +526,21 @@ export const PUZZLES: Puzzle[] = [
   {
     id: 'carte-main-visible', title: 'Lisez sa main', themes: ['cartes', 'mat1'], level: 1, mate: 1,
     fen: '7k/5Q1p/8/8/8/8/PP3PPP/4B1K1 w - - 0 1', solution: ['f7f8'],
-    hands: { b: ['ice_wall'] },
+    hands: { b: hand(['ice_wall']) },
+    requires: { handsVisible: true, tuning: ['ice_wall'] },
     goal: 'Les Noirs gardent un Mur de glace en main. Les Blancs matent en 1 malgré lui.',
     hint: 'Fc3+ semble mater. Mais où les Noirs poseraient-ils leur Mur ?',
-    moral: 'Les mains sont visibles : un échec à distance qui traverse les rangées 3 à 6 se pare d’un Mur. Sur la 8e rangée, aucun Mur ne peut se poser.',
+    moral: `Les mains sont visibles : un échec à distance qui traverse les rangées ${wallRanks[0] + 1} à ${wallRanks[wallRanks.length - 1] + 1} se pare d’un Mur. Sur la 8e rangée, aucun Mur ne peut se poser.`,
   },
 ];
+
+/** Problèmes que permettent les règles `r` (requires). */
+export function puzzlesFor(r: ContentRules, list: readonly Puzzle[] = ALL_PUZZLES): Puzzle[] {
+  return list.filter(p => meetsRequires(p.requires, r));
+}
+
+/** Problèmes proposés sur le site : ceux que permettent les règles des nouvelles parties (tous, au défaut). */
+export const PUZZLES: Puzzle[] = puzzlesFor(GAME_RULES);
 
 // ---------------------------------------------------------------------------------------------
 // Étapes
@@ -470,10 +579,13 @@ export function sameAction(a: PuzzleAction, b: PuzzleAction): boolean {
   return false;
 }
 
-/** Position de départ : catalogue Pouvoirs pour un problème à cartes, sans cartes sinon. */
-export function puzzleStart(p: Puzzle): GameState {
+/**
+ * Position de départ : catalogue Pouvoirs pour un problème à cartes, sans cartes sinon. Les problèmes se jouent avec
+ * les règles pour lesquelles leurs solutions ont été écrites (RULES_V1) ; `rules` ne sert qu'aux tests.
+ */
+export function puzzleStart(p: Puzzle, rules: Rules = RULES_V1): GameState {
   const catalog: Catalog = p.hands || p.effects ? 'climats' : 'aucune';
-  const s = createGameFromFen(p.fen, { w: p.hands?.w ?? [], b: p.hands?.b ?? [] }, false, catalog);
+  const s = createGameFromFen(p.fen, { w: p.hands?.w ?? [], b: p.hands?.b ?? [] }, false, catalog, { rules });
   return withEffects(s, p.effects ?? []);
 }
 
@@ -497,7 +609,7 @@ export function solverOf(p: Puzzle): Color {
 
 export function goalOf(p: Puzzle): string {
   if (p.goal) return p.goal;
-  const side = solverOf(p) === 'w' ? 'Les Blancs' : 'Les Noirs';
+  const side = cap(colorName(solverOf(p), 'les'));
   if (p.mate) return `${side} jouent et matent en ${p.mate}.`;
   return `${side} jouent et gagnent du matériel.`;
 }
@@ -511,12 +623,25 @@ export function dayNumber(d: Date): number {
   return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000);
 }
 
-/** Problème du jour : déterministe selon la date, il parcourt toute la liste avant de se répéter. */
-export function dailyPuzzle(d: Date = new Date()): Puzzle {
-  const n = PUZZLES.length;
+/** Jour d'une date « AAAA-MM-JJ » (même numérotation que dayNumber). */
+function dayOf(iso: string): number {
+  const [y, m, d] = iso.split('-').map(Number);
+  return Math.floor(Date.UTC(y, m - 1, d) / 86_400_000);
+}
+
+/**
+ * Problème du jour : déterministe selon la date, il parcourt toute la liste avant de se répéter. Un problème ajouté
+ * (`since`) n'entre dans le calendrier que le lendemain de son ajout : le problème du jour ne change pas le jour d'un
+ * déploiement.
+ */
+export function dailyPuzzle(d: Date = new Date(), list: readonly Puzzle[] = PUZZLES): Puzzle {
+  const day = dayNumber(d);
+  const pool = list.filter(p => !p.since || dayOf(p.since) < day);
+  const n = pool.length;
+  if (!n) return list[0];
   const step = coprimeStep(n);
-  const i = (((dayNumber(d) * step) % n) + n) % n;
-  return PUZZLES[i];
+  const i = (((day * step) % n) + n) % n;
+  return pool[i];
 }
 
 function coprimeStep(n: number): number {

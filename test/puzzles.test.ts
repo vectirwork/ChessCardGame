@@ -1,15 +1,19 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { analyse } from '../src/shared/bot';
 import { CARDS, CardId, cardsOf } from '../src/shared/cards';
+import type { CardTuning } from '../src/shared/config/rules';
 import { Color, isCapture, sqIndex } from '../src/shared/chess';
+import { GAME_RULES, RULES_V1 } from '../src/shared/config/rules';
 import { GameState, cardOptions, legalMovesOf, playCard, playMove, sideInCheck } from '../src/shared/game';
 import { material, uciOf, validateFen } from '../src/shared/pgn';
 import {
-  PUZZLES, Puzzle, PuzzleAction, applyAction, dailyPuzzle, goalOf, parseAction, puzzleById, puzzleStart, sameAction,
-  solverOf, stepOptions,
+  ALL_PUZZLES, PUZZLES, Puzzle, PuzzleAction, THEME_LABEL, THEME_PLURAL, applyAction, dailyPuzzle, dayNumber, goalOf, hand, parseAction,
+  puzzleById, puzzleStart, puzzlesFor, sameAction, solverOf, stepOptions,
 } from '../src/shared/puzzles';
 
-const cardPuzzles = PUZZLES.filter(p => p.themes.includes('cartes'));
+/** Tout le contenu est vérifié, même ce que les règles du moment masquent. */
+const cardPuzzles = ALL_PUZZLES.filter(p => p.themes.includes('cartes'));
 
 /** Toutes les cartes jouables par `c`, avec toutes leurs cibles. */
 function allCardPlays(s: GameState, c: Color): (PuzzleAction & { kind: 'card' })[] {
@@ -26,6 +30,22 @@ function allCardPlays(s: GameState, c: Color): (PuzzleAction & { kind: 'card' })
     };
     walk([]);
   });
+  return out;
+}
+
+/** Suites de 1 à `k` cartes jouables par `c` dans le même tour, avec l'état obtenu. */
+function cardSequences(s: GameState, c: Color, k: number): { plays: (PuzzleAction & { kind: 'card' })[]; after: GameState }[] {
+  const out: { plays: (PuzzleAction & { kind: 'card' })[]; after: GameState }[] = [];
+  const walk = (st: GameState, plays: (PuzzleAction & { kind: 'card' })[]) => {
+    if (plays.length >= k || st.pos.turn !== c) return;
+    for (const play of allCardPlays(st, c)) {
+      const after = applyAction(st, play);
+      if (!after) continue;
+      out.push({ plays: [...plays, play], after });
+      walk(after, [...plays, play]);
+    }
+  };
+  walk(s, []);
   return out;
 }
 
@@ -59,22 +79,22 @@ function playLine(p: Puzzle) {
 
 describe('problèmes', () => {
   it('au moins 40 problèmes classiques et 6 problèmes à cartes, identifiants uniques', () => {
-    const classic = PUZZLES.filter(p => !p.themes.includes('cartes'));
+    const classic = ALL_PUZZLES.filter(p => !p.themes.includes('cartes'));
     expect(classic.length).toBeGreaterThanOrEqual(40);
     expect(cardPuzzles.length).toBeGreaterThanOrEqual(6);
-    expect(new Set(PUZZLES.map(p => p.id)).size).toBe(PUZZLES.length);
-    for (const p of PUZZLES) {
+    expect(new Set(ALL_PUZZLES.map(p => p.id)).size).toBe(ALL_PUZZLES.length);
+    for (const p of ALL_PUZZLES) {
       expect(p.id).toMatch(/^[a-z0-9-]+$/);
       expect(validateFen(p.fen), p.id).toBeNull();
       expect(p.hint.length).toBeGreaterThan(10);
       expect(p.moral.length).toBeGreaterThan(10);
       expect(goalOf(p)).toMatch(/\.$/);
-      expect(puzzleById(p.id)).toBe(p);
+      if (PUZZLES.includes(p)) expect(puzzleById(p.id)).toBe(p);
     }
   });
 
   it('chaque solution est légale, le solveur termine la ligne', () => {
-    for (const p of PUZZLES) {
+    for (const p of ALL_PUZZLES) {
       const states = playLine(p);
       const last = states[states.length - 2];
       // La dernière étape est jouée par le camp qui résout
@@ -83,7 +103,7 @@ describe('problèmes', () => {
   });
 
   it('les mats annoncés sont des mats, et le moteur les confirme', () => {
-    for (const p of PUZZLES.filter(x => x.mate)) {
+    for (const p of ALL_PUZZLES.filter(x => x.mate)) {
       const states = playLine(p);
       const end = states[states.length - 1];
       expect(end.result, p.id).toMatchObject({ reason: 'checkmate', winner: solverOf(p) });
@@ -99,7 +119,7 @@ describe('problèmes', () => {
   }, 240_000);
 
   it('les problèmes tactiques gagnent du matériel, et le moteur trouve le coup clé', () => {
-    for (const p of PUZZLES.filter(x => !x.mate && !x.hands && !x.effects)) {
+    for (const p of ALL_PUZZLES.filter(x => !x.mate && !x.hands && !x.effects)) {
       const states = playLine(p);
       const me = solverOf(p);
       const other = me === 'w' ? 'b' : 'w';
@@ -115,13 +135,15 @@ describe('problèmes', () => {
 });
 
 describe('problèmes à cartes', () => {
-  it('seulement les huit pouvoirs, en mains de trois cartes au plus, catalogue Pouvoirs', () => {
+  it('seulement les pouvoirs, en mains de RULES_V1.cardsPerPlayer cartes au plus, catalogue Pouvoirs', () => {
     const allowed = cardsOf('climats');
     for (const p of cardPuzzles) {
       const s = puzzleStart(p);
       expect(s.catalog, p.id).toBe('climats');
+      // Joués avec les règles de leurs solutions : aucune règle écrite dans la partie (RULES_V1)
+      expect(s.rules, p.id).toBeUndefined();
       for (const c of ['w', 'b'] as Color[]) {
-        expect(s.hands[c].length, p.id).toBeLessThanOrEqual(3);
+        expect(s.hands[c].length, p.id).toBeLessThanOrEqual(Math.min(RULES_V1.cardsPerPlayer, GAME_RULES.cardsPerPlayer));
         for (const h of s.hands[c]) expect(allowed, `${p.id} : ${h.card}`).toContain(h.card);
       }
       for (const e of p.effects ?? []) expect(allowed).toContain(e.card);
@@ -137,23 +159,29 @@ describe('problèmes à cartes', () => {
     expect(new Set([...used].map(id => CARDS[id].family))).toEqual(new Set(['climat', 'terrain', 'evenement']));
   });
 
-  it('la carte est nécessaire et seule la solution convient (mat confirmé par le moteur)', () => {
+  it('la carte est nécessaire et seule la solution convient, jusqu’à 2 cartes par tour (mat confirmé par le moteur)', () => {
     for (const p of cardPuzzles.filter(x => x.mate && stepOptions(x.solution[0])[0].kind === 'card')) {
-      const start = puzzleStart(p);
+      // Cartes par tour à essayer : au moins 2 (et celles des nouvelles parties si elles en permettent plus), sauf pour
+      // un problème qui déclare n'être unique qu'à une carte par tour (requires.cardsPerTurn : 1, masqué au-delà). Un
+      // problème qui ne déclare rien reste donc proposé avec 2 cartes par tour, et doit y rester unique.
+      const k = p.requires?.cardsPerTurn ?? Math.max(2, GAME_RULES.cardsPerTurn);
+      const start = puzzleStart(p, { ...RULES_V1, cardsPerTurn: k });
       const me = solverOf(p);
       const n = p.mate!;
       // Sans carte : pas de mat aussi rapide
       expect(mateWithin(start, me, n), `${p.id} : mat sans carte`).toBe(false);
-      // Chaque carte jouable (toutes cibles) : elle mène au mat en n si et seulement si la solution l'accepte
+      // Chaque suite de 1 à k cartes jouables (toutes cibles) : elle mène au mat en n seulement si sa première carte est
+      // acceptée par la solution ; une carte seule y mène si et seulement si la solution l'accepte.
       const accepted = stepOptions(p.solution[0]);
-      const plays = allCardPlays(start, me);
-      expect(plays.length, p.id).toBeGreaterThan(0);
-      for (const play of plays) {
-        const after = applyAction(start, play)!;
+      const seqs = cardSequences(start, me, k);
+      expect(seqs.length, p.id).toBeGreaterThan(0);
+      for (const { plays, after } of seqs) {
         // Un Rituel tient lieu de coup : il reste n − 1 coups
         const works = after.pos.turn === me ? mateWithin(after, me, n) : mateWithin(after, me, n - 1);
-        const isSolution = accepted.some(o => sameAction(o, play));
-        expect(works, `${p.id} : @${play.card} ${play.targets.join(',')}`).toBe(isSolution);
+        const first = accepted.some(o => sameAction(o, plays[0]));
+        const where = `${p.id} : ${plays.map(x => `@${x.card} ${x.targets.join(',')}`).join(' puis ')}`;
+        if (plays.length === 1) expect(works, where).toBe(first);
+        else if (works) expect(first, where).toBe(true);
       }
     }
   }, 240_000);
@@ -249,11 +277,129 @@ describe('problème du jour et notation', () => {
     expect(seen.size).toBe(PUZZLES.length);
   });
 
+  it('ajouter un problème ne change pas le problème du jour (il entre au calendrier le lendemain de son ajout)', () => {
+    const today = new Date(2026, 10, 13, 12);
+    const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const added: Puzzle = { ...PUZZLES[0], id: 'nouveau', since: iso(today) };
+    const list = [...PUZZLES, added];
+    // Le jour de l'ajout (déploiement à midi), et toute la journée : même problème du jour
+    for (const h of [0, 12, 23]) expect(dailyPuzzle(new Date(2026, 10, 13, h), list).id).toBe(dailyPuzzle(new Date(2026, 10, 13, h)).id);
+    // Dès le lendemain, il fait partie du calendrier, qui parcourt alors toute la liste
+    const seen = new Set<string>();
+    for (let i = 1; i <= list.length; i++) seen.add(dailyPuzzle(new Date(2026, 10, 13 + i, 12), list).id);
+    expect(seen.size).toBe(list.length);
+    expect(dayNumber(new Date(2026, 10, 14))).toBe(dayNumber(new Date(2026, 10, 13)) + 1);
+  });
+
+  it('requires masque ce qui contredit les règles des nouvelles parties ; filtres tirés des thèmes', () => {
+    const ids = (r: Parameters<typeof puzzlesFor>[0]) => puzzlesFor(r).map(p => p.id);
+    expect(PUZZLES).toEqual(puzzlesFor(GAME_RULES));
+    expect(ids(RULES_V1)).toEqual(ALL_PUZZLES.map(p => p.id));
+    expect(ids({ ...RULES_V1, handsVisible: false })).not.toContain('carte-main-visible');
+    expect(ids({ ...RULES_V1, cardEndsTurn: true })).not.toContain('carte-mur-sauve');
+    expect(ids({ ...RULES_V1, cardEndsTurn: true })).toContain('carte-maree');
+    // Deux cartes par tour : seuls les problèmes uniques à une carte seulement sont masqués (unicité vérifiée plus haut)
+    const two = ids({ ...RULES_V1, cardsPerTurn: 2 });
+    for (const id of ['carte-mur-enferme', 'carte-faille', 'carte-maree']) expect(two).not.toContain(id);
+    for (const id of ['carte-mur-sauve', 'carte-ere-glaciaire', 'carte-lune', 'carte-deflagration', 'carte-main-visible']) expect(two).toContain(id);
+    // Délai du Présage : l'Ère glaciaire « arrive au début de votre tour suivant »
+    expect(ids({ ...RULES_V1, presageDelay: 4 })).not.toContain('carte-ere-glaciaire');
+    expect(ids({ ...RULES_V1, presageDelay: 4 })).toContain('carte-maree');
+    expect(Object.keys(THEME_PLURAL)).toEqual(Object.keys(THEME_LABEL));
+  });
+
+  it('requires.tuning : une carte rééquilibrée dans CARDS masque les problèmes qui citent ou exploitent son équilibrage V1', () => {
+    const ids = (id: CardId, t: CardTuning) => puzzlesFor({ ...RULES_V1, tuning: { ...RULES_V1.tuning, [id]: t } }).map(p => p.id);
+    // Au défaut, l'équilibrage de CARDS est celui de RULES_V1 (GAME_RULES n'a pas de tuning : celui de CARDS)
+    expect(puzzlesFor(GAME_RULES)).toEqual(ALL_PUZZLES);
+    const wall = ids('ice_wall', { ranks: [3, 4] });
+    for (const id of ['carte-mur-sauve', 'carte-mur-enferme', 'carte-main-visible']) expect(wall).not.toContain(id);
+    expect(wall).toContain('carte-faille');
+    expect(ids('rift', { coups: 4, ranks: [2, 3] })).not.toContain('carte-faille');
+    expect(ids('ice_age', { coups: 2 })).not.toContain('carte-ere-glaciaire');
+    expect(ids('tide', { ranks: [1, 2, 3] })).not.toContain('carte-maree');
+    expect(ids('hourglass', { coups: 6, clockRate: 3 })).toEqual(ALL_PUZZLES.map(p => p.id));
+  });
+
+  it('toute carte jouée dans une solution est déclarée dans requires.tuning', () => {
+    for (const p of ALL_PUZZLES) {
+      for (const step of p.solution) for (const o of stepOptions(step)) {
+        if (o.kind === 'card') expect(p.requires?.tuning, `${p.id} : ${o.card} jouée, à déclarer dans requires.tuning`).toContain(o.card);
+      }
+    }
+  });
+
+  it('la carte de la solution est en tête de la main : chaque solution reste jouable avec 1 ou 2 cartes par joueur', () => {
+    for (const n of [1, 2]) {
+      for (const p of cardPuzzles) {
+        const cut: Puzzle = { ...p, hands: p.hands && { w: p.hands.w && hand(p.hands.w, n), b: p.hands.b && hand(p.hands.b, n) } };
+        let s = puzzleStart(cut);
+        for (const step of p.solution) {
+          const next = applyAction(s, stepOptions(step)[0]);
+          expect(next, `${p.id}, ${n} carte(s) par main : ${step}`).not.toBeNull();
+          s = next!;
+        }
+        if (p.mate) expect(s.result, `${p.id}, ${n} carte(s) par main`).toMatchObject({ reason: 'checkmate', winner: solverOf(p) });
+      }
+    }
+  });
+
+  it('problème du jour : les 49 premiers problèmes, dans cet ordre et sans date ; tout autre porte `since` (AAAA-MM-JJ)', () => {
+    // Le calendrier du problème du jour tourne sur la liste : retirer, déplacer ou ajouter sans date un problème change
+    // le problème du jour le jour même du déploiement, puis presque tous les jours suivants. Un problème ajouté porte
+    // donc `since` (sa date d'ajout) : il n'entre au calendrier que le lendemain. Il peut se ranger n'importe où.
+    const original = [
+      'couloir', 'etouffe', 'anastasie', 'berger', 'epaulettes', 'arabe', 'mat-du-sot', 'boden', 'couloir-noir', 'escalier', 'baiser',
+      'greco', 'legs-de-philidor', 'anastasie-2', 'couloir-2', 'legal', 'boden-2', 'opera', 'tour-tempo', 'tour-coin', 'dame-approche',
+      'philidor-3', 'anastasie-3', 'tour-3', 'dame-3', 'fourchette-c7', 'fourchette-e7', 'fourchette-pion', 'fourchette-dame',
+      'fourchette-f6', 'fourchette-noire', 'clouage-b5', 'clouage-f4', 'clouage-d4', 'clouage-e1', 'enfilade-tour', 'enfilade-fou',
+      'enfilade-colonne', 'surcharge', 'decouverte-d6', 'decouverte-h7', 'carte-mur-sauve', 'carte-mur-enferme', 'carte-faille',
+      'carte-ere-glaciaire', 'carte-maree', 'carte-lune', 'carte-deflagration', 'carte-main-visible',
+    ];
+    expect(ALL_PUZZLES.filter(p => !p.since).map(p => p.id), 'problèmes sans `since` : les 49 d’origine, dans leur ordre (ajoutez `since` aux nouveaux)').toEqual(original);
+    for (const p of ALL_PUZZLES.filter(x => x.since)) {
+      expect(p.since, `${p.id} : since au format AAAA-MM-JJ`).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      const [y, m, d] = p.since!.split('-').map(Number);
+      expect(new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10), `${p.id} : since, date réelle`).toBe(p.since);
+    }
+  });
+
   it('lit les étapes : coups, promotions, cartes et alternatives', () => {
     expect(parseAction('e7e8n')).toMatchObject({ kind: 'move', promo: 'n' });
     expect(parseAction('@ice_wall:f3')).toMatchObject({ kind: 'card', card: 'ice_wall', targets: [21] });
     expect(parseAction('@coronation:a7')).toBeNull(); // carte retirée
     expect(parseAction('@inconnue:a1')).toBeNull();
     expect(stepOptions('e2e4|d2d4')).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Réglage par défaut : photographies (lot 8), relevées sur le code d'avant la dérivation des textes.
+
+const sha = (x: unknown) => createHash('sha256').update(JSON.stringify(x)).digest('hex').slice(0, 16);
+
+/** Contenu d'un problème tel qu'il existait avant le lot 8 (sans les champs ajoutés depuis). */
+const photo = (list: Puzzle[]) => list.map(p => ({
+  id: p.id, title: p.title, themes: p.themes, level: p.level, fen: p.fen, solution: p.solution, mate: p.mate, goal: p.goal,
+  hint: p.hint, moral: p.moral, hands: p.hands, effects: p.effects,
+}));
+
+describe('problèmes au réglage par défaut', () => {
+  it('textes, positions, solutions et mains identiques à la photographie', () => {
+    expect(sha(photo(ALL_PUZZLES))).toBe('b98dd400d90d3790');
+    expect(PUZZLES).toEqual(ALL_PUZZLES);
+  });
+
+  it('textes chiffrés des problèmes à cartes (rangées du Mur)', () => {
+    expect(puzzleById('carte-mur-sauve')!.hint).toBe('Un Mur se pose entre la 3e et la 6e rangée : une seule case de la diagonale convient.');
+    expect(puzzleById('carte-main-visible')!.moral).toBe('Les mains sont visibles : un échec à distance qui traverse les rangées 3 à 6 se pare d’un Mur. Sur la 8e rangée, aucun Mur ne peut se poser.');
+  });
+
+  it('problème du jour : même calendrier qu’avant le lot 8', () => {
+    const days: string[] = [];
+    for (let i = 0; i < 120; i++) days.push(dailyPuzzle(new Date(2026, 0, 1 + i, 12)).id);
+    expect(days.slice(0, 6)).toEqual(['philidor-3', 'fourchette-f6', 'enfilade-colonne', 'carte-maree', 'epaulettes', 'legs-de-philidor']);
+    expect(sha(days)).toBe('1dbebfb31f6b60a5');
+    expect(dailyPuzzle(new Date(2026, 10, 13, 12)).id).toBe('etouffe');
   });
 });

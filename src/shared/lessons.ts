@@ -1,13 +1,28 @@
 // Leçons interactives : une suite d'étapes sur un vrai échiquier (consigne, coup attendu, réaction, indice).
 // Les coups s'écrivent en UCI (« e2e4 »), les cartes « @ice_wall:e5 » ; « | » sépare les réponses acceptées
 // et « * » accepte n'importe quel coup légal. Vérifié par test/lessons.test.ts.
-// Les leçons de cartes suivent le jeu final (catalogue « Pouvoirs ») : huit pouvoirs qui touchent les deux camps,
+// Les leçons de cartes suivent le jeu final (catalogue « Pouvoirs ») : des pouvoirs qui touchent les deux camps,
 // mains visibles des deux côtés.
+//
+// Comme les problèmes, les leçons se jouent avec les règles historiques (RULES_V1) : leurs rangées et leurs durées en
+// sont tirées. Ce qui décrit le jeu du moment (nombre de cartes, cartes par tour, nombre de pouvoirs, marque) suit les
+// règles des nouvelles parties (GAME_RULES) ; une leçon qui les contredirait est masquée (`requires`).
+// La marque est __SM__.marque (BRAND.name figé au build, comme dans les pages) : importer BRAND ajouterait un morceau au
+// site. Conséquence : CE MODULE NE SE CHARGE QUE SOUS VITE (site construit, serveur de développement, Vitest), qui
+// remplace __SM__.marque ; sous tsx, node ou l'esbuild du serveur, son chargement échoue (« __SM__ is not defined »).
+// Le serveur et les scripts ne l'importent donc pas (garde-fou dans test/lessons.test.ts). Pour l'en sortir un jour
+// (rendu serveur de /apprendre), définir __SM__.marque dans scripts/build-server.mjs, ou passer la marque en paramètre.
 
 import { Color, Move, PieceType, fileOf, inCheck, kingSquare, rankOf } from './chess';
-import type { CardId, Catalog } from './cards';
+import { CARDS, FAMILY_LABEL, cardsOf } from './cards';
+import type { CardId, Catalog, Family } from './cards';
+import { GAME_RULES, RULES_V1 } from './config/rules';
 import { GameState, createGameFromFen, legalMovesOf, modsFromEffects, playMove } from './game';
-import { EffectSpec, withEffects } from './puzzles';
+import { ContentRequires, ContentRules, EffectSpec, V1_TUNING, hand, meetsRequires, withEffects } from './puzzles';
+import { cap, compte, enLettres, liste, pluriel } from './text/fr';
+import {
+  cartesChacun, cartesDePouvoir, cartesDuCatalogue, constitutionMains, etendueRangees, momentCarte, parTour, pouvoirs, rangees,
+} from './text/regles';
 
 export type LessonGoal =
   /** Lecture : un bouton « Continuer ». */
@@ -55,11 +70,31 @@ export interface Lesson {
   group: string;
   summary: string;
   steps: LessonStep[];
+  /** Règles supposées (leçon masquée si les règles des nouvelles parties les contredisent). */
+  requires?: ContentRequires;
+}
+
+// Ce que les textes des leçons de cartes décrivent.
+/** Le jeu du moment : règles des nouvelles parties. */
+const R = GAME_RULES;
+/** Pouvoirs en jeu (catalogue par défaut, sans les cartes retirées) et leurs familles, dans l'ordre de FAMILY_LABEL. */
+const POWERS = cardsOf('climats').filter(id => !CARDS[id].retired);
+const FAMILIES = (Object.keys(FAMILY_LABEL) as Family[]).filter(f => POWERS.some(id => CARDS[id].family === f));
+/** « Climats, Terrains, Événement » : chaque famille, au pluriel si elle compte plusieurs pouvoirs. */
+const familyList = liste(FAMILIES.map(f => pluriel(POWERS.filter(id => CARDS[id].family === f).length, FAMILY_LABEL[f])), ',');
+/** Équilibrage avec lequel les leçons se jouent (RULES_V1). */
+const wallRanks = V1_TUNING.ice_wall?.ranks ?? [];
+const truceCoups = compte(V1_TUNING.truce?.coups ?? 0, 'coup');
+
+/** Exercice de mat contre le roi seul : au plus `maxMoves` coups, rappelés dans la consigne. */
+function hunt(maxMoves: number, consigne: (coups: string) => string): Pick<LessonStep, 'goal' | 'text'> {
+  return { goal: { kind: 'hunt', maxMoves }, text: consigne(compte(maxMoves, 'coup')) };
 }
 
 export const LESSON_GROUPS = ['Les pièces', 'Coups spéciaux', 'Échec, mat et pat', 'Mats élémentaires', 'Les cartes'];
 
-export const LESSONS: Lesson[] = [
+/** Toutes les leçons, masquées comprises (tests, outils). Le site lit LESSONS. */
+export const ALL_LESSONS: Lesson[] = [
   // ------------------------------------------------------------------------------------------
   // Les pièces
   {
@@ -375,8 +410,8 @@ export const LESSONS: Lesson[] = [
         success: 'La dame seule ne mate pas : son roi doit l’épauler.',
       },
       {
-        fen: '8/8/8/3k4/8/8/8/Q3K3 w - - 0 1', goal: { kind: 'hunt', maxMoves: 30 },
-        text: 'À vous, sans aide : matez le roi noir, qui se défend. Vous avez 30 coups.',
+        fen: '8/8/8/3k4/8/8/8/Q3K3 w - - 0 1',
+        ...hunt(30, n => `À vous, sans aide : matez le roi noir, qui se défend. Vous avez ${n}.`),
         hint: 'Placez la dame à un saut de cavalier du roi, suivez-le, puis amenez votre roi.',
         success: 'Mat ! Vous savez maintenant gagner avec une dame.',
       },
@@ -398,8 +433,8 @@ export const LESSONS: Lesson[] = [
         success: 'Forcé de venir en d8, le roi noir se place face au vôtre.',
       },
       {
-        fen: '8/8/8/4k3/8/8/8/R3K3 w - - 0 1', goal: { kind: 'hunt', maxMoves: 40 },
-        text: 'À vous : matez le roi noir avec la tour. Vous avez 40 coups.',
+        fen: '8/8/8/4k3/8/8/8/R3K3 w - - 0 1',
+        ...hunt(40, n => `À vous : matez le roi noir avec la tour. Vous avez ${n}.`),
         hint: 'La tour coupe le roi sur une rangée ; votre roi vient en opposition, puis la tour donne échec et le repousse.',
         success: 'Mat ! La technique la plus utile des finales.',
       },
@@ -424,27 +459,28 @@ export const LESSONS: Lesson[] = [
   },
 
   // ------------------------------------------------------------------------------------------
-  // Les cartes (catalogue « Pouvoirs » : huit pouvoirs qui touchent les deux camps, mains visibles)
+  // Les cartes (catalogue « Pouvoirs » : des pouvoirs qui touchent les deux camps, mains visibles)
   {
     id: 'cartes', title: 'Jouer une carte', group: 'Les cartes',
-    summary: 'Trois cartes chacun, visibles des deux joueurs ; une par tour, avant le coup.',
+    summary: `${cartesChacun(R, true)}, visibles des deux joueurs ; ${parTour(R)}, ${momentCarte(R)}.`,
+    requires: { cardBefore: true, tuning: ['ice_wall'] },
     steps: [
       {
         fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', goal: { kind: 'info' },
-        hands: { w: ['ice_wall', 'truce', 'tide'], b: ['ice_age', 'rift', 'blood_moon'] },
-        text: 'Spellmate, ce sont les échecs, plus trois cartes de pouvoir par joueur. Au début d’une partie, vous choisissez vos trois cartes ; sur l’accueil, elles sont tirées au hasard. Les deux mains sont visibles : vous voyez les cartes de l’adversaire, il voit les vôtres, et une carte jouée reste grisée à sa place. À votre tour, vous pouvez jouer une carte avant votre coup : une seule par tour, et chaque carte ne sert qu’une fois.',
+        hands: { w: hand(['ice_wall', 'truce', 'tide']), b: hand(['ice_age', 'rift', 'blood_moon']) },
+        text: `${__SM__.marque}, ce sont les échecs, plus ${cartesDePouvoir(R)} par joueur. Au début d’une partie, ${constitutionMains(R)}. Les deux mains sont visibles : vous voyez les cartes de l’adversaire, il voit les vôtres, et une carte jouée reste grisée à sa place. À votre tour, vous pouvez jouer une carte avant votre coup : ${parTour(R, true)}, et chaque carte ne sert qu’une fois.`,
       },
       {
         fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', goal: { kind: 'line', line: ['@ice_wall:e5', '*'] },
-        hands: { w: ['ice_wall'] },
-        text: 'Posez un Mur de glace en e5 : touchez la carte « Mur de glace », puis « Lancer ce sort », puis la case e5. Un Mur se pose sur une case vide, de la 3e à la 6e rangée. Jouez ensuite votre coup.',
+        hands: { w: hand(['ice_wall']) },
+        text: `Posez un Mur de glace en e5 : touchez la carte « Mur de glace », puis « Lancer ce sort », puis la case e5. Un Mur se pose sur une case vide, ${rangees(wallRanks, 'de')}. Jouez ensuite votre coup.`,
         marks: ['e5'],
         hint: 'Touchez la carte « Mur de glace », sous l’échiquier : sa bulle s’ouvre. Touchez « Lancer ce sort », puis la case e5, qui brille.',
         success: 'La case e5 est infranchissable pour les deux camps, jusqu’à la fin de la partie. Seul un cavalier peut sauter par-dessus.',
       },
       {
         fen: '6kr/8/8/8/8/8/6P1/6RK w - - 0 1', goal: { kind: 'line', line: ['@ice_wall:h3|@ice_wall:h4|@ice_wall:h5|@ice_wall:h6'] },
-        hands: { w: ['ice_wall'] },
+        hands: { w: hand(['ice_wall']) },
         text: 'Votre roi est en échec et n’a aucun coup : sans carte, ce serait mat. Mais une carte peut sauver : posez un Mur entre la tour noire et votre roi (la carte, « Lancer ce sort », puis la case).',
         hint: 'g2 et h2 sont sur la 2e rangée : le Mur va plus haut sur la colonne h.',
         success: 'Sauvé ! Un joueur sans coup légal doit jouer la carte qui lui en rend un. Une carte ne met jamais le roi adverse en échec, mais elle peut protéger le vôtre.',
@@ -453,15 +489,15 @@ export const LESSONS: Lesson[] = [
   },
   {
     id: 'catalogues', title: 'Pouvoirs et familles', group: 'Les cartes',
-    summary: 'Avec les huit pouvoirs ou sans cartes ; Climats, Terrains, Événement.',
+    summary: `Avec les ${pouvoirs(POWERS.length)} ou sans cartes ; ${familyList}.`,
     steps: [
       {
         fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', goal: { kind: 'info' }, panel: 'catalogs',
-        text: 'Chaque partie choisit son jeu. Par défaut, les Pouvoirs : huit cartes qui changent la partie pour les deux camps. Ou sans cartes : les échecs classiques, rien d’autre.',
+        text: `Chaque partie choisit son jeu. Par défaut, les Pouvoirs : ${cartesDuCatalogue(POWERS.length)} qui changent la partie pour les deux camps. Ou sans cartes : les échecs classiques, rien d’autre.`,
       },
       {
         fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', goal: { kind: 'info' }, panel: 'families',
-        text: 'Les huit pouvoirs forment trois familles. Un Climat change une règle sur tout le plateau pendant quelques coups (un seul à la fois). Un Terrain transforme des cases. Un Événement agit une fois, tout de suite.',
+        text: `${cap(`les ${pouvoirs(POWERS.length)}`)} ${POWERS.length > 1 ? 'forment' : 'forme'} ${enLettres(FAMILIES.length, 'f')} ${pluriel(FAMILIES.length, 'famille')}. Un Climat change une règle sur tout le plateau pendant quelques coups (un seul à la fois). Un Terrain transforme des cases. Un Événement agit une fois, tout de suite.`,
       },
     ],
   },
@@ -471,14 +507,14 @@ export const LESSONS: Lesson[] = [
     steps: [
       {
         fen: '8/8/8/8/8/8/8/3R4 w - - 0 1', goal: { kind: 'stars', stars: ['d5', 'd8'] },
-        hands: { b: ['ice_wall'] }, effects: [{ card: 'ice_wall', by: 'b', square: 'd4' }],
+        hands: { b: hand(['ice_wall']) }, effects: [{ card: 'ice_wall', by: 'b', square: 'd4' }],
         text: 'Les Noirs ont posé un Mur de glace en d4. Un pouvoir ne choisit pas son camp : le Mur bloque aussi votre tour. Faites-la passer par les deux étoiles.',
         hint: 'Contournez le Mur par la colonne c ou la colonne e.',
         success: 'Le Mur barre la route aux deux camps, jusqu’à la fin de la partie.',
       },
       {
         fen: 'r1bq1rk1/pp2bppp/2n1pn2/3p4/2PP4/2N1PN2/PP2BPPP/R1BQ1RK1 w - - 0 1', goal: { kind: 'any' },
-        hands: { w: ['truce', 'rift', 'ice_wall'], b: ['ice_age', 'tide', 'blood_moon'] },
+        hands: { w: hand(['truce', 'rift', 'ice_wall']), b: hand(['ice_age', 'tide', 'blood_moon']) },
         effects: [{ card: 'ice_age', by: 'b', remaining: 3 }],
         text: 'Les Noirs ont fait venir l’Ère glaciaire : pendant quelques coups, aucun pion ne bouge, ni les leurs ni les vôtres. Jouez un coup : seules vos pièces le peuvent.',
         success: 'Vos pions sont gelés comme les leurs. Celui qui lance un pouvoir ne choisit pas qui il touche : il choisit le moment.',
@@ -488,6 +524,7 @@ export const LESSONS: Lesson[] = [
   {
     id: 'presage-rituel', title: 'Présage et Rituel', group: 'Les cartes',
     summary: 'Le Climat s’annonce ; la marée remplace le coup.',
+    requires: { cardBefore: true, presageDelay: 2, tuning: ['truce', 'tide'] },
     steps: [
       {
         fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', goal: { kind: 'info' }, panel: 'presage',
@@ -495,18 +532,18 @@ export const LESSONS: Lesson[] = [
       },
       {
         fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', goal: { kind: 'line', line: ['@truce', '*', 'e7e5'] },
-        hands: { w: ['truce'] },
-        text: 'Annoncez la Trêve (aucune capture pendant 3 coups, sauf pour sortir d’un échec), puis jouez un coup. Les Noirs répondent ; la Trêve arrive ensuite.',
+        hands: { w: hand(['truce']) },
+        text: `Annoncez la Trêve (aucune capture pendant ${truceCoups}, sauf pour sortir d’un échec), puis jouez un coup. Les Noirs répondent ; la Trêve arrive ensuite.`,
         hint: 'Touchez la carte « Trêve », puis « Lancer ce sort » : elle n’a pas de cible.',
-        success: 'La Trêve est arrivée : regardez la liste des effets sous l’échiquier. Elle vaut pour vous aussi : vous ne prendrez rien pendant 3 coups.',
+        success: `La Trêve est arrivée : regardez la liste des effets sous l’échiquier. Elle vaut pour vous aussi : vous ne prendrez rien pendant ${truceCoups}.`,
       },
       {
         fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', goal: { kind: 'info' }, panel: 'ritual',
-        text: 'Rituel : la Grande Marée remplace votre coup. Tous les pions des deux camps sur leurs 2e à 5e rangées avancent d’une case, si elle est libre, puis c’est à l’adversaire de jouer.',
+        text: `Rituel : la Grande Marée remplace votre coup. Tous les pions des deux camps sur leurs ${etendueRangees(V1_TUNING.tide?.ranks ?? [])} avancent d’une case, si elle est libre, puis c’est à l’adversaire de jouer.`,
       },
       {
         fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', goal: { kind: 'line', line: ['@tide', 'e6e5'] },
-        hands: { w: ['tide'] },
+        hands: { w: hand(['tide']) },
         text: 'Lancez la Grande Marée. Elle tient lieu de coup : vous ne jouez rien d’autre.',
         success: 'Tous les pions ont avancé d’une case, les vôtres comme les siens, et c’est aux Noirs de jouer.',
       },
@@ -518,7 +555,7 @@ export const LESSONS: Lesson[] = [
     steps: [
       {
         fen: '6k1/5ppp/8/4b3/8/7K/6PP/8 w - - 0 1', goal: { kind: 'line', line: ['h3g4|h3h4'] },
-        hands: { w: ['ice_wall'], b: ['ice_wall', 'ice_age'] },
+        hands: { w: hand(['ice_wall']), b: hand(['ice_wall', 'ice_age']) },
         effects: [{ card: 'ice_age', by: 'b', remaining: 3 }, { card: 'ice_wall', by: 'w', square: 'g4' }, { card: 'ice_wall', by: 'b', square: 'h4' }],
         text: 'Pris dans la glace : deux Murs bloquent votre roi, le fou noir tient g3 et l’Ère glaciaire gèle vos pions. Aucun coup, sans être en échec : la magie cède, vous jouez comme si les pouvoirs n’existaient pas pour vos pièces. Marchez sur un Mur avec votre roi.',
         marks: ['g4', 'h4'],
@@ -530,17 +567,26 @@ export const LESSONS: Lesson[] = [
   {
     id: 'mains-visibles', title: 'Lire la main adverse', group: 'Les cartes',
     summary: 'Ses cartes sont visibles : jouez en conséquence.',
+    requires: { handsVisible: true, tuning: ['rift'] },
     steps: [
       {
         fen: 'k7/p1Q5/8/8/8/8/5PPP/3B2K1 w - - 0 1', goal: { kind: 'mate' },
-        hands: { b: ['rift'] },
-        text: 'Les Noirs gardent une Faille en main : elle peut ouvrir un gouffre sur la 4e ou la 5e rangée, même pour parer un échec. Donnez un mat qu’elle ne peut pas arrêter.',
+        hands: { b: hand(['rift']) },
+        text: `Les Noirs gardent une Faille en main : elle peut ouvrir un gouffre sur ${rangees(V1_TUNING.rift?.ranks ?? [])}, même pour parer un échec. Donnez un mat qu’elle ne peut pas arrêter.`,
         hint: 'Ff3+ traverse e4 et d5 : la Faille couperait la diagonale. Cherchez un échec sur la 8e rangée.',
         success: 'Mat ! Avant un plan, regardez toujours ce que l’adversaire garde en main.',
       },
     ],
   },
 ];
+
+/** Leçons que permettent les règles `r` (requires). */
+export function lessonsFor(r: ContentRules, list: readonly Lesson[] = ALL_LESSONS): Lesson[] {
+  return list.filter(l => meetsRequires(l.requires, r));
+}
+
+/** Leçons proposées sur le site : celles que permettent les règles des nouvelles parties (toutes, au défaut). */
+export const LESSONS: Lesson[] = lessonsFor(GAME_RULES);
 
 // ---------------------------------------------------------------------------------------------
 // Outils
@@ -554,9 +600,10 @@ export function studentOf(step: LessonStep): Color {
   return step.fen.split(/\s+/)[1] === 'b' ? 'b' : 'w';
 }
 
+/** Position de départ d'une étape, avec les règles pour lesquelles la leçon a été écrite (RULES_V1). */
 export function stepStart(step: LessonStep): GameState {
   const catalog = step.catalog ?? (step.hands || step.effects ? 'climats' : 'aucune');
-  const s = createGameFromFen(step.fen, { w: step.hands?.w ?? [], b: step.hands?.b ?? [] }, false, catalog);
+  const s = createGameFromFen(step.fen, { w: step.hands?.w ?? [], b: step.hands?.b ?? [] }, false, catalog, { rules: RULES_V1 });
   return withEffects(s, step.effects ?? []);
 }
 

@@ -58,7 +58,7 @@ export type SanLang = 'en' | 'fr';
 export function cleanSan(raw: string): string {
   return raw
     .trim()
-    .replace(/[+#‡†]+/g, '')
+    .replace(/[+#‡†*]+/g, '')
     .replace(/[!?]+$/g, '')
     .replace(/\s*e\.?p\.?$/i, '')
     .replace(/^0-0-0/, 'O-O-O')
@@ -501,7 +501,7 @@ export function readPgn(text: string): PgnGame {
     if (err) throw new PgnError(`FEN de l'en-tête invalide : ${err}`);
   }
   const catalog = CATALOG_IDS.find(c => c === h.Catalog) ?? 'aucune';
-  const start = stateFromFen(fen, catalog, { rules: rulesOfPgn(h) });
+  const start = stateFromFen(fen, catalog, { rules: rulesOfPgn(h), timed: timedOfPgn(h) });
   const root = makeRoot(start);
   if (parsed.intro) root.comment = parsed.intro;
   const lang = detectLang(parsed.entries);

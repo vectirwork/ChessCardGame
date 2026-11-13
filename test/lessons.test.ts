@@ -1,17 +1,23 @@
 import { createHash } from 'node:crypto';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { createElement } from 'react';
 import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cardsOf } from '../src/shared/cards';
+import type { CardId } from '../src/shared/cards';
 import { GAME_RULES, RULES_V1 } from '../src/shared/config/rules';
+import type { Rules as RuleSet } from '../src/shared/config/rules';
 import { F_RELAXED, fromFen, sqIndex, sqName } from '../src/shared/chess';
-import { GameState, legalMovesOf, playMove, sideInCheck } from '../src/shared/game';
+import { GameState, createGame, legalMovesOf, playCard, playMove, sideInCheck } from '../src/shared/game';
+import { treeFromLog } from '../src/shared/pgn';
+import { rulesOf } from '../src/shared/rulesCore';
 import {
   ALL_LESSONS, LESSONS, LESSON_GROUPS, LessonStep, freeMove, lessonById, lessonsFor, loneKingReply, matedBy, stepStart, studentOf,
 } from '../src/shared/lessons';
-import { applyAction, hand, meetsRequires, stepOptions } from '../src/shared/puzzles';
+import { V1_TUNING, applyAction, hand, meetsRequires, stepOptions } from '../src/shared/puzzles';
 import { TIME_CONTROLS, tcLabel } from '../src/shared/protocol';
 import Rules from '../src/client/pages/Rules';
 import Play from '../src/client/pages/Play';
@@ -21,6 +27,7 @@ import Auth, { PASSWORD as AUTH_PASSWORD, USERNAME as AUTH_USERNAME } from '../s
 import { GUEST_NAME as PLAY_GUEST_NAME } from '../src/client/pages/Play';
 import { GUEST_NAME, PASSWORD, USERNAME } from '../src/shared/config/limits';
 import MyGames from '../src/client/pages/MyGames';
+import { HISTORY_KEY, localGame, rememberLocalGame } from '../src/client/features/history';
 import { AppProvider, FeaturesContext } from '../src/client/store';
 import { FEATURES } from '../src/shared/config/features';
 
@@ -272,6 +279,116 @@ describe('leçons : règles du contenu (lot 8)', () => {
     expect(ids({ ...RULES_V1, cardsPerTurn: 2 })).toEqual(ALL_LESSONS.map(l => l.id));
     expect(meetsRequires(undefined, { ...RULES_V1, handsVisible: false, cardEndsTurn: true, cardsPerTurn: 3 })).toBe(true);
     expect(meetsRequires({ cardsPerTurn: 1 }, { ...RULES_V1, cardsPerTurn: 2 })).toBe(false);
+    // Délai du Présage autre que celui du contenu (RULES_V1 : 2 demi-coups)
+    expect(ids({ ...RULES_V1, presageDelay: 4 })).not.toContain('presage-rituel');
+    expect(ids({ ...RULES_V1, presageDelay: 4 })).toContain('cartes');
+    expect(meetsRequires({ presageDelay: 2 }, { ...RULES_V1, presageDelay: 2 })).toBe(true);
+  });
+
+  it('requires.tuning : une carte rééquilibrée dans CARDS masque le contenu qui cite ou exploite son équilibrage V1', () => {
+    const ids = (r: Parameters<typeof lessonsFor>[0]) => lessonsFor(r).map(l => l.id);
+    const retuned = (id: CardId, t: NonNullable<RuleSet['tuning'][CardId]>) => ({ ...RULES_V1, tuning: { ...RULES_V1.tuning, [id]: t } });
+    // Au défaut, l'équilibrage de CARDS est celui de RULES_V1 : rien n'est masqué (GAME_RULES sans tuning : CARDS)
+    expect(ids(GAME_RULES)).toEqual(ALL_LESSONS.map(l => l.id));
+    expect(ids(retuned('ice_wall', { ranks: [3, 4] }))).not.toContain('cartes');
+    expect(ids(retuned('truce', { coups: 4 }))).not.toContain('presage-rituel');
+    expect(ids(retuned('tide', { ranks: [1, 2, 3] }))).not.toContain('presage-rituel');
+    expect(ids(retuned('rift', { coups: 4, ranks: [2, 3] }))).not.toContain('mains-visibles');
+    // Seule la durée change : les rangées citées restent justes, mais la carte est rééquilibrée
+    expect(ids(retuned('rift', { coups: 6, ranks: V1_TUNING.rift!.ranks }))).not.toContain('mains-visibles');
+    // Une carte que la leçon ne cite ni n'exploite : rien ne change
+    expect(ids(retuned('hourglass', { coups: 6, clockRate: 3 }))).toEqual(ALL_LESSONS.map(l => l.id));
+  });
+
+  it('toute carte jouée dans une leçon est déclarée dans requires.tuning', () => {
+    for (const l of ALL_LESSONS) {
+      for (const st of l.steps) {
+        if (st.goal.kind !== 'line') continue;
+        for (const x of st.goal.line) for (const o of stepOptions(x)) {
+          if (o.kind === 'card') expect(l.requires?.tuning, `${l.id} : ${o.card} jouée, à déclarer dans requires.tuning`).toContain(o.card);
+        }
+      }
+    }
+  });
+
+  it('la carte de l’élève est en tête de sa main : chaque suite reste jouable avec 1 ou 2 cartes par joueur', () => {
+    for (const n of [1, 2]) {
+      for (const l of ALL_LESSONS) {
+        for (const [i, st] of l.steps.entries()) {
+          if (st.goal.kind !== 'line') continue;
+          const cut = { ...st, hands: st.hands && { w: st.hands.w && hand(st.hands.w, n), b: st.hands.b && hand(st.hands.b, n) } };
+          let s = stepStart(cut);
+          for (const x of st.goal.line) {
+            if (x === '*') {
+              const m = legalMovesOf(s)[0];
+              s = (playMove(s, m.from, m.to, m.promo) as { state: GameState }).state;
+              continue;
+            }
+            const next = applyAction(s, stepOptions(x)[0]);
+            expect(next, `${l.id} étape ${i + 1}, ${n} carte(s) par main : ${x}`).not.toBeNull();
+            s = next!;
+          }
+        }
+      }
+    }
+  });
+});
+
+describe('leçons : chargement hors de Vite', () => {
+  it('src/shared/lessons.ts (qui lit __SM__.marque) n’est importé ni par le serveur, ni par les scripts, ni par src/shared', () => {
+    const files = (dir: string): string[] =>
+      readdirSync(dir).flatMap(f => {
+        const p = join(dir, f);
+        return statSync(p).isDirectory() ? files(p) : /\.(ts|tsx|mts|mjs|js|cjs)$/.test(f) ? [p] : [];
+      });
+    const offenders = [...files('src/server'), ...files('scripts'), ...files('src/shared')].filter(f => /(?:from\s+|import\(\s*)['"][^'"]*\/lessons(?:\.[jt]s)?['"]/.test(readFileSync(f, 'utf8')));
+    expect(offenders, 'lessons.ts ne se charge que sous Vite : voir son en-tête').toEqual([]);
+  });
+});
+
+describe('historique et Analyse : règles des parties locales', () => {
+  const store = new Map<string, string>();
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    store.clear();
+  });
+  const stub = () => {
+    vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v) });
+    vi.stubGlobal('window', { dispatchEvent: () => true });
+  };
+  const hands = { w: ['ice_wall', 'rift', 'tide'] as CardId[], b: ['ice_wall', 'rift', 'truce'] as CardId[] };
+  const meta = { white: 'Vous', black: 'L’Oracle', you: 'w' as const };
+
+  it('une partie à deux cartes par tour garde ses règles ; l’Analyse la rejoue en entier avec elles, pas avec RULES_V1', () => {
+    stub();
+    const rules: RuleSet = { ...RULES_V1, cardsPerTurn: 2 };
+    let s = createGame(hands, false, 'climats', { rules });
+    for (const [i, t] of [[0, 'e5'], [1, 'a4']] as const) {
+      const r = playCard(s, 'w', i, [sqIndex(t)], 'skin:arcane');
+      expect(r.ok, t).toBe(true);
+      s = (r as { state: GameState }).state;
+    }
+    const r = playMove(s, sqIndex('d2'), sqIndex('d3'));
+    expect(r.ok).toBe(true);
+    s = (r as { state: GameState }).state;
+    rememberLocalGame(s, { ...meta, id: 'local-deux' });
+    const g = localGame('local-deux')!;
+    expect(g.rules).toEqual(rules);
+    // Relecture de l'Analyse : createGame(mains, pendule, catalogue, { rules: rulesOf(partie enregistrée) })
+    const replay = (with_: RuleSet) => treeFromLog(createGame(g.local!.hands, g.local!.timed, g.local!.catalog, { rules: with_ }), g.local!.log);
+    expect(replay(rulesOf(g)).complete).toBe(true);
+    expect(replay(RULES_V1).complete).toBe(false);
+  });
+
+  it('au défaut, l’historique n’écrit pas de règles, et l’Analyse rejoue en RULES_V1', () => {
+    stub();
+    let s = createGame(hands, false, 'climats', { rules: RULES_V1 });
+    s = (playCard(s, 'w', 0, [sqIndex('e5')], 'skin:arcane') as { state: GameState }).state;
+    s = (playMove(s, sqIndex('d2'), sqIndex('d3')) as { state: GameState }).state;
+    rememberLocalGame(s, { ...meta, id: 'local-v1' });
+    const raw = JSON.parse(store.get(HISTORY_KEY)!) as Record<string, unknown>[];
+    expect('rules' in raw[0]).toBe(false);
+    expect(rulesOf(localGame('local-v1')!)).toBe(RULES_V1);
   });
 });
 
@@ -353,14 +470,23 @@ describe('pages au réglage par défaut : textes chiffrés et libellés', () => 
     const t = pageText('/apprendre', '/apprendre', createElement(Learn));
     expect(t).toContain('De la marche des pièces aux mats élémentaires, puis les cartes de Spellmate.');
     expect(t).toContain('0 / 22 leçons');
-    // Pluriels corrigés (lot 8) : « 1 étape » (mur-magie, mains-visibles), « 0 leçon terminée sur 22 ».
+    // Pluriels corrigés (lot 8) : « 1 étape » (mur-magie, mains-visibles), « 1 leçon terminée sur 22 » ; 0 reste au
+    // pluriel, comme avant (« 0 leçons terminées sur 22 », identique au défaut).
     expect(t.match(/^1 étape$/gm)).toHaveLength(2);
     expect(t).not.toMatch(/^1 étapes$/m);
     expect(t).toContain('3 étapes');
-    expect(pageLabels('/apprendre', '/apprendre', createElement(Learn))).toContain('0 leçon terminée sur 22');
+    expect(pageLabels('/apprendre', '/apprendre', createElement(Learn))).toContain('0 leçons terminées sur 22');
     expect(t.split('\n').filter(x => /^[IV]+$/.test(x))).toEqual(['I', 'II', 'III', 'IV', 'V']);
     const cat = pageText('/apprendre/catalogues', '/apprendre/:lesson', createElement(Learn));
     expect(cat).toContain('Pouvoirs\n· 8 cartes');
+  });
+
+  it('Apprendre : « 1 leçon terminée », « 2 leçons terminées »', () => {
+    for (const [ids, label] of [[['tour'], '1 leçon terminée sur 22'], [['tour', 'fou'], '2 leçons terminées sur 22']] as const) {
+      const progress = Object.fromEntries(ids.map(id => [id, { step: 0, done: true }]));
+      vi.stubGlobal('localStorage', { getItem: (k: string) => (k === 'sm:apprendre' ? JSON.stringify(progress) : null), setItem: () => undefined });
+      expect(pageLabels('/apprendre', '/apprendre', createElement(Learn))).toContain(label);
+    }
   });
 
   it('Problèmes : chapeau et filtres', () => {
@@ -392,13 +518,35 @@ describe('pages au réglage par défaut : textes chiffrés et libellés', () => 
     expect(t).toContain('Règle des 50 coups · 4 coups\nEn ligne · Duel (ancienne formule) · 10+0');
   });
 
-  it('Jouer et Connexion : bornes du pseudo et du mot de passe égales à config/limits.ts', () => {
+  it('Jouer et Connexion : copies des bornes égales à config/limits.ts, caractères compris', () => {
+    // Copies (un import ferait de limits.ts un morceau de plus, voir Play.tsx) : tout changement de limits.ts doit y être
+    // reporté, ce test le rappelle.
     expect(PLAY_GUEST_NAME.full.source).toBe(GUEST_NAME.full.source);
     expect(PLAY_GUEST_NAME.full.flags).toBe(GUEST_NAME.full.flags);
     expect(PLAY_GUEST_NAME.max).toBe(GUEST_NAME.max);
     expect(PLAY_GUEST_NAME.invalidDetail).toBe(GUEST_NAME.invalidDetail);
-    expect(AUTH_USERNAME).toEqual({ min: USERNAME.min, max: USERNAME.max, hint: USERNAME.hint });
+    expect({ ...AUTH_USERNAME, chars: AUTH_USERNAME.chars.source + AUTH_USERNAME.chars.flags }).toEqual({
+      min: USERNAME.min, max: USERNAME.max, hint: USERNAME.hint, chars: USERNAME.chars.source + USERNAME.chars.flags,
+    });
     expect(AUTH_PASSWORD).toEqual({ min: PASSWORD.min, hint: PASSWORD.hint });
+  });
+
+  it('Jouer et Connexion : attributs des champs du pseudo identiques au défaut, `pattern` fidèle à USERNAME.chars', () => {
+    const html = (url: string, el: ReactElement) =>
+      renderToStaticMarkup(createElement(AppProvider, null, createElement(MemoryRouter, { initialEntries: [url] }, createElement(Routes, null, createElement(Route, { path: '*', element: el })))));
+    const reg = html('/inscription', createElement(Auth, { mode: 'register' }));
+    const input = /<input id="username"[^>]*>/.exec(reg)?.[0] ?? '';
+    expect(input).toContain('minLength="3"');
+    expect(input).toContain('maxLength="20"');
+    expect(input).toContain('pattern="[A-Za-z0-9_\\-]+"');
+    // Le navigateur compile `pattern` avec le drapeau v, ancré : même verdict que USERNAME.chars (serveur)
+    const pattern = /pattern="([^"]*)"/.exec(input)![1];
+    const browser = new RegExp(`^(?:${pattern})$`, 'v');
+    for (const x of ['abc', 'A_b-9', 'x-', '-x', 'é', 'a b', 'a.b', 'a/b', '[x]', 'a\\b', '']) expect(browser.test(x), x).toBe(USERNAME.chars.test(x));
+    // Jouer : pseudo d'invité borné par GUEST_NAME ; niveaux de l'IA sans --n au défaut (3, la valeur de game.css)
+    const bot = html('/jouer?mode=bot', createElement(Play));
+    expect(bot).toContain(`id="pl-pseudo" class="input" maxLength="${GUEST_NAME.max}"`);
+    expect(bot).toContain('<div class="pl-levels" role="radiogroup" aria-label="Niveau de l’IA">');
   });
 
   it('libellés de cadence identiques pour les 6 cadences (Jouer, Mes parties, Direct, Analyse, historique)', () => {
@@ -438,6 +586,8 @@ async function withSettings(rules: Partial<ConfigRules['GAME_RULES']>, deal: Par
   const Rules = (await import('../src/client/pages/Rules')).default;
   const Play = (await import('../src/client/pages/Play')).default;
   return {
+    render,
+    text,
     lessons: await import('../src/shared/lessons'),
     puzzles: await import('../src/shared/puzzles'),
     rulesHtml: render('/cartes', '/cartes', createElement(Rules)),
@@ -469,15 +619,16 @@ describe('autres réglages : textes, grilles et contenu', () => {
     expect(x.puzzles.puzzleById('carte-mur-sauve')!.hands).toEqual({ w: ['ice_wall'], b: ['ice_wall'] });
   });
 
-  it('deux cartes par tour : phrases du tour ; problèmes à une carte masqués', async () => {
+  it('deux cartes par tour : phrases du tour ; problèmes uniques à une carte seulement masqués', async () => {
     const x = await withSettings({ cardsPerTurn: 2 });
     expect(x.rules).toContain('Deux sorts par tour, avant votre coup\nÀ votre tour, vous pouvez lancer jusqu’à deux cartes, puis vous jouez votre coup.');
     expect(x.rules).toContain('Deux sorts par tour au plus, toujours facultatifs.');
     expect(x.lessons.lessonById('cartes')!.summary).toBe('Trois cartes chacun, visibles des deux joueurs ; deux au plus par tour, avant le coup.');
     expect(x.lessons.lessonById('cartes')!.steps[0].text).toContain('À votre tour, vous pouvez jouer une carte avant votre coup : deux au plus par tour, et chaque carte ne sert qu’une fois.');
     const ids = x.puzzles.PUZZLES.map(p => p.id);
-    for (const id of ['carte-mur-sauve', 'carte-mur-enferme', 'carte-faille', 'carte-ere-glaciaire', 'carte-maree']) expect(ids).not.toContain(id);
-    for (const id of ['carte-lune', 'carte-deflagration', 'carte-main-visible', 'couloir']) expect(ids).toContain(id);
+    // Uniques jusqu'à une carte par tour seulement (requires.cardsPerTurn : 1) ; les autres le restent avec deux
+    for (const id of ['carte-mur-enferme', 'carte-faille', 'carte-maree']) expect(ids).not.toContain(id);
+    for (const id of ['carte-mur-sauve', 'carte-ere-glaciaire', 'carte-lune', 'carte-deflagration', 'carte-main-visible', 'couloir']) expect(ids).toContain(id);
   });
 
   it('la carte remplace le coup : « Remplacé par la carte », contenu « carte puis coup » masqué', async () => {
@@ -485,6 +636,11 @@ describe('autres réglages : textes, grilles et contenu', () => {
     expect(x.rules).toContain('Un sort par tour, à la place du coup\nÀ votre tour, vous pouvez lancer une carte à la place de votre coup. Chaque carte ne sert qu’une fois.');
     expect(x.rules.match(/Remplacé par la carte/g)).toHaveLength(8);
     expect(x.rules).toContain('Un sort par tour au plus, à la place du coup, toujours facultatif.');
+    // Présage et frise de la Trêve : la carte est le coup
+    expect(x.rules).toContain('Le sort est annoncé à la place de votre coup et arrive au début de votre tour suivant.');
+    expect(x.rules).toContain('Vous\nVous lancez la Trêve : c’est votre coup.\nAnnoncée\nAdversaire\nIl répond : il la voit venir.');
+    expect(x.rules).not.toContain('puis vous jouez');
+    expect(x.rules).not.toContain('avant votre coup');
     expect(x.lessons.LESSONS.map(l => l.id)).not.toContain('cartes');
     expect(x.lessons.LESSONS.map(l => l.id)).not.toContain('presage-rituel');
     expect(x.puzzles.PUZZLES.map(p => p.id)).not.toContain('carte-faille');
@@ -497,6 +653,25 @@ describe('autres réglages : textes, grilles et contenu', () => {
     expect(x.rules).toContain('Au deuxième tour à venir (annoncée)');
     expect(x.rulesHtml).toContain('<ol style="--n:8">');
     expect(x.rules).toContain('Vous\nVous lancez la Trêve, puis vous jouez.\nAnnoncée\nAdversaire\nIl répond : il la voit venir.\nAnnoncée\nVous\nVous jouez.\nAnnoncée\nAdversaire\nIl joue.\nArrive au coup suivant\nVous\nElle arrive : vous jouez sans capturer.\n1er coup sur 3');
+    // Le contenu qui enseigne l'arrivée « au début de votre tour suivant » (RULES_V1) est masqué
+    expect(x.lessons.LESSONS.map(l => l.id)).not.toContain('presage-rituel');
+    expect(x.puzzles.PUZZLES.map(p => p.id)).not.toContain('carte-ere-glaciaire');
+    expect(x.lessons.LESSONS.map(l => l.id)).toContain('cartes');
+    expect(x.puzzles.PUZZLES.map(p => p.id)).toContain('carte-maree');
+  });
+
+  it('Mes parties : une partie retenue sans règles (RULES_V1) garde son libellé de fin, quelles que soient les règles du jour', async () => {
+    const x = await withSettings({ fiftyHalfmoves: 150 });
+    const played = [
+      { id: 'local-a', at: Date.now(), you: 'w', white: 'Vous', black: 'L’Oracle', winner: 'draw', reason: 'fifty', catalog: 'climats', plies: 100, vsBot: true, local: { log: [], hands: { w: [], b: [] }, timed: false, catalog: 'climats' } },
+      { id: 'local-b', at: Date.now(), you: 'w', white: 'Vous', black: 'L’Oracle', winner: 'draw', reason: 'fifty', catalog: 'climats', plies: 150, vsBot: true, rules: { ...RULES_V1, fiftyHalfmoves: 150 }, local: { log: [], hands: { w: [], b: [] }, timed: false, catalog: 'climats' } },
+    ];
+    vi.stubGlobal('localStorage', { getItem: (k: string) => (k === 'sm:parties' ? JSON.stringify(played) : null), setItem: () => undefined });
+    const MyGamesX = (await import('../src/client/pages/MyGames')).default;
+    const t = x.text(x.render('/parties', '/parties', createElement(MyGamesX)));
+    vi.unstubAllGlobals();
+    expect(t).toContain('Règle des 50 coups · 50 coups');
+    expect(t).toContain('Règle des 75 coups · 75 coups');
   });
 
   it('sans choix des cartes : mains tirées au hasard partout', async () => {

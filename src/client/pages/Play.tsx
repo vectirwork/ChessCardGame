@@ -63,10 +63,18 @@ const HEADS: Record<Mode, { kicker: string; title: ReactNode; text: string }> = 
   ranked: { kicker: 'classement Elo', title: <>Partie <em>classée</em>.</>, text: 'Adversaire de votre niveau ; la tolérance s’élargit avec l’attente.' },
 };
 
+/** Comportement de chaque niveau de l'IA face aux cartes (un niveau ajouté à BOT_LEVELS exige sa description). */
+const LEVEL_TEXT: Record<BotLevel, string> = {
+  1: 'Joue vite, lance ses sorts au hasard.',
+  2: 'Calcule, protège ses pièces, garde une carte pour la fin.',
+  3: 'Calcule en profondeur et punit chaque sort gaspillé.',
+};
+
 /**
- * Pseudo d'invité : mêmes bornes, caractères et message que GUEST_NAME (src/shared/config/limits.ts), vérifiés égaux par
- * test/lessons.test.ts. Importer GUEST_NAME ici ferait de config/limits.ts un morceau à part (il est aussi lu par la
- * partie) et allongerait la table de préchargement du paquet principal (+19 o compressés mesurés).
+ * Pseudo d'invité : copie de GUEST_NAME (src/shared/config/limits.ts), vérifiée égale par test/lessons.test.ts. L'importer
+ * ferait de config/limits.ts un morceau de plus, partagé avec la partie et la connexion : une requête de plus pour ces
+ * trois pages et +37 o (+9 o compressés, mesurés) dans la table de préchargement du paquet principal, qui ne doit plus
+ * grossir. Le lot 9 remplacera la copie par l'import en rangeant limits.ts dans un morceau existant (vite.config.ts).
  */
 export const GUEST_NAME = {
   full: /^[\p{L}\p{N} _.-]{2,20}$/u,
@@ -74,12 +82,8 @@ export const GUEST_NAME = {
   invalidDetail: 'Choisissez un pseudo de 2 à 20 caractères (lettres, chiffres, espaces, . _ -).',
 } as const;
 
-/** Comportement de chaque niveau de l'IA face aux cartes (un niveau ajouté à BOT_LEVELS exige sa description). */
-const LEVEL_TEXT: Record<BotLevel, string> = {
-  1: 'Joue vite, lance ses sorts au hasard.',
-  2: 'Calcule, protège ses pièces, garde une carte pour la fin.',
-  3: 'Calcule en profondeur et punit chaque sort gaspillé.',
-};
+/** Colonnes de la grille des niveaux (.pl-levels), posées seulement si elles diffèrent de celles de game.css (3). */
+const LEVELS_STYLE = BOT_LEVELS.length === 3 ? undefined : ({ '--n': BOT_LEVELS.length } as CSSProperties);
 
 /** Chapeau de la page : le jeu des nouvelles parties. */
 const LEDE = `Les échecs, plus ${cartesDePouvoir(GAME_RULES)} chacun, ${
@@ -329,7 +333,7 @@ export default function Play() {
               {mode === 'bot' && (
                 <fieldset className="pl-field">
                   <legend className="label">Niveau de l’IA</legend>
-                  <div className="pl-levels" role="radiogroup" aria-label="Niveau de l’IA" style={{ '--n': BOT_LEVELS.length } as CSSProperties}>
+                  <div className="pl-levels" role="radiogroup" aria-label="Niveau de l’IA" style={LEVELS_STYLE}>
                     {BOT_LEVELS.map(l => (
                       <button key={l} type="button" role="radio" aria-checked={level === l} className="pl-level" onClick={() => setLevel(l)}>
                         <b>{BOT_PROFILES[l].name}</b>

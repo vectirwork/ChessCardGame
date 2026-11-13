@@ -10,6 +10,7 @@ import { PageHead, useTitle } from '../features/ui';
 import { useApp } from '../store';
 import { CATALOGS } from '../../shared/cards';
 import type { Color } from '../../shared/chess';
+import { RULES_V1 } from '../../shared/config/rules';
 import type { Rules } from '../../shared/config/rules';
 import { tcLabel } from '../../shared/protocol';
 import type { GameSummary } from '../../shared/protocol';
@@ -28,7 +29,11 @@ interface Row {
   date: number | string;
   plies?: number;
   tags: string[];
-  /** Règles de la partie, si l'appareil les a gardées (parties locales et en ligne d'autres règles que RULES_V1). */
+  /**
+   * Règles de la partie, pour le libellé de sa fin : celles que l'historique de l'appareil a gardées, RULES_V1 s'il n'en a
+   * pas gardé (il ne les écrit que si elles en diffèrent). Absentes pour une partie que l'appareil n'a pas retenue (le
+   * serveur ne les envoie pas dans la liste) : libellé des règles des nouvelles parties.
+   */
   rules?: Rules;
 }
 
@@ -56,6 +61,9 @@ export default function MyGames() {
     };
   }, [me]);
 
+  const history = Array.isArray(local) ? local : [];
+  /** Règles des parties retenues par cet appareil (RULES_V1 si l'entrée n'en porte pas). */
+  const keptRules = new Map(history.filter(g => g && typeof g.id === 'string').map(g => [g.id, g.rules ?? RULES_V1]));
   const serverRows: Row[] = (server ?? []).map(g => ({
     id: g.id,
     white: g.white ?? colorName('w'),
@@ -67,10 +75,11 @@ export default function MyGames() {
     reason: g.reason,
     date: g.createdAt,
     plies: g.plies,
+    rules: keptRules.get(g.id),
     tags: [modeLabel(g.mode, g.rated, 'liste'), tcLabel(g.timeControl)].filter(Boolean),
   }));
   const serverIds = new Set(serverRows.map(r => r.id));
-  const localRows: Row[] = (Array.isArray(local) ? local : [])
+  const localRows: Row[] = history
     .filter(g => g && typeof g.id === 'string' && !serverIds.has(g.id))
     .map(g => ({
       id: g.id,
@@ -81,7 +90,7 @@ export default function MyGames() {
       reason: g.reason,
       date: g.at,
       plies: g.plies,
-      rules: g.rules,
+      rules: g.rules ?? RULES_V1,
       tags: [
         g.local ? 'Sur cet appareil' : g.vsBot ? modeLabel('bot', false, 'liste') : 'En ligne',
         g.catalog ? catalogLabel(g.catalog, CATALOGS, true) : '',

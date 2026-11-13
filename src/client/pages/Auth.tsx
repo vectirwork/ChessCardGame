@@ -11,12 +11,19 @@ import { PageHead, PlacePage, StarMark, useTitle } from './PageScene';
 type Mode = 'login' | 'register' | 'forgot' | 'reset' | 'verify';
 
 /**
- * Bornes du pseudo et du mot de passe : celles de USERNAME et PASSWORD (src/shared/config/limits.ts), vérifiées égales
- * par test/lessons.test.ts. Les importer ferait de config/limits.ts un morceau à part (il est aussi lu par Jouer et la
- * partie) et allongerait la table de préchargement du paquet principal.
+ * Bornes du pseudo et du mot de passe : copie de USERNAME et PASSWORD (src/shared/config/limits.ts), vérifiée égale par
+ * test/lessons.test.ts (bornes, caractères, aides, et attribut `pattern` rendu). Les importer ferait de limits.ts un
+ * morceau de plus (voir GUEST_NAME dans Play.tsx) ; le lot 9 remplacera la copie par l'import.
  */
-export const USERNAME = { min: 3, max: 20, hint: '3 à 20 caractères : lettres, chiffres, - et _' } as const;
+export const USERNAME = { min: 3, max: 20, chars: /^[A-Za-z0-9_-]+$/, hint: '3 à 20 caractères : lettres, chiffres, - et _' } as const;
 export const PASSWORD = { min: 8, hint: '8 caractères minimum.' } as const;
+
+/**
+ * Attribut `pattern` du pseudo, tiré de USERNAME.chars : sans ses ancres, que le navigateur ajoute, et avec le tiret final
+ * d'une classe échappé, car les navigateurs compilent `pattern` avec le drapeau v, qui le refuse nu. Au défaut :
+ * « [A-Za-z0-9_\-]+ », comme avant.
+ */
+const USERNAME_PATTERN = USERNAME.chars.source.replace(/^\^|\$$/g, '').replace(/-\]/g, '\\-]');
 
 export default function Auth({ mode }: { mode: Mode }) {
   const { setMe, refresh, toast, me } = useApp();
@@ -223,7 +230,7 @@ export default function Auth({ mode }: { mode: Mode }) {
                     required
                     minLength={USERNAME.min}
                     maxLength={USERNAME.max}
-                    pattern="[A-Za-z0-9_\-]+"
+                    pattern={USERNAME_PATTERN}
                     aria-describedby="username-hint"
                     value={username}
                     onChange={e => setUsername(e.target.value)}

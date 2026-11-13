@@ -106,7 +106,7 @@ const TEMPO: { key: string; family: string; text: string }[] = [
   {
     key: 'Présage',
     family: 'Climats',
-    text: `Le sort est annoncé avant votre coup et arrive au début de ${R.presageDelay === 2 ? 'votre tour suivant' : prochainTour(R.presageDelay)}. En attendant, il est affiché pour tous : l’adversaire a toujours ${enLettres(replies)} ${pluriel(replies, 'coup')} pour s’y préparer.`,
+    text: `Le sort est annoncé ${R.cardEndsTurn ? 'à la place de votre coup' : 'avant votre coup'} et arrive au début de ${R.presageDelay === 2 ? 'votre tour suivant' : prochainTour(R.presageDelay)}. En attendant, il est affiché pour tous : l’adversaire a toujours ${enLettres(replies)} ${pluriel(replies, 'coup')} pour s’y préparer.`,
   },
   ...(TERRAINS.length
     ? [{
@@ -145,7 +145,9 @@ const she = TRUCE.genre === 'f' ? 'Elle' : 'Il';
 const TIMELINE: { who: 'Vous' | 'Adversaire'; act: string; state: string; phase: Phase }[] = [
   ...Array.from({ length: R.presageDelay }, (_, i) => {
     const me = i % 2 === 0;
-    const act = i === 0 ? `Vous lancez ${withArticle(TRUCE)}, puis vous jouez.` : me ? 'Vous jouez.' : i === 1 ? `Il répond : il ${TRUCE.genre === 'f' ? 'la' : 'le'} voit venir.` : 'Il joue.';
+    // Le lancement : avant le coup (défaut), ou à la place du coup (cardEndsTurn)
+    const cast = R.cardEndsTurn ? `Vous lancez ${withArticle(TRUCE)} : c’est votre coup.` : `Vous lancez ${withArticle(TRUCE)}, puis vous jouez.`;
+    const act = i === 0 ? cast : me ? 'Vous jouez.' : i === 1 ? `Il répond : il ${TRUCE.genre === 'f' ? 'la' : 'le'} voit venir.` : 'Il joue.';
     return { who: me ? 'Vous' : 'Adversaire', act, state: i === R.presageDelay - 1 ? 'Arrive au coup suivant' : 'Annoncée', phase: 'pre' } as const;
   }),
   ...Array.from({ length: TRUCE_COUPS }, (_, i) => {

@@ -67,7 +67,8 @@ function LessonIndex() {
         sub={`De la marche des pièces aux mats élémentaires, puis les cartes de ${__SM__.marque}. Chaque leçon se joue sur l’échiquier, à votre rythme ; votre progression reste dans ce navigateur.`}
       >
         <div className="ft-head-row">
-          <div className="ft-meter" aria-label={`${compte(done, ['leçon terminée', 'leçons terminées'])} sur ${LESSONS.length}`}>
+          {/* « 1 leçon terminée » (pluriel corrigé) ; 0 reste au pluriel, comme avant : « 0 leçons terminées » */}
+          <div className="ft-meter" aria-label={`${done} ${done === 1 ? 'leçon terminée' : 'leçons terminées'} sur ${LESSONS.length}`}>
             <span style={{ width: `${(done / LESSONS.length) * 100}%` }} />
           </div>
           <span className="faint">{done} / {LESSONS.length} leçons</span>

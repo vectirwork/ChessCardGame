@@ -7,16 +7,18 @@
 // Comme les problèmes, les leçons se jouent avec les règles historiques (RULES_V1) : leurs rangées et leurs durées en
 // sont tirées. Ce qui décrit le jeu du moment (nombre de cartes, cartes par tour, nombre de pouvoirs, marque) suit les
 // règles des nouvelles parties (GAME_RULES) ; une leçon qui les contredirait est masquée (`requires`).
-// La marque est __SM__.marque (BRAND.name figé au build, comme dans les pages) : ce module n'est lu que par le site et les
-// tests, où Vite la remplace ; l'importer ajouterait un morceau au site.
+// La marque est __SM__.marque (BRAND.name figé au build, comme dans les pages) : importer BRAND ajouterait un morceau au
+// site. Conséquence : CE MODULE NE SE CHARGE QUE SOUS VITE (site construit, serveur de développement, Vitest), qui
+// remplace __SM__.marque ; sous tsx, node ou l'esbuild du serveur, son chargement échoue (« __SM__ is not defined »).
+// Le serveur et les scripts ne l'importent donc pas (garde-fou dans test/lessons.test.ts). Pour l'en sortir un jour
+// (rendu serveur de /apprendre), définir __SM__.marque dans scripts/build-server.mjs, ou passer la marque en paramètre.
 
 import { Color, Move, PieceType, fileOf, inCheck, kingSquare, rankOf } from './chess';
 import { CARDS, FAMILY_LABEL, cardsOf } from './cards';
 import type { CardId, Catalog, Family } from './cards';
 import { GAME_RULES, RULES_V1 } from './config/rules';
-import type { GameRulesSettings } from './config/rules';
 import { GameState, createGameFromFen, legalMovesOf, modsFromEffects, playMove } from './game';
-import { ContentRequires, EffectSpec, V1_TUNING, hand, meetsRequires, withEffects } from './puzzles';
+import { ContentRequires, ContentRules, EffectSpec, V1_TUNING, hand, meetsRequires, withEffects } from './puzzles';
 import { cap, compte, enLettres, liste, pluriel } from './text/fr';
 import {
   cartesChacun, cartesDePouvoir, cartesDuCatalogue, constitutionMains, etendueRangees, momentCarte, parTour, pouvoirs, rangees,
@@ -461,7 +463,7 @@ export const ALL_LESSONS: Lesson[] = [
   {
     id: 'cartes', title: 'Jouer une carte', group: 'Les cartes',
     summary: `${cartesChacun(R, true)}, visibles des deux joueurs ; ${parTour(R)}, ${momentCarte(R)}.`,
-    requires: { cardBefore: true },
+    requires: { cardBefore: true, tuning: ['ice_wall'] },
     steps: [
       {
         fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', goal: { kind: 'info' },
@@ -522,7 +524,7 @@ export const ALL_LESSONS: Lesson[] = [
   {
     id: 'presage-rituel', title: 'Présage et Rituel', group: 'Les cartes',
     summary: 'Le Climat s’annonce ; la marée remplace le coup.',
-    requires: { cardBefore: true },
+    requires: { cardBefore: true, presageDelay: 2, tuning: ['truce', 'tide'] },
     steps: [
       {
         fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', goal: { kind: 'info' }, panel: 'presage',
@@ -565,7 +567,7 @@ export const ALL_LESSONS: Lesson[] = [
   {
     id: 'mains-visibles', title: 'Lire la main adverse', group: 'Les cartes',
     summary: 'Ses cartes sont visibles : jouez en conséquence.',
-    requires: { handsVisible: true },
+    requires: { handsVisible: true, tuning: ['rift'] },
     steps: [
       {
         fen: 'k7/p1Q5/8/8/8/8/5PPP/3B2K1 w - - 0 1', goal: { kind: 'mate' },
@@ -579,7 +581,7 @@ export const ALL_LESSONS: Lesson[] = [
 ];
 
 /** Leçons que permettent les règles `r` (requires). */
-export function lessonsFor(r: Pick<GameRulesSettings, 'handsVisible' | 'cardsPerTurn' | 'cardEndsTurn'>, list: readonly Lesson[] = ALL_LESSONS): Lesson[] {
+export function lessonsFor(r: ContentRules, list: readonly Lesson[] = ALL_LESSONS): Lesson[] {
   return list.filter(l => meetsRequires(l.requires, r));
 }
 

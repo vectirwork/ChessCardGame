@@ -740,7 +740,7 @@ function duelScene(sc: Scene) {
         converge(stage, skin, t0, 40, 1.2, impactAt * 0.8);
         onImpact(() => {
           const sq = info.targets[0];
-          const f = sq & 7, r = sq >> 3;
+          const f = sq % N, r = Math.floor(sq / N);
           for (const [df, dr] of [[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]]) {
             if (f + df < 0 || f + df > N - 1 || r + dr < 0 || r + dr > N - 1) continue;
             arcStream(stage, skin, t0, stage.local((r + dr) * N + f + df), 0.6, 1.1);

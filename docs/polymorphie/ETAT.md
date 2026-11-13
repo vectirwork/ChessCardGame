@@ -66,8 +66,33 @@ Contrôles après fusion (3be9010) : `tsc` sans erreur, 930 tests verts, `npm ru
 Points ouverts ajoutés : poids de l'accueil, environ +0,6 ko gzip de plus (lot 4) ; contact légal par défaut gardé
 (`contact@example.com`, identité) en attendant les vraies mentions (Q1).
 
-## Reste à faire (vagues 3 à 5)
-3. Lot 5 (partie et coque) ∥ lot 6 (socle client, marque, routes).
+## Fait et fusionné (vague 3)
+- **Lot 5, partie en ligne et coque** : la coque, le choix des cartes et la partie suivent N, le budget de cartes par
+  tour, le moment de la carte et le délai des Présages ; textes dérivés (singulier pour 1 carte, « Remplace votre
+  coup », « Dans deux tours »…) ; petites cartes au-delà de 3 (moment en icône, pastille courte) ; un seul écouteur de
+  redimensionnement. Identique au défaut, à 3 cartes.
+- **Lot 6, socle client, marque, routes et SEO** : table des routes partagée (`src/shared/config/routes.ts`), marque
+  pliée au build (`index.html` tiré de `BRAND`), greffon Vite qui refuse des règles impossibles, limite d'erreur par
+  page avec rechargement quand le code d'une page manque, réseau avec délai maximal, interrupteurs sans flash, liens
+  de la boutique cachés quand elle est fermée. HTML construit identique au défaut.
+
+Défauts corrigés dans cette vague : « Partie sans cartes » affiché à tort dans l'attente et le choix des cartes (seul
+écart, voulu, avec la référence des bancs) ; minuterie d'émote commune aux deux camps ; note de révélation du choix
+devinée côté client au lieu d'être donnée par le serveur ; numérotation des coups après une Grande Marée des Noirs ;
+page blanche quand le code d'une page manque après une mise en ligne.
+
+Contrôles après fusion : `tsc` sans erreur, 1 115 tests verts, `npm run temoins` vert, build réussi ; bancs d'identité
+et de textes identiques à la référence hors l'écart voulu ci-dessus ; `integration.mjs` vert au défaut, avec 5 cartes
+et 2 par tour, avec 1 carte, avec la carte à la place du coup ; `ranked.mjs` vert.
+
+Points ouverts ajoutés :
+- Q11 (fondateur) : captures des variantes (1, 5, 6 cartes, 2 par tour, carte à la place du coup, Présage à 4) ; au
+  lot 9, noms coupés sur les petites cartes du bureau et bulle de consigne qui recouvre les cartes sur mobile au-delà de
+  3 cartes.
+- Paquet principal : +765 o gzip face à 6ae7064 (marge prévue ±0,5 ko) ; le lot 9 retire les reliquats (`usePref` de
+  `store.tsx`, surcharges de `emitAck`) puis mesure.
+
+## Reste à faire (vagues 4 et 5)
 4. Lot 7 (accueil) ∥ lot 8 (pages et contenus).
 5. Lot 9 (intégration, mesure de performance, documentation), seul sur la machine.
 

@@ -188,6 +188,34 @@ describe('commande calculée au serveur (orderFor)', () => {
     ]);
   });
 
+  it('photographie au défaut (avant la refonte) : lignes du Trésor et du Grimoire, texte entier d’un e-mail', () => {
+    expect(purchaseItemLines(productById('pack:tresor')!.items)).toEqual([
+      'Jardin de jade : roi, échiquier et sorts',
+      'Néon 2084 : roi, échiquier et sorts',
+      'Forge d’Inferno : roi, échiquier et sorts',
+      'Olympe : roi, échiquier et sorts',
+      'Cour écarlate : roi, échiquier et sorts',
+      'Néant : roi, échiquier et sorts',
+      'Voûte céleste : roi, échiquier et sorts',
+    ]);
+    expect(purchaseItemLines(productById('pack:skins')!.items)).toEqual(['7 sorts : Inferno, Néon 2084, Céleste, Néant, Sakura, Laurier et Écarlate']);
+    expect(purchaseItemLines(['king:braise', 'king:synthe', 'king:laure', 'board:jade', 'board:ruby'])).toEqual([
+      '3 rois : Roi de braise, Roi Synthé et Roi lauré', '2 échiquiers : Palais de jade et Rubis',
+    ]);
+    const m = purchaseConfirmationMail({ label: 'Roi de braise', amount: '2,99 €', items: ['Roi de braise'], alreadyOwned: ['Sorts Inferno'], equipped: true });
+    expect(m.text).toBe(
+      [
+        'Achat confirmé : Roi de braise · 2,99 €',
+        'Disponible dès maintenant dans votre collection :',
+        '- Roi de braise',
+        'Déjà dans votre collection : Sorts Inferno.',
+        'C’est déjà équipé : tout est prêt pour votre prochaine partie.',
+        'Votre roi et vos sorts : vos adversaires les voient. Votre échiquier : il vous suit dans toutes vos parties.',
+        `${config.publicUrl}/boutique`,
+      ].join('\n'),
+    );
+  });
+
   it('refus du paiement : messages en français, y compris pour une requête forgée', () => {
     const msg = (body: unknown) => {
       const r = checkoutSchema.safeParse(body);

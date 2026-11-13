@@ -1,10 +1,11 @@
 // Catalogue des skins (src/shared/catalog.ts et src/shared/skins/) : identifiants, raretés, grille des prix et ses
 // exceptions, collections, produits et packs, « compléter la collection », panier d'essai, sceau, apparence des IA.
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   ALL_PRODUCTS, BOT_LOOK, COLLECTIONS, DEFAULT_BOARD, DEFAULT_ITEM, DEFAULT_KING, DEFAULT_SKIN, FREE_ITEMS, ITEMS,
-  ORACLE_LOOK, PRICE, PRODUCTS, RARITY, SLOTS, SLOT_LABEL, boardStyle, collectionOf, formatPrice, itemById, kingStyle,
-  normKing, productById, productPrice, quoteCart, sealOf, skinStyle, unitPrice,
+  ORACLE_LOOK, PRICE, PRODUCTS, RARITY, SLOTS, SLOT_LABEL, boardStyle, collectionItems, collectionOf, formatPrice, itemById,
+  itemLabel, kingStyle, normKing, productById, productPrice, quoteCart, sealOf, skinStyle, unitPrice,
 } from '../src/shared/catalog';
 import type { ItemKind } from '../src/shared/catalog';
 
@@ -325,5 +326,80 @@ describe('catalogue : apparence des IA et de l’Oracle', () => {
       3: { skin: 'skin:void', king: 'king:eclipse' },
     });
     expect(ORACLE_LOOK).toEqual({ skin: 'skin:void', king: 'king:eclipse' });
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Photographie de l'offre au défaut, prise avant la refonte (lot 2 de la passe « polymorphe ») : les tables dérivées
+// (emplacements, libellés, produits) doivent rester égales à ces valeurs, au caractère près. Les champs ajoutés par la
+// refonte (Item.badge, Item.retired, Collection.sealName, Product.display, Product.shortName) sont retirés avant de
+// comparer l'empreinte : leur ajout est voulu, le reste ne bouge pas (même ordre des clés).
+
+/** Empreinte (sha256, 16 caractères) du JSON, champs nouveaux retirés. */
+function empreinte(x: unknown, sans: readonly string[] = []): string {
+  const json = JSON.stringify(x, (k, v) => (sans.includes(k) ? undefined : v));
+  return createHash('sha256').update(json).digest('hex').slice(0, 16);
+}
+
+describe('photographie de l’offre au défaut (identique à la boutique d’avant la refonte)', () => {
+  it('objets, collections et produits : mêmes données, même ordre, mêmes clés', () => {
+    expect(empreinte(ITEMS, ['badge', 'retired'])).toBe('7db9051280ad9270');
+    expect(empreinte(COLLECTIONS, ['sealName'])).toBe('f5bdd1ad80879e67');
+    expect(empreinte(ALL_PRODUCTS, ['display', 'shortName'])).toBe('fbc704e7d3d878be');
+    expect(PRODUCTS.map(p => p.id)).toEqual(ALL_PRODUCTS.filter(p => p.id !== 'pack:all').map(p => p.id));
+  });
+
+  it('produits : libellés, descriptions, prix, prix barrés et badges', () => {
+    const lignes = ALL_PRODUCTS.map(p => [p.id, p.name, p.description, p.priceCents, p.compareAtCents ?? null, p.badge ?? null]);
+    expect(lignes).toEqual([
+      ['king:printemps', 'Roi du printemps', 'Une couronne de lotus, une fleur de cerisier pour croix et un rameau en fleurs gravé sur la porcelaine.', 299, null, 'Nouveau'],
+      ['king:synthe', 'Roi Synthé', 'Tout en angles : une visière néon et un pixel lumineux au cœur de la croix. Le roi du club de 2084.', 299, null, 'Nouveau'],
+      ['king:braise', 'Roi de braise', 'Une couronne de flammes, une croix de feu et une veine de lave qui le fend de part en part.', 299, null, 'Nouveau'],
+      ['king:laure', 'Roi lauré', 'Un dôme de marbre ceint d’une couronne de laurier d’or, une croix pattée, un fût cannelé de colonne grecque.', 299, null, 'Nouveau'],
+      ['king:rubis', 'Roi de rubis', 'La couronne impériale : arches perlées, coiffe de velours écarlate, globe d’or et croix, rubis au front.', 399, null, 'Nouveau'],
+      ['king:eclipse', 'Roi éclipse', 'Un soleil noir ceint d’un anneau d’accrétion, et un œil de néant posé sur le bandeau.', 399, null, 'Nouveau'],
+      ['king:astral', 'Roi astral', 'Une couronne de rayons, une étoile d’or pour croix et un croissant de lune gravé : le roi de la carte du ciel.', 499, null, 'Nouveau'],
+      ['board:marble', 'Échiquier Marbre de Carrare', 'Marbre blanc veiné, marbre gris et frise grecque d’or : l’échiquier des vainqueurs.', 199, null, null],
+      ['board:obsidian', 'Échiquier Obsidienne & Or', 'Pierre volcanique sertie d’or, rivets forgés et veines de lave figées dans la roche.', 199, null, null],
+      ['board:jade', 'Échiquier Palais de jade', 'Jade impérial et ivoire, liseré d’or ; des pétales de cerisier tombent sur l’échiquier.', 199, null, null],
+      ['board:ruby', 'Échiquier Rubis', 'Rubis taillé et crème, serti d’un filigrane d’or : taillé pour l’attaque.', 199, null, null],
+      ['board:grille', 'Échiquier Grille 2084', 'Cases indigo et lavande sous une grille cyan qui ne s’éteint jamais, cadre néon magenta.', 199, null, 'Nouveau'],
+      ['board:horizon', 'Échiquier Horizon des événements', 'Un ciel éteint : un disque d’accrétion violet tourne autour d’une singularité, au cœur de l’échiquier.', 249, null, 'Nouveau'],
+      ['board:ciel', 'Échiquier Carte du ciel', 'Parchemin et bleu nuit, piqué d’étoiles d’or comme une carte des astronomes.', 299, null, 'Nouveau'],
+      ['skin:inferno', 'Sorts Inferno', 'Chaque carte s’embrase : braises, cercle de flammes et onde de chaleur.', 299, null, 'Populaire'],
+      ['skin:neon', 'Sorts Néon 2084', 'Grille synthwave, pixels lumineux et glitch rétro-futuriste.', 299, null, null],
+      ['skin:celestial', 'Sorts Céleste', 'Poussière d’étoiles dorée et constellations qui dessinent vos coups.', 399, null, null],
+      ['skin:void', 'Sorts Néant', 'Un trou noir s’ouvre sous l’échiquier. Particules d’ombre et lueurs pourpres.', 399, null, null],
+      ['skin:sakura', 'Sorts Sakura', 'Une pluie de pétales roses et un souffle de printemps à chaque sort.', 299, null, null],
+      ['skin:laurier', 'Sorts Laurier', 'Une pluie de feuilles d’or et de laurier, et une couronne de vainqueur qui se referme à chaque sort.', 299, null, 'Nouveau'],
+      ['skin:ecarlate', 'Sorts Écarlate', 'Des éclats de rubis jaillissent et retombent en pluie sous un anneau de filigrane d’or.', 399, null, 'Nouveau'],
+      ['col:jade', 'Collection Jardin de jade', 'Dans un palais suspendu au-dessus des nuages, le printemps ne finit jamais.', 599, 797, null],
+      ['col:neon', 'Collection Néon 2084', 'Un club clandestin rejoue les grandes parties en hologrammes.', 599, 797, null],
+      ['col:inferno', 'Collection Forge d’Inferno', 'Au cœur du Sablier, une forge coule les couronnes dans l’obsidienne et l’or.', 599, 797, null],
+      ['col:olympe', 'Collection Olympe', 'Sculpté dans le marbre de Carrare et couronné de laurier.', 599, 797, null],
+      ['col:ecarlate', 'Collection Cour écarlate', 'La plus ancienne cour du ciel.', 799, 997, null],
+      ['col:neant', 'Collection Néant', 'Ce qui reste quand le ciel s’éteint.', 799, 1047, null],
+      ['col:celeste', 'Collection Voûte céleste', 'La carte du ciel de l’Odyssée : chaque coup y dessine une constellation.', 999, 1197, null],
+      ['pack:skins', 'Grimoire des sorts', 'Les 7 sorts premium, et les prochains offerts.', 1299, 2393, '-46 %'],
+      ['pack:tresor', 'Trésor du Bazar', 'Les 21 objets des 7 collections premium : rois, échiquiers et sorts.', 2499, 6429, 'Meilleure offre'],
+      ['pack:all', 'Grimoire complet', 'Tous les skins et tous les plateaux premium.', 1299, 2491, null],
+    ]);
+  });
+
+  it('emplacements : ordre, libellés, objets par défaut, libellé d’un objet', () => {
+    expect(SLOTS).toEqual(['king', 'board', 'skin']);
+    expect(SLOT_LABEL).toEqual({ king: 'Roi', board: 'Échiquier', skin: 'Sorts' });
+    expect(DEFAULT_ITEM).toEqual({ king: 'king:arcane', board: 'board:arcane', skin: 'skin:arcane' });
+    expect(ITEMS.filter(i => i.free).map(itemLabel)).toEqual(['Roi Arcane', 'Échiquier Nuit arcane', 'Échiquier Bois de chêne', 'Échiquier Ardoise', 'Sorts Arcane']);
+    expect(COLLECTIONS.map(c => collectionItems(c).join(' '))).toEqual([
+      'king:arcane board:arcane skin:arcane',
+      'king:printemps board:jade skin:sakura',
+      'king:synthe board:grille skin:neon',
+      'king:braise board:obsidian skin:inferno',
+      'king:laure board:marble skin:laurier',
+      'king:rubis board:ruby skin:ecarlate',
+      'king:eclipse board:horizon skin:void',
+      'king:astral board:ciel skin:celestial',
+    ]);
   });
 });

@@ -2,10 +2,12 @@
 // Écart essai / panoplie, essai dans l'adresse (?essai=), prix de l'essai, bouton principal, meilleure collection,
 // « Surprenez-moi », état des cartes.
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_ITEM, FREE_ITEMS, ITEMS, SLOTS, collectionById, productById, productPrice } from '../src/shared/catalog';
+import { COLLECTIONS, DEFAULT_ITEM, FREE_ITEMS, ITEMS, SLOTS, collectionById, itemLabel, productById, productPrice } from '../src/shared/catalog';
+import { RAYON_NOTE } from '../src/client/pages/shop/Rack';
+import { RAYONS, RAYON_LABEL } from '../src/client/pages/shop/RayonTabs';
 import {
-  bestCollection, cardLabel, changedSlots, equipNote, formatEssai, itemState, mainAction, normalize, orderSummary, parseEssai, quoteTrial, rackOrder,
-  revertSlot, surprise, toggleItem, trialOf, withCollection,
+  bestCollection, cardLabel, changedSlots, equipNote, formatEssai, itemPhrase, itemState, mainAction, normalize, orderSummary, parseEssai, quoteTrial,
+  rackOrder, revertSlot, sealName, slotWord, surprise, toggleItem, trialOf, withCollection,
 } from '../src/client/pages/shop/trial';
 import type { Trial } from '../src/client/pages/shop/trial';
 import { itemById } from '../src/shared/catalog';
@@ -13,6 +15,13 @@ import { itemById } from '../src/shared/catalog';
 const ARCANE: Trial = { ...DEFAULT_ITEM };
 const owned = (...ids: string[]) => [...FREE_ITEMS, ...ids];
 const norm = (s: string) => s.replace(/[  ]/g, ' ');
+/** Tirages de « Surprenez-moi » (hasard de Park et Miller, graine 7), relevés avant la refonte. */
+const SURPRISES: Trial[] = [
+  { king: 'king:arcane', board: 'board:ciel', skin: 'skin:neon' },
+  { king: 'king:printemps', board: 'board:grille', skin: 'skin:void' },
+  { king: 'king:synthe', board: 'board:grille', skin: 'skin:laurier' },
+  { king: 'king:laure', board: 'board:ruby', skin: 'skin:sakura' },
+];
 
 describe('écart entre l’essai et la panoplie', () => {
   it('l’essai complet prend la panoplie, puis les emplacements essayés', () => {
@@ -237,5 +246,69 @@ describe('ordre des rayons', () => {
       expect(list.slice(firstFree).every(i => i.free)).toBe(true);
     }
     expect(rackOrder(ITEMS.filter(i => i.kind === 'board')).slice(0, 3).map(i => i.id)).toEqual(['board:grille', 'board:horizon', 'board:ciel']);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Photographie des textes de la boutique au défaut, prise avant la refonte (lot 2 de la passe « polymorphe ») : les
+// textes dérivés des emplacements (SLOT_DEFS) doivent rester égaux à ces valeurs, au caractère près.
+
+describe('textes des emplacements au défaut (identiques à la boutique d’avant la refonte)', () => {
+  it('mot de l’emplacement, nom d’un objet dans une phrase', () => {
+    expect(SLOTS.map(slotWord)).toEqual(['roi', 'échiquier', 'sorts']);
+    expect(itemPhrase(itemById('king:braise')!)).toBe('Roi de braise');
+    expect(itemPhrase(itemById('board:ruby')!)).toBe('Échiquier Rubis');
+    expect(itemPhrase(itemById('skin:inferno')!)).toBe('Sorts Inferno');
+    for (const it of ITEMS) expect(itemPhrase(it)).toBe(itemLabel(it));
+  });
+
+  it('phrase d’équipement : toutes les combinaisons d’emplacements', () => {
+    const one = { king: 'king:braise', board: 'board:ruby', skin: 'skin:inferno' };
+    const phrases = [['king'], ['board'], ['skin'], ['king', 'board'], ['king', 'skin'], ['board', 'skin'], ['king', 'board', 'skin']].map(ks =>
+      equipNote(ks.map(k => one[k as keyof typeof one])),
+    );
+    expect(phrases).toEqual([
+      'vos adversaires verront votre roi dès votre prochaine partie',
+      'votre échiquier vous suit dans toutes vos parties',
+      'vos adversaires verront vos sorts dès votre prochaine partie',
+      'vos adversaires verront votre roi dès votre prochaine partie ; votre échiquier vous suit dans toutes vos parties',
+      'vos adversaires verront votre roi et vos sorts dès votre prochaine partie',
+      'vos adversaires verront vos sorts dès votre prochaine partie ; votre échiquier vous suit dans toutes vos parties',
+      'vos adversaires verront votre roi et vos sorts dès votre prochaine partie ; votre échiquier vous suit dans toutes vos parties',
+    ]);
+    expect(equipNote([])).toBe('');
+  });
+
+  it('noms des sceaux de collection', () => {
+    expect(COLLECTIONS.map(sealName)).toEqual([
+      'Sceau Arcane',
+      'Sceau du Jardin de jade',
+      'Sceau de Néon 2084',
+      'Sceau de la Forge',
+      'Sceau de l’Olympe',
+      'Sceau de la Cour écarlate',
+      'Sceau du Néant',
+      'Sceau de la Voûte céleste',
+    ]);
+  });
+
+  it('rayons : ordre, libellés, notes', () => {
+    expect(RAYONS).toEqual(['rois', 'echiquiers', 'sorts', 'collections']);
+    expect(RAYON_LABEL).toEqual({ rois: 'Rois', echiquiers: 'Échiquiers', sorts: 'Sorts', collections: 'Collections' });
+    expect(RAYON_NOTE).toEqual({
+      rois: 'Votre roi vous représente : vos adversaires le voient en face d’eux.',
+      echiquiers: 'Votre échiquier vous suit dans toutes vos parties. Vos adversaires gardent le leur.',
+      sorts: 'Vos sorts s’animent avec ce skin, chez vous comme chez votre adversaire.',
+      collections: 'Trois skins assortis et une exclusivité qu’on ne trouve nulle part ailleurs : le sceau, à côté de votre pseudo.',
+    });
+  });
+
+  it('« Surprenez-moi » : mêmes tirages pour un même hasard', () => {
+    let a = 7;
+    const rand = () => ((a = (a * 16807) % 2147483647) - 1) / 2147483646;
+    const tirages: Trial[] = [];
+    let t: Trial = { ...DEFAULT_ITEM };
+    for (let i = 0; i < 4; i++) tirages.push((t = surprise(t, rand)));
+    expect(tirages).toEqual(SURPRISES);
   });
 });

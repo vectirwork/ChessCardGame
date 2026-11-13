@@ -24,7 +24,7 @@ export interface Act {
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-const fresh = (): GameState => createGame({ w: [...CARD_IDS], b: [...CARD_IDS] }, true);
+const fresh = (): GameState => createGame({ w: [...CARD_IDS], b: [...CARD_IDS] }, true, 'duel');
 
 /** Accès aux champs internes de la scène d'effets (perspective, calque, rendu) sans modifier le module partagé. */
 interface StageInternals {

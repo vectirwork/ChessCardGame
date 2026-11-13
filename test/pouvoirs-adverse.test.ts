@@ -561,7 +561,7 @@ describe('Mains visibles', () => {
 
 describe('Tirage, sur des dizaines de milliers de mains', () => {
   const POOL = cardsOf('climats');
-  it('8 cartes ; contraintes R9 ; Sablier fou exclu contre l’IA et sans pendule ; miroir ; « Sans cartes » vide', () => {
+  it('8 cartes ; contraintes R9 ; Sablier fou exclu contre l’IA et sans pendule ; « Sans cartes » vide', () => {
     expect(POOL.sort()).toEqual(['blast', 'blood_moon', 'hourglass', 'ice_age', 'ice_wall', 'rift', 'tide', 'truce']);
     const rand = rng(777);
     const count = new Map<string, number>();
@@ -569,9 +569,8 @@ describe('Tirage, sur des dizaines de milliers de mains', () => {
     for (let k = 0; k < 30_000; k++) {
       const timed = k % 2 === 0;
       const vsBot = k % 3 === 0;
-      const mirror = k % 5 === 0;
-      const h = dealHands(timed, mirror, rand, 'climats', { vsBot });
-      const tag = `${k} timed=${timed} vsBot=${vsBot} mirror=${mirror}`;
+      const h = dealHands(timed, rand, 'climats', { vsBot });
+      const tag = `${k} timed=${timed} vsBot=${vsBot}`;
       for (const c of ['w', 'b'] as Color[]) {
         const hand = h[c];
         if (hand.length !== 3 || new Set(hand).size !== 3) bad.push(`${tag} : main ${hand}`);
@@ -581,7 +580,6 @@ describe('Tirage, sur des dizaines de milliers de mains', () => {
         if ((!timed || vsBot) && hand.includes('hourglass')) bad.push(`${tag} : Sablier ${hand}`);
         for (const id of hand) count.set(`${timed && !vsBot}:${id}`, (count.get(`${timed && !vsBot}:${id}`) ?? 0) + 1);
       }
-      if (mirror && h.b.join() !== h.w.join()) bad.push(`${tag} : miroir ${h.w} / ${h.b}`);
     }
     expect(bad).toEqual([]);
     expect(count.get('true:hourglass')).toBeGreaterThan(1000);
@@ -589,14 +587,14 @@ describe('Tirage, sur des dizaines de milliers de mains', () => {
     const f = (id: CardId) => count.get(`false:${id}`) ?? 0;
     expect(Math.min(f('truce'), f('ice_wall'), f('rift'))).toBeGreaterThan(Math.max(f('ice_age'), f('tide')));
     expect(Math.min(f('ice_age'), f('tide'))).toBeGreaterThan(Math.max(f('blood_moon'), f('blast')));
-    expect(dealHands(true, false, rand, 'aucune')).toEqual({ w: [], b: [] });
+    expect(dealHands(true, rand, 'aucune')).toEqual({ w: [], b: [] });
   }, 60_000);
 
   it('générateurs dégénérés (toujours 0, toujours 0,999…, alternés) : mains valides, sans Sablier contre l’IA', () => {
     const gens = [() => 0, () => 0.9999999, (() => { let t = 0; return () => (t++ % 2 ? 0.9999 : 0); })()];
     for (const g of gens) {
       for (const vsBot of [false, true]) {
-        const h = dealHands(true, false, g, 'climats', { vsBot });
+        const h = dealHands(true, g, 'climats', { vsBot });
         for (const c of ['w', 'b'] as Color[]) {
           expect(new Set(h[c]).size).toBe(3);
           expect(h[c].filter(id => CARDS[id].family === 'climat').length).toBeLessThanOrEqual(2);
@@ -691,7 +689,7 @@ function randomGame(seed: number, stats: Map<string, number>) {
   const bump = (k: string) => stats.set(k, (stats.get(k) ?? 0) + 1);
   const timed = seed % 3 !== 0;
   const vsBot = seed % 4 === 0;
-  let s = createGame(dealHands(timed, seed % 7 === 0, rand, 'climats', { vsBot }), timed, 'climats');
+  let s = createGame(dealHands(timed, rand, 'climats', { vsBot }), timed, 'climats');
   const trail: string[] = [];
   try {
     for (let step = 0; step < 260 && !s.result; step++) {

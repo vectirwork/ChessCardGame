@@ -60,6 +60,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as cardsNs from '../../../src/shared/cards';
 import * as gameNs from '../../../src/shared/game';
+import * as configRulesNs from '../../../src/shared/config/rules';
 import * as botNs from '../../../src/shared/bot';
 import * as pgnNs from '../../../src/shared/pgn';
 import * as chessNs from '../../../src/shared/chess';
@@ -76,6 +77,7 @@ import { sq } from '../../helpers/sq';
 type Any = any;
 const C: Any = cardsNs;
 const G: Any = gameNs;
+const CR: Any = configRulesNs;
 const B: Any = botNs;
 const PG: Any = pgnNs;
 const CH: Any = chessNs;
@@ -191,8 +193,9 @@ function temoinsConstantes() {
     }
   }
   ecrire('constantes.json', {
-    CARDS_PER_PLAYER: G.CARDS_PER_PLAYER,
-    DRAFT_MS: G.DRAFT_MS,
+    // Alias retirés au lot 9 (game.ts, cards.ts) : mêmes valeurs, lues dans config/rules.ts.
+    CARDS_PER_PLAYER: CR.GAME_RULES.cardsPerPlayer,
+    DRAFT_MS: CR.DEAL.draftMs,
     CINEMATIC_MS: S.CINEMATIC_MS,
     HOME_WINDOW_MS: S.HOME_WINDOW_MS,
     TIME_CONTROLS: P.TIME_CONTROLS,
@@ -205,7 +208,7 @@ function temoinsConstantes() {
     DEFAULT_SKIN: CAT.DEFAULT_SKIN,
     DEFAULT_KING: CAT.DEFAULT_KING,
     DEFAULT_BOARD: CAT.DEFAULT_BOARD,
-    RARITY_WEIGHT: C.RARITY_WEIGHT,
+    RARITY_WEIGHT: CR.DEAL.rarityWeight,
     RARITY_LABEL: C.RARITY_LABEL,
     FAMILY_LABEL: C.FAMILY_LABEL,
     CATALOGS: C.CATALOGS,
@@ -323,7 +326,7 @@ function specs(): Spec[] {
   const add = (catalog: Spec['catalog'], timed: boolean, hands: Spec['hands'] | null, maxActions = 260) => {
     const n = out.length + 1;
     const graine = 1000 + n * 7919;
-    const h = hands ?? G.dealHands(timed, false, mulberry32(graine ^ 0x5bd1e995), catalog);
+    const h = hands ?? G.dealHands(timed, mulberry32(graine ^ 0x5bd1e995), catalog);
     const nom = catalog === 'climats' ? 'pouvoirs' : catalog === 'duel' ? 'duel' : 'sans-cartes';
     out.push({
       id: `${String(n).padStart(2, '0')}-${nom}-${timed ? 'pendule' : 'sans-pendule'}`,
@@ -453,7 +456,10 @@ function temoinsTirages() {
     const catalog = catalogs[i % catalogs.length];
     const vsBot = i % 3 === 0;
     const mirror = i % 50 === 7;
-    deal.push({ graine, timed, mirror, catalog, vsBot, mains: G.dealHands(timed, mirror, mulberry32(graine), catalog, { vsBot }) });
+    // Mode miroir (paramètre retiré de dealHands au lot 9) : la main des Blancs, tirée la première avec le même
+    // générateur, copiée pour les Noirs ; exactement ce que donnait dealHands(timed, true, …).
+    const h = G.dealHands(timed, mulberry32(graine), catalog, { vsBot });
+    deal.push({ graine, timed, mirror, catalog, vsBot, mains: mirror ? { w: h.w, b: h.w.slice() } : h });
   }
   const complete = [];
   for (let i = 0; i < 500; i++) {
@@ -671,7 +677,7 @@ function temoinsAccueil() {
   vi.useFakeTimers();
   vi.setSystemTime(T0);
   const rand = mulberry32(424242);
-  let s = G.createGame(G.dealHands(false, false, rand, 'climats'), false, 'climats');
+  let s = G.createGame(G.dealHands(false, rand, 'climats'), false, 'climats');
   for (const [from, to] of [['e2', 'e4'], ['c7', 'c5'], ['g1', 'f3']]) {
     const r = G.playMove(s, sq(from), sq(to));
     if (!r.ok) throw new Error(r.error);

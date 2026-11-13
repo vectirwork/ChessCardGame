@@ -20,7 +20,7 @@ const FEN = 'r1bq1rk1/pp2bppp/2n1pn2/3p4/2PP4/2N1PN2/PP2BPPP/2BQK2R w K - 0 9';
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 function fresh(): GameState {
-  const s = createGameFromFen(FEN, { w: [...CARD_IDS], b: [...CARD_IDS] }, true);
+  const s = createGameFromFen(FEN, { w: [...CARD_IDS], b: [...CARD_IDS] }, true, 'duel');
   s.captured = { w: ['r'], b: ['p'] };
   return s;
 }

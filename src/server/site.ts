@@ -22,9 +22,10 @@ import { featuresDiff } from '../shared/config/features';
 import type { Features } from '../shared/config/features';
 import { ROUTES, ROUTE_TITLES, routeOpen } from '../shared/config/routes';
 import type { RouteDef } from '../shared/config/routes';
+import { GUEST_COOKIE, guestCookieOptions, parseCookies } from './auth';
 import { config } from './config';
 import { randomToken, sign, unsign } from './security';
-import { ACCOUNT, FEATURES } from './settings';
+import { FEATURES } from './settings';
 
 interface ManifestChunk {
   file: string;
@@ -221,29 +222,14 @@ function pagesHtml(clientDist: string, opts: SiteOptions) {
   };
 }
 
-const GUEST_COOKIE = 'sm_guest';
-const DAY_MS = 86_400_000;
-
 /**
- * Cookie d'invité posé dès le HTML s'il manque ou ne se vérifie pas (mêmes nom, signature et options que identify,
- * src/server/auth.ts) : le socket, ouvert avant la réponse de /api/me, a ainsi déjà son identité d'invité.
+ * Cookie d'invité posé dès le HTML s'il manque ou ne se vérifie pas (nom, lecture, signature et options de identify,
+ * src/server/auth.ts : GUEST_COOKIE, parseCookies, guestCookieOptions) : le socket, ouvert avant la réponse de
+ * /api/me, a ainsi déjà son identité d'invité.
  */
 function ensureGuestCookie(req: Request, res: Response) {
-  const raw = /(?:^|;\s*)sm_guest=([^;]*)/.exec(req.headers.cookie ?? '')?.[1];
-  let value: string | undefined;
-  try {
-    value = raw === undefined ? undefined : decodeURIComponent(raw);
-  } catch {
-    value = raw;
-  }
-  if (unsign(value)) return;
-  res.cookie(GUEST_COOKIE, sign(randomToken(12)), {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: config.publicUrl.startsWith('https://'),
-    maxAge: ACCOUNT.guestCookieDays * DAY_MS,
-    path: '/',
-  });
+  if (unsign(parseCookies(req.headers.cookie)[GUEST_COOKIE])) return;
+  res.cookie(GUEST_COOKIE, sign(randomToken(12)), guestCookieOptions());
 }
 
 export function serveBuiltSite(app: Express, clientDist: string, opts: SiteOptions = {}) {

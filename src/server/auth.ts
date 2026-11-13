@@ -3,7 +3,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
-import { DEFAULT_ITEM, FREE_ITEMS } from '../shared/catalog';
+import { DEFAULT_ITEM, FREE_ITEMS, SLOTS, SLOT_DEFS } from '../shared/catalog';
 import type { ItemKind } from '../shared/catalog';
 import { PASSWORD, USERNAME } from '../shared/config/limits';
 import type { MeUser } from '../shared/protocol';
@@ -33,23 +33,39 @@ export interface UserRow {
 }
 
 /**
- * Colonne d'équipement de chaque emplacement (exhaustive : le compilateur signale l'emplacement oublié). Les noms de
- * colonnes ne viennent que d'ici, jamais de la requête.
+ * Colonne d'équipement de chaque emplacement (table users), tirée de SLOT_DEFS (src/shared/skins/slots.ts, champ
+ * `column`) : un emplacement ajouté là a sa colonne ici (sa migration reste à écrire, db.ts). Les noms de colonnes ne
+ * viennent que de SLOT_DEFS, jamais d'une requête.
  */
-export const SLOT_COLUMN = {
-  king: 'equipped_king',
-  board: 'equipped_board',
-  skin: 'equipped_skin',
-} as const satisfies Record<ItemKind, string>;
+export const SLOT_COLUMN = Object.freeze(Object.fromEntries(SLOTS.map(k => [k, SLOT_DEFS[k].column]))) as {
+  readonly [K in ItemKind]: (typeof SLOT_DEFS)[K]['column'];
+};
+/** Colonne d'équipement d'un emplacement : equipped_king, equipped_board ou equipped_skin. */
+export type SlotColumn = (typeof SLOT_COLUMN)[ItemKind];
+
+/**
+ * Garde du compilateur : un emplacement ajouté à SLOT_DEFS sans sa colonne dans UserRow (et sa migration, db.ts) ni son
+ * champ dans MeUser (protocol.ts, rempli par toMe) ne compile pas, ici (test/catalog.test.ts, emplacement fictif).
+ */
+type Couvert<T extends true> = T;
+export type SlotsCovered =
+  | Couvert<SlotColumn extends keyof UserRow ? true : false>
+  | Couvert<(typeof SLOT_DEFS)[ItemKind]['meField'] extends keyof MeUser ? true : false>;
+
+/**
+ * Colonnes des objets portés, dans l'ordre des emplacements (SLOTS), pour un SELECT ou un INSERT :
+ * « equipped_king, equipped_board, equipped_skin ». Lues par l'inscription, le profil public (account.ts) et la
+ * revanche (games.ts).
+ */
+export const EQUIPPED_SELECT = SLOTS.map(k => SLOT_COLUMN[k]).join(', ');
 
 /**
  * Création d'un compte : classement de départ (RATING.initial) et objets portés par défaut (DEFAULT_ITEM) écrits
  * explicitement, au lieu des DEFAULT SQL figés dans les migrations (inchangés : mêmes valeurs aujourd'hui).
  */
-const SLOTS_IN_ORDER = Object.keys(SLOT_COLUMN) as ItemKind[];
 const INSERT_USER_SQL =
-  `INSERT INTO users (email, username, password_hash, rating, ${SLOTS_IN_ORDER.map(k => SLOT_COLUMN[k]).join(', ')}) ` +
-  `VALUES ($1, $2, $3, $4, ${SLOTS_IN_ORDER.map((_, i) => `$${i + 5}`).join(', ')}) RETURNING id`;
+  `INSERT INTO users (email, username, password_hash, rating, ${EQUIPPED_SELECT}) ` +
+  `VALUES ($1, $2, $3, $4, ${SLOTS.map((_, i) => `$${i + 5}`).join(', ')}) RETURNING id`;
 
 export interface Identity {
   user: UserRow | null;
@@ -67,10 +83,19 @@ declare global {
 }
 
 const SESSION_COOKIE = 'sm_session';
-const GUEST_COOKIE = 'sm_guest';
+/** Cookie d'invité (identifiant signé). Nom technique, jamais renommé (designDoc §2.6). */
+export const GUEST_COOKIE = 'sm_guest';
 const SESSION_DAYS = ACCOUNT.sessionDays;
 const DAY_MS = 86400_000;
 const secureCookies = config.publicUrl.startsWith('https://');
+
+/**
+ * Options du cookie d'invité, communes à l'API (identify) et au HTML (site.ts, ensureGuestCookie) : le socket, ouvert
+ * avant la réponse de /api/me, trouve ainsi le même cookie quelle que soit la première requête.
+ */
+export function guestCookieOptions() {
+  return { httpOnly: true, sameSite: 'lax', secure: secureCookies, maxAge: ACCOUNT.guestCookieDays * DAY_MS, path: '/' } as const;
+}
 
 /**
  * Durée en intervalle SQL, dans la plus grande unité exacte : « 3 days », « 1 hour », « 90 minutes ». Le nombre vient
@@ -144,9 +169,7 @@ export async function identify(req: Request, res: Response, next: NextFunction) 
     let guestId = unsign(cookies[GUEST_COOKIE]);
     if (!guestId) {
       guestId = randomToken(12);
-      res.cookie(GUEST_COOKIE, sign(guestId), {
-        httpOnly: true, sameSite: 'lax', secure: secureCookies, maxAge: ACCOUNT.guestCookieDays * DAY_MS, path: '/',
-      });
+      res.cookie(GUEST_COOKIE, sign(guestId), guestCookieOptions());
     }
     req.identity = { user: session?.user ?? null, sessionId: session?.sessionId ?? null, guestId };
     next();
@@ -269,7 +292,7 @@ authRouter.post('/register', authLimiter, async (req, res) => {
   const hash = await hashPassword(password);
   let user: { id: string } | null;
   try {
-    user = await one<{ id: string }>(INSERT_USER_SQL, [email, username, hash, RATING.initial, ...SLOTS_IN_ORDER.map(k => DEFAULT_ITEM[k])]);
+    user = await one<{ id: string }>(INSERT_USER_SQL, [email, username, hash, RATING.initial, ...SLOTS.map(k => DEFAULT_ITEM[k])]);
   } catch {
     return res.status(409).json({ error: 'Pseudo ou e-mail déjà utilisé.' });
   }

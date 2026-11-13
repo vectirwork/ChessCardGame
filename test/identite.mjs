@@ -464,9 +464,21 @@ function images(d, prefixe = '') {
 }
 
 /**
+ * Écart d'une image bruitée au-delà de son bruit mesuré (`bruit` : pixels, forts, max d'existantes.json) ; `e` : écart
+ * relevé (taille différente, ou pixels, forts, max). Exportée pour les tests (test/identite-bruit.test.ts).
+ */
+export function bruitAuDela(e, bruit) {
+  if (e.taille || e.forts > 2 * bruit.forts || e.max > bruit.max + 32) return true;
+  // Bruit d'un seul niveau : un écart plus fort, ou bien plus étendu, n'est plus du bruit.
+  return bruit.max <= 1 && (e.max > bruit.max || e.pixels > 4 * bruit.pixels);
+}
+
+/**
  * Captures des scripts existants (rois, echiquiers, sorts, boutique) contre leur référence : images stables au pixel
  * près ; images bruitées rapportées avec le bruit mesuré, signalées au-delà (plus de deux fois les pixels forts mesurés,
- * ou un écart maximal plus grand de 32). Seuls les sous-dossiers présents dans `dossier` sont comparés.
+ * ou un écart maximal plus grand de 32). Bruit d'un seul niveau (écart maximal mesuré de 1 : rastérisation, rendu
+ * logiciel) : la marge de 32 masquerait un vrai changement ; signalées aussi pour un écart maximal plus grand que le
+ * bruit, ou plus de quatre fois ses pixels. Seuls les sous-dossiers présents dans `dossier` sont comparés.
  */
 async function comparerExistantes(browser, dossier, ref) {
   const classement = JSON.parse(readFileSync(CLASSEMENT_EXISTANTES, 'utf8'));
@@ -499,7 +511,7 @@ async function comparerExistantes(browser, dossier, ref) {
         continue;
       }
       const bruit = bruitees[n];
-      const auDela = e.taille || e.forts > 2 * bruit.forts || e.max > bruit.max + 32;
+      const auDela = bruitAuDela(e, bruit);
       const ligne = `${n} : ${texte} (bruit mesuré : ${bruit.forts} de plus de 16, écart maximal ${bruit.max})`;
       if (auDela) ecarts.push(`${ligne} : AU-DELÀ DU BRUIT`);
       else if (e.pixels) aRelire.push(ligne);

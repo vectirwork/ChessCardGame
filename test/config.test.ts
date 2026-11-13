@@ -6,13 +6,13 @@
 // elles-mêmes sont gardées par test/garde-fous/defauts.test.ts.
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
-import { CARD_IDS, CARDS, RARITY_WEIGHT, cardsOf } from '../src/shared/cards';
+import { CARD_IDS, CARDS, cardsOf } from '../src/shared/cards';
 import type { CardId } from '../src/shared/cards';
 import {
   DEAL, GAME_RULES, RULES_BY_CONTEXT, RULES_CONTEXTS, RULES_V1, SUSPENDED_CARDS, deepFreeze,
 } from '../src/shared/config/rules';
 import type { CardTuning, DealSettings, GameRulesSettings, Rules } from '../src/shared/config/rules';
-import { CARDS_PER_PLAYER, DRAFT_MS, cardPool, createGame } from '../src/shared/game';
+import { cardPool, createGame } from '../src/shared/game';
 import { validateFen } from '../src/shared/pgn';
 import {
   basicFenError, cardEndsTurn, castsLeft, checkRules, maxValidHand, parseRules, poolOf, rulesFor, rulesOf, rulesSummary,
@@ -81,13 +81,6 @@ describe('configuration du jour', () => {
     expect(schema).toBe(1);
     expect(tuning).toBeDefined();
     expect(reglages).toEqual(V1);
-  });
-  it('alias du moteur : CARDS_PER_PLAYER et DRAFT_MS suivent GAME_RULES et DEAL', () => {
-    expect(CARDS_PER_PLAYER).toBe(GAME_RULES.cardsPerPlayer);
-    expect(DRAFT_MS).toBe(DEAL.draftMs);
-  });
-  it('DEAL.rarityWeight = RARITY_WEIGHT de cards.ts (le tirage lit encore RARITY_WEIGHT jusqu’au lot 1 : changer les deux)', () => {
-    expect(DEAL.rarityWeight).toEqual(RARITY_WEIGHT);
   });
   it('les réglages sont gelés', () => {
     expect(Object.isFrozen(GAME_RULES)).toBe(true);
@@ -215,6 +208,10 @@ describe('rulesFor, stampRules, sameRules', () => {
   it('résumé pour le journal du serveur', () => {
     expect(rulesSummary(RULES_V1)).toMatch(/^3 cartes par joueur, 1 par tour, avant le coup, mains visibles/);
     expect(rulesSummary({ ...RULES_V1, cardsPerPlayer: 1 })).toMatch(/^1 carte par joueur, /);
+    // Mise en place : DEAL par défaut, celle du serveur sinon (dealSettings, surcharge de test comprise).
+    expect(rulesSummary(RULES_V1)).toMatch(/, choix des cartes en 45 s$/);
+    expect(rulesSummary(RULES_V1, { ...DEAL, draftMs: 30_000 })).toMatch(/, choix des cartes en 30 s$/);
+    expect(rulesSummary(RULES_V1, { ...DEAL, draft: false })).toMatch(/, choix des cartes remplacé par le tirage$/);
   });
 });
 

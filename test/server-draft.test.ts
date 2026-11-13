@@ -79,7 +79,7 @@ describe('choix des cartes : moteur', () => {
     expect(cardPool('aucune', true)).toEqual([]);
     // Le tirage de l'accueil passe par la même réserve.
     for (let k = 0; k < 50; k++) {
-      const h = dealHands(false, false, seeded(k + 1), 'climats');
+      const h = dealHands(false, seeded(k + 1), 'climats');
       expect([...h.w, ...h.b].includes('hourglass')).toBe(false);
     }
   });

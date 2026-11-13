@@ -438,22 +438,19 @@ describe('Mains visibles et instantanés', () => {
 // Tirage pondéré
 
 describe('Tirage pondéré (R9), sur des milliers de mains', () => {
-  it('contraintes tenues pour toutes les options : pendule, IA, miroir', () => {
+  it('contraintes tenues pour toutes les options : pendule, IA', () => {
     const rand = rng(424242);
     for (const timed of [true, false]) {
       for (const vsBot of [false, true]) {
-        for (const mirror of [false, true]) {
-          for (let i = 0; i < 1500; i++) {
-            const h = dealHands(timed, mirror, rand, 'climats', { vsBot });
-            for (const hand of [h.w, h.b]) {
-              expect(hand).toHaveLength(3);
-              expect(new Set(hand).size).toBe(3);
-              expect(hand.every(id => CARDS[id].catalogs.includes('climats'))).toBe(true);
-              expect(hand.filter(id => CARDS[id].rarity === 'légendaire').length).toBeLessThanOrEqual(1);
-              expect(hand.filter(id => CARDS[id].family === 'climat').length).toBeLessThanOrEqual(2);
-              if (!timed || vsBot) expect(hand).not.toContain('hourglass');
-            }
-            if (mirror) expect(h.b).toEqual(h.w);
+        for (let i = 0; i < 3000; i++) {
+          const h = dealHands(timed, rand, 'climats', { vsBot });
+          for (const hand of [h.w, h.b]) {
+            expect(hand).toHaveLength(3);
+            expect(new Set(hand).size).toBe(3);
+            expect(hand.every(id => CARDS[id].catalogs.includes('climats'))).toBe(true);
+            expect(hand.filter(id => CARDS[id].rarity === 'légendaire').length).toBeLessThanOrEqual(1);
+            expect(hand.filter(id => CARDS[id].family === 'climat').length).toBeLessThanOrEqual(2);
+            if (!timed || vsBot) expect(hand).not.toContain('hourglass');
           }
         }
       }
@@ -465,7 +462,7 @@ describe('Tirage pondéré (R9), sur des milliers de mains', () => {
     const gens: (() => number)[] = [() => 0, () => 0.9999999999, () => 0.5, () => (k++ % 2 ? 0.999 : 0), () => (k++ % 7) / 7];
     for (const g of gens) {
       for (const opts of [{}, { vsBot: true }]) {
-        const { w, b } = dealHands(false, false, g, 'climats', opts);
+        const { w, b } = dealHands(false, g, 'climats', opts);
         for (const hand of [w, b]) {
           expect(new Set(hand).size).toBe(3);
           expect(hand.filter(id => CARDS[id].rarity === 'légendaire').length).toBeLessThanOrEqual(1);
@@ -479,7 +476,7 @@ describe('Tirage pondéré (R9), sur des milliers de mains', () => {
     const rand = rng(99);
     const N = 20000;
     const seen: Partial<Record<CardId, number>> = {};
-    for (let i = 0; i < N; i++) for (const id of dealHands(false, false, rand, 'climats').w) seen[id] = (seen[id] ?? 0) + 1;
+    for (let i = 0; i < N; i++) for (const id of dealHands(false, rand, 'climats').w) seen[id] = (seen[id] ?? 0) + 1;
     const pct = (id: CardId) => ((seen[id] ?? 0) / N) * 100;
     expect(pct('hourglass')).toBe(0);
     // Sans Sablier (7 cartes) ; la Déflagration est Épique, comme la Lune de sang : même fréquence, bien sous le Mur.
@@ -874,7 +871,7 @@ describe('parties au hasard agressives (cartes jouées dès que possible)', () =
       const seed = 70_000 + g;
       const rand = rng(seed);
       const hands = g % 3 === 0
-        ? dealHands(true, g % 6 === 0, rand, 'climats')
+        ? dealHands(true, rand, 'climats')
         : { w: Array.from({ length: 3 }, () => pool[Math.floor(rand() * pool.length)]), b: Array.from({ length: 3 }, () => pool[Math.floor(rand() * pool.length)]) };
       aggressive(createGame(hands, g % 4 !== 0, 'climats'), rand, 240, true, `partie ${seed}`, stats);
     }

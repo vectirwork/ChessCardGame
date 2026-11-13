@@ -12,7 +12,7 @@
     "build": "vite build && node scripts/build-server.mjs",
     "start": "node dist/server/index.js",
     "typecheck": "tsc --noEmit -p .",
-    "typecheck:concepts": "tsc --noEmit -p tsconfig.concepts.json || echo \"(vérification des concepts : non bloquante)\"",
+    "typecheck:concepts": "tsc --noEmit -p tsconfig.concepts.json",
     "test": "vitest run",
     "test:rapide": "vitest run --project rapide",
     "test:matrice": "vitest run --project matrice --passWithNoTests",

@@ -16,9 +16,13 @@ import { describe, expect, it } from 'vitest';
 const ROOT = path.resolve(__dirname, '../..');
 const HERE = __dirname;
 
-/** Textes chiffrés : nombre de cartes, de sorts par tour, durée du choix, taille du catalogue, niveaux, R9. */
+/**
+ * Textes chiffrés : nombre de cartes, de sorts par tour, durée du choix, taille du catalogue, niveaux, R9 ; délai d'un
+ * Présage (« a un coup pour s'y préparer », « à votre tour suivant », lot 9 : le texte figé de la Forêt leur avait
+ * échappé).
+ */
 const RULES =
-  /trois (cartes|sorts)|\b3 cartes|un sort par tour|seul sort par tour|une seule carte par tour|une (seule )?par tour|45 secondes|huit (pouvoirs|cartes)|3 niveaux|deux climats/gi;
+  /trois (cartes|sorts)|\b3 cartes|un sort par tour|seul sort par tour|une seule carte par tour|une (seule )?par tour|45 secondes|huit (pouvoirs|cartes)|3 niveaux|deux climats|\b(un|deux|trois) coups? pour\b|tour suivant/gi;
 /** Nom de la marque (pas les identifiants comme SPELLMATE_TEST_RULES). */
 const BRAND = /\bspellmate\b/gi;
 

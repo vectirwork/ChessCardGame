@@ -16,7 +16,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 vi.mock('../src/server/games', () => ({ detachUser: vi.fn(async () => undefined) }));
 
 import { FREE_ITEMS, ITEMS, SLOTS, SLOT_DEFS, productById, quoteCart } from '../src/shared/catalog';
-import { SLOT_COLUMN } from '../src/server/auth';
+import { EQUIPPED_SELECT, SLOT_COLUMN } from '../src/server/auth';
 import { CART_PRODUCT_ID } from '../src/shared/protocol';
 import { leaderboard, publicProfile } from '../src/server/account';
 import { config } from '../src/server/config';
@@ -193,8 +193,12 @@ describe('commande calculée au serveur (orderFor)', () => {
     ]);
   });
 
-  it('colonnes d’équipement : celles de SLOT_DEFS (auth.ts garde SLOT_COLUMN jusqu’au lot 9)', () => {
+  it('colonnes d’équipement : celles de SLOT_DEFS (SLOT_COLUMN en est tiré), dans l’ordre des emplacements', () => {
     expect(SLOT_COLUMN).toEqual(Object.fromEntries(SLOTS.map(k => [k, SLOT_DEFS[k].column])));
+    // Valeurs d'avant le lot 9 (table écrite à la main dans auth.ts), dans le même ordre : mêmes requêtes au défaut.
+    expect(Object.entries(SLOT_COLUMN)).toEqual([['king', 'equipped_king'], ['board', 'equipped_board'], ['skin', 'equipped_skin']]);
+    expect(EQUIPPED_SELECT).toBe('equipped_king, equipped_board, equipped_skin');
+    expect(Object.isFrozen(SLOT_COLUMN)).toBe(true);
   });
 
   it('photographie au défaut (avant la refonte) : lignes du Trésor et du Grimoire, texte entier d’un e-mail', () => {

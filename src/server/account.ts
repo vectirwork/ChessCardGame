@@ -6,7 +6,7 @@ import type { ItemKind } from '../shared/catalog';
 import { BRAND } from '../shared/config/brand';
 import type { LeaderboardResponse, LeaderboardRow, ProfileResponse, PublicProfile } from '../shared/protocol';
 import {
-  SLOT_COLUMN, clearSessionCookie, createEmailToken, createSession, emailSchema, passwordSchema, requireUser, toMe, userById,
+  EQUIPPED_SELECT, SLOT_COLUMN, clearSessionCookie, createEmailToken, createSession, emailSchema, passwordSchema, requireUser, toMe, userById,
   usernameSchema, zodError,
 } from './auth';
 import { one, q } from './db';
@@ -136,9 +136,6 @@ export const communityRouter = Router();
 /** Objets qui comptent pour le sceau : ceux des collections premium (Arcane ne compte jamais). */
 const SEAL_ITEMS = PREMIUM_COLLECTIONS.flatMap(collectionItems);
 
-/** Colonnes des objets portés (une par emplacement), lues par le profil public. Noms tirés de SLOT_COLUMN seulement. */
-const EQUIPPED_COLUMNS = SLOTS.map(k => SLOT_COLUMN[k]).join(', ');
-
 /**
  * Profil public d'un joueur (pseudo sans casse), avec son roi, ses sorts et son échiquier (normalisés comme en partie :
  * un identifiant inconnu ou retiré devient l'objet Arcane de l'emplacement) et son sceau ; null s'il n'existe pas.
@@ -146,7 +143,8 @@ const EQUIPPED_COLUMNS = SLOTS.map(k => SLOT_COLUMN[k]).join(', ');
  */
 export async function publicProfile(username: string): Promise<(PublicProfile & { id: string }) | null> {
   const u = await one(
-    `SELECT id, username, rating, games_played, wins, losses, draws, ${EQUIPPED_COLUMNS}, created_at,
+    // Colonnes des objets portés (une par emplacement) : EQUIPPED_SELECT, tirées de SLOT_DEFS seulement.
+    `SELECT id, username, rating, games_played, wins, losses, draws, ${EQUIPPED_SELECT}, created_at,
        coalesce(array(SELECT item_id FROM user_items WHERE user_id = users.id AND item_id = ANY($2::text[])), '{}') AS items
      FROM users WHERE lower(username) = lower($1)`,
     [username, SEAL_ITEMS],

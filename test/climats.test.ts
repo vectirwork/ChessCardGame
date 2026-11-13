@@ -902,7 +902,7 @@ describe('tirage et choix selon les règles', () => {
     let k = 1;
     for (const n of [1, 2, 4, 5]) {
       for (let i = 0; i < 200; i++) {
-        const { w, b } = dealHands(true, false, rngT(k++), 'climats', { rules: { cardsPerPlayer: n } });
+        const { w, b } = dealHands(true, rngT(k++), 'climats', { rules: { cardsPerPlayer: n } });
         for (const h of [w, b]) {
           expect(h).toHaveLength(n);
           expect(new Set(h).size).toBe(n);
@@ -912,7 +912,7 @@ describe('tirage et choix selon les règles', () => {
     }
     const sansClimat = { handLimits: { maxPerRarity: {}, maxPerFamily: { climat: 0 } }, rarityWeight: { commune: 1, rare: 1, épique: 1, légendaire: 1 }, redrawAttempts: 3 };
     for (let i = 0; i < 100; i++) {
-      expect(dealHands(true, false, rngT(k++), 'climats', { deal: sansClimat }).w.some(id => CARDS[id].family === 'climat')).toBe(false);
+      expect(dealHands(true, rngT(k++), 'climats', { deal: sansClimat }).w.some(id => CARDS[id].family === 'climat')).toBe(false);
     }
   });
   it('choix : compte accordé, contraintes du tirage si demandées, complément et IA', () => {
@@ -946,7 +946,7 @@ describe('corrections de la relecture du lot 1', () => {
     expect(r.state.result).toBeNull();
     expect(legalMovesOf(r.state)).toHaveLength(20);
     expect(r.state.snaps).toEqual([]);
-    expect(dealHands(true, false, rngT(1), 'futur' as Catalog)).toEqual({ w: [], b: [] });
+    expect(dealHands(true, rngT(1), 'futur' as Catalog)).toEqual({ w: [], b: [] });
   });
 
   it('Grande Marée : rangées de 1 à 5 seulement (checkRules, parseRules) ; le moteur ne pousse jamais depuis la 7e', () => {
@@ -1031,7 +1031,7 @@ describe('corrections de la relecture du lot 1', () => {
     for (let i = 1; i <= 300; i++) {
       for (const redrawAttempts of [1, 64]) {
         const deal = { handLimits: limits, rarityWeight: { commune: 4, rare: 3, épique: 2, légendaire: 1 }, redrawAttempts };
-        for (const h of Object.values(dealHands(true, false, rngT(i), 'climats', { rules: { cardsPerPlayer: 5 }, deal }))) {
+        for (const h of Object.values(dealHands(true, rngT(i), 'climats', { rules: { cardsPerPlayer: 5 }, deal }))) {
           expect(h).toHaveLength(5);
           expect(validHand(h, limits)).toBe(true);
         }

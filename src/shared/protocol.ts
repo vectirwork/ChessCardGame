@@ -6,6 +6,7 @@
 import type { Color, PieceType } from './chess';
 import type { CardId } from './cards';
 import type { Features } from './config/features';
+import type { Rules } from './config/rules';
 import type { CardInfo, GameState, MoveInfo, RefusalCode } from './game';
 import { LOCALE } from './text/fr';
 
@@ -412,6 +413,11 @@ export interface GameSummary {
   timeControl: string;
   createdAt: string;
   plies: number;
+  /**
+   * Règles de la partie, seulement si elles diffèrent de RULES_V1 (comme GameState.rules) ; absentes : RULES_V1. Pour
+   * libeller sa fin (« Règle des 75 coups ») sans charger la partie.
+   */
+  rules?: Rules;
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -149,7 +149,7 @@ describe('fréquences du tirage (énumération exacte)', () => {
     it(`dealHands suit la loi exacte : ${nom}`, () => {
       const N = 30_000;
       const exacte = frequences(loiExacte({ ...DEFAUT, pool: cardPool('climats', timed, { vsBot }) }));
-      const obs = observees(N, 17 + Number(timed) * 2 + Number(vsBot), rand => dealHands(timed, false, rand, 'climats', { vsBot }).w);
+      const obs = observees(N, 17 + Number(timed) * 2 + Number(vsBot), rand => dealHands(timed, rand, 'climats', { vsBot }).w);
       compare(exacte, obs, N);
     });
   }
@@ -168,7 +168,7 @@ describe('fréquences du tirage (énumération exacte)', () => {
       const N = t.N ?? 20_000;
       const exacte = frequences(loiExacte({ ...t, pool }));
       const deal = { handLimits: t.limits, rarityWeight: t.weights, redrawAttempts: t.attempts };
-      const obs = observees(N, 101 + i, rand => dealHands(true, false, rand, 'climats', { rules: { cardsPerPlayer: t.n }, deal }).w);
+      const obs = observees(N, 101 + i, rand => dealHands(true, rand, 'climats', { rules: { cardsPerPlayer: t.n }, deal }).w);
       compare(exacte, obs, N);
     }
   }, 60_000);

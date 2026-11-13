@@ -94,7 +94,7 @@ describe('sauvegarde de la partie contre l’Oracle (format v1)', () => {
     // … et une partie neuve de l'accueil à ces règles est acceptée
     const rules = rulesFor('accueil');
     const neuve = JSON.parse(
-      JSON.stringify(createGame(dealHands(HOME.timed, false, Math.random, HOME.catalog, { vsBot: HOME.vsBot, rules }), HOME.timed, HOME.catalog, { rules })),
+      JSON.stringify(createGame(dealHands(HOME.timed, Math.random, HOME.catalog, { vsBot: HOME.vsBot, rules }), HOME.timed, HOME.catalog, { rules })),
     );
     expect(neuve.hands.w).toHaveLength(5);
     expect(validState(neuve)).toBe(true);
@@ -103,7 +103,7 @@ describe('sauvegarde de la partie contre l’Oracle (format v1)', () => {
   it('format v1 conservé : rien de nouveau n’est écrit dans une partie neuve au défaut', () => {
     const rules = rulesFor('accueil');
     expect(rules).toBe(RULES_V1);
-    const s = createGame(dealHands(HOME.timed, false, Math.random, HOME.catalog, { vsBot: HOME.vsBot, rules }), HOME.timed, HOME.catalog, { rules });
+    const s = createGame(dealHands(HOME.timed, Math.random, HOME.catalog, { vsBot: HOME.vsBot, rules }), HOME.timed, HOME.catalog, { rules });
     expect('rules' in s).toBe(false);
     expect('cardsThisTurn' in s).toBe(false);
     expect(validState(JSON.parse(JSON.stringify(s)))).toBe(true);
@@ -116,7 +116,7 @@ describe('sauvegarde de la partie contre l’Oracle (format v1)', () => {
       return n / 2 ** 31;
     };
     for (let k = 1; k < 40; k++) {
-      expect(dealHands(false, false, seed(k), 'climats', { vsBot: true })).toEqual(dealHands(false, false, seed(k), 'climats'));
+      expect(dealHands(false, seed(k), 'climats', { vsBot: true })).toEqual(dealHands(false, seed(k), 'climats'));
     }
   });
 });
@@ -298,6 +298,14 @@ describe('relecture du lot 7', () => {
     expect(abortedEmpty(false, { ply: 0, result: annulee })).toBe(false);
     expect(abortedEmpty(true, { ply: 0, result: null })).toBe(false);
     expect(abortedEmpty(true, { ply: 0, result: { winner: 'w', reason: 'resign' } })).toBe(false);
+  });
+
+  it('partie en direct annulée parce que les Noirs n’ont pas joué leur premier coup à temps (relais coupé) : retour à l’Oracle', () => {
+    // Cause posée par le serveur (Result.cause 'first-move', lot 9) ; jamais après une annulation voulue (sans cause).
+    const tardive = { winner: null, reason: 'aborted' as const, cause: 'first-move' as const };
+    expect(abortedEmpty(true, { ply: 1, result: tardive })).toBe(true);
+    expect(abortedEmpty(true, { ply: 0, result: tardive })).toBe(true);
+    expect(abortedEmpty(false, { ply: 1, result: tardive })).toBe(false);
   });
 
   it('perspective du plateau : la même valeur dans StageBoard (morceau à part), engine.ts et vfx/config', () => {

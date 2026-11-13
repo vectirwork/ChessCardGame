@@ -10,8 +10,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import gsap from 'gsap';
-import { DemoBoard } from '../../src/client/components/DemoBoard';
+import { Board } from '../../src/client/components/Board';
 import { CARDS, RARITY_LABEL } from '../../src/shared/cards';
+import { initialPosition } from '../../src/shared/chess';
 import { itemById } from '../../src/shared/catalog';
 import { playSound } from '../../src/client/sound';
 import { AVENUE, BOARD_THEMES, HAND, LEGAL, LEVELS, LIEUX, LIEU_HEIGHT, SKIN_PORTALS, STEPS } from './data';
@@ -25,6 +26,11 @@ import { Sky, World } from './world';
 type Mode = 'page' | Phase;
 
 const HAND_FAN = [-9, 0, 9];
+/**
+ * Aperçu de la forge : échiquier figé en position initiale, avec le plateau choisi (la démonstration DemoBoard, qui
+ * jouait aussi le skin choisi, a été supprimée au lot 8 : le skin ne se voit plus que dans sa fiche).
+ */
+const FORGE_POS = initialPosition().pos;
 const LIT_DEFAULT = { light: '#c3baf0', dark: '#4e3eb4' };
 
 // Pas de « rattrapage » de GSAP : sur un appareil lent, l'animation saute des images au lieu de ralentir
@@ -468,10 +474,10 @@ function App() {
               </p>
               <div className="forge-row r" style={{ '--i': 4 } as CSSProperties}>
                 <div className="forge-preview">
-                  {forgeLive ? <DemoBoard key={`${skin}${theme}`} mode="preview" skin={skin} theme={theme ?? 'board:obsidian'} /> : <div className="forge-ph" />}
+                  {forgeLive ? <Board pos={FORGE_POS} orientation="w" theme={theme ?? 'board:obsidian'} locked coords={false} /> : <div className="forge-ph" />}
                 </div>
                 <div className="forge-pick" style={{ '--p': skinItem.skin!.primary, '--q': skinItem.skin!.secondary } as CSSProperties}>
-                  <span className="forge-live"><i />Aperçu en direct</span>
+                  <span className="forge-live">Aperçu du plateau</span>
                   <strong className="forge-skin"><i />{skinItem.name}<em>{skinPrice}</em></strong>
                   <p>{skinItem.description}</p>
                   <div className="skin-dots" role="radiogroup" aria-label="Skins d’animation">

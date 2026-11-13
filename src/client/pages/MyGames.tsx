@@ -30,11 +30,11 @@ interface Row {
   plies?: number;
   tags: string[];
   /**
-   * Règles de la partie, pour le libellé de sa fin : celles que l'historique de l'appareil a gardées, RULES_V1 s'il n'en a
-   * pas gardé (il ne les écrit que si elles en diffèrent). Absentes pour une partie que l'appareil n'a pas retenue (le
-   * serveur ne les envoie pas dans la liste) : libellé des règles des nouvelles parties.
+   * Règles de la partie, pour le libellé de sa fin : celles que le serveur envoie dans le résumé (GameSummary.rules) ou
+   * que l'historique de l'appareil a gardées ; RULES_V1 sans elles (l'un et l'autre ne les écrivent que si elles en
+   * diffèrent).
    */
-  rules?: Rules;
+  rules: Rules;
 }
 
 export default function MyGames() {
@@ -62,8 +62,6 @@ export default function MyGames() {
   }, [me]);
 
   const history = Array.isArray(local) ? local : [];
-  /** Règles des parties retenues par cet appareil (RULES_V1 si l'entrée n'en porte pas). */
-  const keptRules = new Map(history.filter(g => g && typeof g.id === 'string').map(g => [g.id, g.rules ?? RULES_V1]));
   const serverRows: Row[] = (server ?? []).map(g => ({
     id: g.id,
     white: g.white ?? colorName('w'),
@@ -75,7 +73,8 @@ export default function MyGames() {
     reason: g.reason,
     date: g.createdAt,
     plies: g.plies,
-    rules: keptRules.get(g.id),
+    // Le serveur envoie les règles d'une partie seulement si elles diffèrent de RULES_V1 (summary.ts).
+    rules: g.rules ?? RULES_V1,
     tags: [modeLabel(g.mode, g.rated, 'liste'), tcLabel(g.timeControl)].filter(Boolean),
   }));
   const serverIds = new Set(serverRows.map(r => r.id));

@@ -3,7 +3,7 @@
   "brancheIntegration": "claude/peaceful-hamilton-qr9cmc",
   "base": "7148547",
   "brancheDuLot": "polymorphie/<lot>",
-  "vagues": [["0a", "0b"], ["1", "2"], ["3", "4"], ["5", "6"], ["7", "8"], ["9a", "9b"], ["9"]],
+  "vagues": [["0a", "0b"], ["1", "2"], ["3", "4"], ["5", "6"], ["7", "8"], ["9a", "9b"], ["9c"], ["9"]],
   "lots": [
     {
       "id": "0a",
@@ -376,6 +376,21 @@
         {"motif": "tsconfig*.json"},
         {"motif": "test/**", "note": "tests, suites de bout en bout, outillage et garde-fous ; pas les tests des fichiers du lot 9a"},
         {"motif": "test/garde-fous/dette-9.txt"}
+      ],
+      "partage": []
+    },
+    {
+      "id": "9c",
+      "titre": "Documentation des réglages, README et rapport (découpage du lot 9 par l'orchestrateur)",
+      "vague": 6,
+      "dependances": ["9a", "9b"],
+      "possede": [
+        {"motif": "docs/REGLAGES.md"},
+        {"motif": "README.md"},
+        {"motif": "docs/polymorphie/ETAT.md"},
+        {"motif": "docs/polymorphie/plan/CONCEPTION.md", "note": "tableau des modules §2.1"},
+        {"motif": "src/shared/config/index.ts", "note": "commentaires seulement"},
+        {"motif": "test/*.test.ts", "note": "test de la documentation seulement"}
       ],
       "partage": []
     },

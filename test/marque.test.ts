@@ -2,15 +2,21 @@
 // robots.txt identiques octet pour octet à ceux d'avant la passe (noms de fichiers hachés normalisés). La liste des
 // <link rel="modulepreload"> du paquet principal fait partie de la comparaison : un module qui changerait de morceau
 // (api-*.js fondu dans le paquet principal, protocol-*.js tiré par le client…) la change.
+// Les mêmes fichiers sont servis en développement (greffon spellmate:marque, vite.config.ts), et des règles
+// impossibles arrêtent la construction avec les messages de checkRules.
 //
 // Le build est fait ici, dans un dossier temporaire, avec la vraie configuration (vite.config.ts) : quelques secondes.
 // NODE_ENV vaut « test » sous Vitest : il est mis à « production » le temps du build (sinon React construit sa
 // version de développement, jsx-dev-runtime).
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { build } from 'vite';
+import { build, createServer } from 'vite';
+import type { ViteDevServer } from 'vite';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { GAME_RULES } from '../src/shared/config/rules';
+import { checkRules } from '../src/shared/rules';
+import { brand, fillMarkers } from '../vite.config';
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -102,5 +108,64 @@ describe('construction au réglage par défaut : fichiers identiques', () => {
   });
   it('robots.txt', () => {
     expect(lire('robots.txt')).toBe(ROBOTS);
+  });
+});
+
+describe('développement : mêmes fichiers servis par le serveur de Vite', () => {
+  let server: ViteDevServer;
+  let base = '';
+  beforeAll(async () => {
+    // Port de la plage du lot 6 (3860 à 3869), le suivant libre sinon
+    server = await createServer({ root: ROOT, configFile: path.join(ROOT, 'vite.config.ts'), logLevel: 'silent', server: { port: 3866, hmr: false } });
+    await server.listen();
+    base = server.resolvedUrls!.local[0].replace(/\/$/, '');
+  }, 60_000);
+  afterAll(async () => {
+    await server?.close();
+  });
+  it('index.html : marqueurs remplacés, comme à la construction', async () => {
+    const html = await (await fetch(`${base}/`)).text();
+    expect(html).not.toContain('%SM_');
+    // Chaque ligne de l'en-tête construit (titre, description, couleur, partage), à l'identique ; les balises du paquet
+    // principal n'existent qu'à la construction, et Vite ajoute les siennes en développement.
+    const lignes = INDEX_HTML.split('\n').filter(l => /<(title|meta|link rel="(icon|apple-touch-icon|manifest)")/.test(l));
+    expect(lignes.length).toBe(13);
+    for (const l of lignes) expect(html, l).toContain(l);
+  });
+  it('manifeste et robots.txt', async () => {
+    expect(await (await fetch(`${base}/manifest.webmanifest`)).text()).toBe(MANIFESTE);
+    expect(await (await fetch(`${base}/robots.txt`)).text()).toBe(ROBOTS);
+  });
+});
+
+describe('règles impossibles : la construction s’arrête', () => {
+  let racine = '';
+  beforeAll(() => {
+    racine = mkdtempSync(path.join(os.tmpdir(), 'spellmate-regles-'));
+    mkdirSync(path.join(racine, 'public'));
+    writeFileSync(path.join(racine, 'index.html'), '<!doctype html>\n<html><head><title>%SM_TITRE%</title></head><body></body></html>\n');
+    writeFileSync(path.join(racine, 'public/manifest.webmanifest'), '{"name":"%SM_NOM%"}\n');
+  });
+  afterAll(() => {
+    if (racine) rmSync(racine, { recursive: true, force: true });
+  });
+  const construire = (check: () => string[]) =>
+    build({ root: racine, configFile: false, logLevel: 'silent', plugins: [brand({ check })], build: { outDir: path.join(racine, 'dist'), emptyOutDir: true } });
+
+  it('checkRules en erreur : build rejeté avec ses messages', async () => {
+    const erreurs = checkRules({ game: { ...GAME_RULES, cardsPerPlayer: 9 } });
+    expect(erreurs.length).toBeGreaterThan(0);
+    const e = await construire(() => erreurs).catch((x: Error) => x);
+    expect(e).toBeInstanceOf(Error);
+    expect(String((e as Error).message)).toContain('Règles impossibles : construction arrêtée.');
+    for (const m of erreurs) expect(String((e as Error).message)).toContain(m);
+  }, 60_000);
+  it('règles jouables : la même construction aboutit, marqueurs remplacés', async () => {
+    await construire(() => []);
+    expect(readFileSync(path.join(racine, 'dist/index.html'), 'utf8')).toContain('<title>Spellmate · Les échecs ont appris la magie</title>');
+    expect(readFileSync(path.join(racine, 'dist/manifest.webmanifest'), 'utf8')).toBe('{"name":"Spellmate"}\n');
+  }, 60_000);
+  it('marqueur inconnu : erreur, jamais de fichier à trous', () => {
+    expect(() => fillMarkers('<b>%SM_INCONNU%</b>', 'index.html', { NOM: 'x' }, s => s)).toThrow('index.html : marqueur inconnu %SM_INCONNU%');
   });
 });

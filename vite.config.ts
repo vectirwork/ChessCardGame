@@ -1,9 +1,11 @@
 /// <reference types="vitest/config" />
 import react from '@vitejs/plugin-react';
+import { readFileSync } from 'node:fs';
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { brotliCompress, constants as zlibConstants, gzip } from 'node:zlib';
+import { tsImport } from 'tsx/esm/api';
 import { defineConfig } from 'vite';
 import type { Plugin } from 'vite';
 
@@ -50,12 +52,178 @@ function precompress(): Plugin {
   };
 }
 
+// ---------------------------------------------------------------------------------------------
+// Marque, textes chiffrés et règles : figés au build depuis src/shared/config
+
+/**
+ * Modules de réglages lus par la construction. Chargés par tsx (comme le serveur en développement), pas importés en
+ * tête de ce fichier : Vite assemble sa configuration lui-même, et les imports sans extension de src/ y sont
+ * signalés comme incompatibles avec son futur chargeur natif (une quarantaine de lignes à chaque build et chaque test).
+ */
+interface Settings {
+  keys: typeof import('./src/client/storageKeys');
+  brand: typeof import('./src/shared/config/brand');
+  rules: typeof import('./src/shared/config/rules');
+  routes: typeof import('./src/shared/config/routes');
+  protocol: typeof import('./src/shared/protocol');
+  check: typeof import('./src/shared/rules');
+  fr: typeof import('./src/shared/text/fr');
+  regles: typeof import('./src/shared/text/regles');
+}
+let settings: Promise<Settings> | undefined;
+export function loadSettings(): Promise<Settings> {
+  const load = (p: string) => tsImport(p, import.meta.url);
+  return (settings ??= Promise.all(
+    ['./src/client/storageKeys.ts', './src/shared/config/brand.ts', './src/shared/config/rules.ts', './src/shared/config/routes.ts',
+      './src/shared/protocol.ts', './src/shared/rules.ts', './src/shared/text/fr.ts', './src/shared/text/regles.ts'].map(load),
+  ).then(([keys, brand, rules, routes, protocol, check, fr, regles]) => ({ keys, brand, rules, routes, protocol, check, fr, regles })));
+}
+
+/**
+ * Constantes du paquet principal (en-tête, pied de page, titre des pages, rechargement, version du protocole), figées
+ * au build depuis les réglages. Le code du paquet principal les lit en `__SM__.<nom>` (remplacé par la valeur à la
+ * construction, en développement et sous Vitest) : il n'importe ainsi ni BRAND, ni KEYS, ni protocol.ts, ni les
+ * phrases de règles, qui l'alourdiraient (BRAND : +0,1 ko compressé ; KEYS : +0,2 ko ; protocol.ts : un morceau de
+ * plus à télécharger avant le premier rendu). Ailleurs, importer directement BRAND, KEYS, PROTOCOL_VERSION.
+ * Ne s'écrit qu'avec une propriété : `__SM__.marque`, jamais `__SM__` seul (non défini à l'exécution).
+ */
+export interface BuildConstants {
+  /** BRAND.name : « Spellmate ». */
+  marque: string;
+  /** BRAND.nameCaps : logo. */
+  marqueCapitales: string;
+  /** BRAND.footerTagline : accroche du pied de page. */
+  accrochePied: string;
+  /** Fin du titre d'une page : pageTitle(t) = t + suffixeTitre (« · Spellmate »). */
+  suffixeTitre: string;
+  /** pageTitle() : titre de l'accueil, et des pages qui n'en posent pas. */
+  titreAccueil: string;
+  /** cartesDePouvoir(GAME_RULES) : « trois cartes de pouvoir » (pied de page). */
+  cartesDePouvoir: string;
+  /** KEYS.reload : garde d'une minute du rechargement automatique. */
+  cleRechargement: string;
+  /** PROTOCOL_VERSION, annoncée à la connexion du socket. */
+  protocole: number;
+}
+
+declare global {
+  /** Constantes figées au build pour le paquet principal : voir BuildConstants (vite.config.ts). */
+  const __SM__: Readonly<BuildConstants>;
+}
+
+export function buildConstants({ brand, rules, regles, keys, protocol }: Settings): BuildConstants {
+  return {
+    marque: brand.BRAND.name,
+    marqueCapitales: brand.BRAND.nameCaps,
+    accrochePied: brand.BRAND.footerTagline,
+    suffixeTitre: `${brand.BRAND.titleSeparator}${brand.BRAND.name}`,
+    titreAccueil: brand.pageTitle(),
+    cartesDePouvoir: regles.cartesDePouvoir(rules.GAME_RULES),
+    cleRechargement: keys.KEYS.reload,
+    protocole: protocol.PROTOCOL_VERSION,
+  };
+}
+
+/**
+ * Valeurs des marqueurs %SM_…% de index.html et de public/manifest.webmanifest. Au réglage par défaut, les deux
+ * fichiers construits sont identiques octet pour octet à ceux d'avant (test/marque.test.ts).
+ */
+export function brandMarkers({ brand, rules, regles, fr }: Settings): Record<string, string> {
+  const { BRAND, pageTitle } = brand;
+  return {
+    TITRE: pageTitle(),
+    NOM: BRAND.name,
+    NOM_COURT: BRAND.shortName,
+    ACCROCHE: BRAND.tagline,
+    COULEUR_THEME: BRAND.themeColor,
+    COULEUR_FOND: BRAND.backgroundColor,
+    CARTES_DE_POUVOIR: regles.cartesDePouvoir(rules.GAME_RULES),
+    VISIBLES: fr.pluriel(rules.GAME_RULES.cardsPerPlayer, 'visible'),
+    SORT_PAR_TOUR: regles.sortParTour(rules.GAME_RULES),
+  };
+}
+
+const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const escapeJson = (s: string) => JSON.stringify(s).slice(1, -1);
+
+/** Remplace les marqueurs %SM_…% d'un fichier ; un marqueur inconnu est une erreur (jamais de fichier à trous). */
+export function fillMarkers(text: string, file: string, values: Record<string, string>, escape: (s: string) => string): string {
+  return text.replace(/%SM_([A-Z_]+)%/g, (m, name: string) => {
+    if (!Object.hasOwn(values, name)) throw new Error(`${file} : marqueur inconnu ${m} (marqueurs : ${Object.keys(values).join(', ')}).`);
+    return escape(values[name]);
+  });
+}
+
+/** robots.txt : l'API et les pages NOT_INDEXED (src/shared/config/routes.ts). */
+export function robotsTxt({ routes }: Settings): string {
+  return ['User-agent: *', 'Allow: /', 'Disallow: /api/', ...routes.NOT_INDEXED.map(p => `Disallow: ${p}`), ''].join('\n');
+}
+
+/**
+ * Greffon de la marque :
+ * - index.html : marqueurs %SM_…% remplacés (construction et développement) ;
+ * - manifest.webmanifest : modèle public/manifest.webmanifest, marqueurs remplacés, émis à la construction (il remplace
+ *   la copie brute du dossier public) et servi tel quel en développement ;
+ * - robots.txt : produit depuis NOT_INDEXED (src/shared/config/routes.ts) ;
+ * - constantes du paquet principal (__SM__) ;
+ * - règles : checkRules() à la construction ; une configuration impossible arrête le build avec ses messages, avant
+ *   toute mise en ligne (deploy/update.sh construit avant de remplacer la version en ligne).
+ * `check` remplace checkRules (tests).
+ */
+export function brand(opts: { check?: () => string[] } = {}): Plugin {
+  let command: 'build' | 'serve' = 'serve';
+  let manifestTemplate = '';
+  let markers: Record<string, string> = {};
+  let robots = '';
+  const manifest = () => fillMarkers(readFileSync(manifestTemplate, 'utf8'), 'public/manifest.webmanifest', markers, escapeJson);
+  return {
+    name: 'spellmate:marque',
+    async config() {
+      const s = await loadSettings();
+      markers = brandMarkers(s);
+      robots = robotsTxt(s);
+      const define: Record<string, string> = {};
+      for (const [k, v] of Object.entries(buildConstants(s))) define[`__SM__.${k}`] = JSON.stringify(v);
+      return { define };
+    },
+    configResolved(config) {
+      command = config.command;
+      manifestTemplate = path.join(config.publicDir || path.join(config.root, 'public'), 'manifest.webmanifest');
+    },
+    async buildStart() {
+      if (command !== 'build') return;
+      const errors = opts.check ? opts.check() : (await loadSettings()).check.checkRules();
+      if (errors.length) this.error(`Règles impossibles : construction arrêtée.\n${errors.map(e => `- ${e}`).join('\n')}`);
+    },
+    transformIndexHtml: {
+      order: 'pre',
+      handler: html => fillMarkers(html, 'index.html', markers, escapeHtml),
+    },
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = req.url?.split('?')[0];
+        if (url === '/manifest.webmanifest') {
+          res.setHeader('Content-Type', 'application/manifest+json');
+          res.end(manifest());
+        } else if (url === '/robots.txt') {
+          res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+          res.end(robots);
+        } else next();
+      });
+    },
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'manifest.webmanifest', source: manifest() });
+      this.emitFile({ type: 'asset', fileName: 'robots.txt', source: robots });
+    },
+  };
+}
+
 /** Tests lents (projet « lent ») et paramétrés par les réglages (projet « matrice ») ; le reste est « rapide ». */
 const TESTS_LENTS = ['test/bot.test.ts'];
 const TESTS_MATRICE = ['test/regles-matrice.test.ts', 'test/**/*.matrice.test.ts'];
 
 export default defineConfig({
-  plugins: [react(), precompress()],
+  plugins: [react(), brand(), precompress()],
   build: {
     outDir: 'dist/client',
     emptyOutDir: true,

@@ -1,9 +1,14 @@
 // En-tête, menu complet, pied de page et petites briques communes (modale, chargement), au style Odyssée.
 // Le menu est sobre : quelques entrées dans l'en-tête, toutes les fonctions dans le panneau « Menu ».
-import { useEffect, useId, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+//
+// Marque, accroches et nombre de cartes : constantes figées au build depuis src/shared/config (__SM__, vite.config.ts).
+// Liens : chacun porte l'interrupteur de sa fonction (`f`, src/shared/config/features.ts) et disparaît quand elle est
+// coupée ; test/routes.test.ts vérifie qu'il couvre celui de sa page (ROUTES).
+import { useContext, useEffect, useId, useRef, useState } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { useApp } from '../store';
+import { FeaturesContext, useApp } from '../store';
+import type { Features, FeatureKey } from '../../shared/config/features';
 
 /** Marque Spellmate : étoile à quatre branches dans son cercle, dégradé d'or. */
 export function LogoMark({ size = 30 }: { size?: number }) {
@@ -26,43 +31,73 @@ export function LogoMark({ size = 30 }: { size?: number }) {
 
 export function Logo() {
   return (
-    <Link to="/" className="logo" aria-label="Spellmate, accueil">
+    <Link to="/" className="logo" aria-label={`${__SM__.marque}, accueil`}>
       <LogoMark size={28} />
-      <span>SPELLMATE</span>
+      <span>{__SM__.marqueCapitales}</span>
     </Link>
   );
 }
 
+export interface SiteLink {
+  to: string;
+  label: string;
+  hint?: string;
+  /** Interrupteur : coupé, le lien est caché. */
+  f?: FeatureKey;
+}
+
 /** Toutes les fonctions du site, rangées (menu complet et pied de page). */
-const SECTIONS: { title: string; links: { to: string; label: string; hint?: string }[] }[] = [
+export const SECTIONS: { title: string; links: SiteLink[] }[] = [
   {
     title: 'Jouer',
     links: [
       { to: '/', label: 'Partie immédiate', hint: "Sur l'échiquier de l'accueil, sans compte" },
-      { to: '/jouer?mode=bot', label: "Contre l'IA", hint: 'Apprenti, Sorcier, Archimage' },
-      { to: '/jouer?mode=invite', label: 'Inviter un ami', hint: 'Un lien, même sans compte' },
-      { to: '/jouer?mode=quick', label: 'Parties classées', hint: 'Elo, adversaire de votre niveau' },
-      { to: '/direct', label: 'Parties en direct', hint: 'Regarder les parties en cours' },
+      { to: '/jouer?mode=bot', label: "Contre l'IA", hint: 'Apprenti, Sorcier, Archimage', f: 'botGames' },
+      { to: '/jouer?mode=invite', label: 'Inviter un ami', hint: 'Un lien, même sans compte', f: 'invites' },
+      { to: '/jouer?mode=quick', label: 'Parties classées', hint: 'Elo, adversaire de votre niveau', f: 'ranked' },
+      { to: '/direct', label: 'Parties en direct', hint: 'Regarder les parties en cours', f: 'live' },
     ],
   },
   {
     title: 'Apprendre',
     links: [
-      { to: '/apprendre', label: 'Leçons', hint: 'Des règles aux premières combinaisons' },
-      { to: '/problemes', label: 'Problèmes', hint: 'Trouver le coup juste' },
-      { to: '/analyse', label: 'Analyse', hint: 'Moteur, import et export PGN ou FEN' },
+      { to: '/apprendre', label: 'Leçons', hint: 'Des règles aux premières combinaisons', f: 'learn' },
+      { to: '/problemes', label: 'Problèmes', hint: 'Trouver le coup juste', f: 'puzzles' },
+      { to: '/analyse', label: 'Analyse', hint: 'Moteur, import et export PGN ou FEN', f: 'analysis' },
       { to: '/cartes', label: 'Règles et cartes', hint: 'Tous les pouvoirs, expliqués' },
     ],
   },
   {
     title: 'Communauté',
     links: [
-      { to: '/classement', label: 'Classement' },
+      { to: '/classement', label: 'Classement', f: 'ranked' },
       { to: '/parties', label: 'Mes parties' },
-      { to: '/boutique', label: 'Boutique', hint: 'Rois, échiquiers et sorts : rien d’autre' },
+      { to: '/boutique', label: 'Boutique', hint: 'Rois, échiquiers et sorts : rien d’autre', f: 'shop' },
     ],
   },
 ];
+
+/** Liens de l'en-tête. */
+export const NAV: SiteLink[] = [
+  { to: '/jouer', label: 'Jouer' },
+  { to: '/apprendre', label: 'Apprendre', f: 'learn' },
+  { to: '/problemes', label: 'Problèmes', f: 'puzzles' },
+  { to: '/analyse', label: 'Analyse', f: 'analysis' },
+  { to: '/boutique', label: 'Boutique', f: 'shop' },
+];
+
+/** Le lien mène-t-il à une fonction ouverte ? */
+const linkOn = (on: Readonly<Features>) => (l: SiteLink) => !l.f || on[l.f];
+
+/**
+ * Sections du menu et du pied de page, sans les liens coupés, et `--n` des grilles quand le nombre de colonnes (une
+ * par section, plus Compte ou Légal) n'est plus 4 (CSS : repeat(var(--n, 4), …)). Au défaut : tout, aucun style.
+ */
+function useSections(): [typeof SECTIONS, CSSProperties | undefined] {
+  const on = useContext(FeaturesContext);
+  const sections = SECTIONS.map(s => ({ ...s, links: s.links.filter(linkOn(on)) })).filter(s => s.links.length);
+  return [sections, sections.length === 3 ? undefined : ({ '--n': sections.length + 1 } as CSSProperties)];
+}
 
 function useOutside(ref: React.RefObject<HTMLElement | null>, on: boolean, close: () => void) {
   useEffect(() => {
@@ -120,6 +155,7 @@ function UserMenu() {
 /** Panneau « Menu » : toutes les fonctions, en colonnes, dans la nuit de l'Odyssée. */
 function SiteMenu({ onClose }: { onClose: () => void }) {
   const { me, logout } = useApp();
+  const [sections, grid] = useSections();
   const navigate = useNavigate();
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -134,8 +170,8 @@ function SiteMenu({ onClose }: { onClose: () => void }) {
   }, [onClose]);
   return (
     <div className="site-menu" role="dialog" aria-modal="true" aria-label="Menu" ref={ref}>
-      <div className="site-menu-in">
-        {SECTIONS.map(s => (
+      <div className="site-menu-in" style={grid}>
+        {sections.map(s => (
           <nav key={s.title} className="site-menu-col" aria-label={s.title}>
             <p className="site-menu-k">{s.title}</p>
             {s.links.map(l => (
@@ -194,6 +230,7 @@ export function Header() {
   const { me, ready } = useApp();
   const [open, setOpen] = useState(false);
   const loc = useLocation();
+  const on = useContext(FeaturesContext);
   useEffect(() => setOpen(false), [loc.pathname, loc.search]);
   return (
     <>
@@ -201,11 +238,11 @@ export function Header() {
         <div className="site-header-in">
           <Logo />
           <nav className="site-nav" aria-label="Navigation principale">
-            <NavLink to="/jouer">Jouer</NavLink>
-            <NavLink to="/apprendre">Apprendre</NavLink>
-            <NavLink to="/problemes">Problèmes</NavLink>
-            <NavLink to="/analyse">Analyse</NavLink>
-            <NavLink to="/boutique">Boutique</NavLink>
+            {NAV.filter(linkOn(on)).map(l => (
+              <NavLink key={l.to} to={l.to}>
+                {l.label}
+              </NavLink>
+            ))}
           </nav>
           <div className="header-right">
             {ready && !me && (
@@ -232,16 +269,17 @@ export function Header() {
 }
 
 export function Footer() {
+  const [sections, grid] = useSections();
   return (
     <footer className="site-footer">
       <div className="site-footer-in">
         <div className="site-footer-top">
           <div className="site-footer-brand">
             <Logo />
-            <p>Les échecs que vous aimez, avec trois cartes de pouvoir pour renverser la partie. Gratuit, sans publicité, sans pay-to-win.</p>
+            <p>{`Les échecs que vous aimez, avec ${__SM__.cartesDePouvoir} pour renverser la partie. Gratuit, sans publicité, sans pay-to-win.`}</p>
           </div>
-          <div className="site-footer-links">
-            {SECTIONS.map(s => (
+          <div className="site-footer-links" style={grid}>
+            {sections.map(s => (
               <nav key={s.title} aria-label={s.title}>
                 <h4>{s.title}</h4>
                 {s.links.map(l => (
@@ -261,8 +299,11 @@ export function Footer() {
           </div>
         </div>
         <div className="site-footer-bottom">
-          <span>© {new Date().getFullYear()} Spellmate. Tous droits réservés.</span>
-          <span>Les échecs, avec un peu de magie.</span>
+          <span>
+            © {new Date().getFullYear()}
+            {` ${__SM__.marque}. Tous droits réservés.`}
+          </span>
+          <span>{__SM__.accrochePied}</span>
         </div>
       </div>
     </footer>

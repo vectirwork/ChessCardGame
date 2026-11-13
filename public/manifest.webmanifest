@@ -1,11 +1,11 @@
 {
-  "name": "Spellmate",
-  "short_name": "Spellmate",
-  "description": "Les échecs ont appris la magie : une vraie partie, trois cartes de pouvoir. Gratuit, sans compte.",
+  "name": "%SM_NOM%",
+  "short_name": "%SM_NOM_COURT%",
+  "description": "%SM_ACCROCHE% : une vraie partie, %SM_CARTES_DE_POUVOIR%. Gratuit, sans compte.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#04050f",
-  "theme_color": "#04050f",
+  "background_color": "%SM_COULEUR_FOND%",
+  "theme_color": "%SM_COULEUR_THEME%",
   "icons": [
     {
       "src": "/icon-192.png",

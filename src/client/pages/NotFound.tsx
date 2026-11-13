@@ -1,9 +1,13 @@
-// Page introuvable : hors de la carte, au milieu des nuées.
+// Page introuvable : hors de la carte, au milieu des nuées. Aussi celle d'une page coupée (interrupteurs) ; les liens
+// vers une fonction coupée sont cachés.
 import { Link } from 'react-router-dom';
+import { useFeature } from '../store';
 import { PageHead, PlacePage, useTitle } from './PageScene';
 
 export default function NotFound() {
   useTitle('Page introuvable');
+  const learn = useFeature('learn');
+  const shop = useFeature('shop');
   return (
     <PlacePage place="nuees" className="nf" narrow>
       <div className="nf-compass" aria-hidden="true">
@@ -52,12 +56,16 @@ export default function NotFound() {
           <Link to="/" className="btn-gold sm">
             Revenir à l’accueil
           </Link>
-          <Link to="/apprendre" className="btn btn-sm">
-            Apprendre
-          </Link>
-          <Link to="/boutique" className="btn btn-sm">
-            Boutique
-          </Link>
+          {learn && (
+            <Link to="/apprendre" className="btn btn-sm">
+              Apprendre
+            </Link>
+          )}
+          {shop && (
+            <Link to="/boutique" className="btn btn-sm">
+              Boutique
+            </Link>
+          )}
           <Link to="/cartes" className="btn btn-sm">
             Règles et cartes
           </Link>

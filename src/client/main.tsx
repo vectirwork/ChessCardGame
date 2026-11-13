@@ -24,20 +24,14 @@ import { BrowserRouter } from 'react-router-dom';
 import { App, preloadRoute } from './App';
 import { AppProvider } from './store';
 
-// Après une mise en ligne, un onglet resté ouvert peut demander le code d'une page qui n'existe plus : on recharge
-// (nouvelle version), au plus une fois par minute pour ne jamais boucler.
-window.addEventListener('vite:preloadError', e => {
-  try {
-    if (Date.now() - Number(sessionStorage.getItem('spellmate:reload') ?? 0) < 60_000) return;
-    sessionStorage.setItem('spellmate:reload', String(Date.now()));
-  } catch {
-    return; // stockage indisponible : pas de rechargement automatique (aucun risque de boucle)
-  }
-  e.preventDefault();
-  window.location.reload();
+// Code d'une page introuvable après une mise en ligne (onglet resté ouvert) : App.tsx recharge la page, au plus une
+// fois par minute (reloadForNewVersion). Les modules facultatifs (three.js, Lenis) gèrent eux-mêmes leur échec : la page
+// n'est plus rechargée pour eux (aucun écouteur de vite:preloadError, Vite transmet l'erreur à l'appelant).
+// Erreur hors d'une page (en-tête, pied de page) : React démonte tout ; elle est notée avec sa pile de composants.
+// Celles d'une page sont arrêtées par PageBoundary (App.tsx).
+const root = createRoot(document.getElementById('root')!, {
+  onUncaughtError: (error, info) => console.error('[app] Erreur non rattrapée :', error, info.componentStack),
 });
-
-const root = createRoot(document.getElementById('root')!);
 const render = () =>
   root.render(
     <StrictMode>

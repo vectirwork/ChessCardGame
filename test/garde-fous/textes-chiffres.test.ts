@@ -117,6 +117,8 @@ describe('garde-fou des textes chiffrés et de la marque', () => {
   it('les sources des phrases (config, text) ne sont pas parcourues, le reste oui', () => {
     const all = occurrences();
     expect(all.some(o => o.file.startsWith('src/shared/text/'))).toBe(false);
-    expect(all.some(o => o.file === 'index.html')).toBe(true);
+    expect(all.some(o => o.file.startsWith('src/client/'))).toBe(true);
+    // index.html est encore parcouru, mais ses textes viennent maintenant de la marque, pliée au build (lot 6).
+    expect(readFileSync(path.join(ROOT, 'index.html'), 'utf8')).toContain('%SM_TITRE%');
   });
 });

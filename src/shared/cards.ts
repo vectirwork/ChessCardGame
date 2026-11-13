@@ -178,10 +178,13 @@ export interface CardDef {
 
 /** Textes d'une carte produits par un gabarit. */
 type CardTexts = Pick<CardDef, 'description' | 'duration' | 'prompts'>;
-/** Définition d'une carte : les Pouvoirs n'écrivent pas leurs textes, produits par TEMPLATES (cardText). */
+/**
+ * Définition d'une carte : les Pouvoirs n'écrivent pas leurs textes, produits par TEMPLATES (cardText) ; les cartes
+ * du Duel, figées, les écrivent (le compilateur l'exige).
+ */
 type CardData = Omit<CardDef, keyof CardTexts> & Partial<CardTexts>;
 
-const DEFS: Record<CardId, CardData> = {
+const DEFS: Record<PowerCardId, Omit<CardDef, keyof CardTexts>> & Record<DuelCardId, CardDef> = {
   // -------------------------------------------------------------------------------------------
   // Climats : une règle pour tout le plateau, annoncée un tour à l'avance (Présage). Un seul Climat à la fois.
   hourglass: {
@@ -561,7 +564,7 @@ export function cardText(id: CardId, rules: CardTextRules): CardTexts {
   if (!memo) textMemo.set(rules, (memo = new Map()));
   let t = memo.get(id);
   if (!t) {
-    t = textsOf(id, DEFS[id], rules.tuning[id] ?? {}, rules.presageDelay);
+    t = textsOf(id, (DEFS as Record<CardId, CardData>)[id], rules.tuning[id] ?? {}, rules.presageDelay);
     memo.set(id, t);
   }
   return t;

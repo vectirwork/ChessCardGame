@@ -1,6 +1,7 @@
 // Banc d'essai des effets (développement).
 // - Sort : /test/vfx.html?card=rift&targets=e4&skin=skin:inferno (lancé au chargement si `card` est donné ;
-//   sinon `window.cast('blast', [], 'skin:arcane')`). `window.moves(2)` joue deux coups (arrivée d'un Présage).
+//   sinon `window.cast('blast', [], 'skin:arcane')`). `window.moves(2)` joue deux coups (arrivée d'un Présage) ;
+//   `window.arrivals` compte les arrivées jouées (mises en scène lancées par la scène, VfxStage.arrivalFactory).
 // - Galerie des cartes (emblèmes, tailles, état « jouée ») : /test/vfx.html?cards
 // - `?live` : animation en temps réel (sinon la scène avance image par image avec `window.__step(ms)`).
 // - `?catalog=duel` : cartes historiques (anciennes parties).
@@ -48,6 +49,13 @@ function Harness() {
   useEffect(() => {
     if (!vfx) return;
     vfx.stage.guard = q.has('live');
+    // Arrivées d'un Présage : comptées quand la scène les lance (test/sorts.mjs attend la première)
+    const arrive = vfx.stage.arrivalFactory;
+    w.arrivals = 0;
+    vfx.stage.arrivalFactory = (stage, e, skin) => {
+      w.arrivals++;
+      arrive?.(stage, e, skin);
+    };
     const apply = (n: GameState) => {
       sRef.current = n;
       setS(n);

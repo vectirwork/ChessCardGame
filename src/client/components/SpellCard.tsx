@@ -6,23 +6,39 @@
 // cardEndsTurn). La règle, la famille et la durée sont dans la bulle (CardBubble), ouverte au survol, au focus ou au
 // toucher. Une carte jouée reste visible, grisée, avec « Jouée ».
 //
-// Règles (`rules`) : celles de la partie (rulesOf(state)), sinon celles des nouvelles parties (GAME_RULES).
+// Règles (`rules`) : celles de la partie (rulesOf(state)), sinon celles des nouvelles parties (GAME_RULES). Elles
+// règlent la pastille (carte à la place du coup), le moment d'action (délai des Présages) et, si elles portent
+// l'équilibrage (`tuning`), les textes de la carte (cardText : durée, règle, consignes d'une partie dont l'équilibrage
+// diffère du réglage du jour). Au défaut, les textes de CARDS.
 //
 // Tailles : 'hand' (mains), 'full' (la même face en grand : annonce d'un sort, chapitres de l'accueil, dont la règle
 // est écrite à côté), 'mini' (vignette : emblème seul) et 'compact' (bandeau : emblème, nom, pastille).
 import { forwardRef, useId, useRef } from 'react';
 import type { CSSProperties, FocusEvent as RFocusEvent, PointerEvent as RPointerEvent, ReactNode, Ref } from 'react';
-import { CARDS, CardDef, CardId, FAMILY_LABEL } from '../../shared/cards';
+import { CARDS, CardDef, CardId, FAMILY_LABEL, cardText } from '../../shared/cards';
 import { GAME_RULES } from '../../shared/config/rules';
 import type { Rules } from '../../shared/config/rules';
-import { ordinalLettres } from '../../shared/text/fr';
+import { enLettres, ordinalLettres } from '../../shared/text/fr';
 import { prochainTour } from '../../shared/text/regles';
 import { CardEmblem } from './CardArt';
 import { CardScene } from './CardScene';
 import { CARD_SCENES } from './cardScenes';
 
-/** Règles qui changent ce que dit une carte : carte à la place du coup, délai des Présages. */
-export type CardRules = Pick<Rules, 'cardEndsTurn' | 'presageDelay'>;
+/**
+ * Règles qui changent ce que dit une carte : carte à la place du coup, délai des Présages et, si elles le portent,
+ * l'équilibrage de la partie (`tuning`, règles complètes d'une partie : rulesOf(state)).
+ */
+export type CardRules = Pick<Rules, 'cardEndsTurn' | 'presageDelay'> & { tuning?: Rules['tuning'] };
+
+/**
+ * Textes d'une carte (règle, durée, consignes de ciblage) selon les règles d'une partie : cardText si elles portent
+ * l'équilibrage (mémorisé par objet de règles), sinon ceux de CARDS. Pour RULES_V1 et au réglage du jour, ce sont
+ * les textes de CARDS au caractère près (test/climats.test.ts).
+ */
+export function cardTexts(def: CardDef, r: CardRules = GAME_RULES): Pick<CardDef, 'description' | 'duration' | 'prompts'> {
+  const tuning = r.tuning;
+  return tuning && CARDS[def.id] === def ? cardText(def.id, r as CardRules & { tuning: Rules['tuning'] }) : def;
+}
 
 /**
  * La carte termine-t-elle le tour ? Même règle que cardEndsTurn (src/shared/rulesCore.ts, vérifié par
@@ -50,14 +66,19 @@ export function turnEffect(def: CardDef, owner: 'self' | 'opponent' = 'self', r:
     : { kind: 'plus', label: `En plus de ${who}`, short: 'En plus du coup', who };
 }
 
-/** Moment où la carte agit, en deux mots : tout de suite, ou au prochain tour du lanceur (Présage). */
-export function cardWhen(def: CardDef): { kind: 'now' | 'next'; label: string } {
-  return def.presage ? { kind: 'next', label: 'Au prochain tour' } : { kind: 'now', label: 'Immédiat' };
+/**
+ * Moment où la carte agit, en deux mots : tout de suite, ou au prochain tour du lanceur (Présage). Avec un délai des
+ * Présages de plus de 2 demi-coups : « Dans deux tours », « Dans trois tours » (même compte que prochainTour).
+ */
+export function cardWhen(def: CardDef, r: Pick<Rules, 'presageDelay'> = GAME_RULES): { kind: 'now' | 'next'; label: string } {
+  if (!def.presage) return { kind: 'now', label: 'Immédiat' };
+  const k = Math.max(1, Math.round(r.presageDelay / 2));
+  return { kind: 'next', label: k === 1 ? 'Au prochain tour' : `Dans ${enLettres(k)} tours` };
 }
 
 /** Étiquette du haut de la carte : « Immédiat » (éclair) ou « Au prochain tour » (sablier). `iconOnly` : petites cartes. */
-export function WhenTag({ def, iconOnly = false, className = '' }: { def: CardDef; iconOnly?: boolean; className?: string }) {
-  const w = cardWhen(def);
+export function WhenTag({ def, iconOnly = false, rules = GAME_RULES, className = '' }: { def: CardDef; iconOnly?: boolean; rules?: Pick<Rules, 'presageDelay'>; className?: string }) {
+  const w = cardWhen(def, rules);
   return (
     <span className={`sc-when is-${w.kind} ${className}`} title={w.label}>
       <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -101,10 +122,10 @@ export function cardTiming(def: CardDef, owner: 'self' | 'opponent' = 'self', r:
 
 /**
  * Règle sans sa phrase d'arrivée (« Annoncée, elle arrive… », « Rituel : la carte remplace votre coup. ») : dans la
- * bulle, le moment d'action a sa propre ligne.
+ * bulle, le moment d'action a sa propre ligne. Texte selon les règles de la partie (cardTexts).
  */
-export function ruleBody(def: CardDef): string {
-  return def.description
+export function ruleBody(def: CardDef, r: CardRules = GAME_RULES): string {
+  return cardTexts(def, r).description
     .replace(/^Annoncée?, (?:il|elle) arrive au début de votre (?:prochain|[a-zéè-]+ième) tour(?: à venir)?\.\s*/u, '')
     .replace(/^Rituel : la carte remplace votre coup\.\s*/u, '');
 }
@@ -148,7 +169,7 @@ export function TurnPill({ def, owner = 'self', compact = false, long = false, r
 
 /** Libellé accessible d'une carte : nom, effet sur le tour, état. La règle est lue par la bulle (aria-describedby). */
 export function cardAriaLabel(def: CardDef, used?: boolean, owner: 'self' | 'opponent' = 'self', r: CardRules = GAME_RULES): string {
-  return `${def.name}, ${cardWhen(def).label.toLowerCase()}, ${turnEffect(def, owner, r).label.toLowerCase()}${used ? ', jouée' : ''}`;
+  return `${def.name}, ${cardWhen(def, r).label.toLowerCase()}, ${turnEffect(def, owner, r).label.toLowerCase()}${used ? ', jouée' : ''}`;
 }
 
 interface Props {
@@ -239,14 +260,14 @@ export const SpellCard = forwardRef(function SpellCard(
           onClick!('key');
         }
       }}
-      aria-label={label ?? `${cardAriaLabel(def, used, owner, rules)}${describedBy ? '' : ` : ${def.description}`}`}
+      aria-label={label ?? `${cardAriaLabel(def, used, owner, rules)}${describedBy ? '' : ` : ${cardTexts(def, rules).description}`}`}
     >
       <div className="sc-body">
         <div className="sc-art">
           <div className="sc-halo" />
           <CardEmblem id={id} className="sc-emblem" />
         </div>
-        {(size === 'hand' || size === 'full') && <WhenTag def={def} iconOnly={narrow || (owner === 'opponent' && size === 'hand')} />}
+        {(size === 'hand' || size === 'full') && <WhenTag def={def} rules={rules} iconOnly={narrow || (owner === 'opponent' && size === 'hand')} />}
         {size !== 'mini' && <div className="sc-name">{def.name}</div>}
         {size !== 'mini' && <TurnPill def={def} owner={owner} rules={rules} compact={narrow || (owner === 'opponent' && size === 'hand')} />}
         {children}
@@ -263,6 +284,7 @@ function CompactCard({ def, used, selected, disabled, rules, onClick, className 
 }) {
   const cls = ['spell-chip', `fam-${def.family}`, used ? 'used' : '', selected ? 'selected' : '', disabled ? 'disabled' : '',
     onClick ? 'clickable' : '', className].join(' ');
+  const description = cardTexts(def, rules).description;
   return (
     <div
       className={cls}
@@ -276,8 +298,8 @@ function CompactCard({ def, used, selected, disabled, rules, onClick, className 
           onClick();
         }
       }}
-      title={`${def.name}${used ? ' (jouée)' : ''} : ${def.description}`}
-      aria-label={`${cardAriaLabel(def, used, 'self', rules)} : ${def.description}`}
+      title={`${def.name}${used ? ' (jouée)' : ''} : ${description}`}
+      aria-label={`${cardAriaLabel(def, used, 'self', rules)} : ${description}`}
     >
       <span className="sch-em" aria-hidden="true">
         <CardEmblem id={def.id} />
@@ -323,6 +345,8 @@ export function CardBubble({ id, domId, mode, used, owner = 'self', rules = GAME
   const def = CARDS[id];
   if (!def) return null;
   const interactive = mode !== 'read';
+  // Durée et règle selon l'équilibrage de la partie (cardTexts), comme le moment d'action (cardTiming)
+  const texts = cardTexts(def, rules);
   return (
     <div
       id={domId}
@@ -339,7 +363,7 @@ export function CardBubble({ id, domId, mode, used, owner = 'self', rules = GAME
           <span className="cbub-title">
             <b>{def.name}</b>
             <small>
-              {cardKicker(def)} · {def.duration}
+              {cardKicker(def)} · {texts.duration}
             </small>
           </span>
         </div>
@@ -352,10 +376,10 @@ export function CardBubble({ id, domId, mode, used, owner = 'self', rules = GAME
         {mode !== 'aim' && CARD_SCENES[id] ? (
           <div className={`cbub-body ${CARD_SCENES[id]?.pair ? 'is-pair' : ''}`}>
             <CardScene id={id} play="auto" className="cbub-scene" labels={!!CARD_SCENES[id]?.pair} />
-            <p className="cbub-rule">{ruleBody(def)}</p>
+            <p className="cbub-rule">{ruleBody(def, rules)}</p>
           </div>
         ) : (
-          <p className="cbub-rule">{ruleBody(def)}</p>
+          <p className="cbub-rule">{ruleBody(def, rules)}</p>
         )}
         <p className="cbub-when">
           <TurnPill def={def} owner={owner} rules={rules} long />

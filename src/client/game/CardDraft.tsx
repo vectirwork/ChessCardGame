@@ -13,24 +13,30 @@
 // Clavier : Tab ou flèches pour parcourir les cartes, Espace ou Entrée pour choisir, touches 1 à 9 en raccourci (les
 // 9 premières cartes). Mobile : une colonne, barre de validation collée en bas. Animations : transform et opacity,
 // figées si l'utilisateur réduit les animations. Phrases et décisions pures : ./draftText.ts.
+//
+// Règles : celles de la partie (rulesOf(view.state)), jamais celles du jour : pastilles « Remplace votre coup » (carte
+// à la place du coup), moment d'action (délai des Présages), durée et règle (équilibrage de la partie).
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent as RKeyboardEvent } from 'react';
 import { opposite } from '../../shared/chess';
 import type { Color } from '../../shared/chess';
-import { CARDS, FAMILY_LABEL, cardsOf } from '../../shared/cards';
-import type { CardDef, CardId } from '../../shared/cards';
+import { CARDS, cardsOf } from '../../shared/cards';
+import type { CardId } from '../../shared/cards';
 import { DEAL } from '../../shared/config/rules';
 import { catalogOf } from '../../shared/game';
 import type { Ack, DraftView, GameView, SeatView } from '../../shared/protocol';
+import { rulesOf } from '../../shared/rulesCore';
+import { colorName } from '../../shared/text/libelles';
 import { CardEmblem } from '../components/CardArt';
-import { SpellCard, cardWhen, ruleBody, turnEffect } from '../components/SpellCard';
+import { SpellCard, ruleBody } from '../components/SpellCard';
 import { CardScene, scenePaired } from '../components/CardScene';
+import { REF_HAND } from '../odyssee/shell/layout';
 import { emitAck } from '../socket';
 import { playSound } from '../sound';
 import {
-  DRAFT_LOCK_MS, attenteAdversaire, cartesChoisies, cartesDe, choixComplet, dealOrder, dejaComplet, draftClosing, encore, excludedNote,
-  expiration, gridColumns, noteRevelation, revealNote, sesCartes, shortcutCount, shortcutIndex, sousTitre, titreChoix,
-  titreSpectateur, vosCartesLabel,
+  DRAFT_LOCK_MS, attenteAdversaire, cardMeta, cartesChoisies, cartesDe, choixComplet, dealOrder, dejaComplet, draftClosing, encore,
+  excludedNote, expiration, gridColumns, noteRevelation, revealNote, sesCartes, shortcutCount, shortcutIndex, sousTitre, tilePills,
+  titreChoix, titreSpectateur, vosCartesLabel,
 } from './draftText';
 import type { RevealEvent } from './draftText';
 import { deNom } from './names';
@@ -39,18 +45,8 @@ import './draft.css';
 
 /** Durée d'affichage des mains révélées avant de laisser place à la partie. */
 const REVEAL_MS = 5200;
-/** Main de référence des mises en page (révélation) : au-delà, les cartes rapetissent (draft.css, data-crowd). */
-const REF_HAND = 3;
 
-/** Famille, mot-clé et durée, en clair : « Climat · Présage · 3 coups ». */
-function cardMeta(def: CardDef): string {
-  // Le moment (immédiat, au prochain tour) et l'effet sur le coup ont leurs pastilles : ici, famille et durée
-  const key = def.permanent && def.family === 'terrain' ? 'Permanent' : null;
-  const dur = def.permanent && def.family === 'terrain' ? 'toute la partie' : def.duration.replace(/\s*\(.*\)\s*$/, '');
-  return [FAMILY_LABEL[def.family], key, dur.charAt(0).toLowerCase() + dur.slice(1)].filter(Boolean).join(' · ');
-}
-
-const seatName = (seat: SeatView | null, c: Color) => seat?.name ?? (c === 'w' ? 'Les Blancs' : 'Les Noirs');
+const seatName = (seat: SeatView | null, c: Color) => seat?.name ?? `Les ${colorName(c)}`;
 
 /** Garde le focus clavier dans le dialogue plein écran (la partie, dessous, est cachée). */
 function trapTab(e: RKeyboardEvent<HTMLElement>) {
@@ -138,6 +134,8 @@ function DraftScreen({ view, draft, receivedAt, onAbort, onSubmitted }: {
   const opp: Color = you ? opposite(you) : 'b';
   const oppSeat = view.seats[opp];
   const count = draft.count;
+  // Règles de la partie (pastilles, moment d'action, durée et règle des cartes), pas celles du jour
+  const rules = rulesOf(view.state);
   const confirmed = !!you && draft.chosen[you];
   const [sel, setSel] = useState<CardId[]>(() => draft.mine.filter(c => draft.pool.includes(c)).slice(0, count));
   const [submitted, setSubmitted] = useState(confirmed);
@@ -345,25 +343,26 @@ function DraftScreen({ view, draft, receivedAt, onAbort, onSubmitted }: {
             if (!def) return null;
             const order = sel.indexOf(id);
             const on = order >= 0;
+            const pills = tilePills(def, rules);
             const content = (
               <>
                 <span className="cd-top">
                   <span className="cd-art" aria-hidden="true">
-                    <SpellCard id={id} size="mini" tilt={false} className="cd-sc" />
+                    <SpellCard id={id} size="mini" tilt={false} rules={rules} className="cd-sc" />
                   </span>
                   <span className="cd-id">
                     <span className="cd-name" id={`cd-n-${id}`}>
                       {def.name}
                     </span>
                     <span className="cd-meta" id={`cd-m-${id}`}>
-                      {cardMeta(def)}
+                      {cardMeta(def, rules)}
                     </span>
                   </span>
                 </span>
                 {/* Moment et effet sur le tour, sur toute la largeur de la tuile (une seule ligne) */}
                 <span className="cd-pills" id={`cd-t-${id}`}>
-                  <span className={`cd-when ${def.presage ? 'is-next' : ''}`}>{cardWhen(def).label}</span>
-                  <span className={`cd-turn ${def.ritual ? 'is-replace' : ''}`}>{turnEffect(def).label}</span>
+                  <span className={`cd-when ${pills.next ? 'is-next' : ''}`}>{pills.when}</span>
+                  <span className={`cd-turn ${pills.replace ? 'is-replace' : ''}`}>{pills.turn}</span>
                 </span>
                 <span className="cd-rule" id={`cd-r-${id}`}>
                   {/* Scène de la carte en image fixe, animée sur la tuile survolée ou touchée en dernier */}
@@ -371,7 +370,7 @@ function DraftScreen({ view, draft, receivedAt, onAbort, onSubmitted }: {
                     <CardScene id={id} play="still" active={peek === id} />
                   </span>
                   {/* Sans « Annoncée, elle arrive… » ni « Rituel : … » : les pastilles le disent déjà */}
-                  {ruleBody(def)}
+                  {ruleBody(def, rules)}
                 </span>
                 {!spectator && (
                   <span className="cd-mark" aria-hidden="true">
@@ -529,6 +528,8 @@ function Reveal({ view, auto, count, onDone }: { view: GameView; auto: boolean; 
   const first: Color = you ?? 'w';
   const second = opposite(first);
   const s = view.state;
+  // Règles de la partie : pastilles et moment d'action des mains révélées, comme la main de la coque derrière
+  const rules = rulesOf(s);
   const titleId = useId();
   const btn = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -540,7 +541,7 @@ function Reveal({ view, auto, count, onDone }: { view: GameView; auto: boolean; 
   const turn = s.pos.turn;
   const turnSeat = view.seats[turn];
   const lead = !you
-    ? `Les ${turn === 'w' ? 'Blancs' : 'Noirs'} commencent.`
+    ? `Les ${colorName(turn)} commencent.`
     : you === turn
       ? 'À vous de commencer : jouez votre premier coup.'
       : `${seatName(turnSeat, turn)} commence.`;
@@ -562,7 +563,7 @@ function Reveal({ view, auto, count, onDone }: { view: GameView; auto: boolean; 
                 {s.hands[c].map((h, i) =>
                   CARDS[h.card] ? (
                     <div key={i} className="cd-deal" style={{ '--i': dealOrder(k, n, i) } as CSSProperties}>
-                      <SpellCard id={h.card} size="hand" tilt={false} narrow={n > REF_HAND} className="cd-sc" />
+                      <SpellCard id={h.card} size="hand" tilt={false} rules={rules} narrow={n > REF_HAND} className="cd-sc" />
                     </div>
                   ) : null,
                 )}

@@ -1,11 +1,15 @@
-// Choix des cartes (CardDraft) : phrases et décisions pures, sans React, testées par test/choix-cartes.test.ts.
+// Choix des cartes (CardDraft) : phrases et décisions pures (aucun rendu, aucun état), testées par
+// test/choix-cartes.test.ts.
 //
 // Les phrases suivent le nombre de cartes à choisir (`n`, DraftView.count) et la taille de la réserve. Au réglage par
 // défaut, chacune rend la phrase d'avant au caractère près ; pour 1 carte, les accords
 // (« Choisissez votre carte. », « Carte choisie : validez-la… ») remplacent « vos une cartes ».
-import { CARDS } from '../../shared/cards';
+// Les tuiles suivent les règles de la partie (rulesOf(view.state)) : pastilles, moment d'action, durée.
+import { CARDS, FAMILY_LABEL } from '../../shared/cards';
 import type { CardDef, CardId } from '../../shared/cards';
 import type { Color } from '../../shared/chess';
+import type { Rules } from '../../shared/config/rules';
+import { cardTexts, cardWhen, turnEffect } from '../components/SpellCard';
 import { cap, compte, enLettres, liste } from '../../shared/text/fr';
 import { pouvoirs } from '../../shared/text/regles';
 
@@ -194,4 +198,22 @@ export function excludedNote(catalog: readonly CardId[], pool: readonly CardId[]
   const bot = missing.filter(id => o.vsBot && CARDS[id].humanOnly);
   const clock = missing.filter(id => !bot.includes(id) && !o.timed && CARDS[id].timedOnly);
   return absentes(bot, 'contre l’IA') + absentes(clock, 'dans une partie sans pendule');
+}
+
+/** Famille, mot-clé et durée (selon l'équilibrage de la partie), en clair : « Climat · Présage · 3 coups ». */
+export function cardMeta(def: CardDef, rules?: Rules): string {
+  // Le moment (immédiat, au prochain tour) et l'effet sur le coup ont leurs pastilles : ici, famille et durée
+  const key = def.permanent && def.family === 'terrain' ? 'Permanent' : null;
+  const dur = def.permanent && def.family === 'terrain' ? 'toute la partie' : cardTexts(def, rules).duration.replace(/\s*\(.*\)\s*$/, '');
+  return [FAMILY_LABEL[def.family], key, dur.charAt(0).toLowerCase() + dur.slice(1)].filter(Boolean).join(' · ');
+}
+
+/**
+ * Pastilles d'une tuile du choix : moment d'action et effet sur le tour, selon les règles de la partie (« Remplace
+ * votre coup » sur toute carte si la carte remplace le coup ; « Dans deux tours » si les Présages tardent).
+ */
+export function tilePills(def: CardDef, rules: Rules): { when: string; next: boolean; turn: string; replace: boolean } {
+  const w = cardWhen(def, rules);
+  const t = turnEffect(def, 'self', rules);
+  return { when: w.label, next: w.kind === 'next', turn: t.label, replace: t.kind === 'replace' };
 }

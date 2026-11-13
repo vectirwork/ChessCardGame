@@ -24,6 +24,7 @@ import { EMOTES } from '../../shared/protocol';
 import { castsLeft, rulesOf } from '../../shared/rulesCore';
 import { consigneTour, mainLabel } from '../../shared/text/regles';
 import { Board, BoardHandle, checkSquare } from '../components/Board';
+import { cardTexts } from '../components/SpellCard';
 import { MATE_FALL_MS, matedKing } from '../components/mate';
 import { Modal, Spinner } from '../components/Layout';
 import { CLASSIC_KINGS_PREF, rememberView, seatKings, shownKings } from '../features/history';
@@ -43,7 +44,7 @@ import { deNom } from './names';
 import type { Casting } from './overlays';
 import {
   Avatar, Captured, Clock, EmoteBubble, MoveList, SeatName, catalogDescription, catalogTag, colorName, firstMoveNumber,
-  modeLabel, seatSub, tcLabel,
+  modeLabel, seatSub, tcLabel, turnEndingCards,
 } from './parts';
 
 type Queued = GameUpdate & { at: number };
@@ -171,7 +172,7 @@ export default function GamePage() {
     async (u: Queued, info: CardInfo, prev: GameView | null) => {
       const seat = u.view.seats[info.caster];
       const mine = u.view.you === info.caster;
-      const by = seat?.name ?? (info.caster === 'w' ? 'Les Blancs' : 'Les Noirs');
+      const by = seat?.name ?? `Les ${colorName(info.caster)}`;
       setCasting({ card: info.card, by, mine, key: Date.now() });
       if (!mine && CARDS[info.card]) setAnnounce({ text: `${by} lance ${CARDS[info.card].name}`, key: Date.now() });
       setAnimating(true);
@@ -279,7 +280,8 @@ export default function GamePage() {
     setSelCard(null);
     setFlipped(false);
     setRevealEv(null);
-    setEmotes({ w: null, b: null });
+    // Bulles déjà vides (premier passage) : même objet, pas de rendu de plus
+    setEmotes(e => (e.w || e.b ? { w: null, b: null } : e));
     // Nouvelle partie (revanche) : la scène 3D sera recréée au repos, pas pendant l'arrivée de la coque
     setWarm(false);
     // Émotes : une minuterie par camp, annulée par l'émote suivante, à la revanche et au départ de la page
@@ -316,6 +318,19 @@ export default function GamePage() {
 
   // ----- Dérivés -----
   const state: GameState | null = view?.state ?? null;
+  // Règles de la partie (celles qu'elle porte, sinon RULES_V1) : consignes, main, message après un lancement, textes
+  // des cartes, numérotation des coups. Les phrases sont calculées une fois par objet de règles.
+  const rules = rulesOf(state ?? {});
+  const ruleTexts = useMemo(
+    () => ({
+      main: mainLabel(rules),
+      consigne: consigneTour(rules),
+      first: firstMoveNumber(rules),
+      // Carte qui termine le tour (même règle que le moteur) : après celle des Noirs, le numéro du coup avance
+      endsTurn: turnEndingCards(rules),
+    }),
+    [rules],
+  );
   // Pendant le choix des cartes (view.draft), personne n'a le trait : l'échiquier reste verrouillé.
   const myTurn = !!view && !!state && view.status === 'active' && !view.draft && you === state.pos.turn && !state.result;
   const legal = useMemo(() => (myTurn && state && !animating ? legalMovesOf(state) : []), [myTurn, state, animating]);
@@ -508,8 +523,6 @@ export default function GamePage() {
   }
 
   const catalog: Catalog = catalogOf(state);
-  // Règles de la partie (celles qu'elle porte, sinon RULES_V1) : consignes, main, message après un lancement
-  const rules = rulesOf(state);
   const top: Color = opposite(orientation);
   const bottom: Color = orientation;
   const spectator = !you;
@@ -588,7 +601,7 @@ export default function GamePage() {
     hint = (
       <>
         {line}
-        {firstMove ?? (hasCards && <small>{consigneTour(rules)}</small>)}
+        {firstMove ?? (hasCards && <small>{ruleTexts.consigne}</small>)}
       </>
     );
   } else if (view.status === 'active') {
@@ -600,11 +613,13 @@ export default function GamePage() {
     );
   }
 
-  const prompt: ShellPrompt | null = selectedDef
+  // Consigne de ciblage et règle selon l'équilibrage de la partie (cardTexts), comme dans la bulle
+  const selectedTexts = selectedDef ? cardTexts(selectedDef, rules) : null;
+  const prompt: ShellPrompt | null = selectedDef && selectedTexts
     ? {
         name: selectedDef.name,
         hue: selectedDef.hue,
-        text: selectedDef.targets ? selectedDef.prompts[partial.length] ?? '' : selectedDef.description,
+        text: selectedDef.targets ? selectedTexts.prompts[partial.length] ?? '' : selectedTexts.description,
         onCast: selectedDef.targets === 0 ? () => castCard(selCard!, []) : undefined,
         onCancel: cancelCard,
       }
@@ -687,6 +702,7 @@ export default function GamePage() {
       you={you}
       names={{ w: view.seats.w?.name, b: view.seats.b?.name }}
       mobile={layout.mobile}
+      rules={rules}
     />
   );
 
@@ -797,7 +813,6 @@ export default function GamePage() {
       L’IA joue pour {relayed.map(c => view.seats[c]?.name ?? `les ${colorName(c)}`).join(' et ')}.
     </p>
   ) : undefined;
-  const firstMoveNo = firstMoveNumber(rules);
 
   return (
     <>
@@ -851,7 +866,7 @@ export default function GamePage() {
         cast={castNow}
         castsLeft={castsLeft(state)}
         readOnlyHand={!you}
-        handLabel={you ? mainLabel(rules) : `Cartes ${selfSeat?.name ? deNom(selfSeat.name) : `des ${colorName(bottom)}`}`}
+        handLabel={you ? ruleTexts.main : `Cartes ${selfSeat?.name ? deNom(selfSeat.name) : `des ${colorName(bottom)}`}`}
         toast={announce}
         onEscape={() => {
           if (selCard !== null) cancelCard();
@@ -865,7 +880,7 @@ export default function GamePage() {
       {showRail && (
         <aside className="gp-rail" style={{ left: railLeft, top: railTop, bottom: railBottom } as CSSProperties} aria-label="Coups joués">
           <p className="gp-label">Coups</p>
-          <MoveList log={state.log} first={firstMoveNo} />
+          <MoveList log={state.log} first={ruleTexts.first} endsTurn={ruleTexts.endsTurn} />
         </aside>
       )}
       {showEnd && ended && layout.mobile && endCard}
@@ -874,7 +889,7 @@ export default function GamePage() {
           <div className="gp-sheet">
             <p className="gp-kick">Coup {moveNo}</p>
             <h2 className="gp-card-title">Coups joués</h2>
-            <MoveList log={state.log} first={firstMoveNo} className="is-sheet" />
+            <MoveList log={state.log} first={ruleTexts.first} endsTurn={ruleTexts.endsTurn} className="is-sheet" />
             <div className="gp-card-actions">
               <button type="button" className="btn-line" onClick={() => setMovesOpen(false)}>
                 Fermer

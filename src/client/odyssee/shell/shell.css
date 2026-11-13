@@ -1180,3 +1180,8 @@
 .gs .gs-fan[data-crowd] .sc-turn.is-compact {
   font-size: min(9px, max(7.5px, calc(var(--w) * 0.13)));
 }
+/* Mobile : la bande de la main adverse nombreuse est plus longue ; l'intitulé passe sur deux lignes plutôt que de
+   sortir de l'écran (360 px, 6 cartes) */
+.gs.is-mobile .gs-opp-fan[data-crowd] .gs-opp-fan-label {
+  white-space: normal;
+}

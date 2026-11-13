@@ -9,12 +9,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { CardEmblem } from '../components/CardArt';
-import { CardBubble, TurnPill, cardAriaLabel } from '../components/SpellCard';
+import { CardBubble, TurnPill, cardAriaLabel, cardTexts } from '../components/SpellCard';
 import { CARDS, CardId, FAMILY_LABEL, isCardId } from '../../shared/cards';
 import { rankOf, sqName } from '../../shared/chess';
 import type { Color } from '../../shared/chess';
 import { Effect, GameState, cardOptions, cardPlayable } from '../../shared/game';
 import { rulesOf } from '../../shared/rulesCore';
+import { colorName } from '../../shared/text/libelles';
 import { handNotes } from '../odyssee/shell/cards';
 
 export interface Targeting {
@@ -72,7 +73,8 @@ export function useTargeting(state: GameState, color: Color, enabled: boolean, o
     index,
     partial,
     options,
-    prompt: card ? CARDS[card].prompts[partial.length] ?? null : null,
+    // Consigne selon l'équilibrage de la partie (cardTexts : rangées du Mur, de la Faille…), comme la bulle
+    prompt: card ? cardTexts(CARDS[card], rulesOf(state)).prompts[partial.length] ?? null : null,
     hue: card ? CARDS[card].hue : undefined,
     select,
     target,
@@ -80,7 +82,7 @@ export function useTargeting(state: GameState, color: Color, enabled: boolean, o
   };
 }
 
-export const sideName = (c: Color) => (c === 'w' ? 'Blancs' : 'Noirs');
+export const sideName = (c: Color) => colorName(c);
 
 /** Invite « Touchez une carte… » (même mémoire que la coque de partie). */
 const SEEN_KEY = 'sm:cartes:lues';
@@ -383,7 +385,7 @@ export function EffectsLine({ effects }: { effects: Effect[] }) {
           return <li key={e.id}><span><b>{String(e.card)}</b> <small>carte retirée du jeu</small></span></li>;
         }
         const def = CARDS[e.card];
-        const who = e.caster === 'w' ? 'Blancs' : 'Noirs';
+        const who = colorName(e.caster);
         const where = e.square !== undefined ? ` en ${sqName(e.square)}` : e.squares?.length ? `, rangée ${rankOf(e.squares[0]) + 1}` : '';
         const when = e.pending
           ? `annoncé, arrive dans ${e.delay ?? 1} coup${(e.delay ?? 1) > 1 ? 's' : ''}`

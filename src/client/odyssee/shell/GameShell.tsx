@@ -39,8 +39,11 @@ import { REF_HAND, fanArrival, fanPose, handCardWidth, oppCardWidth } from './la
 import { useGameLayout } from './useGameLayout';
 import './shell.css';
 
-/** Règles de la partie que lit la coque : intitulé de la main, message après un lancement, pastilles des cartes. */
-export type ShellRules = Pick<Rules, 'cardsPerTurn' | 'cardEndsTurn' | 'presageDelay'>;
+/**
+ * Règles de la partie que lit la coque : intitulé de la main, message après un lancement, pastilles des cartes et,
+ * si elles le portent (`tuning`, règles complètes rulesOf(state)), textes des bulles selon l'équilibrage de la partie.
+ */
+export type ShellRules = Pick<Rules, 'cardsPerTurn' | 'cardEndsTurn' | 'presageDelay'> & { tuning?: Rules['tuning'] };
 
 export interface ShellPlayer {
   name: string;

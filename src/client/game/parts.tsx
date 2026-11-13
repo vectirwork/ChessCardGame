@@ -5,12 +5,13 @@ import type { CSSProperties, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Color, PieceType, VALUE, sanToFrench } from '../../shared/chess';
 import { CARDS, CATALOGS } from '../../shared/cards';
-import type { Catalog } from '../../shared/cards';
+import type { CardId, Catalog } from '../../shared/cards';
 import type { Rules } from '../../shared/config/rules';
 import type { GameState, LogEntry } from '../../shared/game';
 import { describeCardPlay } from '../../shared/game';
 import type { ClockView, GameView, SeatView } from '../../shared/protocol';
 import { tcLabel as tcText } from '../../shared/protocol';
+import { cardEndsTurn } from '../../shared/rulesCore';
 import { DEFAULT_KING, kingStyle, normKing } from '../../shared/catalog';
 import { mmss } from '../../shared/text/fr';
 import { catalogLabel as catalogName, colorName as colorWord, modeLabel as modeText } from '../../shared/text/libelles';
@@ -221,8 +222,21 @@ export function firstMoveNumber(r: Pick<Rules, 'startFen'>): number {
   return Number.isInteger(n) && n > 0 ? n : 1;
 }
 
-/** Lignes de la liste des coups ; `first` : numéro du premier coup (firstMoveNumber). */
-export function moveLines(log: LogEntry[], first = 1): MoveLine[] {
+/**
+ * Cartes qui terminent le tour de leur lanceur dans une partie à ces règles, comme le moteur (game.ts, endsTurnHere) :
+ * un Rituel, toute carte si elle remplace le coup (cardEndsTurn), jamais le Retour arrière (Duel), qui rend le trait
+ * en annulant un coup. Une carte inconnue du client ne termine rien.
+ */
+export function turnEndingCards(r: Pick<Rules, 'cardEndsTurn'>): (card: CardId) => boolean {
+  return card => !!CARDS[card] && card !== 'rewind' && cardEndsTurn(CARDS[card], r);
+}
+
+/**
+ * Lignes de la liste des coups ; `first` : numéro du premier coup (firstMoveNumber). Le numéro suit celui de la
+ * position (fullmove) : il avance après un coup des Noirs, et après une carte des Noirs qui termine leur tour
+ * (`endsTurn` : Grande Marée, toute carte si elle remplace le coup), qui passe le trait comme un coup.
+ */
+export function moveLines(log: LogEntry[], first = 1, endsTurn?: (card: CardId) => boolean): MoveLine[] {
   const out: MoveLine[] = [];
   let n = first;
   let cur: Extract<MoveLine, { k: 'pair' }> | null = null;
@@ -230,6 +244,7 @@ export function moveLines(log: LogEntry[], first = 1): MoveLine[] {
     if (e.k === 'card') {
       out.push({ k: 'card', e });
       cur = null;
+      if (e.c === 'b' && !e.undone && endsTurn?.(e.card)) n++;
       continue;
     }
     if (e.c === 'w') {
@@ -249,14 +264,14 @@ export function moveLines(log: LogEntry[], first = 1): MoveLine[] {
   return out;
 }
 
-export function MoveList({ log, first = 1, className = '' }: { log: LogEntry[]; first?: number; className?: string }) {
+export function MoveList({ log, first = 1, endsTurn, className = '' }: { log: LogEntry[]; first?: number; endsTurn?: (card: CardId) => boolean; className?: string }) {
   const ref = useRef<HTMLOListElement>(null);
   useEffect(() => {
     const el = ref.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }, [log.length]);
   if (!log.length) return <p className={`gp-moves-empty ${className}`}>Les coups et les sorts s'inscriront ici.</p>;
-  const lines = moveLines(log, first);
+  const lines = moveLines(log, first, endsTurn);
   return (
     <ol className={`gp-moves ${className}`} ref={ref} aria-label="Coups joués">
       {lines.map((l, i) => {

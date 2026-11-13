@@ -2,7 +2,9 @@
 // Au réglage par défaut (3 cartes parmi les Pouvoirs), chaque phrase est celle d'avant au caractère près ; pour 1 et
 // 5 cartes, les accords suivent.
 import { describe, expect, it } from 'vitest';
-import { cardsOf } from '../src/shared/cards';
+import { CARDS, cardsOf } from '../src/shared/cards';
+import { RULES_V1 } from '../src/shared/config/rules';
+import type { Rules } from '../src/shared/config/rules';
 import * as T from '../src/client/game/draftText';
 
 const POUVOIRS = cardsOf('climats');
@@ -125,5 +127,37 @@ describe('choix des cartes : décisions', () => {
   it('donne de la révélation : k·n + i (0 à 5 pour deux mains de 3, comme avant)', () => {
     expect([0, 1].flatMap(k => [0, 1, 2].map(i => T.dealOrder(k, 3, i)))).toEqual([0, 1, 2, 3, 4, 5]);
     expect([0, 1].flatMap(k => [0, 1, 2, 3, 4].map(i => T.dealOrder(k, 5, i)))).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  });
+});
+
+describe('choix des cartes : tuiles selon les règles de la partie (rulesOf(view.state))', () => {
+  const tuile = (r: Rules) => Object.fromEntries(POUVOIRS.map(id => [id, { ...T.tilePills(CARDS[id], r), meta: T.cardMeta(CARDS[id], r) }]));
+  it('au défaut (RULES_V1) : pastilles, moment et durée d’avant, au caractère près', () => {
+    const plus = 'En plus de votre coup';
+    const next = { when: 'Au prochain tour', next: true, turn: plus, replace: false };
+    const now = { when: 'Immédiat', next: false, turn: plus, replace: false };
+    expect(tuile(RULES_V1)).toEqual({
+      hourglass: { ...next, meta: 'Climat · 6 coups' },
+      truce: { ...next, meta: 'Climat · 3 coups' },
+      blood_moon: { ...next, meta: 'Climat · 3 coups' },
+      ice_age: { ...next, meta: 'Climat · 4 coups' },
+      blast: { ...next, meta: 'Climat · 4 coups' },
+      ice_wall: { ...now, meta: 'Terrain · Permanent · toute la partie' },
+      rift: { ...now, meta: 'Terrain · 4 coups' },
+      tide: { ...now, turn: 'Remplace votre coup', replace: true, meta: 'Événement · instantané' },
+    });
+    // Sans règles : celles du jour (cardMeta d'avant, lue dans CARDS)
+    for (const id of POUVOIRS) expect(T.cardMeta(CARDS[id])).toBe(T.cardMeta(CARDS[id], RULES_V1));
+  });
+  it('carte à la place du coup, Présages à 4 demi-coups, Trêve en 4 coups : la tuile suit la partie, pas le jour', () => {
+    const r: Rules = { ...RULES_V1, cardEndsTurn: true, presageDelay: 4, tuning: { ...RULES_V1.tuning, truce: { coups: 4 } } };
+    const t = tuile(r);
+    for (const id of POUVOIRS) {
+      expect(t[id].turn, id).toBe('Remplace votre coup');
+      expect(t[id].replace, id).toBe(true);
+      expect(t[id].when, id).toBe(CARDS[id].presage ? 'Dans deux tours' : 'Immédiat');
+    }
+    expect(t.truce.meta).toBe('Climat · 4 coups');
+    expect(t.blood_moon.meta).toBe('Climat · 3 coups');
   });
 });

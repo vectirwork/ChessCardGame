@@ -30,7 +30,7 @@ describe('tirage pondéré (R9)', () => {
     const N = 40000;
     const seen: Partial<Record<CardId, number>> = {};
     for (let i = 0; i < N; i++) {
-      const { w, b } = dealHands(true, false, rand, 'climats');
+      const { w, b } = dealHands(true, rand, 'climats');
       for (const hand of [w, b]) {
         expect(new Set(hand).size).toBe(3);
         expect(hand.filter(id => CARDS[id].rarity === 'légendaire').length).toBeLessThanOrEqual(1);
@@ -41,17 +41,15 @@ describe('tirage pondéré (R9)', () => {
     expect(Object.keys(seen).sort()).toEqual([...cardsOf('climats')].sort());
   });
 
-  it('Sablier fou exclu sans pendule et contre l’IA ; miroir ; catalogues Duel et sans cartes', () => {
+  it('Sablier fou exclu sans pendule et contre l’IA ; catalogues Duel et sans cartes', () => {
     const rand = rng(11);
     for (let i = 0; i < 3000; i++) {
-      expect(dealHands(true, false, rand, 'climats', { vsBot: true }).w).not.toContain('hourglass');
-      expect(dealHands(false, false, rand, 'climats').b).not.toContain('hourglass');
-      const m = dealHands(true, true, rand, 'climats');
-      expect(m.b).toEqual(m.w);
-      const d = dealHands(true, false, rand, 'duel');
+      expect(dealHands(true, rand, 'climats', { vsBot: true }).w).not.toContain('hourglass');
+      expect(dealHands(false, rand, 'climats').b).not.toContain('hourglass');
+      const d = dealHands(true, rand, 'duel');
       expect(d.w.every(id => CARDS[id].catalogs.includes('duel'))).toBe(true);
     }
-    expect(dealHands(true, false, rand, 'aucune')).toEqual({ w: [], b: [] });
+    expect(dealHands(true, rand, 'aucune')).toEqual({ w: [], b: [] });
   });
 
   it('aucune main impossible, quelles que soient les options et le générateur (contre l’IA, sans pendule)', () => {
@@ -71,7 +69,7 @@ describe('tirage pondéré (R9)', () => {
       for (const timed of [true, false]) {
         for (const opts of [{}, { vsBot: true }] as DealOptions[]) {
           for (let i = 0; i < 300; i++) {
-            const { w, b } = dealHands(timed, i % 5 === 0, gen, 'climats', opts);
+            const { w, b } = dealHands(timed, gen, 'climats', opts);
             valid(w, timed, opts);
             valid(b, timed, opts);
           }
@@ -145,7 +143,7 @@ function randomGame(seed: number, catalog: Catalog, maxPlies: number): { cards: 
   const timed = rand() < 0.6;
   const pool = cardsOf(catalog);
   const pick = () => Array.from({ length: 3 }, () => pool[Math.floor(rand() * pool.length)]);
-  const hands = !pool.length || rand() < 0.5 ? dealHands(timed, rand() < 0.2, rand, catalog) : { w: pick(), b: pick() };
+  const hands = !pool.length || rand() < 0.5 ? dealHands(timed, rand, catalog) : { w: pick(), b: pick() };
   return playRandom(createGame(hands, timed, catalog), rand, maxPlies, `${catalog} n° ${seed}`);
 }
 

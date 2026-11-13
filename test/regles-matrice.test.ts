@@ -62,7 +62,7 @@ const RESERVES = [
 
 /** Mains d'une partie de la combinaison : choix (complément au hasard pour l'un, choix de l'IA pour l'autre) ou tirage. */
 function mains(c: Combinaison, r: Rules, timed: boolean, rand: () => number): Record<Color, CardId[]> {
-  if (!c.draft) return dealHands(timed, false, rand, 'climats', { rules: r });
+  if (!c.draft) return dealHands(timed, rand, 'climats', { rules: r });
   const pool = cardPool('climats', timed);
   return { w: completeDraft(pool, [], rand, r.cardsPerPlayer), b: chooseBotDraft(pool, 2, rand, { count: r.cardsPerPlayer }) };
 }
@@ -210,7 +210,7 @@ describe(`matrice des règles (moteur), cartes par joueur ${MATRICE.join(', ')}`
             const bot = chooseBotDraft(pool, (1 + (k % 3)) as BotLevel, rand, { count: n });
             expect(draftRefusal(pool, bot, false, n)).toBeNull();
           } else {
-            const { w, b } = dealHands(res.timed, false, rand, 'climats', { vsBot: res.vsBot, rules: r });
+            const { w, b } = dealHands(res.timed, rand, 'climats', { vsBot: res.vsBot, rules: r });
             for (const h of [w, b]) {
               expect(h).toHaveLength(n);
               expect(new Set(h).size).toBe(n);

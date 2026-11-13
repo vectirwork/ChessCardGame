@@ -153,9 +153,6 @@ export interface GameState {
   result: Result | null;
 }
 
-/** @deprecated Alias de GAME_RULES.cardsPerPlayer (config/rules.ts), retiré au lot 9 : lire rulesOf(s).cardsPerPlayer. */
-export const CARDS_PER_PLAYER = GAME_RULES.cardsPerPlayer;
-
 /** Catalogue effectif d'une partie (les parties enregistrées avant les catalogues sont des parties Duel). */
 export const catalogOf = (s: Pick<GameState, 'catalog'>): Catalog => s.catalog ?? LEGACY_CATALOG;
 
@@ -192,11 +189,12 @@ const defaultHandSize = () => rulesFor('classee').cardsPerPlayer;
  *   DEAL.redrawAttempts fois, puis tirage contraint carte par carte. checkRules (rules.ts) garantit qu'une main
  *   valide existe dans chaque réserve.
  * - Tirage uniforme (Duel : anciennes parties, tests) : sans remise, sans contrainte.
- * Les cartes `timedOnly` sont exclues sans pendule, les cartes `humanOnly` contre l'IA (`cardPool`). En mode miroir
- * (anciennes parties, tests ; plus proposé), les deux joueurs reçoivent la même main.
+ * Les cartes `timedOnly` sont exclues sans pendule, les cartes `humanOnly` contre l'IA (`cardPool`). La main des
+ * Blancs est tirée la première, puis celle des Noirs, avec le même générateur `rand`. (Le mode miroir, où les deux
+ * joueurs recevaient la même main, n'est plus proposé ; ses anciennes salles gardent leurs mains.)
  */
 export function dealHands(
-  timed: boolean, mirror: boolean, rand: () => number = Math.random, catalog: Catalog = LEGACY_CATALOG, opts: DealOptions = {},
+  timed: boolean, rand: () => number = Math.random, catalog: Catalog = LEGACY_CATALOG, opts: DealOptions = {},
 ): Record<Color, CardId[]> {
   const pool = cardPool(catalog, timed, opts);
   if (!pool.length) return { w: [], b: [] };
@@ -247,7 +245,7 @@ export function dealHands(
     return weighted(true);
   };
   const w = draw();
-  return { w, b: mirror ? w.slice() : draw() };
+  return { w, b: draw() };
 }
 
 /**
@@ -266,12 +264,6 @@ export function cardPool(catalog: Catalog, timed: boolean, opts: Pick<DealOption
 // contrainte (les contraintes du tirage, R9, ne s'appliquent au choix que si DEAL.limitsInDraft : le serveur passe
 // alors `limits`). Le serveur garde les choix secrets jusqu'à ce que les deux joueurs aient choisi, puis donne les
 // mains avec `withHands`. La partie de l'accueil garde le tirage (`dealHands`).
-
-/**
- * Durée du choix des cartes (ms) ; à l'échéance, le serveur complète au hasard ce qui manque.
- * @deprecated Alias de DEAL.draftMs (config/rules.ts), retiré au lot 9.
- */
-export const DRAFT_MS = DEAL.draftMs;
 
 /**
  * Refus d'un choix de cartes, ou null s'il est valide : des cartes de la réserve, toutes différentes, exactement

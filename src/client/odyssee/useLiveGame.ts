@@ -92,7 +92,7 @@ const homeRules = () => rulesFor('accueil');
 /** Partie neuve contre l'Oracle : mains tirées (catalogue, pendule et réserve de l'accueil), règles de l'accueil. */
 function newGame(): GameState {
   const rules = homeRules();
-  return createGame(dealHands(HOME.timed, false, Math.random, HOME.catalog, { vsBot: HOME.vsBot, rules }), HOME.timed, HOME.catalog, { rules });
+  return createGame(dealHands(HOME.timed, Math.random, HOME.catalog, { vsBot: HOME.vsBot, rules }), HOME.timed, HOME.catalog, { rules });
 }
 
 /**

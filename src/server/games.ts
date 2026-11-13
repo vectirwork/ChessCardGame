@@ -24,7 +24,8 @@ import type { Rules } from '../shared/rules';
 import { cardsOfReply } from '../shared/botProtocol';
 import type { BotCard, BotReply } from '../shared/botProtocol';
 import rateLimit from 'express-rate-limit';
-import { Identity, identityFromCookies, userById } from './auth';
+import { EQUIPPED_SELECT, Identity, identityFromCookies, userById } from './auth';
+import type { SlotColumn, UserRow } from './auth';
 import { BOT_LEVELS, BOT_PROFILES, BotLevel, DEFAULT_BOT_LEVEL, botLevelOr, chooseBotDraft } from '../shared/bot';
 import { botPool } from './bot-pool';
 import { DbClient, one, q, tx } from './db';
@@ -722,7 +723,7 @@ export function newRoom(opts: NewRoomOptions): Room {
   const vsBot = opts.mode === 'bot';
   const drawn = opts.deal || !deal.draft;
   const draft = drawn ? null : newDraft(opts.catalog, !!tc, vsBot, rules.cardsPerPlayer, deal.limitsInDraft ? deal.handLimits : undefined);
-  const hands = draft ? { w: [], b: [] } : dealHands(!!tc, false, Math.random, opts.catalog, { vsBot, rules, deal });
+  const hands = draft ? { w: [], b: [] } : dealHands(!!tc, Math.random, opts.catalog, { vsBot, rules, deal });
   // Tirage plus court que les règles (contraintes du tirage impossibles à tenir) : refus explicite, jamais une main
   // silencieusement plus courte. checkRules l'empêche au démarrage ; ceci protège des règles imposées (tests).
   const dealt = [hands.w.length, hands.b.length];
@@ -1179,8 +1180,9 @@ export async function createRematch(room: Room): Promise<Room | null> {
     if (!s) return null;
     const copy = { ...s };
     if (s.userId) {
-      const u = await one<{ rating: number; games_played: number; equipped_skin: string; equipped_king: string; items: string[] }>(
-        `SELECT rating, games_played, equipped_skin, equipped_king,
+      // Objets portés : toutes les colonnes d'équipement (EQUIPPED_SELECT, tirées de SLOT_DEFS) ; le siège garde les sorts et le roi.
+      const u = await one<Pick<UserRow, 'rating' | 'games_played' | 'items' | SlotColumn>>(
+        `SELECT rating, games_played, ${EQUIPPED_SELECT},
            coalesce(array(SELECT item_id FROM user_items WHERE user_id = u.id), '{}') AS items
          FROM users u WHERE id = $1`, [s.userId]);
       if (u) {

@@ -94,7 +94,7 @@ describe('sauvegarde de la partie contre l’Oracle (format v1)', () => {
     // … et une partie neuve de l'accueil à ces règles est acceptée
     const rules = rulesFor('accueil');
     const neuve = JSON.parse(
-      JSON.stringify(createGame(dealHands(HOME.timed, false, Math.random, HOME.catalog, { vsBot: HOME.vsBot, rules }), HOME.timed, HOME.catalog, { rules })),
+      JSON.stringify(createGame(dealHands(HOME.timed, Math.random, HOME.catalog, { vsBot: HOME.vsBot, rules }), HOME.timed, HOME.catalog, { rules })),
     );
     expect(neuve.hands.w).toHaveLength(5);
     expect(validState(neuve)).toBe(true);
@@ -103,7 +103,7 @@ describe('sauvegarde de la partie contre l’Oracle (format v1)', () => {
   it('format v1 conservé : rien de nouveau n’est écrit dans une partie neuve au défaut', () => {
     const rules = rulesFor('accueil');
     expect(rules).toBe(RULES_V1);
-    const s = createGame(dealHands(HOME.timed, false, Math.random, HOME.catalog, { vsBot: HOME.vsBot, rules }), HOME.timed, HOME.catalog, { rules });
+    const s = createGame(dealHands(HOME.timed, Math.random, HOME.catalog, { vsBot: HOME.vsBot, rules }), HOME.timed, HOME.catalog, { rules });
     expect('rules' in s).toBe(false);
     expect('cardsThisTurn' in s).toBe(false);
     expect(validState(JSON.parse(JSON.stringify(s)))).toBe(true);
@@ -116,7 +116,7 @@ describe('sauvegarde de la partie contre l’Oracle (format v1)', () => {
       return n / 2 ** 31;
     };
     for (let k = 1; k < 40; k++) {
-      expect(dealHands(false, false, seed(k), 'climats', { vsBot: true })).toEqual(dealHands(false, false, seed(k), 'climats'));
+      expect(dealHands(false, seed(k), 'climats', { vsBot: true })).toEqual(dealHands(false, seed(k), 'climats'));
     }
   });
 });

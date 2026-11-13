@@ -155,7 +155,9 @@ describe('tirages témoins v1, au défaut', () => {
   const t = lire<Tirages>('tirages.json');
   it('dealHands : mêmes mains à graine égale', () => {
     for (const x of t.dealHands) {
-      expect(dealHands(x.timed, x.mirror, mulberry32(x.graine), x.catalog, { vsBot: x.vsBot }), String(x.graine)).toEqual(x.mains);
+      const h = dealHands(x.timed, mulberry32(x.graine), x.catalog, { vsBot: x.vsBot });
+      // Mode miroir (retiré du moteur au lot 9) : la main des Blancs, tirée la première avec le même générateur, copiée.
+      expect(x.mirror ? { w: h.w, b: h.w.slice() } : h, String(x.graine)).toEqual(x.mains);
     }
   });
   it('completeDraft : mêmes compléments à graine égale', () => {

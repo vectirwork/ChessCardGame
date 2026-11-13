@@ -57,8 +57,11 @@ export function parseRules(x: unknown): Rules | null {
   return sameRules(parsed, RULES_V1) ? RULES_V1 : parsed;
 }
 
-/** Résumé d'une ligne des règles, pour le journal du serveur (nombre de cartes, par tour, moment de la carte…). */
-export function rulesSummary(r: Rules): string {
+/**
+ * Résumé d'une ligne des règles, pour le journal du serveur (nombre de cartes, par tour, moment de la carte…), avec la
+ * mise en place `deal` (défaut : DEAL ; le serveur passe la sienne, surcharge de test comprise : dealSettings()).
+ */
+export function rulesSummary(r: Rules, deal: Readonly<Pick<DealSettings, 'draft' | 'draftMs'>> = DEAL): string {
   return [
     `${compte(r.cardsPerPlayer, 'carte')} par joueur`,
     `${r.cardsPerTurn} par tour`,
@@ -68,7 +71,7 @@ export function rulesSummary(r: Rules): string {
     `nulle après ${compte(r.fiftyHalfmoves / 2, 'coup')} sans prise ni coup de pion`,
     `répétition ×${r.repetitions}`,
     r.startFen ? `départ ${r.startFen}` : 'position standard',
-    `choix des cartes ${DEAL.draft ? `en ${DEAL.draftMs / 1000} s` : 'remplacé par le tirage'}`,
+    `choix des cartes ${deal.draft ? `en ${deal.draftMs / 1000} s` : 'remplacé par le tirage'}`,
   ].join(', ');
 }
 

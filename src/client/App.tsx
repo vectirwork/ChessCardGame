@@ -1,18 +1,24 @@
-import { Suspense, lazy, useEffect, useState } from 'react';
-import type { ComponentType } from 'react';
+import { Component, Suspense, createElement, lazy, useContext, useEffect, useState } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 import { Route, Routes, matchPath, useLocation } from 'react-router-dom';
 import { Footer, Header, PageLoader } from './components/Layout';
+import { reloadForNewVersion } from './socket';
+import { FeaturesContext } from './store';
+import { ROUTES, routeOpen } from '../shared/config/routes';
+import type { PageModule, PropsOf } from '../shared/config/routes';
 
 /**
  * Page chargée à la demande (un morceau de code et de CSS par page, décision D6). `preload()` récupère son code à
  * l'avance (main.tsx pour la première page, que le serveur précharge aussi dès le HTML ; survol d'un lien) : une page
  * dont le code est déjà là s'affiche d'un coup, sans écran d'attente. Le choix entre rendu direct et attente Suspense
  * est fait au montage et ne change plus ensuite (aucun remontage en cours de vie).
+ *
+ * Code de la page introuvable (onglet resté ouvert après une mise en ligne, réseau coupé) : un préchargement en échec
+ * ne fait rien (survol d'un lien : aucun rechargement en pleine partie) ; à l'affichage, l'erreur va à PageBoundary,
+ * qui recharge le site.
  */
-interface Preloadable {
-  preload: () => Promise<unknown>;
-}
-function page<P extends object>(load: () => Promise<{ default: ComponentType<P> }>): ComponentType<P> & Preloadable {
+type Page<P> = ComponentType<P> & { preload: () => Promise<unknown> };
+export function page<P extends object>(load: () => Promise<{ default: ComponentType<P> }>): Page<P> {
   let ready: ComponentType<P> | undefined;
   let pending: Promise<ComponentType<P>> | undefined;
   const preload = () =>
@@ -26,69 +32,105 @@ function page<P extends object>(load: () => Promise<{ default: ComponentType<P> 
   const Lazy = lazy(() => preload().then(C => ({ default: C })));
   function Paged(props: P) {
     const [Now] = useState(() => ready);
-    const Shown = (Now ?? Lazy) as ComponentType<P>;
-    return <Shown {...props} />;
+    return createElement((Now ?? Lazy) as ComponentType<P>, props);
   }
   return Object.assign(Paged, { preload });
 }
 
-const Home = page<object>(() => import('./pages/Home').then(m => ({ default: m.Home })));
-const Play = page(() => import('./pages/Play'));
-const GamePage = page(() => import('./pages/GameRoute'));
-const Rules = page(() => import('./pages/Rules'));
-const Shop = page(() => import('./pages/Shop'));
-const DemoCheckout = page(() => import('./pages/DemoCheckout'));
-const Auth = page(() => import('./pages/Auth'));
-const Account = page(() => import('./pages/Account'));
-const Profile = page(() => import('./pages/Profile'));
-const Leaderboard = page(() => import('./pages/Leaderboard'));
-const Admin = page(() => import('./pages/Admin'));
-const Legal = page(() => import('./pages/Legal'));
-const NotFound = page(() => import('./pages/NotFound'));
-const Learn = page(() => import('./pages/Learn'));
-const Puzzles = page(() => import('./pages/Puzzles'));
-const Analysis = page(() => import('./pages/Analysis'));
-const MyGames = page(() => import('./pages/MyGames'));
-const Live = page(() => import('./pages/Live'));
-
-/** Chemins et pages de Routes ci-dessous, à tenir ensemble : sert au préchargement de la première page (une route
- *  absente d'ici s'affiche quand même, après un écran d'attente). */
-const PAGES: [string, Preloadable][] = [
-  ['/', Home],
-  ['/jouer', Play],
-  ['/partie/:id', GamePage],
-  ['/cartes', Rules],
-  ['/regles', Rules],
-  ['/boutique', Shop],
-  ['/boutique/demo/:id', DemoCheckout],
-  ['/connexion', Auth],
-  ['/inscription', Auth],
-  ['/mot-de-passe-oublie', Auth],
-  ['/reinitialiser/:token', Auth],
-  ['/verifier/:token', Auth],
-  ['/compte', Account],
-  ['/joueur/:username', Profile],
-  ['/classement', Leaderboard],
-  ['/admin', Admin],
-  ['/apprendre', Learn],
-  ['/apprendre/:lesson', Learn],
-  ['/problemes', Puzzles],
-  ['/problemes/:puzzle', Puzzles],
-  ['/analyse', Analysis],
-  ['/analyse/:gameId', Analysis],
-  ['/parties', MyGames],
-  ['/direct', Live],
-  ['/cgu', Legal],
-  ['/cgv', Legal],
-  ['/confidentialite', Legal],
-  ['/mentions-legales', Legal],
-];
-
+/**
+ * Chargeur de chaque module de page (src/shared/config/routes.ts) : un import() littéral par module, donc un morceau
+ * de code par page. Le type exige un chargeur pour chaque module de PAGE_MODULES, et des propriétés conformes à
+ * PageProps (Auth : mode ; Legal : page).
+ */
+const PAGES: { [M in PageModule]: Page<PropsOf<M>> } = {
+  Home: page<object>(() => import('./pages/Home').then(m => ({ default: m.Home }))),
+  Play: page(() => import('./pages/Play')),
+  GameRoute: page(() => import('./pages/GameRoute')),
+  Rules: page(() => import('./pages/Rules')),
+  Shop: page(() => import('./pages/Shop')),
+  DemoCheckout: page(() => import('./pages/DemoCheckout')),
+  Auth: page(() => import('./pages/Auth')),
+  Account: page(() => import('./pages/Account')),
+  Profile: page(() => import('./pages/Profile')),
+  Leaderboard: page(() => import('./pages/Leaderboard')),
+  Admin: page(() => import('./pages/Admin')),
+  Legal: page(() => import('./pages/Legal')),
+  NotFound: page(() => import('./pages/NotFound')),
+  Learn: page(() => import('./pages/Learn')),
+  Puzzles: page(() => import('./pages/Puzzles')),
+  Analysis: page(() => import('./pages/Analysis')),
+  MyGames: page(() => import('./pages/MyGames')),
+  Live: page(() => import('./pages/Live')),
+};
 /** Charge le code de la page qui correspond à `pathname` (page introuvable sinon). Ne rejette jamais. */
 export function preloadRoute(pathname: string): Promise<unknown> {
-  const hit = PAGES.find(([path]) => matchPath(path, pathname));
-  return (hit ? hit[1] : NotFound).preload().catch(() => undefined);
+  const hit = ROUTES.find(r => matchPath(r.path, pathname));
+  return PAGES[hit ? hit.page : 'NotFound'].preload().catch(() => undefined);
 }
+
+/**
+ * Échec du chargement d'un module (code d'une page, ou composant paresseux d'une page comme l'échiquier de l'accueil) :
+ * « Failed to fetch dynamically imported module » (Chromium), « error loading dynamically imported module » (Firefox),
+ * « Importing a module script failed. » (Safari), « Unable to preload CSS for … » (feuille du module, Vite).
+ */
+export const importFailed = (e: unknown) => /dynamically imported|a module script|preload CSS/.test(String(e));
+
+/**
+ * Limite d'erreur d'une page : code introuvable, ou exception pendant le rendu. Sans elle, React démonte tout le site
+ * (page blanche, sans en-tête pour repartir).
+ * - Code introuvable (onglet resté ouvert après une mise en ligne, réseau coupé) : le site est rechargé tout de suite,
+ *   au plus une fois par minute (reloadForNewVersion), ce qui prend aussi la version en ligne ; sinon « Réessayer »
+ *   recharge. Ni React (composant paresseux rejeté) ni le navigateur (import en échec, vérifié dans Chromium) ne
+ *   retentent le même module : redessiner ne suffirait pas.
+ * - Exception de rendu : « Réessayer » redessine la page.
+ * Une limite par module de page (clé) : une page saine n'est jamais remontée (même module, même instance, comme
+ * avant) ; l'erreur s'efface quand le chemin change (`at`), même vers une autre page du même module.
+ */
+interface BoundaryProps {
+  children: ReactNode;
+  /** Chemin affiché : quand il change, l'erreur est oubliée. */
+  at: string;
+}
+interface BoundaryState {
+  failure: 'import' | 'render' | null;
+  at?: string;
+}
+export class PageBoundary extends Component<BoundaryProps, BoundaryState> {
+  state: BoundaryState = { failure: null };
+  static getDerivedStateFromError(e: unknown): Partial<BoundaryState> {
+    return { failure: importFailed(e) ? 'import' : 'render' };
+  }
+  static getDerivedStateFromProps(p: BoundaryProps, s: BoundaryState): Partial<BoundaryState> | null {
+    return p.at === s.at ? null : { failure: null, at: p.at };
+  }
+  componentDidCatch(e: unknown) {
+    if (importFailed(e)) reloadForNewVersion();
+  }
+  retry = () => {
+    if (this.state.failure === 'import') window.location.reload();
+    else this.setState({ failure: null });
+  };
+  render() {
+    if (!this.state.failure) return this.props.children;
+    return (
+      <div className="page-loader" role="alert">
+        <p>
+          Impossible d’afficher cette page.{' '}
+          <button type="button" className="btn" onClick={this.retry}>
+            Réessayer
+          </button>
+        </p>
+      </div>
+    );
+  }
+}
+
+/** Élément d'une route : la page dans sa limite d'erreur. */
+const pageElement = (page: PageModule, at: string, props?: object) => (
+  <PageBoundary key={page} at={at}>
+    {createElement(PAGES[page] as ComponentType<object>, props)}
+  </PageBoundary>
+);
 
 /**
  * Intention de navigation (souris qui bouge au-dessus d'un lien interne, ou focus clavier) : le code de la page
@@ -130,6 +172,8 @@ function usePrefetchOnIntent() {
 
 export function App() {
   const loc = useLocation();
+  // Interrupteurs (contexte à part : ne change pas à chaque réponse de /api/me, aucun rendu de plus au défaut)
+  const features = useContext(FeaturesContext);
   const inGame = loc.pathname.startsWith('/partie/');
   useEffect(() => {
     if (!loc.hash) window.scrollTo(0, 0);
@@ -144,35 +188,10 @@ export function App() {
       <main id="contenu">
         <Suspense fallback={<PageLoader />}>
           <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/jouer" element={<Play />} />
-            <Route path="/partie/:id" element={<GamePage />} />
-            <Route path="/cartes" element={<Rules />} />
-            <Route path="/regles" element={<Rules />} />
-            <Route path="/boutique" element={<Shop />} />
-            <Route path="/boutique/demo/:id" element={<DemoCheckout />} />
-            <Route path="/connexion" element={<Auth mode="login" />} />
-            <Route path="/inscription" element={<Auth mode="register" />} />
-            <Route path="/mot-de-passe-oublie" element={<Auth mode="forgot" />} />
-            <Route path="/reinitialiser/:token" element={<Auth mode="reset" />} />
-            <Route path="/verifier/:token" element={<Auth mode="verify" />} />
-            <Route path="/compte" element={<Account />} />
-            <Route path="/joueur/:username" element={<Profile />} />
-            <Route path="/classement" element={<Leaderboard />} />
-            <Route path="/admin" element={<Admin />} />
-            <Route path="/apprendre" element={<Learn />} />
-            <Route path="/apprendre/:lesson" element={<Learn />} />
-            <Route path="/problemes" element={<Puzzles />} />
-            <Route path="/problemes/:puzzle" element={<Puzzles />} />
-            <Route path="/analyse" element={<Analysis />} />
-            <Route path="/analyse/:gameId" element={<Analysis />} />
-            <Route path="/parties" element={<MyGames />} />
-            <Route path="/direct" element={<Live />} />
-            <Route path="/cgu" element={<Legal page="cgu" />} />
-            <Route path="/cgv" element={<Legal page="cgv" />} />
-            <Route path="/confidentialite" element={<Legal page="privacy" />} />
-            <Route path="/mentions-legales" element={<Legal page="mentions" />} />
-            <Route path="*" element={<NotFound />} />
+            {ROUTES.filter(r => routeOpen(r, features)).map(r => (
+              <Route key={r.path} path={r.path} element={pageElement(r.page, loc.pathname, r.props)} />
+            ))}
+            <Route path="*" element={pageElement('NotFound', loc.pathname)} />
           </Routes>
         </Suspense>
       </main>

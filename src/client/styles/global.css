@@ -239,9 +239,6 @@ button {
 .row.wrap {
   flex-wrap: wrap;
 }
-.spacer {
-  flex: 1;
-}
 .stack {
   display: flex;
   flex-direction: column;
@@ -252,27 +249,10 @@ button {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
 }
-.grid-3 {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 20px;
-}
-@media (max-width: 900px) {
-  .grid-3 {
-    grid-template-columns: 1fr;
-  }
-}
 @media (max-width: 700px) {
   .grid-2 {
     grid-template-columns: 1fr;
   }
-}
-
-.gradient-text {
-  background: linear-gradient(100deg, #fff1c4 0%, #f3c969 40%, #e5a24a 70%, #fff1c4 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
 }
 
 /* Surtitre en capitales gravées (« II · LA FORÊT DE GIVRE ») */
@@ -312,12 +292,6 @@ button {
   font-size: 17px;
   line-height: 1.65;
   color: var(--dim);
-}
-.hairline {
-  height: 1px;
-  border: 0;
-  background: var(--hair);
-  margin: 24px 0;
 }
 .link-quiet {
   font-size: 13.5px;
@@ -376,15 +350,6 @@ button {
   background: linear-gradient(180deg, #fff0c4 0%, #f7d27c 55%, #dca64a 100%);
   box-shadow: 0 16px 44px -12px rgba(243, 201, 105, 0.95), inset 0 1px 0 rgba(255, 255, 255, 0.7), inset 0 0 0 1px rgba(255, 241, 196, 0.55);
   transform: translateY(-1px);
-}
-.btn-arcane {
-  border: 1px solid rgba(127, 231, 255, 0.42);
-  background: linear-gradient(180deg, rgba(127, 231, 255, 0.14), rgba(167, 123, 255, 0.12));
-  box-shadow: 0 10px 30px -14px rgba(127, 231, 255, 0.6);
-}
-.btn-arcane:hover {
-  border-color: rgba(127, 231, 255, 0.7);
-  background: linear-gradient(180deg, rgba(127, 231, 255, 0.22), rgba(167, 123, 255, 0.18));
 }
 .btn-ghost {
   background: transparent;
@@ -733,12 +698,6 @@ textarea.input {
   background: rgba(255, 107, 129, 0.08);
   border-color: rgba(255, 107, 129, 0.3);
   color: #ffadb9;
-}
-
-.divider {
-  height: 1px;
-  background: var(--hair);
-  margin: 18px 0;
 }
 
 kbd {
@@ -1248,12 +1207,6 @@ html.ody-home .site-footer {
   font-size: clamp(30px, 3.6vw, 46px);
 }
 
-.auth-wrap {
-  min-height: calc(100vh - var(--header-h) - 120px);
-  display: grid;
-  place-items: center;
-  padding: 40px 16px;
-}
 .auth-card {
   width: 100%;
   max-width: 440px;

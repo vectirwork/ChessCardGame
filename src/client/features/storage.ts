@@ -50,6 +50,16 @@ export function useStored<T>(key: string, initial: T): [T, (v: T | ((prev: T) =>
   return [v, set];
 }
 
+/**
+ * Préférence locale (rois classiques, moteur d'analyse…) : useStored sur une clé de KEYS (src/client/storageKeys.ts,
+ * valeurs inchangées), partagée entre les composants et les onglets. Exemple : usePref(KEYS.classicKings, false).
+ * Remplace usePref de store.tsx (nom sans préfixe, sans synchronisation), gardé tant que ses appelants n'importent pas
+ * celui-ci (le garder dans le paquet principal coûte des octets à chaque page).
+ */
+export function usePref<T>(key: string, initial: T): [T, (v: T) => void] {
+  return useStored<T>(key, initial);
+}
+
 /** Clé de date locale « AAAA-MM-JJ ». */
 export function dayKey(d: Date = new Date()): string {
   const p = (x: number) => String(x).padStart(2, '0');

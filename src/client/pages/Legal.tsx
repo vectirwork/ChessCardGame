@@ -2,8 +2,9 @@
 // Ces textes sont des modèles : ils doivent être relus par un professionnel du droit avant l'ouverture.
 import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { api } from '../api';
+import { api, errMsg } from '../api';
 import { PageLoader } from '../components/Layout';
+import type { PageProps } from '../../shared/config/routes';
 import { PageHead, PlacePage, useTitle } from './PageScene';
 
 interface LegalInfo {
@@ -18,7 +19,7 @@ interface LegalInfo {
   url: string;
 }
 
-type Page = 'cgu' | 'cgv' | 'privacy' | 'mentions';
+type Page = PageProps['Legal']['page'];
 
 const DOCS: { page: Page; to: string; title: string; short: string }[] = [
   { page: 'mentions', to: '/mentions-legales', title: 'Mentions légales', short: 'Mentions légales' },
@@ -27,15 +28,41 @@ const DOCS: { page: Page; to: string; title: string; short: string }[] = [
   { page: 'privacy', to: '/confidentialite', title: 'Politique de confidentialité', short: 'Confidentialité' },
 ];
 
-export default function Legal({ page }: { page: Page }) {
+export default function Legal({ page }: PageProps['Legal']) {
   const doc = DOCS.find(d => d.page === page)!;
   useTitle(doc.short);
   const [l, setL] = useState<LegalInfo | null>(null);
+  // Échec de /api/legal (réseau, serveur) : un message et « Réessayer », au lieu d'une attente sans fin
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
+    let alive = true;
     api<LegalInfo>('/legal')
-      .then(setL)
-      .catch(() => undefined);
-  }, []);
+      .then(r => alive && setL(r))
+      .catch(e => alive && setError(errMsg(e)));
+    return () => {
+      alive = false;
+    };
+  }, [attempt]);
+  if (error) {
+    return (
+      <div className="page-loader" role="alert">
+        <p>
+          {error}{' '}
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              setError(null);
+              setAttempt(n => n + 1);
+            }}
+          >
+            Réessayer
+          </button>
+        </p>
+      </div>
+    );
+  }
   if (!l) return <PageLoader />;
   const updated = '29 octobre 2026';
   return (

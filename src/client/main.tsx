@@ -24,20 +24,17 @@ import { BrowserRouter } from 'react-router-dom';
 import { App, preloadRoute } from './App';
 import { AppProvider } from './store';
 
-// Après une mise en ligne, un onglet resté ouvert peut demander le code d'une page qui n'existe plus : on recharge
-// (nouvelle version), au plus une fois par minute pour ne jamais boucler.
-window.addEventListener('vite:preloadError', e => {
-  try {
-    if (Date.now() - Number(sessionStorage.getItem('spellmate:reload') ?? 0) < 60_000) return;
-    sessionStorage.setItem('spellmate:reload', String(Date.now()));
-  } catch {
-    return; // stockage indisponible : pas de rechargement automatique (aucun risque de boucle)
-  }
-  e.preventDefault();
-  window.location.reload();
+// Code introuvable après une mise en ligne (onglet resté ouvert) ou réseau coupé : aucun écouteur de
+// vite:preloadError, Vite transmet l'erreur à l'appelant.
+// - Code d'une page, ou d'un composant paresseux affiché par une page (échiquier des lieux de l'accueil) : l'erreur va
+//   à la limite de la page (PageBoundary, App.tsx), qui recharge le site au plus une fois par minute
+//   (reloadForNewVersion), puis propose « Réessayer ».
+// - Préchargement qui rattrape son échec (survol d'un lien, StageBoard ou GameRoute au repos, effets, Lenis) : rien
+//   n'est rechargé ; le module sera redemandé à l'affichage.
+// Erreur hors d'une page (en-tête, pied de page) : React démonte tout ; elle est notée avec sa pile de composants.
+const root = createRoot(document.getElementById('root')!, {
+  onUncaughtError: (error, info) => console.error(error, info.componentStack),
 });
-
-const root = createRoot(document.getElementById('root')!);
 const render = () =>
   root.render(
     <StrictMode>

@@ -30,13 +30,17 @@ export function Crumbs({ items }: { items: { to?: string; label: string }[] }) {
   );
 }
 
-/** Titre du document : « Apprendre · Spellmate ». */
+/**
+ * Titre du document : « Apprendre · <marque> » (pageTitle de src/shared/config/brand.ts, figé au build : __SM__). En
+ * quittant la page, celui de l'accueil, que gardent les pages sans titre (le HTML servi porte déjà celui de la page).
+ * Même code dans pages/PageScene.tsx : ne pas l'importer de là, ni de components/Layout.tsx (le découpage du build en
+ * changerait : index.html perdrait des modulepreload, vérifié).
+ */
 export function useTitle(title: string) {
   useEffect(() => {
-    const prev = document.title;
-    document.title = `${title} · Spellmate`;
+    document.title = title + __SM__.suffixeTitre;
     return () => {
-      document.title = prev;
+      document.title = __SM__.titreAccueil;
     };
   }, [title]);
 }

@@ -3,7 +3,7 @@
   "brancheIntegration": "claude/peaceful-hamilton-qr9cmc",
   "base": "7148547",
   "brancheDuLot": "polymorphie/<lot>",
-  "vagues": [["0a", "0b"], ["1", "2"], ["3", "4"], ["5", "6"], ["7", "8"], ["9"]],
+  "vagues": [["0a", "0b"], ["1", "2"], ["3", "4"], ["5", "6"], ["7", "8"], ["9a", "9b"], ["9"]],
   "lots": [
     {
       "id": "0a",
@@ -337,6 +337,49 @@
       "partage": []
     },
     {
+      "id": "9a",
+      "titre": "Intégration côté client : poids de l'accueil, reliquats, mises en page hors défaut (découpage du lot 9 par l'orchestrateur)",
+      "vague": 5,
+      "dependances": ["0a", "0b", "1", "2", "3", "4", "5", "6", "7", "8"],
+      "possede": [
+        {"motif": "src/client/**", "note": "sauf useLiveGame.ts et pages/MyGames.tsx (lot 9b)"},
+        {"motif": "src/shared/text/**"},
+        {"motif": "src/shared/cards.ts"},
+        {"motif": "src/shared/catalog.ts"},
+        {"motif": "src/shared/skins/**"},
+        {"motif": "vite.config.ts"},
+        {"motif": "test/*.test.ts", "note": "tests des fichiers du lot seulement"},
+        {"motif": "test/*.test.tsx", "note": "tests des fichiers du lot seulement"}
+      ],
+      "partage": []
+    },
+    {
+      "id": "9b",
+      "titre": "Intégration côté serveur, protocole, moteur, outillage et cohérence (découpage du lot 9 par l'orchestrateur)",
+      "vague": 5,
+      "dependances": ["0a", "0b", "1", "2", "3", "4", "5", "6", "7", "8"],
+      "possede": [
+        {"motif": "src/server/**"},
+        {"motif": "src/shared/protocol.ts"},
+        {"motif": "src/shared/game.ts"},
+        {"motif": "src/shared/bot.ts"},
+        {"motif": "src/shared/pgn.ts"},
+        {"motif": "src/shared/rules.ts"},
+        {"motif": "src/shared/rulesCore.ts"},
+        {"motif": "src/shared/chess.ts"},
+        {"motif": "src/shared/config/**"},
+        {"motif": "src/client/odyssee/useLiveGame.ts"},
+        {"motif": "src/client/pages/MyGames.tsx"},
+        {"motif": "scripts/**"},
+        {"motif": "package.json"},
+        {"motif": "concepts/**"},
+        {"motif": "tsconfig*.json"},
+        {"motif": "test/**", "note": "tests, suites de bout en bout, outillage et garde-fous ; pas les tests des fichiers du lot 9a"},
+        {"motif": "test/garde-fous/dette-9.txt"}
+      ],
+      "partage": []
+    },
+    {
       "id": "9",
       "titre": "Intégration, vérification et documentation (seul sur la machine)",
       "vague": 5,
@@ -403,8 +446,8 @@
     }
   ],
   "geles": [
-    {"motif": "src/shared/protocol.ts", "apres": "0b", "jusqua": "9"},
-    {"motif": "src/shared/config/**", "sauf": ["src/shared/config/routes.ts"], "apres": "0b", "jusqua": "9"},
-    {"motif": "src/shared/text/regles.ts", "apres": "0b", "jusqua": "9"}
+    {"motif": "src/shared/protocol.ts", "apres": "0b", "jusqua": "9b"},
+    {"motif": "src/shared/config/**", "sauf": ["src/shared/config/routes.ts"], "apres": "0b", "jusqua": "9b"},
+    {"motif": "src/shared/text/regles.ts", "apres": "0b", "jusqua": "9a"}
   ]
 }

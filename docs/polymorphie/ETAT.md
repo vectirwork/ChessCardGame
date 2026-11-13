@@ -92,8 +92,34 @@ Points ouverts ajoutés :
 - Paquet principal : +765 o gzip face à 6ae7064 (marge prévue ±0,5 ko) ; le lot 9 retire les reliquats (`usePref` de
   `store.tsx`, surcharges de `emitAck`) puis mesure.
 
-## Reste à faire (vagues 4 et 5)
-4. Lot 7 (accueil) ∥ lot 8 (pages et contenus).
+## Fait et fusionné (vague 4)
+- **Lot 7, accueil** : l'accueil lit `HOME`, `PLACES`, les règles de l'accueil et les interrupteurs (catalogue, pendule,
+  couleur, niveau et rythme de l'Oracle, sauvegarde v1, portes, lieux, Bazar, « Défier un ami ») ; textes dérivés ;
+  l'Oracle joue toutes ses cartes ; mini-main chevauchée au-delà de 3 cartes. `engine.ts` ne gagne qu'un export
+  (`SLOT_TILT`) et `scenery.tsx` une sélection par identifiant : logique des chemins chauds inchangée.
+- **Lot 8, pages et contenus** : Règles, Jouer, Apprendre, Problèmes, Classement, Connexion et Mes parties tirés des
+  réglages ; leçons et problèmes figés en `RULES_V1` et masqués quand les règles du jour les rendraient faux
+  (`requires`) ; problème du jour stable ; l'historique garde les règles d'une partie hors défaut et l'Analyse la rejoue
+  avec elles ; SkinPreview, DemoBoard et environ 200 lignes de CSS mort supprimés.
+
+Défauts corrigés dans cette vague : halo et curseur de l'accueil faux pour un visiteur aux Noirs ; position d'une partie
+précédente montrée en attendant l'adversaire ; socket de l'accueil ouvert avant `/api/me` ; « Partie sans cartes »
+entrevu pendant l'appariement ; pluriels « 1 étapes », « 1 leçon terminées », « 1 coups ».
+
+Contrôles après fusion (f6422b5) : `tsc` sans erreur, 1 175 tests verts, `npm run temoins` vert, build réussi ; bancs
+d'identité et de textes identiques à la référence hors les écarts voulus (« Partie sans cartes », « 1 étape ») ;
+`integration.mjs` vert au défaut, avec 5 cartes et 2 par tour, 1 carte, la carte à la place du coup et un Présage à 4 ;
+`ranked.mjs` vert.
+
+Poids mesuré après la vague 4 (gzip -9, fermeture des imports statiques) : accueil 222 036 → 235 015 o (+5,8 %),
+paquet principal 100 989 → 101 843 o, page de partie 197 449 → 207 193 o. Le lot 9a doit le réduire avant la mesure de
+performance.
+
+Le lot 9 est découpé en 9a (client : poids, reliquats, mises en page hors défaut) ∥ 9b (serveur, protocole, moteur,
+outillage, cohérence, bout en bout), puis mesure de performance par l'orchestrateur seul, puis 9c (documentation,
+rapport). Plans : `plan/lots/9a.md`, `plan/lots/9b.md`.
+
+## Reste à faire (vague 5)
 5. Lot 9 (intégration, mesure de performance, documentation), seul sur la machine.
 
 Le script de vague (réaliser, deux relectures adverses, corriger) est réutilisable : une copie de travail par lot,

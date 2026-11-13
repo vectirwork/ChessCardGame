@@ -6,6 +6,7 @@ import { requireAdmin, requireUser } from './auth';
 import { one, q } from './db';
 import { activeRoomCount } from './games';
 import { LIMITS } from './settings';
+import { revokeItems } from './shop';
 
 export const adminRouter = Router();
 adminRouter.use(requireUser, requireAdmin);
@@ -59,7 +60,8 @@ adminRouter.post('/grant', async (req, res) => {
   const parsed = z.object({ userId: z.string().uuid(), itemId: z.string(), revoke: z.boolean().default(false) }).safeParse(req.body);
   if (!parsed.success || !itemById(parsed.data.itemId)) return res.status(400).json({ error: 'Requête invalide.' });
   const { userId, itemId, revoke } = parsed.data;
-  if (revoke) await q('DELETE FROM user_items WHERE user_id = $1 AND item_id = $2', [userId, itemId]);
+  // Retrait : l'objet quitte la collection et, s'il était équipé, son emplacement revient au défaut
+  if (revoke) await revokeItems(userId, [itemId]);
   else await q(`INSERT INTO user_items (user_id, item_id, source) VALUES ($1, $2, 'admin') ON CONFLICT DO NOTHING`, [userId, itemId]);
   res.json({ ok: true });
 });

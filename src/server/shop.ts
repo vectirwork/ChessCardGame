@@ -280,6 +280,19 @@ async function unequipLost(userId: string, c?: DbClient): Promise<void> {
   else await q(UNEQUIP_LOST_SQL, params);
 }
 
+/**
+ * Retrait d'objets (administration, remboursement partiel) : les objets quittent la collection et, s'ils étaient
+ * équipés, leur emplacement revient à son défaut, dans la même transaction. Exportée pour l'administration et les
+ * tests. Renvoie le nombre d'objets retirés.
+ */
+export async function revokeItems(userId: string, ids: readonly string[]): Promise<number> {
+  if (!ids.length) return 0;
+  return tx(async c => {
+    const r = await c.query(`DELETE FROM user_items WHERE user_id = $1 AND item_id = ANY($2::text[]) RETURNING item_id`, [userId, [...ids]]);
+    await unequipLost(userId, c);
+    return r.rows.length;
+  });
+}
 
 // ---------------------------------------------------------------------------------------------
 // Routes

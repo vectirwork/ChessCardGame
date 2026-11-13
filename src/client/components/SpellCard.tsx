@@ -177,11 +177,13 @@ interface Props {
   owner?: 'self' | 'opponent';
   /** Règles de la partie (pastille « Remplace le coup ») ; par défaut celles des nouvelles parties. */
   rules?: CardRules;
+  /** Petite carte d'une main nombreuse : moment en icône et pastille courte (« + En plus », « Remplace »). */
+  narrow?: boolean;
   className?: string;
 }
 
 export const SpellCard = forwardRef(function SpellCard(
-  { id, size = 'full', used, selected, disabled, dim, onClick, onHover, onFocusChange, describedBy, expanded, label, children, tilt = true, owner = 'self', rules = GAME_RULES, className = '' }: Props,
+  { id, size = 'full', used, selected, disabled, dim, onClick, onHover, onFocusChange, describedBy, expanded, label, children, tilt = true, owner = 'self', rules = GAME_RULES, narrow = false, className = '' }: Props,
   outer: Ref<HTMLDivElement>,
 ) {
   const def = CARDS[id];
@@ -244,9 +246,9 @@ export const SpellCard = forwardRef(function SpellCard(
           <div className="sc-halo" />
           <CardEmblem id={id} className="sc-emblem" />
         </div>
-        {(size === 'hand' || size === 'full') && <WhenTag def={def} iconOnly={owner === 'opponent' && size === 'hand'} />}
+        {(size === 'hand' || size === 'full') && <WhenTag def={def} iconOnly={narrow || (owner === 'opponent' && size === 'hand')} />}
         {size !== 'mini' && <div className="sc-name">{def.name}</div>}
-        {size !== 'mini' && <TurnPill def={def} owner={owner} rules={rules} compact={owner === 'opponent' && size === 'hand'} />}
+        {size !== 'mini' && <TurnPill def={def} owner={owner} rules={rules} compact={narrow || (owner === 'opponent' && size === 'hand')} />}
         {children}
       </div>
       <div className="sc-foil" />

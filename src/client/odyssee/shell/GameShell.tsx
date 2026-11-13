@@ -221,6 +221,9 @@ export function GameShell(p: GameShellProps) {
   // Nombre de cartes de la partie : la plus longue des deux mains (aucune prop de plus)
   const n = Math.max(p.hand.length, p.opponent.hand.length);
   const crowd = n > REF_HAND;
+  // Au-delà de la main de référence, vos cartes rapetissent ; sous 96 px, moment en icône et pastille courte
+  const handWidth = crowd ? handCardWidth(n, layout, layout.vw, layout.vh) : null;
+  const narrow = !!handWidth && handWidth.w < 96;
   const rules = p.rules ?? GAME_RULES;
   // Intitulé de la main par défaut, calculé une fois par objet de règles (pas à chaque rendu)
   const defaultLabel = useMemo(() => mainLabel(rules), [rules]);
@@ -721,7 +724,7 @@ export function GameShell(p: GameShellProps) {
           aria-label={readOnlyHand ? p.handLabel : 'Vos cartes'}
           role="group"
           data-crowd={crowd ? n : undefined}
-          style={crowd ? crowdStyle(handCardWidth(n, layout, layout.vw, layout.vh)) : undefined}
+          style={handWidth ? crowdStyle(handWidth) : undefined}
         >
           {fanNote}
           {p.selfExtra && <div className="gs-self-extra gs-in">{p.selfExtra}</div>}
@@ -740,6 +743,7 @@ export function GameShell(p: GameShellProps) {
                     size="hand"
                     used={h.used}
                     rules={rules}
+                    narrow={narrow}
                     selected={sel === i}
                     dim={!h.used && !readOnlyHand && !playable[i]}
                     onClick={how => onSelfCard(i, how)}

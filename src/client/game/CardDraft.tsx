@@ -562,7 +562,7 @@ function Reveal({ view, auto, count, onDone }: { view: GameView; auto: boolean; 
                 {s.hands[c].map((h, i) =>
                   CARDS[h.card] ? (
                     <div key={i} className="cd-deal" style={{ '--i': dealOrder(k, n, i) } as CSSProperties}>
-                      <SpellCard id={h.card} size="hand" tilt={false} className="cd-sc" />
+                      <SpellCard id={h.card} size="hand" tilt={false} narrow={n > REF_HAND} className="cd-sc" />
                     </div>
                   ) : null,
                 )}

@@ -104,8 +104,9 @@ const ECARTS_VOULUS: Record<string, { raison: string; chemins?: RegExp }> = {
   },
   'pgn/sablier.relu.json': {
     raison:
-      'lot 1, décision de l’orchestrateur (défaut signalé par le lot 0a) : la relecture suit l’en-tête TimeControl ' +
-      '(« - » : sans pendule ; absent ou inconnu : pendule supposée) ; le Sablier fou d’une partie à pendule se relit',
+      'lot 1, décision de l’orchestrateur (défaut signalé par le lot 0a) : un PGN qui contient une carte à pendule ' +
+      '(Sablier fou) se relit comme une partie à pendule, sauf avec TimeControl « - » ; les autres PGN donnent le ' +
+      'même état qu’avant (timed: false)',
   },
   'cartes-donnees.json': {
     raison: 'lot 1, conception § 2.2 et étape 8 : CardDef.catalog (déprécié, doublon de catalogs[0]) est supprimé',

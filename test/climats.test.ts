@@ -1,7 +1,8 @@
 // Catalogue Pouvoirs (identifiant 'climats' ; concepts/CARTES-GLOBALES.md et décision du fondateur du
 // 30 octobre dans docs/PLAN-ODYSSEE.md) : Présage, Rituel, « la magie cède », mains visibles, et les 8 cartes.
 // Les positions citées par les relectures du document servent de tests de non-régression (section 4.6).
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   CARDS, CATALOGS, CATALOG_IDS, CATALOG_RULES, CardId, DEFAULT_CATALOG, LEGACY_CATALOG, cardText, cardsOf, offeredCatalog,
@@ -10,14 +11,15 @@ import {
   Color, F_BLAST, F_CASTLE_K, F_RELAXED, inCheck, legalMoves, sqIndex as q, sqName, toFen,
 } from '../src/shared/chess';
 import { deepFreeze } from '../src/shared/config/rules';
-import type { Rules } from '../src/shared/config/rules';
+import type { GameRulesSettings, Rules } from '../src/shared/config/rules';
 import {
   Effect, GameState, canStillMate, cardOptions, cardPlayable, cardRefusalInfo, castsThisTurn, checkKind, clockRate,
   completeDraft, createGame, createGameFromFen, dealHands, draftRefusal, evaluateEnd, incrementSuspended, inferCatalog,
   legalMovesOf, modsFromEffects, playCard, playMove, positionKey, resultText, sideInCheck, viewState,
 } from '../src/shared/game';
-import { RULES_V1, castsLeft } from '../src/shared/rules';
+import { RULES_V1, canComplete, castsLeft, checkRules, parseRules, poolOf, validHand } from '../src/shared/rules';
 import { chooseBotDraft } from '../src/shared/bot';
+import type { Catalog } from '../src/shared/cards';
 
 const game = (fen: string, w: CardId[] = [], b: CardId[] = [], timed = true) => createGameFromFen(fen, { w, b }, timed, 'climats');
 const names = (s: GameState, from: string) => legalMovesOf(s).filter(m => m.from === q(from)).map(m => sqName(m.to)).sort();
@@ -932,6 +934,142 @@ describe('tirage et choix selon les règles', () => {
       expect(draftRefusal(pool, bot, false, 4, limits)).toBeNull();
     }
     expect(chooseBotDraft(pool, 2, rngT(3), { count: 1 })).toHaveLength(1);
+  });
+});
+
+describe('corrections de la relecture du lot 1', () => {
+  it('catalogue inconnu (historique abîmé, version plus récente) : la partie se joue comme « Sans cartes », sans exception', () => {
+    const s = createGame({ w: [], b: [] }, false, 'futur' as Catalog);
+    const r = playMove(s, q('e2'), q('e4'));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.result).toBeNull();
+    expect(legalMovesOf(r.state)).toHaveLength(20);
+    expect(r.state.snaps).toEqual([]);
+    expect(dealHands(true, false, rngT(1), 'futur' as Catalog)).toEqual({ w: [], b: [] });
+  });
+
+  it('Grande Marée : rangées de 1 à 5 seulement (checkRules, parseRules) ; le moteur ne pousse jamais depuis la 7e', () => {
+    for (const ranks of [[1, 2, 3, 4, 5, 6], [0, 1, 2, 3, 4, 5, 6, 7]]) {
+      const tuning = { ...RULES_V1.tuning, tide: { ranks } };
+      expect(checkRules({ tuning })).toEqual([
+        `CARDS.tide.ranks vaut ${JSON.stringify(ranks)} : de 1 à 5 seulement pour la Grande Marée (un pion poussé depuis la 7e rangée atteindrait la promotion sans être promu).`,
+      ]);
+      expect(parseRules(JSON.parse(JSON.stringify({ ...RULES_V1, tuning })))).toBeNull();
+    }
+    expect(checkRules({ tuning: { ...RULES_V1.tuning, tide: { ranks: [1, 5] } } })).toEqual([]);
+    // Règles forgées sans passer par la vérification : le pion de la 7e rangée ne bouge pas.
+    const r = regles({ tuning: { ...RULES_V1.tuning, tide: { ranks: [1, 2, 3, 4, 5, 6] } } });
+    const s = avecRegles(r, '7k/P7/8/8/8/8/8/4K3 w - - 0 1', ['tide']);
+    expect(refused(s, 0)).toBe('Aucun pion ne peut avancer.');
+  });
+
+  it('startFen : une position déjà finie (mat ou pat) est refusée par checkRules et par createGame', () => {
+    for (const fen of ['k7/1Q6/1K6/8/8/8/8/8 b - - 0 1', 'k7/8/1QK5/8/8/8/8/8 b - - 0 1']) {
+      const game: GameRulesSettings = {
+        cardsPerPlayer: 3, cardsPerTurn: 1, cardEndsTurn: false, handsVisible: true, presageDelay: 2, fiftyHalfmoves: 100,
+        repetitions: 3, startFen: fen,
+      };
+      expect(checkRules({ game, byContext: {} })).toContain('GAME_RULES.startFen : la position de départ est déjà finie (mat ou pat).');
+      expect(() => createGame({ w: [], b: [] }, false, 'aucune', { rules: regles({ startFen: fen }) })).toThrow(/déjà finie/);
+    }
+  });
+
+  it('carte à la place du coup : R4b jugée au prochain tour du lanceur (pas de « magie cède » qu’il se serait offerte)', () => {
+    const fen = 'kb4r1/8/8/8/P7/8/8/7K w - - 0 1';
+    for (const r of [RULES_V1, regles({ cardEndsTurn: true })]) {
+      const s = avecRegles(r, fen, ['ice_wall']);
+      expect(all(s)).toEqual(['a4a5']);
+      expect(cardRefusalInfo(s, 'w', 0, [q('a5')])).toEqual({ error: 'Cette carte vous laisserait sans aucun coup.', code: 'no-move' });
+    }
+    // Ailleurs, le Mur reste permis et termine le tour.
+    const s = avecRegles(regles({ cardEndsTurn: true }), fen, ['ice_wall']);
+    const t = card(s, 0, 'c5');
+    expect(t.pos.turn).toBe('b');
+  });
+
+  it('deux cartes par tour : la sonde d’arrivée du Présage ne dépend pas de l’ordre des cartes', () => {
+    const fen = '2k3r1/8/8/8/P6K/8/8/5b2 w - - 0 1';
+    const r = regles({ cardsPerPlayer: 2, cardsPerTurn: 2 });
+    // Ère glaciaire puis Mur h5 : refusé à la seconde carte.
+    let s = avecRegles(r, fen, ['ice_age', 'ice_wall']);
+    s = card(s, 0);
+    expect(cardRefusalInfo(s, 'w', 1, [q('h5')])).toEqual({
+      error: 'À l’arrivée de votre Présage, cette carte vous laisserait sans aucun coup.', code: 'no-move-on-arrival',
+    });
+    // Mur h5 puis Ère glaciaire : refusé aussi (déjà le cas).
+    let u = avecRegles(r, fen, ['ice_wall', 'ice_age']);
+    u = card(u, 0, 'h5');
+    expect(cardRefusalInfo(u, 'w', 1)).toEqual({ error: 'À son arrivée, cette carte vous laisserait sans aucun coup.', code: 'no-move-on-arrival' });
+    // Un Mur qui laisse un coup à l'arrivée reste permis.
+    expect(cardRefusalInfo(s, 'w', 1, [q('c5')])).toBeNull();
+  });
+
+  it('rangées de la Faille hors des 4e et 5e : une Faille seule peut aider à mater, pas de nulle par matériel insuffisant', () => {
+    const fen = 'k7/8/1K6/3N4/8/8/8/8 w - - 0 1';
+    expect(evaluateEnd(avecRegles(RULES_V1, fen, ['rift']))).toEqual({ winner: null, reason: 'insufficient' });
+    const r = regles({ tuning: { ...RULES_V1.tuning, rift: { coups: 4, ranks: [7] } } });
+    const s = avecRegles(r, fen, ['rift']);
+    expect(evaluateEnd(s)).toBeNull();
+    const t = mv(card(s, 0, 'h8'), 'd5', 'c7');
+    expect(t.result).toEqual({ winner: 'w', reason: 'checkmate' });
+    // Rangées incluses dans les rangées centrales : même jugement qu'au défaut.
+    const centre = regles({ tuning: { ...RULES_V1.tuning, rift: { coups: 4, ranks: [4] } } });
+    expect(evaluateEnd(avecRegles(centre, fen, ['rift']))).toEqual({ winner: null, reason: 'insufficient' });
+  });
+
+  it('Faille sur trois rangées contiguës ou plus : « une rangée, de la 3e à la 5e » (défaut inchangé)', () => {
+    const t = cardText('rift', regles({ tuning: { ...RULES_V1.tuning, rift: { coups: 4, ranks: [2, 3, 4] } } }));
+    expect(t.description.startsWith('Choisissez une rangée, de la 3e à la 5e. Pendant 4 coups')).toBe(true);
+    expect(t.prompts).toEqual(['Choisissez une rangée, de la 3e à la 5e (une case de la rangée)']);
+    expect(cardText('rift', RULES_V1).prompts).toEqual(['Choisissez la 4e ou la 5e rangée (une case de la rangée)']);
+  });
+
+  it('tirages contraints : jamais de main trop courte quand une main valide existe ; au défaut, rien n’est écarté', () => {
+    const limits = { maxPerRarity: { rare: 1 }, maxPerFamily: { climat: 2 } };
+    const pool = poolOf('climats', { timed: true });
+    for (let i = 1; i <= 300; i++) {
+      for (const redrawAttempts of [1, 64]) {
+        const deal = { handLimits: limits, rarityWeight: { commune: 4, rare: 3, épique: 2, légendaire: 1 }, redrawAttempts };
+        for (const h of Object.values(dealHands(true, false, rngT(i), 'climats', { rules: { cardsPerPlayer: 5 }, deal }))) {
+          expect(h).toHaveLength(5);
+          expect(validHand(h, limits)).toBe(true);
+        }
+      }
+      expect(completeDraft(pool, [], rngT(i), 5, limits)).toHaveLength(5);
+      const bot = chooseBotDraft(pool, (1 + (i % 3)) as 1 | 2 | 3, rngT(i), { count: 5, limits });
+      expect(bot).toHaveLength(5);
+      expect(validHand(bot, limits)).toBe(true);
+    }
+    // Sélection qui ne se complète pas : on complète jusqu'à la plus grande main valide qui la contient.
+    expect(completeDraft(pool, ['ice_age'], rngT(1), 5, limits)).toHaveLength(4);
+    // Au défaut (R9, mains du jour), toute main valide se complète : le sac filtré est le même qu'avec la seule
+    // validité, donc le même tirage, les mêmes appels au générateur.
+    const r9 = { maxPerRarity: { légendaire: 1 }, maxPerFamily: { climat: 2 } };
+    const n = RULES_V1.cardsPerPlayer;
+    for (const timed of [true, false]) {
+      for (const vsBot of [true, false]) {
+        const p = poolOf('climats', { timed, vsBot });
+        const parties = (k: number): CardId[][] => (k === 0 ? [[]] : parties(k - 1).flatMap(h => p.filter(id => !h.includes(id)).map(id => [...h, id])));
+        for (let k = 0; k < n; k++) {
+          for (const h of parties(k).filter(x => validHand(x, r9))) {
+            expect(canComplete(h, p.filter(id => !h.includes(id)), r9, n), h.join(',')).toBe(true);
+          }
+        }
+      }
+    }
+  });
+
+  it('le code chargé par l’accueil (moteur, IA, client) n’importe pas rules.ts : la validation reste hors de son morceau', () => {
+    // Rollup range rules.ts (la validation) avec tout module qui l'importe : le moteur et le client importent rulesCore.ts.
+    const racine = fileURLToPath(new URL('../src/', import.meta.url));
+    const fichiers = [
+      ...['game.ts', 'bot.ts', 'cards.ts', 'chess.ts', 'rulesCore.ts'].map(f => `shared/${f}`),
+      ...readdirSync(`${racine}client`, { recursive: true }).map(String).filter(f => /\.tsx?$/.test(f)).map(f => `client/${f}`),
+    ];
+    for (const f of fichiers) {
+      expect(readFileSync(`${racine}${f}`, 'utf8'), f).not.toMatch(/from '(\.\/|(\.\.\/)+shared\/)rules'/);
+    }
   });
 });
 

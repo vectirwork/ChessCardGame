@@ -3,7 +3,8 @@
 // seulement). Le tirage du moteur :
 // - tirage pondéré sans remise (poids de la rareté), recommencé tant que la main est invalide (contraintes du tirage,
 //   R9), au plus `redrawAttempts` fois ;
-// - au-delà, tirage contraint carte par carte (les cartes qui rendraient la main invalide sont écartées du sac).
+// - au-delà, tirage contraint carte par carte (les cartes qui rendraient la main invalide, ou impossible à compléter
+//   jusqu'à n cartes, ou jusqu'à la plus grande main valide si la réserve n'en permet pas n, sont écartées du sac).
 // La loi exacte d'une main H valide est donc : p(H) × (1 − q^A) / (1 − q) + q^A × c(H), où p est la loi du tirage
 // pondéré, q la probabilité d'une main invalide, A le nombre d'essais et c la loi du tirage contraint.
 // Les fréquences observées sur des dizaines de milliers de tirages doivent être à quelques écarts-types de la loi.
@@ -32,10 +33,35 @@ function valide(hand: readonly CardId[], l: HandLimits): boolean {
 
 const cle = (hand: readonly CardId[]) => [...hand].sort().join(',');
 
-/** Loi des mains (clé : cartes triées) d'un tirage pondéré sans remise ; `contraint` : sac filtré après chaque carte. */
+/**
+ * Taille de la plus grande main valide de la réserve qui contient `hand`, par force brute sur les parties de la
+ * réserve (indépendante de canComplete et completionTarget du moteur), mémorisée.
+ */
+function plusGrandeMain(t: Tirage, hand: readonly CardId[], memo: Map<string, number>): number {
+  const k = cle(hand);
+  const vu = memo.get(k);
+  if (vu !== undefined) return vu;
+  const reste = t.pool.filter(x => !hand.includes(x));
+  let best = valide(hand, t.limits) ? hand.length : -1;
+  for (let mask = 1; mask < 1 << reste.length; mask++) {
+    const main = [...hand, ...reste.filter((_, i) => mask & (1 << i))];
+    if (main.length > best && valide(main, t.limits)) best = main.length;
+  }
+  memo.set(k, best);
+  return best;
+}
+
+/**
+ * Loi des mains (clé : cartes triées) d'un tirage pondéré sans remise ; `contraint` : sac filtré après chaque carte,
+ * on ne garde que les cartes après lesquelles la main reste valide et complétable jusqu'à la cible (n, ou la plus
+ * grande main valide de la réserve si elle est plus petite).
+ */
 function loiPonderee(t: Tirage, contraint: boolean): Map<string, number> {
   const loi = new Map<string, number>();
   const w = (id: CardId) => t.weights[CARDS[id].rarity];
+  const memo = new Map<string, number>();
+  const cible = Math.min(t.n, plusGrandeMain(t, [], memo));
+  const garde = (suite: CardId[], x: CardId) => plusGrandeMain(t, [...suite, x], memo) >= cible;
   const visiter = (hand: CardId[], bag: CardId[], p: number) => {
     if (hand.length === t.n || !bag.length) {
       loi.set(cle(hand), (loi.get(cle(hand)) ?? 0) + p);
@@ -45,11 +71,11 @@ function loiPonderee(t: Tirage, contraint: boolean): Map<string, number> {
     for (const id of bag) {
       const suite = [...hand, id];
       let reste = bag.filter(x => x !== id);
-      if (contraint) reste = reste.filter(x => valide([...suite, x], t.limits));
+      if (contraint) reste = reste.filter(x => garde(suite, x));
       visiter(suite, reste, (p * w(id)) / total);
     }
   };
-  visiter([], contraint ? t.pool.filter(id => valide([id], t.limits)) : [...t.pool], 1);
+  visiter([], contraint ? t.pool.filter(id => garde([], id)) : [...t.pool], 1);
   return loi;
 }
 
@@ -128,19 +154,22 @@ describe('fréquences du tirage (énumération exacte)', () => {
     });
   }
 
-  it('autres réglages : 5 cartes par main, autres poids, autres contraintes (le tirage lit les règles et DEAL donnés)', () => {
-    const N = 20_000;
+  it('autres réglages : 5 cartes par main, autres poids, autres contraintes, impasses (le tirage lit les règles et DEAL donnés)', () => {
     const pool = cardPool('climats', true);
-    const autres = [
+    const autres: (Omit<Tirage, 'pool'> & { N?: number })[] = [
       { ...DEFAUT, n: 5 },
       { ...DEFAUT, n: 2, weights: { commune: 1, rare: 2, épique: 5, légendaire: 1 } },
       { ...DEFAUT, n: 3, limits: { maxPerRarity: { rare: 1 }, maxPerFamily: { climat: 1 } }, attempts: 2 },
+      // Impasses possibles (une Rare climatique d'abord ne laisse que 4 cartes) : le tirage contraint les évite. Tirage
+      // contraint une fois sur deux, plus coûteux : moins de tirages observés.
+      { ...DEFAUT, n: 5, limits: { maxPerRarity: { rare: 1 }, maxPerFamily: { climat: 2 } }, attempts: 1, N: 8_000 },
     ];
     for (const [i, t] of autres.entries()) {
+      const N = t.N ?? 20_000;
       const exacte = frequences(loiExacte({ ...t, pool }));
       const deal = { handLimits: t.limits, rarityWeight: t.weights, redrawAttempts: t.attempts };
       const obs = observees(N, 101 + i, rand => dealHands(true, false, rand, 'climats', { rules: { cardsPerPlayer: t.n }, deal }).w);
       compare(exacte, obs, N);
     }
-  });
+  }, 60_000);
 });

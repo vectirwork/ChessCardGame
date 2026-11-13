@@ -226,7 +226,47 @@ describe('défauts corrigés au lot 1 (relecture des PGN exportés)', () => {
     expect(fin(writePgn({ Event: 'Sablier', TimeControl: '180+2' }, root)).log).toEqual(s.log);
     expect(fin(writePgn({ Event: 'Sablier' }, root)).log).toEqual(s.log);
     expect(fin(writePgn({ Event: 'Sablier' }, root)).effects).toEqual(s.effects.map(e => ({ ...e, skin: '' })));
+    expect(readPgn(writePgn({ Event: 'Sablier', TimeControl: '180+2' }, root)).root.state.timed).toBe(true);
     expect(() => readPgn(writePgn({ Event: 'Sablier', TimeControl: '-' }, root))).toThrow(/Sablier fou/);
+  });
+  it('sans carte qui demande une pendule, la relecture donne le même état qu’avant (timed: false), cadence ou non', () => {
+    const s = play(createGame({ w: ['truce'], b: [] }, true, 'climats'), 'e2e4', 'e7e5');
+    const { root } = treeFromLog(initialStateOf(s), s.log);
+    const entetes: Record<string, string>[] = [{ TimeControl: '180+2' }, {}, { TimeControl: '?' }, { TimeControl: '-' }];
+    for (const h of entetes) {
+      expect(readPgn(writePgn({ Event: 'x', ...h }, root)).root.state.timed).toBe(false);
+    }
+    // Carte à pendule dans une variante seulement : la partie avait une pendule.
+    const v = `[Event "x"]\n[Variant "Spellmate"]\n[Catalog "climats"]\n\n1. e4 (1. {[%spell hourglass]} d4) e5 *`;
+    expect(readPgn(v).root.state.timed).toBe(true);
+  });
+});
+
+describe('carte à la place du coup (cardEndsTurn) dans le PGN', () => {
+  it('toute carte qui a passé le trait est suivie du coup nul « -- » ; aller-retour identique', () => {
+    const rules = { ...RULES_V1, cardEndsTurn: true };
+    let s = createGame({ w: ['ice_wall', 'truce'], b: ['ice_wall', 'blood_moon'] }, true, 'climats', { rules });
+    const card = (c: 'w' | 'b', i: number, t: string[]) => {
+      const r = playCard(s, c, i, t.map(q), '');
+      if (!r.ok) throw new Error(r.error);
+      s = r.state;
+    };
+    s = play(s, 'e2e4');
+    card('b', 0, ['d4']);
+    s = play(s, 'g1f3', 'e7e5');
+    card('w', 0, ['c4']);
+    s = play(s, 'b8c6');
+    const { root, complete } = treeFromLog(initialStateOf(s), s.log);
+    expect(complete).toBe(true);
+    const text = writePgn({ Event: 'Mur' }, root);
+    // Texte coupé à 80 colonnes : on compare la suite des coups sur une ligne.
+    expect(text.split('\n\n')[1].replace(/\n/g, ' ').trim()).toBe('1. e4 {[%spell ice_wall d4]} 1... -- 2. Nf3 e5 {[%spell ice_wall c4]} 3. -- Nc6 *');
+    const g = readPgn(text);
+    expect(g.root.state.rules).toEqual(rules);
+    const fin = mainline(g.root).at(-1)!.state;
+    expect(toFen(fin.pos)).toBe(toFen(s.pos));
+    expect(fin.log).toEqual(s.log);
+    expect(writePgn(g.headers, g.root, g.result)).toBe(text);
   });
 });
 
@@ -256,6 +296,10 @@ describe('règles de la partie dans le PGN (en-tête SpellmateRules)', () => {
     const avec = (v: string) => `[Event "x"]\n[SpellmateRules "${v.replace(/"/g, '\\"')}"]\n\n1. e4 *`;
     expect(() => readPgn(avec(JSON.stringify({ ...RULES_V1, schema: 2 })))).toThrow(/version inconnue \(schéma 2\)/);
     expect(() => readPgn(avec('{pas du json'))).toThrow(/illisible/);
+    // En-tête abîmé (pas un objet, schéma absent ou d'un autre type) : invalide, pas « version inconnue ».
+    for (const v of ['42', '{"cardsPerPlayer":5}', '[1]', 'null', '{"schema":"1"}', '{"schema":0}']) {
+      expect(() => readPgn(avec(v)), v).toThrow('En-tête SpellmateRules invalide : ces règles ne sont pas jouables.');
+    }
     expect(() => readPgn(avec(JSON.stringify({ ...RULES_V1, presageDelay: 3 })))).toThrow(/pas jouables/);
     expect(readPgn(avec(JSON.stringify(RULES_V1))).root.state.rules).toBeUndefined();
   });

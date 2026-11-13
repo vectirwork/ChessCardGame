@@ -13,7 +13,7 @@ import type { HandLimits } from './config/rules';
 import {
   GameState, cardOptions, cardPlayable, legalMovesOf, magicYields, modsSequence, playCard,
 } from './game';
-import { cardEndsTurn, castsLeft, rulesFor, rulesOf, validHand } from './rules';
+import { canComplete, cardEndsTurn, castsLeft, completionTarget, rulesFor, rulesOf, validHand } from './rulesCore';
 
 /** Niveaux de l'IA, du plus faible au plus fort. Ne jamais recycler un niveau : il est enregistré dans les sièges. */
 export const BOT_LEVELS = [1, 2, 3] as const;
@@ -488,7 +488,15 @@ export function chooseBotDraft(
   pool: readonly CardId[], level: BotLevel, rand: () => number = Math.random, opts: BotDraftOptions = {},
 ): CardId[] {
   const count = opts.count ?? rulesFor('classee').cardsPerPlayer;
-  const fits = (hand: CardId[], id: CardId) => !opts.limits || validHand([...hand, id], opts.limits);
+  const limits = opts.limits;
+  // Avec des contraintes, une carte n'est prise que si la main reste valide et complétable jusqu'à `count` cartes (ou
+  // la plus grande main valide de la réserve, si elle est plus petite) : jamais de main trop courte.
+  const target = limits ? completionTarget([], pool, limits, count) : count;
+  const fits = (hand: CardId[], id: CardId) => {
+    if (!limits) return true;
+    const next = [...hand, id];
+    return validHand(next, limits) && canComplete(next, pool.filter(x => !next.includes(x)), limits, target);
+  };
   const noise = DRAFT_NOISE[level] ?? 1.6;
   const ranked = pool
     .filter(id => !CARDS[id].humanOnly || pool.length <= count)

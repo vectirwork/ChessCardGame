@@ -1,6 +1,7 @@
 // Notation : lecture et écriture de la notation algébrique (SAN), du FEN et du PGN.
 // Extension Spellmate : une carte jouée s'écrit en commentaire avant le coup, `{[%spell freeze f6]}`,
-// et une carte qui remplace le coup (Rituel) est suivie du coup nul `--`.
+// et une carte qui remplace le coup (Rituel ; toute carte si les règles de la partie le disent, cardEndsTurn) est
+// suivie du coup nul `--`.
 // Les règles d'une partie qui diffèrent des règles historiques (RULES_V1) s'écrivent dans l'en-tête
 // `[SpellmateRules "{…}"]` (JSON) et sont relues à l'import ; sans cet en-tête, la partie suit RULES_V1.
 // Tout est pur et partagé : la page Analyse s'en sert, les tests aussi.
@@ -437,7 +438,8 @@ function resolveInto(parent: TreeNode, entries: PgnEntry[], lang: SanLang) {
       continue;
     }
     if (e.san === '--' || e.san === 'Z0') {
-      // Coup nul : seulement après un Rituel (la carte a déjà rendu la main à l'adversaire).
+      // Coup nul : seulement après une carte qui a remplacé le coup (Rituel, ou toute carte si cardEndsTurn) : elle a
+      // déjà rendu la main à l'adversaire.
       const prev = node.entry;
       if (prev?.k === 'card' && prev.c !== s.pos.turn) continue;
       throw new PgnError(`Coup nul non pris en charge (coup ${s.pos.fullmove}).`);
@@ -473,22 +475,28 @@ export function rulesOfPgn(h: Record<string, string>): Rules {
   } catch {
     throw new PgnError('En-tête SpellmateRules illisible : les règles de la partie sont inconnues.');
   }
-  const schema = (x as { schema?: unknown } | null)?.schema;
-  if (schema !== RULES_V1.schema) {
-    throw new PgnError(`Règles de la partie d'une version inconnue (schéma ${String(schema)}) : mettez la page à jour pour relire ce PGN.`);
+  const invalid = 'En-tête SpellmateRules invalide : ces règles ne sont pas jouables.';
+  const schema = x !== null && typeof x === 'object' && !Array.isArray(x) ? (x as { schema?: unknown }).schema : undefined;
+  // Seul un schéma plus récent que ce code demande une mise à jour ; toute autre forme est un en-tête abîmé.
+  if (typeof schema === 'number' && schema > RULES_V1.schema) {
+    throw new PgnError(`Règles de la partie d'une version inconnue (schéma ${schema}) : mettez la page à jour pour relire ce PGN.`);
   }
   const r = parseRules(x);
-  if (!r) throw new PgnError('En-tête SpellmateRules invalide : ces règles ne sont pas jouables.');
+  if (!r) throw new PgnError(invalid);
   return r;
 }
 
 /**
- * Partie à pendule ? D'après l'en-tête TimeControl : « - » veut dire sans pendule ; une cadence, avec ; absent ou
- * « ? » (inconnu), on suppose une pendule, pour relire les cartes qui en demandent une (Sablier fou) : elles n'ont
- * pu être jouées que dans une partie à pendule.
+ * Partie à pendule ? Oui seulement si le PGN contient, variantes comprises, une carte qui en demande une (Sablier fou,
+ * Distorsion temporelle du Duel) et que l'en-tête TimeControl ne dit pas « - » (sans pendule) : une telle carte n'a
+ * pu être jouée que dans une partie à pendule (une cadence, ou en-tête absent ou « ? »). Sinon, partie sans pendule,
+ * comme avant : un PGN qui se relisait déjà donne exactement le même état.
  */
-export function timedOfPgn(h: Record<string, string>): boolean {
-  return h.TimeControl?.trim() !== '-';
+export function timedOfPgn(h: Record<string, string>, entries: readonly PgnEntry[]): boolean {
+  if (h.TimeControl?.trim() === '-') return false;
+  const needsClock = (list: readonly PgnEntry[]): boolean =>
+    list.some(e => (e.k === 'card' ? !!CARDS[e.card]?.timedOnly : e.vars.some(needsClock)));
+  return needsClock(entries);
 }
 
 /** Lit un PGN (première partie du texte). Lève PgnError avec un message en français. */
@@ -501,7 +509,7 @@ export function readPgn(text: string): PgnGame {
     if (err) throw new PgnError(`FEN de l'en-tête invalide : ${err}`);
   }
   const catalog = CATALOG_IDS.find(c => c === h.Catalog) ?? 'aucune';
-  const start = stateFromFen(fen, catalog, { rules: rulesOfPgn(h), timed: timedOfPgn(h) });
+  const start = stateFromFen(fen, catalog, { rules: rulesOfPgn(h), timed: timedOfPgn(h, parsed.entries) });
   const root = makeRoot(start);
   if (parsed.intro) root.comment = parsed.intro;
   const lang = detectLang(parsed.entries);
@@ -540,8 +548,10 @@ export function writeMovetext(from: TreeNode): string {
       const num = `${s.pos.fullmove}${s.pos.turn === 'w' ? '.' : '...'}`;
       if (e.k === 'card') {
         out.push(spellComment(e));
-        if (CARDS[e.card]?.ritual && node.state.pos.turn !== s.pos.turn) {
-          // Rituel : la carte remplace le coup, écrit comme un coup nul.
+        if (e.card !== 'rewind' && node.state.pos.turn !== s.pos.turn) {
+          // Carte qui remplace le coup (Rituel ; toute carte si les règles le disent, cardEndsTurn) : le trait est
+          // passé, la carte s'écrit suivie du coup nul. Le Retour arrière (Duel) rend aussi le trait, mais en annulant
+          // le coup adverse : pas de coup nul (PGN du Duel inchangés).
           out.push(`${num} --`);
           needNumber = false;
         } else needNumber = true;

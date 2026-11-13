@@ -472,6 +472,14 @@ const surRangees = (ranks: readonly number[]) => {
   const r = rangees(ranks);
   return r.startsWith('entre ') ? r : `sur ${r}`;
 };
+/**
+ * Rangée à choisir (Faille) : « la 4e ou la 5e rangée », « la 4e rangée » ; trois rangées contiguës ou plus : « une
+ * rangée, de la 3e à la 5e » (« entre la 3e et la 5e rangée » se lirait comme un choix entre deux rangées).
+ */
+const rangeeAChoisir = (ranks: readonly number[]) => {
+  const r = rangees(ranks, 'de');
+  return r.startsWith('de ') ? `une rangée, ${r.replace(/ rangée$/, '')}` : r;
+};
 
 /**
  * Gabarits des textes des Pouvoirs, à partir de l'équilibrage de la carte (`t` : coups, rangées, vitesse) et du délai
@@ -513,9 +521,9 @@ const TEMPLATES: Record<PowerCardId, (t: CardTuning, delay: number, genre: CardD
     prompts: [`Choisissez une case vide ${surRangees(t.ranks!)}`],
   }),
   rift: t => ({
-    description: `Choisissez ${rangees(t.ranks!)}. Pendant ${coups(t.coups!)}, toutes ses cases vides deviennent un gouffre : aucune pièce ne peut s’y arrêter ni le traverser. Les cavaliers passent par-dessus.`,
+    description: `Choisissez ${rangeeAChoisir(t.ranks!)}. Pendant ${coups(t.coups!)}, toutes ses cases vides deviennent un gouffre : aucune pièce ne peut s’y arrêter ni le traverser. Les cavaliers passent par-dessus.`,
     duration: dureeEffet(t.coups!),
-    prompts: [`Choisissez ${rangees(t.ranks!)} (une case de la rangée)`],
+    prompts: [`Choisissez ${rangeeAChoisir(t.ranks!)} (une case de la rangée)`],
   }),
   tide: t => ({
     description: `Rituel : la carte remplace votre coup. Tous les pions des deux camps qui sont sur ${t.ranks!.length > 1 ? 'leurs' : 'leur'} ${etendueRangees(t.ranks!)} avancent d’une case, si elle est libre. C’est ensuite à l’adversaire de jouer.`,

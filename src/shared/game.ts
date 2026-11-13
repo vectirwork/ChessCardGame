@@ -28,8 +28,9 @@ import type { CardDef } from './cards';
 import { DEAL, GAME_RULES } from './config/rules';
 import type { DealSettings, HandLimits, Rules } from './config/rules';
 import {
-  basicFenError, cardEndsTurn, castsLeft, poolOf, rulesFor, rulesOf, stampRules, tuneOf, validHand,
-} from './rules';
+  basicFenError, canComplete, cardEndsTurn, castsLeft, completionTarget, poolOf, rulesFor, rulesOf, stampRules, tuneOf,
+  validHand,
+} from './rulesCore';
 import { cap, compte } from './text/fr';
 import { limitesMain, refusBudget, regle50, repetition } from './text/regles';
 
@@ -158,8 +159,11 @@ export const CARDS_PER_PLAYER = GAME_RULES.cardsPerPlayer;
 /** Catalogue effectif d'une partie (les parties enregistrées avant les catalogues sont des parties Duel). */
 export const catalogOf = (s: Pick<GameState, 'catalog'>): Catalog => s.catalog ?? LEGACY_CATALOG;
 
-/** Règles propres au catalogue de la partie (CATALOG_RULES). */
-const catalogRules = (s: Pick<GameState, 'catalog'>) => CATALOG_RULES[catalogOf(s)];
+/**
+ * Règles propres au catalogue de la partie (CATALOG_RULES). Un identifiant inconnu (historique local abîmé, salle
+ * enregistrée par une version plus récente) suit « Sans cartes », comme avant les données : aucune règle de catalogue.
+ */
+const catalogRules = (s: Pick<GameState, 'catalog'>) => CATALOG_RULES[catalogOf(s)] ?? CATALOG_RULES.aucune;
 
 /** « La magie cède » (R6) : règle du catalogue Pouvoirs. */
 export const magicYields = (s: GameState): boolean => catalogRules(s).magicYields;
@@ -208,10 +212,19 @@ export function dealHands(
     return a.slice(0, n);
   };
   const weight = (id: CardId) => deal.rarityWeight[CARDS[id].rarity];
-  /** Tirage pondéré sans remise ; `constrained` : on écarte au fur et à mesure les cartes qui rendraient la main invalide. */
+  /**
+   * Tirage pondéré sans remise ; `constrained` : on écarte au fur et à mesure les cartes qui rendraient la main
+   * invalide, ou impossible à compléter (jusqu'à n cartes, ou la plus grande main valide si la réserve n'en permet pas
+   * autant). Au réglage par défaut (R9), toute main valide se complète : le sac est le même qu'avec la seule validité.
+   */
   const weighted = (constrained: boolean) => {
-    // Contraint : seules les cartes qui gardent la main valide restent dans le sac, dès la première.
-    let bag = constrained ? pool.filter(id => validHand([id], limits)) : pool.slice();
+    const target = constrained ? completionTarget([], pool, limits, n) : n;
+    const keeps = (hand: readonly CardId[], id: CardId) => {
+      const next = [...hand, id];
+      return validHand(next, limits) && canComplete(next, pool.filter(x => !next.includes(x)), limits, target);
+    };
+    // Contraint : seules les cartes qui gardent la main valide et complétable restent dans le sac, dès la première.
+    let bag = constrained ? pool.filter(id => keeps([], id)) : pool.slice();
     const hand: CardId[] = [];
     while (hand.length < n && bag.length) {
       let r = rand() * bag.reduce((t, id) => t + weight(id), 0);
@@ -219,12 +232,12 @@ export function dealHands(
       while (k < bag.length - 1 && r >= weight(bag[k])) r -= weight(bag[k++]);
       hand.push(bag[k]);
       bag.splice(k, 1);
-      if (constrained) bag = bag.filter(id => validHand([...hand, id], limits));
+      if (constrained) bag = bag.filter(id => keeps(hand, id));
     }
     return hand;
   };
   const draw = () => {
-    if (CATALOG_RULES[catalog].draw === 'uniforme') return uniform();
+    if (catalogRules({ catalog }).draw === 'uniforme') return uniform();
     // Tirage recommencé tant que la main est invalide (R9). Au-delà (générateur dégénéré, tests), tirage contraint
     // carte par carte.
     for (let attempt = 0; attempt < deal.redrawAttempts; attempt++) {
@@ -283,7 +296,7 @@ export function draftRefusal(
 /**
  * Complète au hasard une sélection (valide, éventuellement vide) jusqu'à `count` cartes différentes de la réserve,
  * uniformément. Les cartes déjà choisies gardent leur place, en tête. `limits` (DEAL.limitsInDraft seulement) : les
- * cartes qui rendraient la main invalide ne sont pas tirées.
+ * cartes qui rendraient la main invalide, ou impossible à compléter, ne sont pas tirées.
  */
 export function completeDraft(
   pool: readonly CardId[], partial: readonly CardId[], rand: () => number = Math.random, count: number = defaultHandSize(),
@@ -291,9 +304,16 @@ export function completeDraft(
 ): CardId[] {
   const hand = partial.filter((c, i) => pool.includes(c) && partial.indexOf(c) === i).slice(0, count);
   let rest = pool.filter(c => !hand.includes(c));
+  // Avec des contraintes : la plus grande main valide qui contient la sélection (count, ou moins si elle ne se
+  // complète pas), et seulement des cartes qui la gardent complétable jusque-là.
+  const target = limits ? completionTarget(hand, rest, limits, count) : count;
   while (hand.length < count && rest.length) {
     if (limits) {
-      rest = rest.filter(c => validHand([...hand, c], limits));
+      const r = rest;
+      rest = r.filter(c => {
+        const next = [...hand, c];
+        return validHand(next, limits) && canComplete(next, r.filter(x => x !== c), limits, target);
+      });
       if (!rest.length) break;
     }
     const k = Math.min(rest.length - 1, Math.floor(rand() * rest.length));
@@ -323,12 +343,17 @@ export interface CreateOptions {
   rules?: Rules;
 }
 
-/** Position de départ des règles : la position standard, ou `startFen` (roque standard seulement, refus sinon). */
+/**
+ * Position de départ des règles : la position standard, ou `startFen` (roque standard seulement, et au moins un coup
+ * pour le camp au trait : refus sinon, comme checkRules).
+ */
 function startPosition(r: Rules) {
   if (!r.startFen) return initialPosition();
   const err = basicFenError(r.startFen);
   if (err) throw new Error(`Position de départ des règles refusée : ${err}`);
-  return fromFen(r.startFen);
+  const start = fromFen(r.startFen);
+  if (!hasLegalMove(start.pos)) throw new Error('Position de départ des règles refusée : elle est déjà finie (mat ou pat).');
+  return start;
 }
 
 /** Nouvelle partie : mains données (vides pendant le choix des cartes), pendule ou non, catalogue de cartes. */
@@ -859,7 +884,9 @@ export function tidePushes(s: GameState): { from: number; to: number }[] {
     const p = b[i];
     if (!p || p.t !== 'p' || mods.frozen.has(p.id)) continue;
     const rel = p.c === 'w' ? rankOf(i) : 7 - rankOf(i);
-    if (!ranks.includes(rel)) continue;
+    // Jamais depuis la 7e rangée relative (la poussée atteindrait la promotion sans promouvoir) ni au-delà : checkRules
+    // et parseRules refusent déjà ces rangées, défense en profondeur.
+    if (rel >= 6 || !ranks.includes(rel)) continue;
     const to = i + (p.c === 'w' ? 8 : -8);
     if (b[to] || mods.blocked[to]) continue;
     pushes.push({ from: i, to });
@@ -1100,6 +1127,20 @@ function probeState(n: GameState, turn: Color, effects: Effect[]): GameState {
 }
 
 /**
+ * Sonde des garde-fous qui regardent plus loin que la carte : la position de `from`, trait à `color`, avec `effects`
+ * décomptés `plies` fois en alternant les camps à partir de celui qui a le trait dans `from`. Les coups d'ici là sont
+ * supposés ne rien changer.
+ */
+function probeAhead(from: GameState, color: Color, effects: Effect[], plies: number): GameState {
+  let mover = from.pos.turn;
+  for (let k = 0; k < plies; k++) {
+    effects = tickEffects(effects, mover);
+    mover = opposite(mover);
+  }
+  return probeState(from, color, effects);
+}
+
+/**
  * Présage (Climats) : R4b jugée aussi à l'arrivée, en supposant que les coups d'ici là ne changent rien. Au tour
  * du lanceur où l'effet arrive, il garde un coup légal sous les effets, sauf s'il était déjà bloqué avant la carte.
  * Sans cela, un camp réduit aux coups de pion annoncerait l'Ère glaciaire pour pousser ensuite ses pions par « la
@@ -1114,16 +1155,41 @@ function probeState(n: GameState, turn: Color, effects: Effect[]): GameState {
 function presageRefusal(s: GameState, n: GameState, color: Color, id: number): Refusal | null {
   const delay = n.effects.find(e => e.id === id)?.delay ?? 0;
   const others = n.effects.filter(e => e.id !== id);
-  const arrival = (effects: Effect[]) => {
-    let mover = n.pos.turn;
-    for (let k = 0; k < delay; k++) {
-      effects = tickEffects(effects, mover);
-      mover = opposite(mover);
-    }
-    return probeState(n, color, effects);
-  };
-  if (hasStrictLegal(s) && hasStrictLegal(arrival(others)) && !hasStrictLegal(arrival(n.effects))) {
+  if (hasStrictLegal(s) && hasStrictLegal(probeAhead(n, color, others, delay)) && !hasStrictLegal(probeAhead(n, color, n.effects, delay))) {
     return refusal('À son arrivée, cette carte vous laisserait sans aucun coup.', 'no-move-on-arrival');
+  }
+  return null;
+}
+
+/**
+ * Carte qui termine le tour et pose un effet qui n'est pas un Présage (toute carte si `cardEndsTurn` : Mur, Faille) :
+ * R4b jugée au prochain tour du lanceur, après la réponse de l'adversaire, supposée ne rien changer. Sans cela, le
+ * lanceur pourrait se priver lui-même de tout coup (un Mur sur la case de son dernier coup) pour jouer ensuite par
+ * « la magie cède », libéré de tous les effets. Même monde avec et sans le nouvel effet, comme pour le Présage.
+ */
+function nextTurnRefusal(s: GameState, n: GameState, color: Color, id: number): Refusal | null {
+  const plies = n.pos.turn === color ? 0 : 1;
+  const others = n.effects.filter(e => e.id !== id);
+  if (hasStrictLegal(s) && hasStrictLegal(probeAhead(n, color, others, plies)) && !hasStrictLegal(probeAhead(n, color, n.effects, plies))) {
+    return refusal('Cette carte vous laisserait sans aucun coup.', 'no-move');
+  }
+  return null;
+}
+
+/**
+ * Présage du lanceur déjà annoncé (plus tôt dans le tour, avec plusieurs cartes par tour ; ou à un tour précédent,
+ * avec un délai de plus de 2) : la carte jouée ensuite ne doit pas priver le lanceur de tout coup à l'arrivée de ce
+ * Présage, ce que sa sonde, faite à son lancement, ne pouvait pas voir. Arrivée comparée avant et après la carte :
+ * refus si le lanceur y gardait un coup avant et n'en a plus après. Les deux ordres des mêmes cartes donnent ainsi le
+ * même verdict. Jamais au réglage par défaut : avec une carte par tour et un délai de 2, le Présage du lanceur est
+ * toujours arrivé quand il rejoue.
+ */
+function pendingPresageRefusal(s: GameState, n: GameState, color: Color, newId: number | undefined): Refusal | null {
+  const p = n.effects.find(e => e.pending && e.caster === color && e.id !== newId);
+  const before = p && s.effects.find(e => e.id === p.id);
+  if (!p || !before) return null;
+  if (hasStrictLegal(probeAhead(s, color, s.effects, before.delay ?? 1)) && !hasStrictLegal(probeAhead(n, color, n.effects, p.delay ?? 1))) {
+    return refusal('À l’arrivée de votre Présage, cette carte vous laisserait sans aucun coup.', 'no-move-on-arrival');
   }
   return null;
 }
@@ -1132,9 +1198,10 @@ function presageRefusal(s: GameState, n: GameState, color: Color, id: number): R
  * Garde-fous après une carte (R4) :
  * a) elle ne met jamais le roi adverse en échec ;
  * b) le lanceur garde un coup légal sous les effets (« la magie cède » ne compte pas, sauf s'il était déjà
- *    bloqué ; Présage : aussi à l'arrivée, `presageRefusal`) ; une carte qui termine le tour (Rituel, ou toute carte
- *    si `cardEndsTurn`) est un coup : elle ne peut pas laisser le roi du lanceur en échec (un Présage qui termine
- *    le tour est aussi jugé à son arrivée).
+ *    bloqué) : tout de suite, et plus loin quand l'effet attend (Présage : à son arrivée, `presageRefusal` ; carte qui
+ *    termine le tour : au prochain tour du lanceur, `nextTurnRefusal`), comme à l'arrivée d'un Présage du lanceur déjà
+ *    annoncé (`pendingPresageRefusal`) ; une carte qui termine le tour (Rituel, ou toute carte si `cardEndsTurn`) est
+ *    un coup : elle ne peut pas laisser le roi du lanceur en échec.
  */
 function validateAfterCard(s: GameState, n: GameState, color: Color, card: CardId, info: CardInfo): Refusal | null {
   if (card === 'rewind') {
@@ -1147,14 +1214,22 @@ function validateAfterCard(s: GameState, n: GameState, color: Color, card: CardI
       return refusal(def.ritual ? 'Ce rituel laisserait votre roi en échec.' : 'Cette carte laisserait votre roi en échec.', 'leaves-check');
     }
     if (inCheck(n.pos, them, nowMods(n)) || sideInCheck(n)) return refusal('Une carte ne peut pas mettre le roi adverse en échec.', 'checks-king');
-    if (def.presage && info.effectId !== undefined && magicYields(n)) return presageRefusal(s, n, color, info.effectId);
-    return null;
+    if (!magicYields(n)) return null;
+    if (info.effectId !== undefined) {
+      const r = def.presage ? presageRefusal(s, n, color, info.effectId) : nextTurnRefusal(s, n, color, info.effectId);
+      if (r) return r;
+    }
+    return pendingPresageRefusal(s, n, color, info.effectId);
   }
   if (inCheck(n.pos, them, nowMods(n))) return refusal('Une carte ne peut pas mettre le roi adverse en échec.', 'checks-king');
   if (!hasLegal(n)) return refusal('Après cette carte, vous n’auriez plus aucun coup légal.', 'no-move');
-  if (magicYields(n) && !hasStrictLegal(n) && hasStrictLegal(s)) return refusal('Cette carte vous laisserait sans aucun coup.', 'no-move');
-  if (def.presage && info.effectId !== undefined && magicYields(n)) return presageRefusal(s, n, color, info.effectId);
-  return null;
+  if (!magicYields(n)) return null;
+  if (!hasStrictLegal(n) && hasStrictLegal(s)) return refusal('Cette carte vous laisserait sans aucun coup.', 'no-move');
+  if (def.presage && info.effectId !== undefined) {
+    const r = presageRefusal(s, n, color, info.effectId);
+    if (r) return r;
+  }
+  return pendingPresageRefusal(s, n, color, info.effectId);
 }
 
 function tryCard(s: GameState, color: Color, index: number, targets: number[], skin: string): Outcome<CardInfo> {
@@ -1241,6 +1316,11 @@ const WALL_MATE_PAIRS: { squares: [number, number]; light: boolean }[] = (
 ).map(([x, y, l]) => ({ squares: [sqIndex(x), sqIndex(y)], light: l === 1 }));
 /** Rangées du Mur pour lesquelles WALL_MATE_PAIRS a été calculée (3e à 6e). */
 const WALL_MATE_RANKS = [2, 3, 4, 5];
+/**
+ * Rangées de la Faille pour lesquelles une Faille seule n'aide jamais à mater (4e et 5e, centrales). Sur une rangée du
+ * bord, elle ferme des fuites au roi : Roi et Cavalier matent avec une Faille sur la 8e rangée.
+ */
+const RIFT_NO_MATE_RANKS = [3, 4];
 const sameRanks = (a: readonly number[], b: readonly number[]) =>
   a.length === b.length && [...a].sort((x, y) => x - y).every((x, i) => x === b[i]);
 
@@ -1256,7 +1336,9 @@ interface Minors { knight: boolean; lightBishop: boolean; darkBishop: boolean }
  * - deux Murs formant une paire de `WALL_MATE_PAIRS` utilisable par l'une des pièces ;
  * - une Faille (posée ou en main) avec au moins un Mur (posé ou en main) : une Faille ferme toute une rangée, et les
  *   combinaisons possibles (Murs c3 et e3 avec la Faille de la 4e rangée, par exemple) sont trop nombreuses pour une
- *   table : par prudence, on considère qu'un mat reste possible (la règle des 50 coups reste).
+ *   table : par prudence, on considère qu'un mat reste possible (la règle des 50 coups reste) ;
+ * - avec d'autres rangées que celles des règles historiques, la même prudence : une Faille seule hors des 4e et 5e
+ *   rangées, un Mur seul hors des rangées de WALL_MATE_PAIRS.
  */
 function terrainMate(s: GameState, m: Minors): boolean {
   const walls = new Set<number>();
@@ -1266,7 +1348,10 @@ function terrainMate(s: GameState, m: Minors): boolean {
     if (e.card === 'rift') riftPosed = true;
   }
   const wallCards = unusedCards(s, 'ice_wall');
-  if ((riftPosed || unusedCards(s, 'rift') > 0) && walls.size + wallCards > 0) return true;
+  const rift = riftPosed || unusedCards(s, 'rift') > 0;
+  if (rift && walls.size + wallCards > 0) return true;
+  // Faille hors des rangées centrales : seule, elle peut fermer des fuites ; par prudence, elle permet un mat.
+  if (rift && !ranksOf(s, 'rift').every(r => RIFT_NO_MATE_RANKS.includes(r))) return true;
   // Rangées du Mur changées : la table ne vaut plus ; par prudence, un Mur posé ou en main permet un mat.
   if (!sameRanks(ranksOf(s, 'ice_wall'), WALL_MATE_RANKS)) return walls.size + wallCards > 0;
   return WALL_MATE_PAIRS.some(pair => {

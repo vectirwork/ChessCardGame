@@ -44,6 +44,15 @@ export const SLOT_COLUMN = Object.freeze(Object.fromEntries(SLOTS.map(k => [k, S
 export type SlotColumn = (typeof SLOT_COLUMN)[ItemKind];
 
 /**
+ * Garde du compilateur : un emplacement ajouté à SLOT_DEFS sans sa colonne dans UserRow (et sa migration, db.ts) ni son
+ * champ dans MeUser (protocol.ts, rempli par toMe) ne compile pas, ici (test/catalog.test.ts, emplacement fictif).
+ */
+type Couvert<T extends true> = T;
+export type SlotsCovered =
+  | Couvert<SlotColumn extends keyof UserRow ? true : false>
+  | Couvert<(typeof SLOT_DEFS)[ItemKind]['meField'] extends keyof MeUser ? true : false>;
+
+/**
  * Colonnes des objets portés, dans l'ordre des emplacements (SLOTS), pour un SELECT ou un INSERT :
  * « equipped_king, equipped_board, equipped_skin ». Lues par l'inscription, le profil public (account.ts) et la
  * revanche (games.ts).

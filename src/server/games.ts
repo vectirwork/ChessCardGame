@@ -5,20 +5,32 @@ import { z } from 'zod';
 import { Color, PieceType, opposite } from '../shared/chess';
 import { BOT_LOOK, DEFAULT_KING, DEFAULT_SKIN, normKing, sealOf } from '../shared/catalog';
 import {
-  CARDS_PER_PLAYER, CardInfo, DRAFT_MS, GameState, MoveInfo, Result, canStillMate, cardPool, catalogOf, clockRate,
-  completeDraft, createGame, dealHands, draftRefusal, incrementSuspended, playCard, playMove, viewState, withHands,
+  CardInfo, GameState, MoveInfo, Result, canStillMate, cardPool, catalogOf, clockRate, completeDraft, createGame,
+  dealHands, draftRefusal, incrementSuspended, legalMovesOf, playCard, playMove, viewState, withHands,
 } from '../shared/game';
 import type {
-  ClientToServer, DraftView, GameEvent, GameMode, GameStatus, GameView, JoinReply, SeatView, ServerToClient,
+  AckCode, ClientToServer, DraftView, GameEvent, GameMode, GameStatus, GameView, JoinReply, SeatView, ServerToClient,
+  TimeControl,
 } from '../shared/protocol';
-import { EMOTES, QUICK_CONTROLS, TIME_CONTROLS, tcFromId } from '../shared/protocol';
-import { CardId, Catalog, isCardId, offeredCatalog } from '../shared/cards';
+import { EMOTES, OFFERED_CONTROLS, PROTOCOL_VERSION, QUICK_CONTROLS, tcFromId } from '../shared/protocol';
+import { CARDS, CATALOG_IDS, CATALOG_RULES, CardId, Catalog, DEFAULT_CATALOG, isCardId, offeredCatalog } from '../shared/cards';
+import type { FeatureKey } from '../shared/config/features';
+import { HOME } from '../shared/config/home';
+import { GUEST_NAME } from '../shared/config/limits';
+import { BOUNDS } from '../shared/config/rules';
+import type { HandLimits, RulesContext } from '../shared/config/rules';
+import { RULES_V1, cardEndsTurn, parseRules, rulesFor, rulesOf } from '../shared/rules';
+import type { Rules } from '../shared/rules';
+import { cardsOfReply } from '../shared/botProtocol';
+import type { BotCard, BotReply } from '../shared/botProtocol';
 import rateLimit from 'express-rate-limit';
 import { Identity, identityFromCookies, userById } from './auth';
-import { BOT_PROFILES, BotLevel, chooseBotDraft } from '../shared/bot';
+import { BOT_LEVELS, BOT_PROFILES, BotLevel, DEFAULT_BOT_LEVEL, botLevelOr, chooseBotDraft } from '../shared/bot';
 import { botPool } from './bot-pool';
 import { DbClient, one, q, tx } from './db';
+import { matchTolerance, ratingDiffs } from './rating';
 import { gameId, randomToken } from './security';
+import { BOT_RUNTIME, FEATURES, LIMITS, MATCHMAKING, PERSIST, RATING, RELAY, TIMINGS, dealSettings } from './settings';
 import { toSummary } from './summary';
 import { countryOfTimezone } from './timezones';
 
@@ -64,6 +76,11 @@ export interface DraftData {
   picks: Record<Color, CardId[] | null>;
   /** Sélections provisoires, secrètes, complétées au hasard à l'échéance si le joueur n'a pas validé. */
   tentative: Record<Color, CardId[]>;
+  /**
+   * Contraintes du tirage (R9) appliquées aussi au choix, lues à la création (DEAL.limitsInDraft) ; absent : aucune
+   * (décision Q4, et parties d'avant). Un déploiement qui change DEAL ne change pas les contraintes d'un choix en cours.
+   */
+  limits?: HandLimits;
 }
 
 export interface RoomData {
@@ -95,7 +112,7 @@ export interface RoomData {
   lastActivity?: number;
   /**
    * Partie en direct de l'accueil : si un joueur ne joue pas, l'IA joue pour lui (`standIn`) jusqu'à ce qu'il reprenne
-   * la main (il joue un coup, ou game:takeover).
+   * la main (il joue un coup, ou game:takeover). Ses mains sont tirées au hasard (setupOf : la revanche les tire aussi).
    */
   relay?: boolean;
   standIn?: Record<Color, boolean>;
@@ -122,20 +139,32 @@ export class Room {
   activityAt: Record<Color, number> = { w: 0, b: 0 };
   rematchPending = false;
   endedAt = 0;
+  /** Échecs consécutifs de l'IA à jouer (décision en erreur, délai dépassé, coup refusé) : voir maybeBot. */
+  botFailures = 0;
+  /**
+   * Fin de partie pas encore enregistrée (persistResult en cours, en attente d'un nouvel essai, ou abandonné) :
+   * flushRooms l'enregistre à l'arrêt du serveur, classement compris.
+   */
+  resultPending = false;
   constructor(public d: RoomData) {}
 }
 
-const FIRST_MOVE_MS = 45_000;
-/** Partie contre l'IA abandonnée par le joueur humain. */
-const BOT_IDLE_MS = 30 * 60_000;
-/** Partie sans pendule sans aucune action. */
-const UNTIMED_IDLE_MS = 3 * 86400_000;
-const MAX_OPEN_ROOMS = 8;
-const CLAIM_AFTER_MS = 60_000;
-/** Temps laissé à l'animation d'une carte de l'IA avant qu'elle ne joue son coup. */
-const BOT_CARD_PAUSE_MS = 2300;
+// Délais, limites, classement, appariement, relais et IA : src/server/settings.ts (TIMINGS, LIMITS, RATING,
+// MATCHMAKING, RELAY, BOT_RUNTIME). Rien n'est écrit en dur ici.
+
 /** Pouvoirs (R10) : les cinématiques (lancement, arrivée d'un Présage, Rituel) ne coûtent pas de temps. */
-export const CINEMATIC_MS = 1200;
+export const CINEMATIC_MS = TIMINGS.cinematicMs;
+
+const COLORS: Color[] = ['w', 'b'];
+
+/**
+ * La partie a-t-elle commencé (chacun a joué son premier coup) ? Ensuite, plus d'annulation possible, et une
+ * proposition de nulle devient permise.
+ */
+export const isStarted = (s: Pick<GameState, 'ply'>) => s.ply >= TIMINGS.minPlyToStart;
+
+/** Catalogue d'une salle : celui de sa création, sinon celui de son état (catalogOf : Duel pour les plus anciennes). */
+export const roomCatalog = (d: Pick<RoomData, 'catalog' | 'state'>): Catalog => d.catalog ?? catalogOf(d.state);
 
 const rooms = new Map<string, Room>();
 let io: IO;
@@ -151,7 +180,7 @@ function scheduleSave(room: Room) {
   room.saveTimer = setTimeout(() => {
     room.saveTimer = null;
     void saveRoom(room).catch(e => console.error('Sauvegarde de partie :', e));
-  }, 250);
+  }, TIMINGS.saveDebounceMs);
 }
 
 async function saveRoom(room: Room, client?: DbClient) {
@@ -210,13 +239,24 @@ export function resumeRoom(room: Room) {
     endGame(room, { winner: null, reason: 'aborted' });
     return;
   }
+  // Règles enregistrées illisibles (schéma d'une version plus récente, données abîmées, valeurs injouables) : la
+  // partie ne peut pas être arbitrée, elle est annulée avec un message au journal. Lisibles : les mêmes, gelées.
+  if (room.d.state.rules !== undefined) {
+    const rules = parseRules(room.d.state.rules);
+    if (!rules) {
+      console.error(`Partie ${room.d.id} annulée à la reprise : ses règles enregistrées sont illisibles (schéma inconnu ou valeurs injouables).`);
+      endGame(room, { winner: null, reason: 'aborted' });
+      return;
+    }
+    room.d.state = { ...room.d.state, rules };
+  }
   resumeClock(room.d);
-  if (room.d.started === undefined) room.d.started = room.d.state.ply >= 2;
+  if (room.d.started === undefined) room.d.started = isStarted(room.d.state);
   room.d.lastActivity ??= now();
   if (room.d.status === 'active') {
-    for (const c of ['w', 'b'] as Color[]) if (room.d.seats[c] && room.d.seats[c]!.kind !== 'bot') room.away[c] = now();
+    for (const c of COLORS) if (room.d.seats[c] && room.d.seats[c]!.kind !== 'bot') room.away[c] = now();
   }
-  if (room.d.firstMoveDeadline) room.d.firstMoveDeadline = now() + FIRST_MOVE_MS;
+  if (room.d.firstMoveDeadline) room.d.firstMoveDeadline = now() + TIMINGS.firstMoveMs;
   const both = resumeDraft(room.d);
   armTimers(room);
   if (both) closeDraftRoom(room);
@@ -225,6 +265,7 @@ export function resumeRoom(room: Room) {
 }
 
 export async function restoreRooms() {
+  await applyPendingRatings();
   const rows = await q<{ data: RoomData }>(`SELECT data FROM games WHERE status <> 'ended'`);
   for (const { data } of rows) {
     if (rooms.has(data.id)) continue;
@@ -279,7 +320,7 @@ export function viewFor(room: Room, you: Color | null): GameView {
     ratingDiff: d.ratingDiff,
     firstMoveDeadline: d.firstMoveDeadline,
     away: room.away,
-    claimAfterMs: CLAIM_AFTER_MS,
+    claimAfterMs: TIMINGS.claimAfterMs,
     createdAt: d.createdAt,
     mirror: d.mirror,
     started: !!d.started,
@@ -366,7 +407,7 @@ export function resumeClock(d: RoomData) {
 /** Pouvoirs (R10) : crédite au camp au trait la durée d'une cinématique, si sa pendule tourne. */
 function creditCinematic(d: RoomData, c: Color) {
   const ck = d.clock;
-  if (!ck || ck.running !== c || catalogOf(d.state) !== 'climats') return;
+  if (!ck || ck.running !== c || !CATALOG_RULES[catalogOf(d.state)]?.cinematicCredit) return;
   ck[c] += CINEMATIC_MS * rate(d, c);
 }
 
@@ -379,27 +420,30 @@ export function commitMove(d: RoomData, color: Color, state: GameState, info: Mo
   d.state = state;
   d.drawOffer = null;
   d.lastActivity = now();
-  if (d.state.ply >= 2) d.started = true;
+  if (isStarted(d.state)) d.started = true;
   startClock(d);
   if (info.arrived?.length) creditCinematic(d, d.state.pos.turn);
 }
 
 /**
- * Pendule et état après une carte. Renvoie vrai si le trait a changé (Rituel, Retour arrière du Duel).
- * - Rituel : c'est un coup (incrément, démarrage de la partie) ; l'adversaire est crédité de la cinématique.
+ * Pendule et état après une carte. Renvoie vrai si le trait a changé (carte qui termine le tour, Retour arrière du
+ * Duel).
+ * - Carte qui termine le tour (cardEndsTurn : un Rituel, ou toute carte si les règles de la partie le disent) : c'est
+ *   un coup (incrément, démarrage de la partie) ; l'adversaire est crédité de la cinématique.
  * - Autre carte : le lanceur, toujours au trait, est crédité de la cinématique de lancement.
  */
 export function commitCard(d: RoomData, color: Color, state: GameState, info: CardInfo): boolean {
   const turnChanges = state.pos.turn !== color;
+  const asMove = cardEndsTurn(CARDS[info.card], rulesOf(state));
   // La vitesse de la pendule dépend de l'état : le temps écoulé est figé avant de le changer.
   settleClock(d);
-  if (turnChanges) stopClock(d, color, !!info.ritual && !incrementSuspended(d.state));
+  if (turnChanges) stopClock(d, color, asMove && !incrementSuspended(d.state));
   d.state = state;
   d.lastActivity = now();
   if (turnChanges) {
-    if (info.ritual) {
+    if (asMove) {
       d.drawOffer = null;
-      if (d.state.ply >= 2) d.started = true;
+      if (isStarted(d.state)) d.started = true;
     }
     startClock(d);
     creditCinematic(d, d.state.pos.turn);
@@ -415,14 +459,28 @@ export function commitCard(d: RoomData, color: Color, state: GameState, info: Ca
 // test/server-draft.test.ts. Les choix restent dans `RoomData.draft` jusqu'à la révélation ; la vue n'en montre
 // que ce que `draftView` laisse passer.
 
-const COLORS: Color[] = ['w', 'b'];
-
-/** Choix des cartes d'une nouvelle partie avec cartes (null : sans cartes, ou réserve trop petite pour choisir). */
-export function newDraft(catalog: Catalog, timed: boolean, vsBot: boolean): DraftData | null {
+/**
+ * Choix des cartes d'une nouvelle partie (null : catalogue sans cartes). `count` : cartes par joueur des règles de la
+ * partie. Une réserve trop petite pour en choisir `count` est une erreur de configuration (checkRules la refuse au
+ * démarrage du serveur) : refus explicite, plus de tirage silencieux à la place du choix. `limits` : contraintes du
+ * tirage appliquées aussi au choix (DEAL.limitsInDraft), gardées dans le choix ; absentes, aucune.
+ */
+export function newDraft(
+  catalog: Catalog, timed: boolean, vsBot: boolean, count: number = rulesFor('classee').cardsPerPlayer, limits?: HandLimits,
+): DraftData | null {
   const pool = cardPool(catalog, timed, { vsBot });
-  if (pool.length < CARDS_PER_PLAYER) return null;
-  return { pool, deadline: null, picks: { w: null, b: null }, tentative: { w: [], b: [] } };
+  if (!pool.length) return null;
+  if (pool.length < count) {
+    throw new Error(`Choix des cartes impossible : la réserve n'a que ${pool.length} cartes pour ${count} cartes par joueur (voir checkRules).`);
+  }
+  // `limits` n'est écrit que s'il y en a : au défaut, le choix enregistré est le même qu'avant (témoins v1).
+  return { pool, deadline: null, picks: { w: null, b: null }, tentative: { w: [], b: [] }, ...(limits ? { limits } : {}) };
 }
+
+/** Cartes à choisir dans cette partie : celles de ses règles (RULES_V1 pour les parties d'avant le versionnement). */
+const draftCount = (d: RoomData) => rulesOf(d.state).cardsPerPlayer;
+/** Contraintes du tirage appliquées aussi au choix de cette partie, lues à sa création ; sinon aucune (décision Q4). */
+const draftLimits = (d: RoomData) => d.draft?.limits;
 
 /**
  * Ouvre (ou rouvre, après un redémarrage) le choix d'une partie active : échéance entière à partir de maintenant,
@@ -431,10 +489,12 @@ export function newDraft(catalog: Catalog, timed: boolean, vsBot: boolean): Draf
 export function openDraft(d: RoomData): boolean {
   const dr = d.draft;
   if (!dr || d.status !== 'active') return false;
-  dr.deadline = now() + DRAFT_MS;
+  dr.deadline = now() + dealSettings().draftMs;
   for (const c of COLORS) {
     const seat = d.seats[c];
-    if (seat?.kind === 'bot' && !dr.picks[c]) dr.picks[c] = chooseBotDraft(dr.pool, seat.level ?? 2);
+    if (seat?.kind === 'bot' && !dr.picks[c]) {
+      dr.picks[c] = chooseBotDraft(dr.pool, botLevelOr(seat.level), Math.random, { count: draftCount(d), limits: draftLimits(d) });
+    }
   }
   return !!(dr.picks.w && dr.picks.b);
 }
@@ -445,13 +505,14 @@ export const resumeDraft = openDraft;
 export type DraftOutcome = { ok: false; error: string } | { ok: true; validated: boolean; complete: boolean };
 
 /**
- * Choix de `color` : validé (`confirm`, exactement 3 cartes, définitif, idempotent) ou provisoire (0 à 3 cartes).
- * `validated` : un nouveau choix vient d'être validé ; `complete` : les deux camps ont validé.
+ * Choix de `color` : validé (`confirm`, exactement `count` cartes, définitif, idempotent) ou provisoire (de 0 à
+ * `count` cartes), `count` étant le nombre de cartes des règles de la partie (draftCount). `validated` : un nouveau
+ * choix vient d'être validé ; `complete` : les deux camps ont validé.
  */
 export function submitDraft(d: RoomData, color: Color, cards: readonly unknown[], confirm: boolean): DraftOutcome {
   const dr = d.draft;
   if (d.status !== 'active' || !dr?.deadline) return { ok: false, error: 'Aucun choix de cartes en cours.' };
-  const err = draftRefusal(dr.pool, cards, !confirm);
+  const err = draftRefusal(dr.pool, cards, !confirm, draftCount(d), draftLimits(d));
   if (err) return { ok: false, error: err };
   const chosen = cards.slice() as CardId[];
   const done = dr.picks[color];
@@ -467,24 +528,37 @@ export function submitDraft(d: RoomData, color: Color, cards: readonly unknown[]
   return { ok: true, validated: true, complete: !!(dr.picks.w && dr.picks.b) };
 }
 
+/** Fin du choix : camps qui n'avaient pas validé (`auto`), et parmi eux ceux qui ont reçu des cartes au hasard. */
+export interface DraftClosure {
+  auto: Color[];
+  /** Camps dont la sélection provisoire avait moins de cartes que la partie n'en demande : complétés au hasard. */
+  filled: Color[];
+}
+
 /**
  * Fin du choix : chaque camp reçoit ses cartes validées, ou sa sélection provisoire complétée au hasard. Les mains
- * sont données à l'état (révélées), le choix est retiré. Renvoie les camps complétés au hasard.
+ * sont données à l'état (révélées), le choix est retiré. Une sélection provisoire déjà complète est gardée telle
+ * quelle : ce camp est dans `auto` (il n'avait pas validé), pas dans `filled` (aucune carte tirée au hasard).
  */
-export function closeDraft(d: RoomData, rand: () => number = Math.random): Color[] {
+export function closeDraft(d: RoomData, rand: () => number = Math.random): DraftClosure {
   const dr = d.draft;
-  if (!dr) return [];
+  if (!dr) return { auto: [], filled: [] };
+  const count = draftCount(d);
   const auto: Color[] = [];
+  const filled: Color[] = [];
   const hands: Record<Color, CardId[]> = { w: [], b: [] };
   for (const c of COLORS) {
     const picked = dr.picks[c];
-    if (!picked) auto.push(c);
-    hands[c] = picked ?? completeDraft(dr.pool, dr.tentative[c], rand);
+    if (!picked) {
+      auto.push(c);
+      if (dr.tentative[c].length < count) filled.push(c);
+    }
+    hands[c] = picked ?? completeDraft(dr.pool, dr.tentative[c], rand, count, draftLimits(d));
   }
   d.state = withHands(d.state, hands);
   d.draft = null;
   d.lastActivity = now();
-  return auto;
+  return { auto, filled };
 }
 
 /** Ce qu'un joueur (ou un spectateur, `you` null) voit du choix en cours : jamais les cartes de l'adversaire. */
@@ -493,9 +567,10 @@ export function draftView(d: RoomData, you: Color | null): DraftView | null {
   if (!dr || d.status !== 'active' || !dr.deadline) return null;
   return {
     pool: dr.pool.slice(),
-    count: CARDS_PER_PLAYER,
+    count: draftCount(d),
     deadline: dr.deadline,
     msLeft: Math.max(0, dr.deadline - now()),
+    totalMs: dealSettings().draftMs,
     chosen: { w: !!dr.picks.w, b: !!dr.picks.b },
     mine: you ? (dr.picks[you] ?? dr.tentative[you]).slice() : [],
   };
@@ -505,11 +580,11 @@ export function draftView(d: RoomData, you: Color | null): DraftView | null {
 function closeDraftRoom(room: Room) {
   const d = room.d;
   if (!d.draft || d.status !== 'active') return;
-  const auto = closeDraft(d);
+  const { auto, filled } = closeDraft(d);
   updateFirstMoveDeadline(room);
   startClock(d);
   armTimers(room);
-  broadcast(room, { type: 'reveal', auto });
+  broadcast(room, { type: 'reveal', auto, filled });
   maybeBot(room);
 }
 
@@ -534,7 +609,7 @@ function armTimers(room: Room) {
   const ck = room.d.clock;
   if (ck?.running) {
     const c = ck.running;
-    const ms = Math.max(0, remaining(room.d, c) / rate(room.d, c)) + 30;
+    const ms = Math.max(0, remaining(room.d, c) / rate(room.d, c)) + TIMINGS.flagMarginMs;
     room.flagTimer = setTimeout(() => checkFlag(room), Math.min(ms, 2 ** 31 - 1));
   }
   if (room.d.firstMoveDeadline) {
@@ -564,9 +639,11 @@ function updateFirstMoveDeadline(room: Room) {
   const s = room.d.state;
   const turnSeat = room.d.seats[s.pos.turn];
   // Pendant le choix des cartes, pas de délai : il commence à la révélation des mains.
-  // Parties de l'accueil : pas de délai, l'IA joue pour celui qui ne joue pas (relais)
+  // Parties de l'accueil : pas de délai, l'IA joue pour celui qui ne joue pas (relais) ; relais coupé
+  // (FEATURE_HOME_RELAY=0) : le délai ordinaire, sinon une partie désertée resterait ouverte sans fin.
+  const relayed = !!room.d.relay && FEATURES.homeRelay;
   room.d.firstMoveDeadline =
-    room.d.status === 'active' && !room.d.draft && !room.d.started && !room.d.relay && turnSeat?.kind !== 'bot' ? now() + FIRST_MOVE_MS : null;
+    room.d.status === 'active' && !room.d.draft && !room.d.started && !relayed && turnSeat?.kind !== 'bot' ? now() + TIMINGS.firstMoveMs : null;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -599,17 +676,59 @@ export function botSeat(level: BotLevel): Seat {
   };
 }
 
+/** Contexte de règles d'une nouvelle partie (RULES_BY_CONTEXT) : accueil, contre l'IA, invitation, classée, amicale. */
+export function contextOf(o: { mode: GameMode; rated: boolean; relay?: boolean }): RulesContext {
+  if (o.relay) return 'accueil';
+  if (o.mode === 'bot') return 'ia';
+  if (o.mode === 'invite') return 'invitation';
+  return o.rated ? 'classee' : 'amicale';
+}
+
+export interface NewRoomOptions {
+  mode: GameMode;
+  rated: boolean;
+  /** Identifiant de cadence (TIME_CONTROLS, archivées comprises). Inconnu : refusé, sauf si `clock` est donnée. */
+  tc: string;
+  catalog: Catalog;
+  creator: string;
+  seats: Record<Color, Seat | null>;
+  /** Mains tirées au hasard, sans choix des cartes (parties de l'accueil). Sinon : le choix si DEAL.draft. */
+  deal?: boolean;
+  /** L'IA joue pour un joueur qui ne joue pas (parties de l'accueil). */
+  relay?: boolean;
+  /** Contexte des règles (défaut : contextOf, d'après le mode). */
+  ctx?: RulesContext;
+  /** Règles imposées (tests) ; défaut : rulesFor(ctx), les règles du moment. */
+  rules?: Rules;
+  /** Pendule imposée (revanche : celle de la partie d'origine, même si sa cadence a été retirée depuis). */
+  clock?: TimeControl | null;
+}
+
 /**
- * Nouvelle partie. Avec cartes, elle commence par le choix des cartes (D5) : mains vides jusqu'à la révélation.
- * Le mode miroir n'existe plus (le paramètre `mirror` des anciens clients est ignoré). Exportée pour les tests.
+ * Nouvelle partie, avec les règles du moment de son contexte (rulesFor, photographiées dans l'état seulement si elles
+ * diffèrent de RULES_V1) et la mise en place du moment (dealSettings) : choix des cartes (D5, mains vides jusqu'à la
+ * révélation) ou tirage. Un catalogue qui n'est plus proposé (Duel : anciennes parties, tests) suit RULES_V1. Une
+ * cadence inconnue est refusée (plus de partie « sans pendule » silencieuse). Le mode miroir n'existe plus (le
+ * paramètre `mirror` des anciens clients est ignoré). Exportée pour les tests.
  */
-export function newRoom(opts: { mode: GameMode; rated: boolean; tc: string; catalog: Catalog; creator: string; seats: Record<Color, Seat | null>; /** Mains tirées au hasard, sans choix des cartes (parties de l'accueil). */ deal?: boolean; /** L'IA joue pour un joueur qui ne joue pas (parties de l'accueil). */ relay?: boolean }): Room {
-  const tc = tcFromId(opts.tc) ?? null;
+export function newRoom(opts: NewRoomOptions): Room {
+  const tc = opts.clock !== undefined ? opts.clock : tcFromId(opts.tc);
+  if (tc === undefined) throw new Error(`Cadence inconnue : ${opts.tc}.`);
+  const rules = opts.rules ?? (CATALOG_RULES[opts.catalog]?.offered === false ? RULES_V1 : rulesFor(opts.ctx ?? contextOf(opts)));
+  const deal = dealSettings();
   let id = gameId();
   while (rooms.has(id)) id = gameId();
   // Réserve : contre l'IA, pas de Sablier fou (il ne pénaliserait que l'humain) ; sans pendule non plus.
   const vsBot = opts.mode === 'bot';
-  const draft = opts.deal ? null : newDraft(opts.catalog, !!tc, vsBot);
+  const drawn = opts.deal || !deal.draft;
+  const draft = drawn ? null : newDraft(opts.catalog, !!tc, vsBot, rules.cardsPerPlayer, deal.limitsInDraft ? deal.handLimits : undefined);
+  const hands = draft ? { w: [], b: [] } : dealHands(!!tc, false, Math.random, opts.catalog, { vsBot, rules, deal });
+  // Tirage plus court que les règles (contraintes du tirage impossibles à tenir) : refus explicite, jamais une main
+  // silencieusement plus courte. checkRules l'empêche au démarrage ; ceci protège des règles imposées (tests).
+  const dealt = [hands.w.length, hands.b.length];
+  if (!draft && dealt.some(n => n > 0) && dealt.some(n => n !== rules.cardsPerPlayer)) {
+    throw new Error(`Tirage impossible : mains de ${dealt.join(' et ')} cartes pour ${rules.cardsPerPlayer} cartes par joueur (voir checkRules).`);
+  }
   const room = new Room({
     id,
     mode: opts.mode,
@@ -620,7 +739,7 @@ export function newRoom(opts: { mode: GameMode; rated: boolean; tc: string; cata
     catalog: opts.catalog,
     creator: opts.creator,
     seats: opts.seats,
-    state: createGame(draft ? { w: [], b: [] } : dealHands(!!tc, false, Math.random, opts.catalog, { vsBot }), !!tc, opts.catalog),
+    state: createGame(hands, !!tc, opts.catalog, { rules }),
     draft,
     clock: tc ? { initial: tc.initial, increment: tc.increment, w: tc.initial * 1000, b: tc.initial * 1000, running: null, since: now() } : null,
     drawOffer: null,
@@ -651,11 +770,6 @@ function begin(room: Room) {
   armRelay(room);
 }
 
-function elo(a: number, b: number, score: number, games: number): number {
-  const k = games < 30 ? 40 : 20;
-  return Math.round(k * (score - 1 / (1 + 10 ** ((b - a) / 400))));
-}
-
 function endGame(room: Room, result?: Result) {
   const d = room.d;
   if (d.status === 'ended') return;
@@ -672,78 +786,167 @@ function endGame(room: Room, result?: Result) {
   if (room.relayTimer) clearTimeout(room.relayTimer);
   room.relayTimer = null;
   const { w, b } = d.seats;
-  if (d.rated && w?.userId && b?.userId && r.reason !== 'aborted') {
-    const sw = r.winner === 'w' ? 1 : r.winner === 'b' ? 0 : 0.5;
-    d.ratingDiff = {
-      w: elo(w.rating ?? 1200, b.rating ?? 1200, sw, w.gamesPlayed),
-      b: elo(b.rating ?? 1200, w.rating ?? 1200, 1 - sw, b.gamesPlayed),
-    };
-  }
+  if (d.rated && w?.userId && b?.userId && r.reason !== 'aborted') d.ratingDiff = ratingDiffs(w, b, r.winner);
   broadcast(room, { type: 'end' });
-  void persistResult(room).catch(e => console.error('Fin de partie :', e));
+  void persistResult(room);
 }
 
-async function persistResult(room: Room) {
-  const d = room.d;
-  const r = d.state.result!;
-  if (room.saveTimer) {
-    clearTimeout(room.saveTimer);
-    room.saveTimer = null;
+/**
+ * Classement d'une partie classée terminée, dans la transaction `c` : écarts (ratingDiff) et compteurs de parties.
+ * Garde-fou : même après un redémarrage ou un nouvel essai, il n'est appliqué qu'une fois par partie
+ * (ratings_applied). Renvoie vrai s'il vient d'être appliqué.
+ */
+async function applyRatings(c: DbClient, d: RoomData): Promise<boolean> {
+  const r = d.state.result;
+  if (!d.rated || !d.ratingDiff || !r || r.reason === 'aborted') return false;
+  const first = await c.query(`UPDATE games SET ratings_applied = true WHERE id = $1 AND NOT ratings_applied RETURNING id`, [d.id]);
+  if (!first.rowCount) return false;
+  for (const color of COLORS) {
+    const seat = d.seats[color]!;
+    if (!seat.userId) continue;
+    const outcome = r.winner === null ? 'draws' : r.winner === color ? 'wins' : 'losses';
+    await c.query(
+      `UPDATE users SET rating = greatest(${RATING.floor}, rating + $1), games_played = games_played + 1, ${outcome} = ${outcome} + 1 WHERE id = $2`,
+      [d.ratingDiff[color], seat.userId],
+    );
   }
-  await tx(async c => {
+  return true;
+}
+
+/** Salle terminée et classement, en une transaction. */
+const saveResult = (room: Room) =>
+  tx(async c => {
     await saveRoom(room, c);
-    if (!d.rated || !d.ratingDiff || r.reason === 'aborted') return;
-    // Garde-fou : même après un redémarrage, le classement n'est appliqué qu'une fois par partie
-    const first = await c.query(`UPDATE games SET ratings_applied = true WHERE id = $1 AND NOT ratings_applied RETURNING id`, [d.id]);
-    if (!first.rowCount) return;
-    for (const color of ['w', 'b'] as Color[]) {
-      const seat = d.seats[color]!;
-      if (!seat.userId) continue;
-      const outcome = r.winner === null ? 'draws' : r.winner === color ? 'wins' : 'losses';
-      await c.query(
-        `UPDATE users SET rating = greatest(100, rating + $1), games_played = games_played + 1, ${outcome} = ${outcome} + 1 WHERE id = $2`,
-        [d.ratingDiff![color], seat.userId],
-      );
-    }
+    await applyRatings(c, room.d);
   });
+
+/**
+ * Fin de partie enregistrée (saveResult). Si la base ne répond pas, nouvel essai après PERSIST.retryMs,
+ * PERSIST.attempts fois au plus ; la partie reste en mémoire en attendant (resultPending), et un arrêt du serveur
+ * pendant ce temps l'enregistre (flushRooms). Exportée pour les tests.
+ */
+export async function persistResult(room: Room): Promise<boolean> {
+  const d = room.d;
+  room.resultPending = true;
+  for (let attempt = 1; ; attempt++) {
+    if (room.saveTimer) {
+      clearTimeout(room.saveTimer);
+      room.saveTimer = null;
+    }
+    try {
+      await saveResult(room);
+      room.resultPending = false;
+      return true;
+    } catch (e) {
+      if (attempt >= PERSIST.attempts) {
+        console.error(`Fin de partie ${d.id} non enregistrée après ${attempt} essais :`, e);
+        return false;
+      }
+      console.error(`Fin de partie ${d.id} : enregistrement impossible (essai ${attempt} sur ${PERSIST.attempts}), nouvel essai :`, e);
+      await sleep(PERSIST.retryMs);
+    }
+  }
+}
+
+/**
+ * Rattrapage au démarrage : parties classées terminées en base dont le classement n'a pas été appliqué (fin de partie
+ * sauvegardée sans lui : enregistrement interrompu entre deux écritures, ou ligne écrite par une version d'avant
+ * cette transaction). Même garde-fou (ratings_applied) : jamais deux fois. Une fin de partie que la base n'a jamais
+ * reçue (base injoignable jusqu'à l'arrêt) n'est pas rattrapable : la ligne reste celle de la dernière sauvegarde, et
+ * la partie est reprise au redémarrage. Exportée pour les tests.
+ */
+export async function applyPendingRatings(): Promise<number> {
+  const rows = await q<{ data: RoomData }>(
+    `SELECT data FROM games WHERE status = 'ended' AND rated AND NOT ratings_applied AND white_diff IS NOT NULL AND black_diff IS NOT NULL`,
+  );
+  let n = 0;
+  for (const { data } of rows) {
+    try {
+      if (await tx(c => applyRatings(c, data))) n++;
+    } catch (e) {
+      console.error(`Classement de la partie ${data.id} (rattrapage) :`, e);
+    }
+  }
+  if (n) console.log(`Classement appliqué à ${n} partie(s) terminée(s) dont l'enregistrement avait été interrompu.`);
+  return n;
 }
 
 // ---------------------------------------------------------------------------------------------
 // IA
 
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+/** Un coup légal au hasard, sans carte (repli de l'IA après trop d'échecs). */
+function randomReply(s: GameState): BotReply {
+  const moves = legalMovesOf(s);
+  const m = moves[Math.floor(Math.random() * moves.length)];
+  return { id: 0, card: null, cards: [], move: m ? { from: m.from, to: m.to, promo: m.promo } : null };
+}
+
+/**
+ * Joue la décision de l'IA pour `color` : ses cartes dans l'ordre (reply.cards, ou reply.card d'un fil plus ancien),
+ * avec BOT_RUNTIME.cardPauseMs entre deux cartes et avant le coup (le temps de l'animation), puis le coup. `still` :
+ * l'IA joue-t-elle toujours (vérifié après chaque pause) ? Une carte refusée arrête les cartes suivantes ; le coup est
+ * alors abandonné (`keepMove` faux) ou tenté quand même (relais, comme avant).
+ */
+async function playReply(room: Room, color: Color, reply: BotReply, still: () => boolean, o: { label: string; keepMove: boolean }) {
+  const cards: BotCard[] = cardsOfReply(reply);
+  let move = reply.move;
+  for (let i = 0; i < cards.length; i++) {
+    if (!applyCard(room, color, cards[i].index, cards[i].targets).ok) {
+      if (!o.keepMove) move = null;
+      break;
+    }
+    if (i < cards.length - 1 || move) await sleep(BOT_RUNTIME.cardPauseMs);
+    if (!still()) return;
+  }
+  if (move && still()) {
+    const r = applyMove(room, color, move.from, move.to, move.promo as PieceType | undefined);
+    if (!r.ok) console.error(`${o.label}, coup refusé :`, r.error);
+  }
+}
+
+/**
+ * L'IA joue si elle a le trait : décision d'un fil de calcul (botPool), petite pause pour un rythme naturel, puis ses
+ * cartes et son coup (playReply). Un niveau inconnu (partie enregistrée par une autre version) prend le défaut. Une
+ * tentative qui ne joue rien alors que l'IA garde le trait (fil en panne, délai dépassé, décision refusée) est un
+ * échec ; après BOT_RUNTIME.maxFailures échecs consécutifs, l'IA joue un coup légal au hasard (la partie avance
+ * toujours) ; si même ce coup échoue, elle ne relance plus.
+ */
 function maybeBot(room: Room) {
   const d = room.d;
   if (d.status !== 'active' || room.botBusy || d.draft) return;
   const seat = d.seats[d.state.pos.turn];
   if (seat?.kind !== 'bot') return;
   room.botBusy = true;
+  const color = d.state.pos.turn;
   const ply = d.state.ply;
   const logLen = d.state.log.length;
   const started = now();
   const stale = () => d.status !== 'active' || d.state.ply !== ply || d.state.log.length !== logLen;
-  void botPool
-    .decide(d.state, seat.level!)
+  const fallback = room.botFailures >= BOT_RUNTIME.maxFailures;
+  if (fallback) console.error(`IA : ${room.botFailures} échecs de suite dans la partie ${d.id}, coup légal au hasard.`);
+  void (fallback ? Promise.resolve(randomReply(d.state)) : botPool.decide(d.state, botLevelOr(seat.level)))
     .then(async reply => {
       if (reply.error) console.error('IA :', reply.error);
       // Petite pause pour un rythme naturel
-      const wait = Math.max(0, 500 + Math.random() * 500 - (now() - started));
-      await new Promise(r => setTimeout(r, wait));
+      const wait = Math.max(0, BOT_RUNTIME.pauseMinMs + Math.random() * BOT_RUNTIME.pauseJitterMs - (now() - started));
+      await sleep(wait);
       if (stale()) return;
-      const color = d.state.pos.turn;
-      if (reply.card) {
-        if (!applyCard(room, color, reply.card.index, reply.card.targets).ok) reply.move = null;
-        else if (reply.move) await new Promise(r => setTimeout(r, BOT_CARD_PAUSE_MS));
-      }
-      if (reply.move && d.status === 'active' && d.state.pos.turn === color) {
-        const r = applyMove(room, color, reply.move.from, reply.move.to, reply.move.promo as PieceType | undefined);
-        if (!r.ok) console.error('IA, coup refusé :', r.error);
-      }
+      await playReply(room, color, reply, () => d.status === 'active' && d.state.pos.turn === color, { label: 'IA', keepMove: false });
     })
     .catch(e => console.error('IA :', e))
     .finally(() => {
       room.botBusy = false;
+      // Rien n'a été joué alors que l'IA garde le trait : un échec de plus. Sinon, le compte repart de zéro.
+      const stuck = d.status === 'active' && d.state.pos.turn === color && d.state.ply === ply && d.state.log.length === logLen;
+      room.botFailures = stuck ? room.botFailures + 1 : 0;
+      if (stuck && fallback) {
+        console.error(`IA : aucun coup possible dans la partie ${d.id}, l'IA ne relance plus.`);
+        return;
+      }
       // Si l'état a changé pendant le calcul (ou si l'IA doit rejouer), on relance.
-      if (d.status === 'active' && d.seats[d.state.pos.turn]?.kind === 'bot') setTimeout(() => maybeBot(room), 50);
+      if (d.status === 'active' && d.seats[d.state.pos.turn]?.kind === 'bot') setTimeout(() => maybeBot(room), BOT_RUNTIME.retryMs);
     });
 }
 
@@ -751,40 +954,38 @@ function maybeBot(room: Room) {
 // Relais de l'IA (parties en direct de l'accueil)
 //
 // Un joueur qui ne joue pas (aucun coup, l'échiquier pas touché) : l'IA joue pour lui, sans le faire attendre ni
-// faire attendre l'autre, jusqu'à ce qu'il reprenne la main. Premier coup : 10 s ; ensuite 30 s sans le moindre
-// signe de présence (game:activity). Relayé, il joue de lui-même dès qu'il veut : son coup lui rend la main. Si les
-// deux joueurs sont relayés, l'IA ne joue pas contre elle-même : la partie attend ; personne n'est plus là, elle
-// est annulée.
-
-const RELAY_FIRST_MS = 10_000;
-const RELAY_IDLE_MS = 30_000;
-const RELAY_LEVEL: BotLevel = 2;
+// faire attendre l'autre, jusqu'à ce qu'il reprenne la main. Premier coup : RELAY.firstMoveMs ; ensuite
+// RELAY.idleMs sans le moindre signe de présence (game:activity). Relayé, il joue de lui-même dès qu'il veut :
+// son coup lui rend la main. Si les deux joueurs sont relayés, l'IA ne joue pas contre elle-même : la partie attend ;
+// personne n'est plus là depuis RELAY.abandonMs, elle est annulée.
 
 export function armRelay(room: Room) {
   if (room.relayTimer) clearTimeout(room.relayTimer);
   room.relayTimer = null;
   const d = room.d;
-  if (!d.relay || d.status !== 'active' || d.state.result) return;
+  // Relais coupé (FEATURE_HOME_RELAY=0) : l'IA ne joue plus pour personne ; la partie suit les délais ordinaires
+  // (délai du premier coup : updateFirstMoveDeadline ; victoire réclamée contre un absent ; ménage des parties).
+  if (!d.relay || !FEATURES.homeRelay || d.status !== 'active' || d.state.result) return;
   const c = d.state.pos.turn;
   const seat = d.seats[c];
   if (!seat || seat.kind === 'bot') return;
   const other = opposite(c);
   if (d.standIn?.[other] && !d.standIn?.[c]) {
     // L'adversaire est déjà relayé : l'IA ne joue pas contre elle-même. On attend ce joueur ; si plus personne n'est
-    // sur la page depuis 30 s, la partie est annulée.
+    // sur la page depuis RELAY.abandonMs, la partie est annulée.
     if (room.away.w && room.away.b) {
       room.relayTimer = setTimeout(() => {
         if (d.status === 'active' && room.away.w && room.away.b) endGame(room, { winner: null, reason: 'aborted' });
-      }, 30_000);
+      }, RELAY.abandonMs);
     }
     return;
   }
   let ms: number;
-  if (d.standIn?.[c]) ms = 900 + Math.random() * 700;
+  if (d.standIn?.[c]) ms = RELAY.delayMinMs + Math.random() * RELAY.delayJitterMs;
   else {
     const first = d.state.ply < (c === 'w' ? 1 : 2);
     const since = Math.max(room.turnSince, room.activityAt[c]);
-    ms = Math.max(0, since + (first ? RELAY_FIRST_MS : RELAY_IDLE_MS) - now());
+    ms = Math.max(0, since + (first ? RELAY.firstMoveMs : RELAY.idleMs) - now());
   }
   room.relayTimer = setTimeout(() => relayPlay(room, c), ms);
 }
@@ -792,7 +993,7 @@ export function armRelay(room: Room) {
 function relayPlay(room: Room, c: Color) {
   const d = room.d;
   room.relayTimer = null;
-  if (!d.relay || d.status !== 'active' || d.state.pos.turn !== c || room.relayBusy) return;
+  if (!d.relay || !FEATURES.homeRelay || d.status !== 'active' || d.state.pos.turn !== c || room.relayBusy) return;
   if (d.standIn?.[opposite(c)] && !d.standIn?.[c]) return;
   if (!d.standIn?.[c]) {
     d.standIn = { w: !!d.standIn?.w, b: !!d.standIn?.b, [c]: true } as Record<Color, boolean>;
@@ -802,17 +1003,12 @@ function relayPlay(room: Room, c: Color) {
   const len = d.state.log.length;
   const still = () => d.status === 'active' && d.state.pos.turn === c && d.state.log.length === len && !!d.standIn?.[c];
   void botPool
-    .decide(d.state, RELAY_LEVEL)
+    .decide(d.state, RELAY.level)
     .then(async reply => {
       if (reply.error) console.error('Relais de l’IA :', reply.error);
       if (!still()) return;
-      if (reply.card && applyCard(room, c, reply.card.index, reply.card.targets).ok && reply.move) {
-        await new Promise(r => setTimeout(r, BOT_CARD_PAUSE_MS));
-      }
-      if (reply.move && d.status === 'active' && d.state.pos.turn === c && d.standIn?.[c]) {
-        const r = applyMove(room, c, reply.move.from, reply.move.to, reply.move.promo as PieceType | undefined);
-        if (!r.ok) console.error('Relais de l’IA, coup refusé :', r.error);
-      }
+      const playing = () => d.status === 'active' && d.state.pos.turn === c && !!d.standIn?.[c];
+      await playReply(room, c, reply, playing, { label: 'Relais de l’IA', keepMove: true });
     })
     .catch(e => console.error('Relais de l’IA :', e))
     .finally(() => {
@@ -833,7 +1029,64 @@ function takeOver(room: Room, c: Color) {
 // ---------------------------------------------------------------------------------------------
 // Actions
 
-type Ack = { ok: boolean; error?: string };
+type Ack = { ok: boolean; error?: string; code?: AckCode };
+
+// ---------------------------------------------------------------------------------------------
+// Interrupteurs (FEATURES : défauts de src/shared/config/features.ts, FEATURE_* de l'environnement). Le serveur refuse
+// ce qui est coupé, avec le code 'feature-off' ; au défaut, tout est ouvert et rien de ceci ne répond jamais.
+
+/** Message de refus d'une fonction coupée (seulement celles que le serveur refuse lui-même). */
+const FEATURE_OFF: Partial<Record<FeatureKey, string>> = {
+  ranked: 'Les parties classées sont fermées pour le moment.',
+  friendlyQueue: 'La recherche de partie amicale est fermée pour le moment.',
+  invites: 'Les invitations sont fermées pour le moment.',
+  botGames: 'Les parties contre l’IA sont fermées pour le moment.',
+  guestPlay: 'Connectez-vous pour jouer : le jeu sans compte est fermé pour le moment.',
+  live: 'Les parties en direct sont fermées pour le moment.',
+  homeDuel: 'Les parties de l’accueil sont fermées pour le moment.',
+  newGames: 'Le site est en maintenance : aucune nouvelle partie pour le moment. Les parties en cours continuent.',
+};
+
+/** Refus « fonction coupée » (code 'feature-off'). */
+export const featureOff = (k: FeatureKey): Ack & { error: string } => ({
+  ok: false,
+  error: FEATURE_OFF[k] ?? 'Cette fonction est fermée pour le moment.',
+  code: 'feature-off',
+});
+
+/** Interrupteur d'une sorte de partie : accueil (relais), contre l'IA, invitation, classée, amicale (comme contextOf). */
+export function featureOfGame(o: { mode: GameMode; rated: boolean; relay?: boolean }): FeatureKey {
+  if (o.relay) return 'homeDuel';
+  if (o.mode === 'bot') return 'botGames';
+  if (o.mode === 'invite') return 'invites';
+  return o.rated ? 'ranked' : 'friendlyQueue';
+}
+
+/**
+ * Peut-on créer une partie de cette sorte pour ce joueur ? null si oui ; sinon le refus : maintenance (newGames),
+ * sorte de partie coupée, ou invité alors que le jeu sans compte est coupé (guestPlay). Création par POST /games, file,
+ * accueil et revanche.
+ */
+export function creationRefusal(o: { mode: GameMode; rated: boolean; relay?: boolean }, identity: Identity): (Ack & { error: string }) | null {
+  if (!FEATURES.newGames) return featureOff('newGames');
+  const k = featureOfGame(o);
+  if (!FEATURES[k]) return featureOff(k);
+  if (!identity.user && !FEATURES.guestPlay) return featureOff('guestPlay');
+  return null;
+}
+
+/**
+ * Version du protocole annoncée par le client à la connexion (`io({ auth: { v } })`) différente de celle du serveur :
+ * l'onglet date d'une autre version du site. Absente : client d'avant la version du protocole, accepté (il ne saurait
+ * pas recharger).
+ */
+export function protocolMismatch(auth: unknown): boolean {
+  const v = (auth as { v?: unknown } | null | undefined)?.v;
+  return v !== undefined && v !== null && v !== PROTOCOL_VERSION;
+}
+
+/** Refus de toute action d'un client d'une autre version (code 'outdated') : il doit recharger la page. */
+export const OUTDATED: Ack & { error: string } = { ok: false, error: 'Le site a été mis à jour : rechargez la page.', code: 'outdated' };
 
 /** Coup reçu d'un joueur ou de l'IA (exporté pour les tests). */
 export function applyMove(room: Room, color: Color, from: number, to: number, promo?: PieceType): Ack {
@@ -897,8 +1150,25 @@ export function abortRoom(room: Room): Ack {
 }
 
 /**
- * Revanche : sièges copiés, couleurs inversées, classement et équipement (sorts, roi, sceau) relus en base. Renvoie la
- * nouvelle salle (null si la revanche existe déjà). Exportée pour les tests.
+ * Mise en place d'une salle, reprise par la revanche : mains tirées (`deal`) et relais de l'IA. Rien de plus n'est
+ * écrit dans la salle : seules les parties de l'accueil tirent leurs mains, et elles sont toutes relayées.
+ */
+export const setupOf = (d: Pick<RoomData, 'relay'>) => ({ deal: !!d.relay, relay: !!d.relay });
+
+/**
+ * La proposition de revanche a-t-elle expiré (TIMINGS.rematchTtlMs après la fin de la partie) ? Jamais au défaut
+ * (null : elle vit tant que la salle est en mémoire). Après un redémarrage, le délai repart du rechargement de la salle.
+ * Exportée pour les tests.
+ */
+export function rematchExpired(room: Room, ttl: number | null = TIMINGS.rematchTtlMs): boolean {
+  return ttl !== null && room.d.status === 'ended' && now() - room.endedAt > ttl;
+}
+
+/**
+ * Revanche : sièges copiés, couleurs inversées, classement et équipement (sorts, roi, sceau) relus en base. Pendule de
+ * la partie d'origine (d.clock, même si sa cadence a été retirée depuis), sa mise en place (setupOf), et les règles
+ * du moment (décision Q3 : c'est une nouvelle partie). Renvoie la nouvelle salle (null si la revanche existe déjà).
+ * Exportée pour les tests.
  */
 export async function createRematch(room: Room): Promise<Room | null> {
   const d = room.d;
@@ -930,8 +1200,15 @@ export async function createRematch(room: Room): Promise<Room | null> {
     throw e;
   }
   // Revanche d'une ancienne partie Duel : le Duel n'est plus proposé, elle se joue avec les Pouvoirs.
-  const catalog = offeredCatalog(d.catalog ?? d.state.catalog);
-  const next = newRoom({ mode: d.mode, rated: d.rated, tc: d.tc, catalog, creator: d.creator, seats });
+  const catalog = offeredCatalog(roomCatalog(d));
+  const clock = d.clock ? { initial: d.clock.initial, increment: d.clock.increment } : null;
+  let next: Room;
+  try {
+    next = newRoom({ mode: d.mode, rated: d.rated, tc: d.tc, catalog, creator: d.creator, seats, clock, ...setupOf(d) });
+  } catch (e) {
+    room.rematchPending = false;
+    throw e;
+  }
   d.rematch.next = next.d.id;
   for (const s of room.sockets) s.emit('game:redirect', { from: d.id, to: next.d.id });
   broadcast(room, { type: 'sync' });
@@ -948,14 +1225,47 @@ interface QueueEntry {
   since: number;
   /** Pseudo de l'invité (file amicale). */
   name?: string;
+  /** Catalogue demandé (celui de la partie si ce joueur attendait le premier). */
+  catalog: Catalog;
 }
 const queues = new Map<string, QueueEntry[]>();
+/**
+ * Demande d'entrée en file en cours, par joueur : une demande plus récente, ou queue:leave, rend caduque celle qui
+ * attend encore la lecture de son classement (le joueur parti n'est jamais mis en file ni apparié).
+ */
+const queueTickets = new Map<string, number>();
+let queueTicket = 0;
+/**
+ * Joueurs retirés de la file pour une partie en cours de création (sièges relus en base) : si la création échoue, ils
+ * y sont remis, sauf s'ils l'ont quittée entre-temps (quitQueue les retire d'ici).
+ */
+const queueMatching = new Set<string>();
 
 function leaveQueues(key: string) {
   for (const [tc, list] of queues) {
     const rest = list.filter(e => e.key !== key);
     if (rest.length !== list.length) queues.set(tc, rest);
   }
+}
+
+/** Le joueur quitte la file (queue:leave, déconnexion) : son entrée, et toute demande encore en cours. Exportée pour les tests. */
+export function quitQueue(key: string) {
+  queueTickets.delete(key);
+  queueMatching.delete(key);
+  leaveQueues(key);
+}
+
+/**
+ * File d'une demande : cadence, classée ou amicale, catalogue ; une seule file pour tous les catalogues (`*`) si
+ * MATCHMAKING.splitByCatalog est faux. Exportée pour les tests.
+ */
+export function queuePool(tc: string, rated: boolean, catalog: Catalog, split: boolean = MATCHMAKING.splitByCatalog): string {
+  return `${tc}|${rated ? 'classee' : 'amicale'}|${split ? catalog : '*'}`;
+}
+
+/** Clés des joueurs en attente, par file (`tc|classee|catalogue`, voir queuePool). Pour les tests. */
+export function queueKeys(): Record<string, string[]> {
+  return Object.fromEntries([...queues].filter(([, l]) => l.length).map(([pool, l]) => [pool, l.map(e => e.key)]));
 }
 
 function queueSize() {
@@ -967,50 +1277,81 @@ function queueSize() {
 /**
  * File d'attente. Classée : comptes uniquement, appariement par classement Elo.
  * Amicale : ouverte aux invités (pseudo anonyme), non classée, premier arrivé premier servi.
+ *
+ * Concurrence : la seule attente (le classement relu en base) a lieu AVANT de toucher à la file ; ensuite, la sortie
+ * des autres files, la lecture de la file, le choix de l'adversaire et l'écriture se font sans aucun await. Deux
+ * demandes simultanées ne lisent donc jamais la même liste périmée (double appariement, entrée perdue), et un joueur
+ * parti pendant l'attente n'est ni apparié ni remis en file. Exportée pour les tests (`sock` : identité et emit).
  */
-async function joinQueue(sock: Sock, tc: string, rated: boolean, guestName?: string, catalog: Catalog = 'climats'): Promise<Ack> {
+export async function joinQueue(sock: Pick<Sock, 'data' | 'emit'>, tc: string, rated: boolean, guestName?: string, catalog: Catalog = DEFAULT_CATALOG): Promise<Ack> {
   const identity = sock.data.identity;
+  const off = creationRefusal({ mode: 'quick', rated }, identity);
+  if (off) return off;
   if (rated && !identity.user) return { ok: false, error: 'Connectez-vous pour jouer en partie classée.' };
   if (!QUICK_CONTROLS.includes(tc)) return { ok: false, error: 'Cadence inconnue.' };
   let name: string | undefined;
   if (!identity.user) {
     const parsed = guestNameSchema.safeParse(guestName ?? '');
-    name = parsed.success ? parsed.data : `Anonyme-${Math.floor(1000 + Math.random() * 9000)}`;
+    const { anonymousPrefix: prefix, anonymousMin: min, anonymousMax: max } = MATCHMAKING;
+    name = parsed.success ? parsed.data : `${prefix}${Math.floor(min + Math.random() * (max - min + 1))}`;
   }
   const key = keyOf(identity);
+  // Une nouvelle demande remplace la précédente : l'ancienne entrée sort tout de suite (elle ne peut plus être
+  // appariée pendant l'attente du classement).
+  const ticket = ++queueTicket;
+  queueTickets.set(key, ticket);
   leaveQueues(key);
-  const pool = `${tc}|${rated ? 'classee' : 'amicale'}|${catalog}`;
+  // 1. Attente : classement à jour (la seule lecture en base avant l'appariement).
+  const me = identity.user ? (await userById(identity.user.id))?.rating ?? identity.user.rating : RATING.initial;
+  // 2. Section synchrone, sans aucun await. Le joueur est parti, ou une demande plus récente a pris la place : rien.
+  if (queueTickets.get(key) !== ticket) return { ok: true };
+  queueTickets.delete(key);
+  leaveQueues(key);
+  const pool = queuePool(tc, rated, catalog);
   const list = queues.get(pool) ?? [];
-  const me = identity.user ? (await userById(identity.user.id))?.rating ?? identity.user.rating : 1200;
   // Classée : adversaire le plus proche en classement, avec une tolérance qui s'élargit avec l'attente
   const candidates = list
     .filter(e => e.key !== key)
-    .filter(e => !rated || Math.abs(e.rating - me) <= 250 + ((now() - e.since) / 1000) * 25)
+    .filter(e => !rated || Math.abs(e.rating - me) <= matchTolerance(now() - e.since))
     .sort((a, b) => (rated ? Math.abs(a.rating - me) - Math.abs(b.rating - me) : a.since - b.since));
   const opp = candidates[0];
   if (!opp) {
-    list.push({ key, identity, rating: me, since: now(), name });
-    queues.set(pool, list);
+    queues.set(pool, [...list, { key, identity, rating: me, since: now(), name, catalog }]);
     sock.emit('queue:status', { waiting: true, tc, since: now(), players: queueSize() });
     return { ok: true };
   }
   queues.set(pool, list.filter(e => e !== opp));
-  const [a, b] = await Promise.all([seatFor(identity, name), seatFor(opp.identity, opp.name)]);
-  const white = Math.random() < 0.5;
-  const room = newRoom({ mode: 'quick', rated, tc, catalog, creator: key, seats: white ? { w: a, b } : { w: b, b: a } });
-  io.to(`id:${key}`).to(`id:${opp.key}`).emit('queue:matched', { gameId: room.d.id });
+  queueMatching.add(opp.key);
+  // 3. Appariés (plus personne ne peut les prendre) : sièges relus en base, puis la partie, avec le catalogue de celui
+  // qui attendait (le même que le sien si les files sont séparées par catalogue).
+  let room: Room;
+  try {
+    const [a, b] = await Promise.all([seatFor(identity, name), seatFor(opp.identity, opp.name)]);
+    const white = Math.random() < 0.5;
+    room = newRoom({ mode: 'quick', rated, tc, catalog: opp.catalog, creator: key, seats: white ? { w: a, b } : { w: b, b: a } });
+  } catch (e) {
+    // Création impossible (base qui ne répond pas) : celui qui attendait reprend sa place en tête de file, s'il ne
+    // l'a pas quittée ni ne s'est remis en file entre-temps ; l'erreur remonte au demandeur.
+    if (queueMatching.delete(opp.key) && ![...queues.values()].some(l => l.some(x => x.key === opp.key))) {
+      queues.set(pool, [opp, ...(queues.get(pool) ?? [])]);
+    }
+    throw e;
+  }
+  queueMatching.delete(opp.key);
+  if (io) io.to(`id:${key}`).to(`id:${opp.key}`).emit('queue:matched', { gameId: room.d.id });
   return { ok: true };
 }
 
-/** Une entrée de file ne survit pas si elle ne trouve personne en 10 minutes. */
+/** Une entrée de file ne survit pas si elle ne trouve personne en MATCHMAKING.entryTtlMs. */
 setInterval(() => {
-  for (const [tc, list] of queues) queues.set(tc, list.filter(e => now() - e.since < 600_000));
-}, 30_000).unref();
+  for (const [tc, list] of queues) queues.set(tc, list.filter(e => now() - e.since < MATCHMAKING.entryTtlMs));
+}, MATCHMAKING.sweepMs).unref();
 
 // ---------------------------------------------------------------------------------------------
-// Accueil : deux visiteurs arrivés depuis moins de 30 s, l'échiquier du haut sous les yeux, jouent l'un contre l'autre
-// sur cet échiquier, sans rien demander (retour du fondateur du 7 novembre). Partie amicale, sans pendule, mains tirées
-// au hasard comme sur l'accueil ; personne ne joue le premier coup en 45 s : elle est annulée (FIRST_MOVE_MS).
+// Accueil : deux visiteurs arrivés depuis moins de HOME.pairWindowMs, l'échiquier du haut sous les yeux, jouent l'un
+// contre l'autre sur cet échiquier, sans rien demander (retour du fondateur du 7 novembre). Partie amicale, sans
+// pendule, mains tirées au hasard comme sur l'accueil (HOME) ; un joueur qui ne joue pas est relayé par l'IA (RELAY).
+// Interrupteurs : homeDuel (appariement), homeRelay (relais), guestPlay (invités), newGames (maintenance).
 
 interface HomeVisitor {
   sock: Sock;
@@ -1021,9 +1362,15 @@ interface HomeVisitor {
   /** « Chercher un vrai joueur » : apparié quel que soit le temps passé sur la page. */
   searching: boolean;
 }
-/** Fenêtre d'arrivée : au-delà, le visiteur joue contre l'Oracle, on ne vient plus le chercher. */
-export const HOME_WINDOW_MS = 30_000;
+/** Fenêtre d'arrivée : au-delà, le visiteur joue contre l'Oracle, on ne vient plus le chercher (HOME.pairWindowMs). */
+export const HOME_WINDOW_MS = HOME.pairWindowMs;
 const homeVisitors = new Map<string, HomeVisitor>();
+
+/**
+ * Ce visiteur peut-il être apparié sur l'accueil ? Non si le duel de l'accueil est coupé (homeDuel), en maintenance
+ * (newGames), ou pour un invité si le jeu sans compte est coupé (guestPlay) : ses messages home:* sont ignorés.
+ */
+const homeAllowed = (sock: Sock) => !creationRefusal({ mode: 'quick', rated: false, relay: true }, sock.data.identity);
 
 function pairHomeVisitors() {
   const t = now();
@@ -1042,9 +1389,10 @@ function pairHomeVisitors() {
 }
 
 async function startHomeGame(a: HomeVisitor, b: HomeVisitor) {
-  const [sa, sb] = await Promise.all([seatFor(a.sock.data.identity, 'Visiteur'), seatFor(b.sock.data.identity, 'Visiteur')]);
+  const [sa, sb] = await Promise.all([seatFor(a.sock.data.identity, HOME.guestName), seatFor(b.sock.data.identity, HOME.guestName)]);
   const aWhite = Math.random() < 0.5;
-  const room = newRoom({ mode: 'quick', rated: false, tc: 'none', catalog: 'climats', creator: a.key, seats: aWhite ? { w: sa, b: sb } : { w: sb, b: sa }, deal: true, relay: true });
+  // Sans pendule (HOME.timed est toujours faux : jamais de pendule sur l'accueil).
+  const room = newRoom({ mode: 'quick', rated: false, tc: 'none', catalog: HOME.catalog, creator: a.key, seats: aWhite ? { w: sa, b: sb } : { w: sb, b: sa }, deal: true, relay: true });
   a.sock.emit('home:paired', { gameId: room.d.id, color: aWhite ? 'w' : 'b', opponent: { country: countryOfTimezone(b.tz) } });
   b.sock.emit('home:paired', { gameId: room.d.id, color: aWhite ? 'b' : 'w', opponent: { country: countryOfTimezone(a.tz) } });
 }
@@ -1052,21 +1400,21 @@ async function startHomeGame(a: HomeVisitor, b: HomeVisitor) {
 // ---------------------------------------------------------------------------------------------
 // Socket.IO
 
-const guestNameSchema = z.string().trim().min(2).max(20).regex(/^[\p{L}\p{N} _.-]+$/u);
+const guestNameSchema = z.string().trim().min(GUEST_NAME.min).max(GUEST_NAME.max).regex(GUEST_NAME.chars);
 
 /** Choix des cartes (`game:draft`) : le contenu des cartes est vérifié ensuite contre la réserve (draftRefusal). */
 const draftSchema = z.object({
   id: z.string().max(32),
-  cards: z.array(z.string().max(32)).max(CARDS_PER_PLAYER),
+  cards: z.array(z.string().max(32)).max(BOUNDS.cardsPerPlayer[1]),
   confirm: z.boolean().optional(),
 });
 
 function limiter() {
-  let tokens = 20;
+  let tokens: number = LIMITS.socketBurst;
   let last = now();
   return () => {
     const t = now();
-    tokens = Math.min(20, tokens + ((t - last) / 1000) * 8);
+    tokens = Math.min(LIMITS.socketBurst, tokens + ((t - last) / 1000) * LIMITS.socketPerSecond);
     last = t;
     if (tokens < 1) return false;
     tokens -= 1;
@@ -1074,10 +1422,48 @@ function limiter() {
   };
 }
 
+const freeSeat = (room: Room): Color | null => (!room.d.seats.w ? 'w' : !room.d.seats.b ? 'b' : null);
+
+/**
+ * Assise d'un visiteur qui rejoint une partie (game:join) : sa couleur s'il y joue déjà ; sinon, sur une invitation
+ * en attente, le siège libre. Le siège est relu en base (seatFor) PUIS l'assise est revérifiée : si un autre visiteur
+ * s'est assis entre-temps (ou ce même compte, depuis un autre onglet), ou si la partie a commencé, il la regarde en
+ * spectateur au lieu d'écraser le siège. Renvoie sa couleur, null (spectateur) ou 'needName' (invité sans pseudo
+ * valable). Exportée pour les tests.
+ */
+export async function takeSeat(room: Room, identity: Identity, p: { name?: string; sit?: boolean }): Promise<Color | null | 'needName' | 'guestOff'> {
+  const color = colorOf(room, identity);
+  if (color || room.d.status !== 'waiting' || p.sit === false || !freeSeat(room)) return color;
+  let name: string | undefined;
+  // Jeu sans compte coupé (FEATURE_GUEST_PLAY=0) : un invité ne s'assoit pas.
+  if (!identity.user && !FEATURES.guestPlay) return 'guestOff';
+  if (!identity.user) {
+    const parsed = guestNameSchema.safeParse(p.name ?? '');
+    if (!parsed.success) return 'needName';
+    name = parsed.data;
+  }
+  const seat = await seatFor(identity, name);
+  const again = colorOf(room, identity);
+  if (again) return again;
+  const free = freeSeat(room);
+  if (room.d.status !== 'waiting' || !free) return null;
+  room.d.seats[free] = seat;
+  begin(room);
+  broadcast(room, { type: 'start' });
+  return free;
+}
+
+/** Spectateurs d'une salle : ses sockets qui ne jouent pas (contre l'IA, onglets en double, joueur déconnecté compris). */
+export function spectatorCount(room: Room): number {
+  let n = 0;
+  for (const s of room.sockets) if (!colorOf(room, s.data.identity)) n++;
+  return n;
+}
+
 function updatePresence(room: Room) {
   if (room.d.status !== 'active') return;
   let changed = false;
-  for (const c of ['w', 'b'] as Color[]) {
+  for (const c of COLORS) {
     const seat = room.d.seats[c];
     if (!seat || seat.kind === 'bot') continue;
     const online = [...room.sockets].some(s => keyOf(s.data.identity) === seat.key);
@@ -1102,6 +1488,16 @@ export function attachSockets(server: IO) {
 
   io.on('connection', raw => {
     const sock = raw as Sock;
+    // Onglet d'une autre version du site : prévenu (server:outdated, le client recharge), et chacune de ses actions
+    // est refusée (code 'outdated') jusqu'au rechargement.
+    if (protocolMismatch(sock.handshake.auth)) {
+      sock.emit('server:outdated', { version: PROTOCOL_VERSION });
+      sock.use(([, ...args], _next) => {
+        const ack = args.at(-1);
+        if (typeof ack === 'function') (ack as (r: Ack) => void)(OUTDATED);
+      });
+      return;
+    }
     const identity = sock.data.identity;
     const myKey = keyOf(identity);
     void sock.join(`id:${myKey}`);
@@ -1140,24 +1536,20 @@ export function attachSockets(server: IO) {
       room.sockets.add(sock);
       joined.add(room);
       void sock.join(`game:${room.d.id}`);
-      let color = colorOf(room, identity);
-      if (!color && room.d.status === 'waiting' && p.sit !== false) {
-        const free: Color | null = !room.d.seats.w ? 'w' : !room.d.seats.b ? 'b' : null;
-        if (free) {
-          let name: string | undefined;
-          if (!identity.user) {
-            const parsed = guestNameSchema.safeParse(p.name ?? '');
-            if (!parsed.success) return ack({ ok: true, needName: true, view: viewFor(room, null) });
-            name = parsed.data;
-          }
-          room.d.seats[free] = await seatFor(identity, name);
-          color = free;
-          begin(room);
-          broadcast(room, { type: 'start' });
-        }
-      }
+      const seated = await takeSeat(room, identity, p);
+      if (seated === 'needName') return ack({ ok: true, needName: true, view: viewFor(room, null) });
+      // Invité qui ne peut pas s'asseoir (guestPlay coupé), ou spectateur alors que les parties en direct sont coupées
+      // (live) : refusé, il ne reste pas dans la salle.
+      const refuse = (r: Ack) => {
+        room.sockets.delete(sock);
+        joined.delete(room);
+        void sock.leave(`game:${room.d.id}`);
+        ack(r);
+      };
+      if (seated === 'guestOff') return refuse(featureOff('guestPlay'));
+      if (!seated && !FEATURES.live) return refuse(featureOff('live'));
       updatePresence(room);
-      ack({ ok: true, view: viewFor(room, color) });
+      ack({ ok: true, view: viewFor(room, seated) });
     };
 
     sock.on('game:leave', p => {
@@ -1238,7 +1630,7 @@ export function attachSockets(server: IO) {
           }
           if (p.action === 'accept') return { ok: false, error: 'Aucune proposition de nulle.' };
           if (d.seats[opp]?.kind === 'bot') return { ok: false, error: "L'IA refuse la nulle et veut se battre !" };
-          if (d.state.ply < 2) return { ok: false, error: 'Jouez au moins un coup chacun.' };
+          if (!isStarted(d.state)) return { ok: false, error: 'Jouez au moins un coup chacun.' };
           d.drawOffer = color;
         } else if (d.drawOffer === opp) {
           d.drawOffer = null;
@@ -1251,7 +1643,7 @@ export function attachSockets(server: IO) {
       withRoom(p?.id, ack, (room, color) => {
         const opp = opposite(color);
         const since = room.away[opp];
-        if (room.d.status !== 'active' || since === null || now() - since < CLAIM_AFTER_MS) {
+        if (room.d.status !== 'active' || since === null || now() - since < TIMINGS.claimAfterMs) {
           return { ok: false, error: "Votre adversaire peut encore revenir." };
         }
         // Départ pendant le choix des cartes ou avant le premier coup : la partie sera annulée (délai du premier coup),
@@ -1271,6 +1663,10 @@ export function attachSockets(server: IO) {
           sock.emit('game:redirect', { from: d.id, to: d.rematch.next });
           return { ok: true };
         }
+        if (rematchExpired(room)) return { ok: false, error: 'La revanche n’est plus possible.' };
+        // Une revanche est une nouvelle partie : refusée si sa sorte (ou toute création) est coupée.
+        const off = creationRefusal(d, identity);
+        if (off) return off;
         d.rematch[color] = true;
         const opp = opposite(color);
         if (d.seats[opp]?.kind === 'bot' || d.rematch[opp]) await createRematch(room);
@@ -1300,25 +1696,25 @@ export function attachSockets(server: IO) {
     });
 
     sock.on('queue:leave', () => {
-      leaveQueues(myKey);
+      quitQueue(myKey);
       sock.emit('queue:status', { waiting: false, tc: null, since: null, players: queueSize() });
     });
 
     sock.on('home:hello', p => {
-      if (!allow()) return;
+      if (!allow() || !homeAllowed(sock)) return;
       const prev = homeVisitors.get(sock.id);
       homeVisitors.set(sock.id, { sock, key: myKey, since: now(), tz: String(p?.tz ?? '').slice(0, 64), ready: !!p?.ready, searching: !!prev?.searching });
       pairHomeVisitors();
     });
     sock.on('home:search', p => {
-      if (!allow()) return;
+      if (!allow() || !homeAllowed(sock)) return;
       const v = homeVisitors.get(sock.id);
       if (v) v.searching = !!p?.search;
       else if (p?.search) homeVisitors.set(sock.id, { sock, key: myKey, since: now(), tz: String(p?.tz ?? '').slice(0, 64), ready: false, searching: true });
       if (p?.search) pairHomeVisitors();
     });
     sock.on('home:ready', p => {
-      if (!allow()) return;
+      if (!allow() || !homeAllowed(sock)) return;
       const v = homeVisitors.get(sock.id);
       if (!v) return;
       v.ready = !!p?.ready;
@@ -1336,9 +1732,9 @@ export function attachSockets(server: IO) {
       }
       try {
         const others = await io.in(`id:${myKey}`).fetchSockets();
-        if (!others.length) leaveQueues(myKey);
+        if (!others.length) quitQueue(myKey);
       } catch {
-        leaveQueues(myKey);
+        quitQueue(myKey);
       }
     });
   });
@@ -1347,24 +1743,24 @@ export function attachSockets(server: IO) {
   setInterval(() => {
     for (const [id, room] of rooms) {
       const d = room.d;
-      if (d.status === 'ended' && !room.sockets.size && now() - room.endedAt > 10 * 60_000) rooms.delete(id);
-      if (d.status === 'waiting' && now() - d.createdAt > 3 * 86400_000) endGame(room, { winner: null, reason: 'aborted' });
+      if (d.status === 'ended' && !room.sockets.size && now() - room.endedAt > TIMINGS.endedRoomEvictMs) rooms.delete(id);
+      if (d.status === 'waiting' && now() - d.createdAt > TIMINGS.inviteTtlMs) endGame(room, { winner: null, reason: 'aborted' });
       if (d.status !== 'active') continue;
-      const humans = (['w', 'b'] as Color[]).filter(c => d.seats[c] && d.seats[c]!.kind !== 'bot');
+      const humans = COLORS.filter(c => d.seats[c] && d.seats[c]!.kind !== 'bot');
       const allAway = humans.every(c => room.away[c] !== null);
       const awayFor = Math.min(...humans.map(c => now() - (room.away[c] ?? now())));
-      // Contre l'IA, le joueur parti depuis 30 min : partie annulée
-      if (d.mode === 'bot' && allAway && awayFor > BOT_IDLE_MS) endGame(room, { winner: null, reason: 'aborted' });
-      // Sans pendule, aucune action depuis 3 jours : partie annulée
-      else if (!d.clock && now() - (d.lastActivity ?? d.createdAt) > UNTIMED_IDLE_MS) endGame(room, { winner: null, reason: 'aborted' });
+      // Contre l'IA, le joueur parti depuis TIMINGS.botIdleMs : partie annulée
+      if (d.mode === 'bot' && allAway && awayFor > TIMINGS.botIdleMs) endGame(room, { winner: null, reason: 'aborted' });
+      // Sans pendule, aucune action depuis TIMINGS.untimedIdleMs : partie annulée
+      else if (!d.clock && now() - (d.lastActivity ?? d.createdAt) > TIMINGS.untimedIdleMs) endGame(room, { winner: null, reason: 'aborted' });
     }
-  }, 60_000).unref();
+  }, TIMINGS.housekeepingMs).unref();
 }
 
 /** Compte supprimé : ses parties en cours se terminent et ses sièges deviennent anonymes. */
 export async function detachUser(userId: string) {
   for (const room of rooms.values()) {
-    for (const c of ['w', 'b'] as Color[]) {
+    for (const c of COLORS) {
       const seat = room.d.seats[c];
       if (seat?.userId !== userId) continue;
       // Pendant le choix des cartes, la partie est annulée (sans effet sur le classement).
@@ -1381,13 +1777,21 @@ export async function detachUser(userId: string) {
 
 /**
  * Sauvegarde immédiate de toutes les parties en cours (arrêt du serveur). La pendule en marche est figée : le
- * temps réfléchi avant l'arrêt reste décompté, seul le temps d'arrêt ne l'est pas (`resumeClock`).
+ * temps réfléchi avant l'arrêt reste décompté, seul le temps d'arrêt ne l'est pas (`resumeClock`). Une fin de partie
+ * pas encore enregistrée (persistResult en attente d'un nouvel essai) l'est ici, classement compris (saveResult :
+ * jamais deux fois, ratings_applied).
  */
 export async function flushRooms() {
-  await Promise.all([...rooms.values()].filter(r => r.d.status !== 'ended' || r.saveTimer).map(r => {
+  await Promise.all([...rooms.values()].filter(r => r.d.status !== 'ended' || r.saveTimer || r.resultPending).map(r => {
     if (r.saveTimer) clearTimeout(r.saveTimer);
     r.saveTimer = null;
     if (r.d.status === 'active') settleClock(r.d);
+    if (r.d.status === 'ended' && r.resultPending) {
+      return saveResult(r).then(
+        () => { r.resultPending = false; },
+        e => console.error(`Fin de partie ${r.d.id} non enregistrée à l'arrêt :`, e),
+      );
+    }
     return saveRoom(r).catch(e => console.error('Sauvegarde :', e));
   }));
 }
@@ -1407,9 +1811,12 @@ export function activeRoomCount() {
 
 export const gamesRouter = Router();
 
+/** Niveau de l'IA demandé (BOT_LEVELS) : une union de littéraux, comme avant (même message d'erreur). */
+const botLevelSchema = z.union(BOT_LEVELS.map(l => z.literal(l)) as unknown as [z.ZodLiteral<BotLevel>, ...z.ZodLiteral<BotLevel>[]]);
+
 const createLimiter = rateLimit({
-  windowMs: 10 * 60_000,
-  limit: 40,
+  windowMs: LIMITS.createWindowMs,
+  limit: LIMITS.createPerWindow,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { error: 'Trop de parties créées, patiente quelques minutes.' },
@@ -1419,16 +1826,16 @@ gamesRouter.post('/', createLimiter, async (req, res) => {
   const parsed = z
     .object({
       mode: z.enum(['invite', 'bot']),
-      tc: z.string().refine(id => TIME_CONTROLS.some(t => t.id === id), 'Cadence inconnue.'),
+      tc: z.string().refine(id => OFFERED_CONTROLS.includes(id), 'Cadence inconnue.'),
       color: z.enum(['w', 'b', 'random']).default('random'),
-      level: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+      level: botLevelSchema.optional(),
       // Mode miroir : plus proposé (chacun choisit ses cartes) ; accepté des anciens clients et ignoré.
       mirror: z.boolean().optional(),
       // Le Duel n'est plus proposé : une demande Duel (ancien client) est ramenée aux Pouvoirs ; une valeur
       // inconnue est refusée.
       catalog: z
-        .enum(['climats', 'duel', 'aucune'], { message: 'Catalogue de cartes inconnu.' })
-        .default('climats')
+        .enum(CATALOG_IDS, { message: 'Catalogue de cartes inconnu.' })
+        .default(DEFAULT_CATALOG)
         .transform(offeredCatalog),
       name: z.string().optional(),
     })
@@ -1436,19 +1843,21 @@ gamesRouter.post('/', createLimiter, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Requête invalide.' });
   const o = parsed.data;
   const identity = req.identity;
+  const off = creationRefusal({ mode: o.mode, rated: false }, identity);
+  if (off) return res.status(503).json({ error: off.error, code: off.code });
   const open = [...rooms.values()].filter(r => r.d.status !== 'ended' && r.d.creator === keyOf(identity)).length;
-  if (open >= MAX_OPEN_ROOMS) {
+  if (open >= LIMITS.maxOpenRooms) {
     return res.status(429).json({ error: 'Vous avez déjà trop de parties ouvertes : terminez-en ou annulez-en une.' });
   }
   let name: string | undefined;
   if (!identity.user) {
     const n = guestNameSchema.safeParse(o.name ?? '');
-    if (!n.success) return res.status(400).json({ error: 'Choisissez un pseudo de 2 à 20 caractères.' });
+    if (!n.success) return res.status(400).json({ error: GUEST_NAME.invalid });
     name = n.data;
   }
   const me = await seatFor(identity, name);
   const color: Color = o.color === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : o.color;
-  const other = o.mode === 'bot' ? botSeat(o.level ?? 2) : null;
+  const other = o.mode === 'bot' ? botSeat(o.level ?? DEFAULT_BOT_LEVEL) : null;
   const seats = color === 'w' ? { w: me, b: other } : { w: other, b: me };
   const room = newRoom({ mode: o.mode, rated: false, tc: o.tc, catalog: o.catalog, creator: keyOf(identity), seats });
   await saveRoom(room);
@@ -1458,6 +1867,10 @@ gamesRouter.post('/', createLimiter, async (req, res) => {
 /** Parties en cours du visiteur (pour les reprendre). */
 /** Parties en cours, pour les spectateurs (« Parties en direct »). Les parties entre humains d'abord. */
 gamesRouter.get('/live', (_req, res) => {
+  if (!FEATURES.live) {
+    const off = featureOff('live');
+    return res.status(503).json({ error: off.error, code: off.code });
+  }
   const list = [...rooms.values()]
     .filter(r => r.d.status === 'active' && r.d.started)
     .map(r => ({
@@ -1465,18 +1878,18 @@ gamesRouter.get('/live', (_req, res) => {
       mode: r.d.mode,
       rated: r.d.rated,
       tc: r.d.tc,
-      catalog: r.d.catalog ?? r.d.state.catalog ?? 'duel',
+      catalog: roomCatalog(r.d),
       white: r.d.seats.w?.name ?? null,
       black: r.d.seats.b?.name ?? null,
       whiteRating: r.d.seats.w?.rating ?? null,
       blackRating: r.d.seats.b?.rating ?? null,
       vsBot: r.d.seats.w?.kind === 'bot' || r.d.seats.b?.kind === 'bot',
       plies: r.d.state.ply,
-      spectators: Math.max(0, r.sockets.size - 2),
+      spectators: spectatorCount(r),
       lastActivity: r.d.lastActivity ?? r.d.createdAt,
     }))
     .sort((a, b) => Number(a.vsBot) - Number(b.vsBot) || (b.whiteRating ?? 0) + (b.blackRating ?? 0) - ((a.whiteRating ?? 0) + (a.blackRating ?? 0)))
-    .slice(0, 40);
+    .slice(0, LIMITS.liveList);
   res.json({ games: list });
 });
 
@@ -1491,7 +1904,7 @@ gamesRouter.get('/mine', (req, res) => {
       opponent: (r.d.seats.w?.key === k ? r.d.seats.b : r.d.seats.w)?.name ?? null,
       tc: r.d.tc,
       rated: r.d.rated,
-      catalog: catalogOf(r.d.state),
+      catalog: roomCatalog(r.d),
       createdAt: r.d.createdAt,
     }));
   res.json({ games: mine });
@@ -1501,7 +1914,7 @@ gamesRouter.get('/recent', async (req, res) => {
   const u = req.identity.user;
   if (!u) return res.json({ games: [] });
   const rows = await q(
-    `SELECT * FROM games WHERE (white_user_id = $1 OR black_user_id = $1) AND status = 'ended' ORDER BY ended_at DESC NULLS LAST LIMIT 30`,
+    `SELECT * FROM games WHERE (white_user_id = $1 OR black_user_id = $1) AND status = 'ended' ORDER BY ended_at DESC NULLS LAST LIMIT ${LIMITS.recentGames}`,
     [u.id],
   );
   res.json({ games: rows.map(toSummary) });

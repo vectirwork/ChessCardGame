@@ -1,11 +1,14 @@
 // Réglages du serveur, nommés : délais, classement, appariement, relais, IA, limites, comptes, interrupteurs.
-// Valeurs actuelles du serveur ; rien ne les consomme encore (le lot 3 remplace les littéraux de games.ts, auth.ts,
-// account.ts, index.ts et bot-pool.ts par ces constantes). Les durées couplées au client sont dans
-// src/shared/config/timings.ts, les règles du jeu dans src/shared/config/rules.ts.
+// Lus par games.ts, rating.ts, auth.ts, index.ts, bot-pool.ts et db.ts (aucun de ces nombres n'y est recopié) ; les
+// tests les importent. Les durées couplées au client sont dans src/shared/config/timings.ts, les règles du jeu dans
+// src/shared/config/rules.ts, la configuration lue dans l'environnement dans config.ts.
 
+import { existsSync } from 'node:fs';
 import type { BotLevel } from '../shared/bot';
 import { FEATURES as FEATURE_DEFAULTS, FEATURE_KEYS, featureEnvName } from '../shared/config/features';
 import type { Features } from '../shared/config/features';
+import { DEAL, deepFreeze } from '../shared/config/rules';
+import type { DealSettings } from '../shared/config/rules';
 import { BOT_CARD_PAUSE_MS, BOT_TIMEOUT_MS, CINEMATIC_MS } from '../shared/config/timings';
 
 const MIN = 60_000;
@@ -65,7 +68,7 @@ export const MATCHMAKING = Object.freeze({
   /** Période du balayage des entrées oubliées. */
   sweepMs: 30_000,
   /** Files séparées par catalogue (Pouvoirs, Sans cartes). */
-  splitByCatalog: true,
+  splitByCatalog: true as boolean,
   /** Pseudo d'un invité anonyme dans la file amicale : « Anonyme-1000 » à « Anonyme-9999 ». */
   anonymousPrefix: 'Anonyme-',
   anonymousMin: 1000,
@@ -102,6 +105,32 @@ export const BOT_RUNTIME = Object.freeze({
   maxThreads: 4,
   /** Délai maximal d'une décision. */
   timeoutMs: BOT_TIMEOUT_MS,
+});
+
+/** Base PostgreSQL (DATABASE_URL ; la base embarquée PGlite n'a pas de pool). */
+export const DATABASE = Object.freeze({
+  /** Connexions ouvertes au plus (variable DATABASE_POOL_MAX). */
+  poolMax: 10,
+  /** Ouverture d'une connexion : échec au-delà de ce délai (base injoignable) au lieu d'une attente sans fin. */
+  connectionTimeoutMs: 10_000,
+});
+
+/**
+ * Fils de calcul de l'IA (bot-pool.ts) : un fil mort est remplacé ; au-delà de `maxRestarts` remplacements en
+ * `restartWindowMs`, plus de remplacement, et le calcul se fait dans le processus quand il ne reste aucun fil.
+ */
+export const BOT_THREADS = Object.freeze({
+  maxRestarts: 5,
+  restartWindowMs: 60_000,
+});
+
+/**
+ * Enregistrement d'une fin de partie (résultat et classement, en une transaction) : essais si la base ne répond pas,
+ * et délai entre deux. Le classement n'est jamais appliqué deux fois (ratings_applied).
+ */
+export const PERSIST = Object.freeze({
+  attempts: 5,
+  retryMs: 5_000,
 });
 
 /** Limites d'usage. */
@@ -175,6 +204,11 @@ export function readFeatures(env: Record<string, string | undefined>): { feature
   return { features: Object.freeze(features), errors };
 }
 
+// Fichier .env (lancement hors Docker : npm start, npm run dev ; en production Docker, env_file donne de vraies variables
+// d'environnement). Chargé ici, et non dans config.ts : config.ts importe ce module, qui est donc évalué avant lui, et
+// les FEATURE_* sont lues juste en dessous. Une variable déjà définie dans l'environnement garde sa valeur.
+if (existsSync('.env')) process.loadEnvFile('.env');
+
 const fromEnv = readFeatures(process.env);
 
 /** Interrupteurs du serveur : défauts (shared/config/features.ts) fusionnés avec FEATURE_*. */
@@ -182,3 +216,25 @@ export const FEATURES: Readonly<Features> = fromEnv.features;
 
 /** Erreurs de lecture des FEATURE_* (à signaler au démarrage ; la valeur par défaut est gardée). */
 export const FEATURE_ERRORS: readonly string[] = fromEnv.errors;
+
+// ---------------------------------------------------------------------------------------------
+// Mise en place des nouvelles parties sur ce serveur
+
+let dealOverride: Readonly<DealSettings> | null = null;
+
+/**
+ * Mise en place des nouvelles parties (choix ou tirage, durée du choix, contraintes du tirage) : DEAL
+ * (src/shared/config/rules.ts), sauf surcharge de test (SPELLMATE_TEST_RULES, config.ts). Lue à chaque création.
+ */
+export function dealSettings(): Readonly<DealSettings> {
+  return dealOverride ?? DEAL;
+}
+
+/**
+ * Surcharge de test de la mise en place (serveur jetable : {"draft":false}, {"draftMs":5000}), ou null pour la
+ * retirer. Refusée en production, comme setRulesOverride.
+ */
+export function setDealOverride(p: Partial<Pick<DealSettings, 'draft' | 'draftMs' | 'limitsInDraft'>> | null): void {
+  if (p && process.env.NODE_ENV === 'production') throw new Error('Mise en place de test refusée en production (SPELLMATE_TEST_RULES).');
+  dealOverride = p ? deepFreeze({ ...DEAL, ...p }) : null;
+}

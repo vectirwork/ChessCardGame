@@ -7,18 +7,41 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Server } from 'socket.io';
+import { featuresDiff } from '../shared/config/features';
+import { PROTOCOL_VERSION } from '../shared/protocol';
 import type { ClientToServer, MeResponse, ServerToClient } from '../shared/protocol';
 import { accountRouter, communityRouter } from './account';
 import { adminRouter } from './admin';
 import { authRouter, identify, sameOrigin, toMe } from './auth';
 import { botPool } from './bot-pool';
-import { config } from './config';
+import { config, configWarnings, rulesReport } from './config';
 import { connectDb, db, migrate } from './db';
 import { attachSockets, flushRooms, gamesRouter, restoreRooms } from './games';
 import { honorPackPromises, shopRouter, stripeWebhook } from './shop';
+import { FEATURES, FEATURE_ERRORS, LIMITS } from './settings';
 import { serveBuiltSite } from './site';
 
+/**
+ * Journal de démarrage : avertissements de configuration et d'interrupteurs (signalés, sans arrêt : décision Q1 pour
+ * les mentions légales), règles des nouvelles parties (une ligne, plus une par contexte qui diffère). Des règles
+ * impossibles (checkRules, avec la mise en place de ce serveur) arrêtent le serveur avec leurs messages, comme une
+ * configuration invalide (config.ts) : aucune partie ne doit être créée avec elles.
+ */
+function startupReport() {
+  for (const w of configWarnings) console.warn(`Attention : ${w}`);
+  for (const e of FEATURE_ERRORS) console.warn(`Attention, interrupteurs : ${e}`);
+  const off = Object.keys(featuresDiff(FEATURES));
+  if (off.length) console.log(`Interrupteurs changés : ${off.map(k => `${k}=${FEATURES[k as keyof typeof FEATURES]}`).join(', ')}.`);
+  const { lines, errors } = rulesReport();
+  for (const l of lines) console.log(l);
+  if (errors.length) {
+    console.error(`Règles impossibles : arrêt.\n${errors.map(e => `- ${e}`).join('\n')}`);
+    process.exit(1);
+  }
+}
+
 async function main() {
+  startupReport();
   const dbLabel = await connectDb();
   await migrate();
   // Promesses des packs (« et les prochains offerts ») : livre aux acheteurs les objets ajoutés depuis leur achat.
@@ -31,7 +54,7 @@ async function main() {
 
   const app = express();
   app.disable('x-powered-by');
-  if (config.trustProxy) app.set('trust proxy', 1);
+  if (config.trustProxy) app.set('trust proxy', config.trustProxy);
 
   app.use(
     helmet({
@@ -59,17 +82,20 @@ async function main() {
   // Le webhook Stripe a besoin du corps brut : déclaré avant express.json()
   app.post('/api/stripe/webhook', ...stripeWebhook);
 
-  app.use('/api', express.json({ limit: '100kb' }), sameOrigin, identify);
+  // Sonde de santé (Docker, update.sh, report.sh) : avant identify, elle ne crée ni ne signe aucun cookie d'invité.
   app.get('/api/health', async (_req, res) => {
     await db.query('SELECT 1');
     res.json({ ok: true });
   });
+  app.use('/api', express.json({ limit: LIMITS.jsonBody }), sameOrigin, identify);
   app.get('/api/me', (req, res) => {
     const body: MeResponse = {
       user: req.identity.user ? toMe(req.identity.user) : null,
       guestId: req.identity.guestId,
       payments: config.payments,
       appName: config.appName,
+      features: FEATURES,
+      version: PROTOCOL_VERSION,
     };
     res.json(body);
   });
@@ -102,8 +128,8 @@ async function main() {
   const io = new Server<ClientToServer, ServerToClient>(server, {
     serveClient: false,
     cors: { origin: false },
-    pingInterval: 10_000,
-    pingTimeout: 8_000,
+    pingInterval: LIMITS.pingIntervalMs,
+    pingTimeout: LIMITS.pingTimeoutMs,
   });
   attachSockets(io);
   botPool.start();

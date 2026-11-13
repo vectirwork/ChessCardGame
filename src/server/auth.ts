@@ -3,15 +3,15 @@ import type { NextFunction, Request, Response } from 'express';
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
-import { FREE_ITEMS } from '../shared/catalog';
+import { DEFAULT_ITEM, FREE_ITEMS } from '../shared/catalog';
 import type { ItemKind } from '../shared/catalog';
 import { PASSWORD, USERNAME } from '../shared/config/limits';
 import type { MeUser } from '../shared/protocol';
 import { config } from './config';
 import { one, q } from './db';
 import { sendPasswordReset, sendVerification } from './mail';
-import { hashPassword, randomToken, sha256, sign, unsign, verifyPassword } from './security';
-import { ACCOUNT, LIMITS } from './settings';
+import { hashPassword, needsRehash, randomToken, sha256, sign, unsign, verifyPassword } from './security';
+import { ACCOUNT, LIMITS, RATING } from './settings';
 
 export interface UserRow {
   id: string;
@@ -41,6 +41,15 @@ export const SLOT_COLUMN = {
   board: 'equipped_board',
   skin: 'equipped_skin',
 } as const satisfies Record<ItemKind, string>;
+
+/**
+ * Création d'un compte : classement de départ (RATING.initial) et objets portés par défaut (DEFAULT_ITEM) écrits
+ * explicitement, au lieu des DEFAULT SQL figés dans les migrations (inchangés : mêmes valeurs aujourd'hui).
+ */
+const SLOTS_IN_ORDER = Object.keys(SLOT_COLUMN) as ItemKind[];
+const INSERT_USER_SQL =
+  `INSERT INTO users (email, username, password_hash, rating, ${SLOTS_IN_ORDER.map(k => SLOT_COLUMN[k]).join(', ')}) ` +
+  `VALUES ($1, $2, $3, $4, ${SLOTS_IN_ORDER.map((_, i) => `$${i + 5}`).join(', ')}) RETURNING id`;
 
 export interface Identity {
   user: UserRow | null;
@@ -260,10 +269,7 @@ authRouter.post('/register', authLimiter, async (req, res) => {
   const hash = await hashPassword(password);
   let user: { id: string } | null;
   try {
-    user = await one<{ id: string }>(
-      'INSERT INTO users (email, username, password_hash) VALUES ($1, $2, $3) RETURNING id',
-      [email, username, hash],
-    );
+    user = await one<{ id: string }>(INSERT_USER_SQL, [email, username, hash, RATING.initial, ...SLOTS_IN_ORDER.map(k => DEFAULT_ITEM[k])]);
   } catch {
     return res.status(409).json({ error: 'Pseudo ou e-mail déjà utilisé.' });
   }
@@ -285,6 +291,8 @@ authRouter.post('/login', authLimiter, async (req, res) => {
   // Vérification factice si l'utilisateur n'existe pas, pour ne pas révéler les comptes par le temps de réponse
   const ok = await verifyPassword(password, row?.password_hash ?? 'scrypt$32768$AAAAAAAAAAAAAAAAAAAAAA==$AAAA');
   if (!row || !ok) return res.status(401).json({ error: 'E-mail, pseudo ou mot de passe incorrect.' });
+  // Hachage d'un coût plus faible que le coût courant (SCRYPT.N relevé depuis) : refait avec le coût courant.
+  if (needsRehash(row.password_hash)) await q('UPDATE users SET password_hash = $1 WHERE id = $2', [await hashPassword(password), row.id]);
   await createSession(req, res, row.id);
   const user = await userById(row.id);
   res.json({ user: toMe(user!) });

@@ -7,19 +7,45 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Server } from 'socket.io';
+import { featuresDiff } from '../shared/config/features';
+import { RULES_CONTEXTS } from '../shared/config/rules';
+import { PROTOCOL_VERSION } from '../shared/protocol';
 import type { ClientToServer, MeResponse, ServerToClient } from '../shared/protocol';
+import { checkRules, rulesFor, rulesSummary, sameRules } from '../shared/rules';
 import { accountRouter, communityRouter } from './account';
 import { adminRouter } from './admin';
 import { authRouter, identify, sameOrigin, toMe } from './auth';
 import { botPool } from './bot-pool';
-import { config } from './config';
+import { config, configWarnings } from './config';
 import { connectDb, db, migrate } from './db';
 import { attachSockets, flushRooms, gamesRouter, restoreRooms } from './games';
 import { honorPackPromises, shopRouter, stripeWebhook } from './shop';
-import { LIMITS } from './settings';
+import { FEATURES, FEATURE_ERRORS, LIMITS, dealSettings } from './settings';
 import { serveBuiltSite } from './site';
 
+/**
+ * Journal de démarrage : avertissements de configuration et d'interrupteurs, règles des nouvelles parties (une ligne,
+ * plus une par contexte qui diffère), erreurs de règles (checkRules). Décision Q1 : tout cela est signalé, rien
+ * n'arrête le serveur (le build refuse déjà une configuration de règles impossible ; seules les créations de parties
+ * concernées échoueraient).
+ */
+function startupReport() {
+  for (const w of configWarnings) console.warn(`Attention : ${w}`);
+  for (const e of FEATURE_ERRORS) console.warn(`Attention, interrupteurs : ${e}`);
+  const off = Object.keys(featuresDiff(FEATURES));
+  if (off.length) console.log(`Interrupteurs changés : ${off.map(k => `${k}=${FEATURES[k as keyof typeof FEATURES]}`).join(', ')}.`);
+  const base = rulesFor('classee');
+  const test = config.testRules || config.testDeal ? ` (surcharge de test : ${JSON.stringify({ ...config.testRules, ...config.testDeal })})` : '';
+  console.log(`Règles des nouvelles parties : ${rulesSummary(base)}${test}.`);
+  for (const ctx of RULES_CONTEXTS) {
+    const r = rulesFor(ctx);
+    if (!sameRules(r, base)) console.log(`Règles des nouvelles parties (${ctx}) : ${rulesSummary(r)}.`);
+  }
+  for (const e of checkRules({ deal: dealSettings() })) console.error(`Attention, règles impossibles : ${e}`);
+}
+
 async function main() {
+  startupReport();
   const dbLabel = await connectDb();
   await migrate();
   // Promesses des packs (« et les prochains offerts ») : livre aux acheteurs les objets ajoutés depuis leur achat.
@@ -32,7 +58,7 @@ async function main() {
 
   const app = express();
   app.disable('x-powered-by');
-  if (config.trustProxy) app.set('trust proxy', 1);
+  if (config.trustProxy) app.set('trust proxy', config.trustProxy);
 
   app.use(
     helmet({
@@ -60,17 +86,20 @@ async function main() {
   // Le webhook Stripe a besoin du corps brut : déclaré avant express.json()
   app.post('/api/stripe/webhook', ...stripeWebhook);
 
-  app.use('/api', express.json({ limit: LIMITS.jsonBody }), sameOrigin, identify);
+  // Sonde de santé (Docker, update.sh, report.sh) : avant identify, elle ne crée ni ne signe aucun cookie d'invité.
   app.get('/api/health', async (_req, res) => {
     await db.query('SELECT 1');
     res.json({ ok: true });
   });
+  app.use('/api', express.json({ limit: LIMITS.jsonBody }), sameOrigin, identify);
   app.get('/api/me', (req, res) => {
     const body: MeResponse = {
       user: req.identity.user ? toMe(req.identity.user) : null,
       guestId: req.identity.guestId,
       payments: config.payments,
       appName: config.appName,
+      features: FEATURES,
+      version: PROTOCOL_VERSION,
     };
     res.json(body);
   });

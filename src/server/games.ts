@@ -942,12 +942,29 @@ interface QueueEntry {
   name?: string;
 }
 const queues = new Map<string, QueueEntry[]>();
+/**
+ * Demande d'entrée en file en cours, par joueur : une demande plus récente, ou queue:leave, rend caduque celle qui
+ * attend encore la lecture de son classement (le joueur parti n'est jamais mis en file ni apparié).
+ */
+const queueTickets = new Map<string, number>();
+let queueTicket = 0;
 
 function leaveQueues(key: string) {
   for (const [tc, list] of queues) {
     const rest = list.filter(e => e.key !== key);
     if (rest.length !== list.length) queues.set(tc, rest);
   }
+}
+
+/** Le joueur quitte la file (queue:leave, déconnexion) : son entrée, et toute demande encore en cours. Exportée pour les tests. */
+export function quitQueue(key: string) {
+  queueTickets.delete(key);
+  leaveQueues(key);
+}
+
+/** Clés des joueurs en attente, par file (`tc|classee|catalogue`). Pour les tests. */
+export function queueKeys(): Record<string, string[]> {
+  return Object.fromEntries([...queues].filter(([, l]) => l.length).map(([pool, l]) => [pool, l.map(e => e.key)]));
 }
 
 function queueSize() {
@@ -959,8 +976,13 @@ function queueSize() {
 /**
  * File d'attente. Classée : comptes uniquement, appariement par classement Elo.
  * Amicale : ouverte aux invités (pseudo anonyme), non classée, premier arrivé premier servi.
+ *
+ * Concurrence : la seule attente (le classement relu en base) a lieu AVANT de toucher à la file ; ensuite, la sortie
+ * des autres files, la lecture de la file, le choix de l'adversaire et l'écriture se font sans aucun await. Deux
+ * demandes simultanées ne lisent donc jamais la même liste périmée (double appariement, entrée perdue), et un joueur
+ * parti pendant l'attente n'est ni apparié ni remis en file. Exportée pour les tests (`sock` : identité et emit).
  */
-async function joinQueue(sock: Sock, tc: string, rated: boolean, guestName?: string, catalog: Catalog = DEFAULT_CATALOG): Promise<Ack> {
+export async function joinQueue(sock: Pick<Sock, 'data' | 'emit'>, tc: string, rated: boolean, guestName?: string, catalog: Catalog = DEFAULT_CATALOG): Promise<Ack> {
   const identity = sock.data.identity;
   if (rated && !identity.user) return { ok: false, error: 'Connectez-vous pour jouer en partie classée.' };
   if (!QUICK_CONTROLS.includes(tc)) return { ok: false, error: 'Cadence inconnue.' };
@@ -971,10 +993,19 @@ async function joinQueue(sock: Sock, tc: string, rated: boolean, guestName?: str
     name = parsed.success ? parsed.data : `${prefix}${Math.floor(min + Math.random() * (max - min + 1))}`;
   }
   const key = keyOf(identity);
+  // Une nouvelle demande remplace la précédente : l'ancienne entrée sort tout de suite (elle ne peut plus être
+  // appariée pendant l'attente du classement).
+  const ticket = ++queueTicket;
+  queueTickets.set(key, ticket);
+  leaveQueues(key);
+  // 1. Attente : classement à jour (la seule lecture en base avant l'appariement).
+  const me = identity.user ? (await userById(identity.user.id))?.rating ?? identity.user.rating : RATING.initial;
+  // 2. Section synchrone, sans aucun await. Le joueur est parti, ou une demande plus récente a pris la place : rien.
+  if (queueTickets.get(key) !== ticket) return { ok: true };
+  queueTickets.delete(key);
   leaveQueues(key);
   const pool = `${tc}|${rated ? 'classee' : 'amicale'}|${catalog}`;
   const list = queues.get(pool) ?? [];
-  const me = identity.user ? (await userById(identity.user.id))?.rating ?? identity.user.rating : RATING.initial;
   // Classée : adversaire le plus proche en classement, avec une tolérance qui s'élargit avec l'attente
   const candidates = list
     .filter(e => e.key !== key)
@@ -982,16 +1013,16 @@ async function joinQueue(sock: Sock, tc: string, rated: boolean, guestName?: str
     .sort((a, b) => (rated ? Math.abs(a.rating - me) - Math.abs(b.rating - me) : a.since - b.since));
   const opp = candidates[0];
   if (!opp) {
-    list.push({ key, identity, rating: me, since: now(), name });
-    queues.set(pool, list);
+    queues.set(pool, [...list, { key, identity, rating: me, since: now(), name }]);
     sock.emit('queue:status', { waiting: true, tc, since: now(), players: queueSize() });
     return { ok: true };
   }
   queues.set(pool, list.filter(e => e !== opp));
+  // 3. Appariés (plus personne ne peut les prendre) : sièges relus en base, puis la partie.
   const [a, b] = await Promise.all([seatFor(identity, name), seatFor(opp.identity, opp.name)]);
   const white = Math.random() < 0.5;
   const room = newRoom({ mode: 'quick', rated, tc, catalog, creator: key, seats: white ? { w: a, b } : { w: b, b: a } });
-  io.to(`id:${key}`).to(`id:${opp.key}`).emit('queue:matched', { gameId: room.d.id });
+  if (io) io.to(`id:${key}`).to(`id:${opp.key}`).emit('queue:matched', { gameId: room.d.id });
   return { ok: true };
 }
 
@@ -1068,6 +1099,42 @@ function limiter() {
   };
 }
 
+const freeSeat = (room: Room): Color | null => (!room.d.seats.w ? 'w' : !room.d.seats.b ? 'b' : null);
+
+/**
+ * Assise d'un visiteur qui rejoint une partie (game:join) : sa couleur s'il y joue déjà ; sinon, sur une invitation
+ * en attente, le siège libre. Le siège est relu en base (seatFor) PUIS l'assise est revérifiée : si un autre visiteur
+ * s'est assis entre-temps (ou ce même compte, depuis un autre onglet), ou si la partie a commencé, il la regarde en
+ * spectateur au lieu d'écraser le siège. Renvoie sa couleur, null (spectateur) ou 'needName' (invité sans pseudo
+ * valable). Exportée pour les tests.
+ */
+export async function takeSeat(room: Room, identity: Identity, p: { name?: string; sit?: boolean }): Promise<Color | null | 'needName'> {
+  const color = colorOf(room, identity);
+  if (color || room.d.status !== 'waiting' || p.sit === false || !freeSeat(room)) return color;
+  let name: string | undefined;
+  if (!identity.user) {
+    const parsed = guestNameSchema.safeParse(p.name ?? '');
+    if (!parsed.success) return 'needName';
+    name = parsed.data;
+  }
+  const seat = await seatFor(identity, name);
+  const again = colorOf(room, identity);
+  if (again) return again;
+  const free = freeSeat(room);
+  if (room.d.status !== 'waiting' || !free) return null;
+  room.d.seats[free] = seat;
+  begin(room);
+  broadcast(room, { type: 'start' });
+  return free;
+}
+
+/** Spectateurs d'une salle : ses sockets qui ne jouent pas (contre l'IA, onglets en double, joueur déconnecté compris). */
+export function spectatorCount(room: Room): number {
+  let n = 0;
+  for (const s of room.sockets) if (!colorOf(room, s.data.identity)) n++;
+  return n;
+}
+
 function updatePresence(room: Room) {
   if (room.d.status !== 'active') return;
   let changed = false;
@@ -1134,24 +1201,10 @@ export function attachSockets(server: IO) {
       room.sockets.add(sock);
       joined.add(room);
       void sock.join(`game:${room.d.id}`);
-      let color = colorOf(room, identity);
-      if (!color && room.d.status === 'waiting' && p.sit !== false) {
-        const free: Color | null = !room.d.seats.w ? 'w' : !room.d.seats.b ? 'b' : null;
-        if (free) {
-          let name: string | undefined;
-          if (!identity.user) {
-            const parsed = guestNameSchema.safeParse(p.name ?? '');
-            if (!parsed.success) return ack({ ok: true, needName: true, view: viewFor(room, null) });
-            name = parsed.data;
-          }
-          room.d.seats[free] = await seatFor(identity, name);
-          color = free;
-          begin(room);
-          broadcast(room, { type: 'start' });
-        }
-      }
+      const seated = await takeSeat(room, identity, p);
+      if (seated === 'needName') return ack({ ok: true, needName: true, view: viewFor(room, null) });
       updatePresence(room);
-      ack({ ok: true, view: viewFor(room, color) });
+      ack({ ok: true, view: viewFor(room, seated) });
     };
 
     sock.on('game:leave', p => {
@@ -1294,7 +1347,7 @@ export function attachSockets(server: IO) {
     });
 
     sock.on('queue:leave', () => {
-      leaveQueues(myKey);
+      quitQueue(myKey);
       sock.emit('queue:status', { waiting: false, tc: null, since: null, players: queueSize() });
     });
 
@@ -1330,9 +1383,9 @@ export function attachSockets(server: IO) {
       }
       try {
         const others = await io.in(`id:${myKey}`).fetchSockets();
-        if (!others.length) leaveQueues(myKey);
+        if (!others.length) quitQueue(myKey);
       } catch {
-        leaveQueues(myKey);
+        quitQueue(myKey);
       }
     });
   });
@@ -1469,7 +1522,7 @@ gamesRouter.get('/live', (_req, res) => {
       blackRating: r.d.seats.b?.rating ?? null,
       vsBot: r.d.seats.w?.kind === 'bot' || r.d.seats.b?.kind === 'bot',
       plies: r.d.state.ply,
-      spectators: Math.max(0, r.sockets.size - 2),
+      spectators: spectatorCount(r),
       lastActivity: r.d.lastActivity ?? r.d.createdAt,
     }))
     .sort((a, b) => Number(a.vsBot) - Number(b.vsBot) || (b.whiteRating ?? 0) + (b.blackRating ?? 0) - ((a.whiteRating ?? 0) + (a.blackRating ?? 0)))

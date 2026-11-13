@@ -6,6 +6,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import pg from 'pg';
 import { config } from './config';
+import { DATABASE } from './settings';
 
 export interface DbResult<T> {
   rows: T[];
@@ -25,8 +26,15 @@ interface Driver extends DbClient {
   label: string;
 }
 
-function postgresDriver(url: string): Driver {
-  const pool = new pg.Pool({ connectionString: url, max: 10 });
+/**
+ * PostgreSQL. Le pool écoute 'error' : node-postgres l'émet quand une connexion inactive se perd (redémarrage de la
+ * base) ; sans écouteur, Node arrêterait tout le serveur (parties en cours comprises). La connexion suivante est
+ * rouverte à la demande ; une base injoignable fait échouer la requête après DATABASE.connectionTimeoutMs au lieu de
+ * la laisser attendre sans fin. Exportée pour les tests (`pool`).
+ */
+export function postgresDriver(url: string, max: number = config.databasePoolMax): Driver & { pool: pg.Pool } {
+  const pool = new pg.Pool({ connectionString: url, max, connectionTimeoutMillis: DATABASE.connectionTimeoutMs });
+  pool.on('error', e => console.error('PostgreSQL : connexion inactive perdue (elle sera rouverte à la demande) :', e.message));
   const wrap = (c: pg.Pool | pg.PoolClient): DbClient => ({
     async query<T>(text: string, params: unknown[] = []) {
       const r = await c.query(text, params);
@@ -38,6 +46,7 @@ function postgresDriver(url: string): Driver {
   });
   return {
     ...wrap(pool),
+    pool,
     label: 'PostgreSQL',
     async transaction(fn) {
       const c = await pool.connect();

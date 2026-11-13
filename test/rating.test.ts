@@ -15,6 +15,8 @@ vi.mock('../src/server/bot-pool', () => ({
 
 import { sqIndex as sq } from '../src/shared/chess';
 import { abortRoom, applyMove, newRoom, resignRoom } from '../src/server/games';
+import { RATING, MATCHMAKING } from '../src/server/settings';
+import { elo, matchTolerance, ratingDiffs } from '../src/server/rating';
 import type { SeatArg } from './helpers/sieges';
 
 const T0 = 1_800_000_000_000;
@@ -74,3 +76,38 @@ describe('Elo : caractérisation des écarts d’une partie classée', () => {
   });
 });
 
+describe('elo() pur', () => {
+  it('formule : K × (score − attendu), arrondi ; K 40 avant 30 parties, puis 20', () => {
+    expect(elo(1500, 1500, 1, 10)).toBe(20);
+    expect(elo(1500, 1500, 0, 10)).toBe(-20);
+    expect(elo(1600, 1400, 0.5, 40)).toBe(-5);
+    expect(elo(1400, 1600, 0.5, 5)).toBe(10);
+    expect(elo(1200, 1200, 0, 30)).toBe(-10);
+    expect(elo(1200, 1200, 1, 29)).toBe(20);
+    expect(elo(2000, 1200, 1, 0)).toBe(0);
+    expect(elo(1200, 2000, 1, 0)).toBe(40);
+  });
+
+  it('suit RATING (facteurs K, seuil, échelle)', () => {
+    const r = { ...RATING, kProvisional: 32, kEstablished: 16, provisionalGames: 10, scale: 800 };
+    expect(elo(1500, 1500, 1, 9, r)).toBe(16);
+    expect(elo(1500, 1500, 1, 10, r)).toBe(8);
+    // Échelle 800 : un écart de 400 points compte comme 200 à l'échelle 400.
+    expect(elo(1600, 1200, 0, 0, r)).toBe(elo(1400, 1200, 0, 0, { ...r, scale: 400 }));
+  });
+
+  it('ratingDiffs : écarts des deux camps (classement absent : RATING.initial)', () => {
+    expect(ratingDiffs({ rating: 1500, gamesPlayed: 10 }, { rating: 1500, gamesPlayed: 10 }, 'w')).toEqual({ w: 20, b: -20 });
+    expect(ratingDiffs({ rating: null, gamesPlayed: 0 }, { rating: RATING.initial, gamesPlayed: 0 }, null)).toEqual({ w: 0, b: 0 });
+  });
+});
+
+describe('tolérance de l’appariement classé', () => {
+  it('250 points au départ, plus 25 par seconde d’attente', () => {
+    expect(matchTolerance(0)).toBe(MATCHMAKING.baseTolerance);
+    expect(matchTolerance(0)).toBe(250);
+    expect(matchTolerance(4000)).toBe(350);
+    expect(matchTolerance(1500)).toBe(287.5);
+    expect(matchTolerance(60_000)).toBe(250 + 60 * 25);
+  });
+});

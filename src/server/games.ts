@@ -12,13 +12,17 @@ import type {
   ClientToServer, DraftView, GameEvent, GameMode, GameStatus, GameView, JoinReply, SeatView, ServerToClient,
 } from '../shared/protocol';
 import { EMOTES, QUICK_CONTROLS, TIME_CONTROLS, tcFromId } from '../shared/protocol';
-import { CardId, Catalog, isCardId, offeredCatalog } from '../shared/cards';
+import { CATALOG_RULES, CardId, Catalog, DEFAULT_CATALOG, isCardId, offeredCatalog } from '../shared/cards';
+import { HOME } from '../shared/config/home';
+import { GUEST_NAME } from '../shared/config/limits';
 import rateLimit from 'express-rate-limit';
 import { Identity, identityFromCookies, userById } from './auth';
-import { BOT_PROFILES, BotLevel, chooseBotDraft } from '../shared/bot';
+import { BOT_LEVELS, BOT_PROFILES, BotLevel, DEFAULT_BOT_LEVEL, chooseBotDraft } from '../shared/bot';
 import { botPool } from './bot-pool';
 import { DbClient, one, q, tx } from './db';
+import { matchTolerance, ratingDiffs } from './rating';
 import { gameId, randomToken } from './security';
+import { BOT_RUNTIME, LIMITS, MATCHMAKING, RATING, RELAY, TIMINGS } from './settings';
 import { toSummary } from './summary';
 import { countryOfTimezone } from './timezones';
 
@@ -125,17 +129,22 @@ export class Room {
   constructor(public d: RoomData) {}
 }
 
-const FIRST_MOVE_MS = 45_000;
-/** Partie contre l'IA abandonnée par le joueur humain. */
-const BOT_IDLE_MS = 30 * 60_000;
-/** Partie sans pendule sans aucune action. */
-const UNTIMED_IDLE_MS = 3 * 86400_000;
-const MAX_OPEN_ROOMS = 8;
-const CLAIM_AFTER_MS = 60_000;
-/** Temps laissé à l'animation d'une carte de l'IA avant qu'elle ne joue son coup. */
-const BOT_CARD_PAUSE_MS = 2300;
+// Délais, limites, classement, appariement, relais et IA : src/server/settings.ts (TIMINGS, LIMITS, RATING,
+// MATCHMAKING, RELAY, BOT_RUNTIME). Rien n'est écrit en dur ici.
+
 /** Pouvoirs (R10) : les cinématiques (lancement, arrivée d'un Présage, Rituel) ne coûtent pas de temps. */
-export const CINEMATIC_MS = 1200;
+export const CINEMATIC_MS = TIMINGS.cinematicMs;
+
+const COLORS: Color[] = ['w', 'b'];
+
+/**
+ * La partie a-t-elle commencé (chacun a joué son premier coup) ? Ensuite, plus d'annulation possible, et une
+ * proposition de nulle devient permise.
+ */
+export const isStarted = (s: Pick<GameState, 'ply'>) => s.ply >= TIMINGS.minPlyToStart;
+
+/** Catalogue d'une salle : celui de sa création, sinon celui de son état (catalogOf : Duel pour les plus anciennes). */
+export const roomCatalog = (d: Pick<RoomData, 'catalog' | 'state'>): Catalog => d.catalog ?? catalogOf(d.state);
 
 const rooms = new Map<string, Room>();
 let io: IO;
@@ -151,7 +160,7 @@ function scheduleSave(room: Room) {
   room.saveTimer = setTimeout(() => {
     room.saveTimer = null;
     void saveRoom(room).catch(e => console.error('Sauvegarde de partie :', e));
-  }, 250);
+  }, TIMINGS.saveDebounceMs);
 }
 
 async function saveRoom(room: Room, client?: DbClient) {
@@ -211,12 +220,12 @@ export function resumeRoom(room: Room) {
     return;
   }
   resumeClock(room.d);
-  if (room.d.started === undefined) room.d.started = room.d.state.ply >= 2;
+  if (room.d.started === undefined) room.d.started = isStarted(room.d.state);
   room.d.lastActivity ??= now();
   if (room.d.status === 'active') {
-    for (const c of ['w', 'b'] as Color[]) if (room.d.seats[c] && room.d.seats[c]!.kind !== 'bot') room.away[c] = now();
+    for (const c of COLORS) if (room.d.seats[c] && room.d.seats[c]!.kind !== 'bot') room.away[c] = now();
   }
-  if (room.d.firstMoveDeadline) room.d.firstMoveDeadline = now() + FIRST_MOVE_MS;
+  if (room.d.firstMoveDeadline) room.d.firstMoveDeadline = now() + TIMINGS.firstMoveMs;
   const both = resumeDraft(room.d);
   armTimers(room);
   if (both) closeDraftRoom(room);
@@ -279,7 +288,7 @@ export function viewFor(room: Room, you: Color | null): GameView {
     ratingDiff: d.ratingDiff,
     firstMoveDeadline: d.firstMoveDeadline,
     away: room.away,
-    claimAfterMs: CLAIM_AFTER_MS,
+    claimAfterMs: TIMINGS.claimAfterMs,
     createdAt: d.createdAt,
     mirror: d.mirror,
     started: !!d.started,
@@ -366,7 +375,7 @@ export function resumeClock(d: RoomData) {
 /** Pouvoirs (R10) : crédite au camp au trait la durée d'une cinématique, si sa pendule tourne. */
 function creditCinematic(d: RoomData, c: Color) {
   const ck = d.clock;
-  if (!ck || ck.running !== c || catalogOf(d.state) !== 'climats') return;
+  if (!ck || ck.running !== c || !CATALOG_RULES[catalogOf(d.state)]?.cinematicCredit) return;
   ck[c] += CINEMATIC_MS * rate(d, c);
 }
 
@@ -379,7 +388,7 @@ export function commitMove(d: RoomData, color: Color, state: GameState, info: Mo
   d.state = state;
   d.drawOffer = null;
   d.lastActivity = now();
-  if (d.state.ply >= 2) d.started = true;
+  if (isStarted(d.state)) d.started = true;
   startClock(d);
   if (info.arrived?.length) creditCinematic(d, d.state.pos.turn);
 }
@@ -399,7 +408,7 @@ export function commitCard(d: RoomData, color: Color, state: GameState, info: Ca
   if (turnChanges) {
     if (info.ritual) {
       d.drawOffer = null;
-      if (d.state.ply >= 2) d.started = true;
+      if (isStarted(d.state)) d.started = true;
     }
     startClock(d);
     creditCinematic(d, d.state.pos.turn);
@@ -414,8 +423,6 @@ export function commitCard(d: RoomData, color: Color, state: GameState, info: Ca
 // Fonctions sur les données de la salle seules (sans sockets ni minuteries) : testées dans
 // test/server-draft.test.ts. Les choix restent dans `RoomData.draft` jusqu'à la révélation ; la vue n'en montre
 // que ce que `draftView` laisse passer.
-
-const COLORS: Color[] = ['w', 'b'];
 
 /** Choix des cartes d'une nouvelle partie avec cartes (null : sans cartes, ou réserve trop petite pour choisir). */
 export function newDraft(catalog: Catalog, timed: boolean, vsBot: boolean): DraftData | null {
@@ -434,7 +441,7 @@ export function openDraft(d: RoomData): boolean {
   dr.deadline = now() + DRAFT_MS;
   for (const c of COLORS) {
     const seat = d.seats[c];
-    if (seat?.kind === 'bot' && !dr.picks[c]) dr.picks[c] = chooseBotDraft(dr.pool, seat.level ?? 2);
+    if (seat?.kind === 'bot' && !dr.picks[c]) dr.picks[c] = chooseBotDraft(dr.pool, seat.level ?? DEFAULT_BOT_LEVEL);
   }
   return !!(dr.picks.w && dr.picks.b);
 }
@@ -534,7 +541,7 @@ function armTimers(room: Room) {
   const ck = room.d.clock;
   if (ck?.running) {
     const c = ck.running;
-    const ms = Math.max(0, remaining(room.d, c) / rate(room.d, c)) + 30;
+    const ms = Math.max(0, remaining(room.d, c) / rate(room.d, c)) + TIMINGS.flagMarginMs;
     room.flagTimer = setTimeout(() => checkFlag(room), Math.min(ms, 2 ** 31 - 1));
   }
   if (room.d.firstMoveDeadline) {
@@ -566,7 +573,7 @@ function updateFirstMoveDeadline(room: Room) {
   // Pendant le choix des cartes, pas de délai : il commence à la révélation des mains.
   // Parties de l'accueil : pas de délai, l'IA joue pour celui qui ne joue pas (relais)
   room.d.firstMoveDeadline =
-    room.d.status === 'active' && !room.d.draft && !room.d.started && !room.d.relay && turnSeat?.kind !== 'bot' ? now() + FIRST_MOVE_MS : null;
+    room.d.status === 'active' && !room.d.draft && !room.d.started && !room.d.relay && turnSeat?.kind !== 'bot' ? now() + TIMINGS.firstMoveMs : null;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -651,11 +658,6 @@ function begin(room: Room) {
   armRelay(room);
 }
 
-function elo(a: number, b: number, score: number, games: number): number {
-  const k = games < 30 ? 40 : 20;
-  return Math.round(k * (score - 1 / (1 + 10 ** ((b - a) / 400))));
-}
-
 function endGame(room: Room, result?: Result) {
   const d = room.d;
   if (d.status === 'ended') return;
@@ -672,13 +674,7 @@ function endGame(room: Room, result?: Result) {
   if (room.relayTimer) clearTimeout(room.relayTimer);
   room.relayTimer = null;
   const { w, b } = d.seats;
-  if (d.rated && w?.userId && b?.userId && r.reason !== 'aborted') {
-    const sw = r.winner === 'w' ? 1 : r.winner === 'b' ? 0 : 0.5;
-    d.ratingDiff = {
-      w: elo(w.rating ?? 1200, b.rating ?? 1200, sw, w.gamesPlayed),
-      b: elo(b.rating ?? 1200, w.rating ?? 1200, 1 - sw, b.gamesPlayed),
-    };
-  }
+  if (d.rated && w?.userId && b?.userId && r.reason !== 'aborted') d.ratingDiff = ratingDiffs(w, b, r.winner);
   broadcast(room, { type: 'end' });
   void persistResult(room).catch(e => console.error('Fin de partie :', e));
 }
@@ -696,12 +692,12 @@ async function persistResult(room: Room) {
     // Garde-fou : même après un redémarrage, le classement n'est appliqué qu'une fois par partie
     const first = await c.query(`UPDATE games SET ratings_applied = true WHERE id = $1 AND NOT ratings_applied RETURNING id`, [d.id]);
     if (!first.rowCount) return;
-    for (const color of ['w', 'b'] as Color[]) {
+    for (const color of COLORS) {
       const seat = d.seats[color]!;
       if (!seat.userId) continue;
       const outcome = r.winner === null ? 'draws' : r.winner === color ? 'wins' : 'losses';
       await c.query(
-        `UPDATE users SET rating = greatest(100, rating + $1), games_played = games_played + 1, ${outcome} = ${outcome} + 1 WHERE id = $2`,
+        `UPDATE users SET rating = greatest(${RATING.floor}, rating + $1), games_played = games_played + 1, ${outcome} = ${outcome} + 1 WHERE id = $2`,
         [d.ratingDiff![color], seat.userId],
       );
     }
@@ -726,13 +722,13 @@ function maybeBot(room: Room) {
     .then(async reply => {
       if (reply.error) console.error('IA :', reply.error);
       // Petite pause pour un rythme naturel
-      const wait = Math.max(0, 500 + Math.random() * 500 - (now() - started));
+      const wait = Math.max(0, BOT_RUNTIME.pauseMinMs + Math.random() * BOT_RUNTIME.pauseJitterMs - (now() - started));
       await new Promise(r => setTimeout(r, wait));
       if (stale()) return;
       const color = d.state.pos.turn;
       if (reply.card) {
         if (!applyCard(room, color, reply.card.index, reply.card.targets).ok) reply.move = null;
-        else if (reply.move) await new Promise(r => setTimeout(r, BOT_CARD_PAUSE_MS));
+        else if (reply.move) await new Promise(r => setTimeout(r, BOT_RUNTIME.cardPauseMs));
       }
       if (reply.move && d.status === 'active' && d.state.pos.turn === color) {
         const r = applyMove(room, color, reply.move.from, reply.move.to, reply.move.promo as PieceType | undefined);
@@ -743,7 +739,7 @@ function maybeBot(room: Room) {
     .finally(() => {
       room.botBusy = false;
       // Si l'état a changé pendant le calcul (ou si l'IA doit rejouer), on relance.
-      if (d.status === 'active' && d.seats[d.state.pos.turn]?.kind === 'bot') setTimeout(() => maybeBot(room), 50);
+      if (d.status === 'active' && d.seats[d.state.pos.turn]?.kind === 'bot') setTimeout(() => maybeBot(room), BOT_RUNTIME.retryMs);
     });
 }
 
@@ -751,14 +747,10 @@ function maybeBot(room: Room) {
 // Relais de l'IA (parties en direct de l'accueil)
 //
 // Un joueur qui ne joue pas (aucun coup, l'échiquier pas touché) : l'IA joue pour lui, sans le faire attendre ni
-// faire attendre l'autre, jusqu'à ce qu'il reprenne la main. Premier coup : 10 s ; ensuite 30 s sans le moindre
-// signe de présence (game:activity). Relayé, il joue de lui-même dès qu'il veut : son coup lui rend la main. Si les
-// deux joueurs sont relayés, l'IA ne joue pas contre elle-même : la partie attend ; personne n'est plus là, elle
-// est annulée.
-
-const RELAY_FIRST_MS = 10_000;
-const RELAY_IDLE_MS = 30_000;
-const RELAY_LEVEL: BotLevel = 2;
+// faire attendre l'autre, jusqu'à ce qu'il reprenne la main. Premier coup : RELAY.firstMoveMs (10 s) ; ensuite
+// RELAY.idleMs (30 s) sans le moindre signe de présence (game:activity). Relayé, il joue de lui-même dès qu'il veut :
+// son coup lui rend la main. Si les deux joueurs sont relayés, l'IA ne joue pas contre elle-même : la partie attend ;
+// personne n'est plus là depuis RELAY.abandonMs, elle est annulée.
 
 export function armRelay(room: Room) {
   if (room.relayTimer) clearTimeout(room.relayTimer);
@@ -771,20 +763,20 @@ export function armRelay(room: Room) {
   const other = opposite(c);
   if (d.standIn?.[other] && !d.standIn?.[c]) {
     // L'adversaire est déjà relayé : l'IA ne joue pas contre elle-même. On attend ce joueur ; si plus personne n'est
-    // sur la page depuis 30 s, la partie est annulée.
+    // sur la page depuis RELAY.abandonMs, la partie est annulée.
     if (room.away.w && room.away.b) {
       room.relayTimer = setTimeout(() => {
         if (d.status === 'active' && room.away.w && room.away.b) endGame(room, { winner: null, reason: 'aborted' });
-      }, 30_000);
+      }, RELAY.abandonMs);
     }
     return;
   }
   let ms: number;
-  if (d.standIn?.[c]) ms = 900 + Math.random() * 700;
+  if (d.standIn?.[c]) ms = RELAY.delayMinMs + Math.random() * RELAY.delayJitterMs;
   else {
     const first = d.state.ply < (c === 'w' ? 1 : 2);
     const since = Math.max(room.turnSince, room.activityAt[c]);
-    ms = Math.max(0, since + (first ? RELAY_FIRST_MS : RELAY_IDLE_MS) - now());
+    ms = Math.max(0, since + (first ? RELAY.firstMoveMs : RELAY.idleMs) - now());
   }
   room.relayTimer = setTimeout(() => relayPlay(room, c), ms);
 }
@@ -802,12 +794,12 @@ function relayPlay(room: Room, c: Color) {
   const len = d.state.log.length;
   const still = () => d.status === 'active' && d.state.pos.turn === c && d.state.log.length === len && !!d.standIn?.[c];
   void botPool
-    .decide(d.state, RELAY_LEVEL)
+    .decide(d.state, RELAY.level)
     .then(async reply => {
       if (reply.error) console.error('Relais de l’IA :', reply.error);
       if (!still()) return;
       if (reply.card && applyCard(room, c, reply.card.index, reply.card.targets).ok && reply.move) {
-        await new Promise(r => setTimeout(r, BOT_CARD_PAUSE_MS));
+        await new Promise(r => setTimeout(r, BOT_RUNTIME.cardPauseMs));
       }
       if (reply.move && d.status === 'active' && d.state.pos.turn === c && d.standIn?.[c]) {
         const r = applyMove(room, c, reply.move.from, reply.move.to, reply.move.promo as PieceType | undefined);
@@ -930,7 +922,7 @@ export async function createRematch(room: Room): Promise<Room | null> {
     throw e;
   }
   // Revanche d'une ancienne partie Duel : le Duel n'est plus proposé, elle se joue avec les Pouvoirs.
-  const catalog = offeredCatalog(d.catalog ?? d.state.catalog);
+  const catalog = offeredCatalog(roomCatalog(d));
   const next = newRoom({ mode: d.mode, rated: d.rated, tc: d.tc, catalog, creator: d.creator, seats });
   d.rematch.next = next.d.id;
   for (const s of room.sockets) s.emit('game:redirect', { from: d.id, to: next.d.id });
@@ -968,24 +960,25 @@ function queueSize() {
  * File d'attente. Classée : comptes uniquement, appariement par classement Elo.
  * Amicale : ouverte aux invités (pseudo anonyme), non classée, premier arrivé premier servi.
  */
-async function joinQueue(sock: Sock, tc: string, rated: boolean, guestName?: string, catalog: Catalog = 'climats'): Promise<Ack> {
+async function joinQueue(sock: Sock, tc: string, rated: boolean, guestName?: string, catalog: Catalog = DEFAULT_CATALOG): Promise<Ack> {
   const identity = sock.data.identity;
   if (rated && !identity.user) return { ok: false, error: 'Connectez-vous pour jouer en partie classée.' };
   if (!QUICK_CONTROLS.includes(tc)) return { ok: false, error: 'Cadence inconnue.' };
   let name: string | undefined;
   if (!identity.user) {
     const parsed = guestNameSchema.safeParse(guestName ?? '');
-    name = parsed.success ? parsed.data : `Anonyme-${Math.floor(1000 + Math.random() * 9000)}`;
+    const { anonymousPrefix: prefix, anonymousMin: min, anonymousMax: max } = MATCHMAKING;
+    name = parsed.success ? parsed.data : `${prefix}${Math.floor(min + Math.random() * (max - min + 1))}`;
   }
   const key = keyOf(identity);
   leaveQueues(key);
   const pool = `${tc}|${rated ? 'classee' : 'amicale'}|${catalog}`;
   const list = queues.get(pool) ?? [];
-  const me = identity.user ? (await userById(identity.user.id))?.rating ?? identity.user.rating : 1200;
+  const me = identity.user ? (await userById(identity.user.id))?.rating ?? identity.user.rating : RATING.initial;
   // Classée : adversaire le plus proche en classement, avec une tolérance qui s'élargit avec l'attente
   const candidates = list
     .filter(e => e.key !== key)
-    .filter(e => !rated || Math.abs(e.rating - me) <= 250 + ((now() - e.since) / 1000) * 25)
+    .filter(e => !rated || Math.abs(e.rating - me) <= matchTolerance(now() - e.since))
     .sort((a, b) => (rated ? Math.abs(a.rating - me) - Math.abs(b.rating - me) : a.since - b.since));
   const opp = candidates[0];
   if (!opp) {
@@ -1002,15 +995,15 @@ async function joinQueue(sock: Sock, tc: string, rated: boolean, guestName?: str
   return { ok: true };
 }
 
-/** Une entrée de file ne survit pas si elle ne trouve personne en 10 minutes. */
+/** Une entrée de file ne survit pas si elle ne trouve personne en MATCHMAKING.entryTtlMs (10 minutes). */
 setInterval(() => {
-  for (const [tc, list] of queues) queues.set(tc, list.filter(e => now() - e.since < 600_000));
-}, 30_000).unref();
+  for (const [tc, list] of queues) queues.set(tc, list.filter(e => now() - e.since < MATCHMAKING.entryTtlMs));
+}, MATCHMAKING.sweepMs).unref();
 
 // ---------------------------------------------------------------------------------------------
 // Accueil : deux visiteurs arrivés depuis moins de 30 s, l'échiquier du haut sous les yeux, jouent l'un contre l'autre
 // sur cet échiquier, sans rien demander (retour du fondateur du 7 novembre). Partie amicale, sans pendule, mains tirées
-// au hasard comme sur l'accueil ; personne ne joue le premier coup en 45 s : elle est annulée (FIRST_MOVE_MS).
+// au hasard comme sur l'accueil (HOME) ; un joueur qui ne joue pas est relayé par l'IA (RELAY).
 
 interface HomeVisitor {
   sock: Sock;
@@ -1021,8 +1014,8 @@ interface HomeVisitor {
   /** « Chercher un vrai joueur » : apparié quel que soit le temps passé sur la page. */
   searching: boolean;
 }
-/** Fenêtre d'arrivée : au-delà, le visiteur joue contre l'Oracle, on ne vient plus le chercher. */
-export const HOME_WINDOW_MS = 30_000;
+/** Fenêtre d'arrivée : au-delà, le visiteur joue contre l'Oracle, on ne vient plus le chercher (HOME.pairWindowMs). */
+export const HOME_WINDOW_MS = HOME.pairWindowMs;
 const homeVisitors = new Map<string, HomeVisitor>();
 
 function pairHomeVisitors() {
@@ -1042,9 +1035,10 @@ function pairHomeVisitors() {
 }
 
 async function startHomeGame(a: HomeVisitor, b: HomeVisitor) {
-  const [sa, sb] = await Promise.all([seatFor(a.sock.data.identity, 'Visiteur'), seatFor(b.sock.data.identity, 'Visiteur')]);
+  const [sa, sb] = await Promise.all([seatFor(a.sock.data.identity, HOME.guestName), seatFor(b.sock.data.identity, HOME.guestName)]);
   const aWhite = Math.random() < 0.5;
-  const room = newRoom({ mode: 'quick', rated: false, tc: 'none', catalog: 'climats', creator: a.key, seats: aWhite ? { w: sa, b: sb } : { w: sb, b: sa }, deal: true, relay: true });
+  // Sans pendule (HOME.timed est toujours faux : jamais de pendule sur l'accueil).
+  const room = newRoom({ mode: 'quick', rated: false, tc: 'none', catalog: HOME.catalog, creator: a.key, seats: aWhite ? { w: sa, b: sb } : { w: sb, b: sa }, deal: true, relay: true });
   a.sock.emit('home:paired', { gameId: room.d.id, color: aWhite ? 'w' : 'b', opponent: { country: countryOfTimezone(b.tz) } });
   b.sock.emit('home:paired', { gameId: room.d.id, color: aWhite ? 'b' : 'w', opponent: { country: countryOfTimezone(a.tz) } });
 }
@@ -1052,7 +1046,7 @@ async function startHomeGame(a: HomeVisitor, b: HomeVisitor) {
 // ---------------------------------------------------------------------------------------------
 // Socket.IO
 
-const guestNameSchema = z.string().trim().min(2).max(20).regex(/^[\p{L}\p{N} _.-]+$/u);
+const guestNameSchema = z.string().trim().min(GUEST_NAME.min).max(GUEST_NAME.max).regex(GUEST_NAME.chars);
 
 /** Choix des cartes (`game:draft`) : le contenu des cartes est vérifié ensuite contre la réserve (draftRefusal). */
 const draftSchema = z.object({
@@ -1062,11 +1056,11 @@ const draftSchema = z.object({
 });
 
 function limiter() {
-  let tokens = 20;
+  let tokens: number = LIMITS.socketBurst;
   let last = now();
   return () => {
     const t = now();
-    tokens = Math.min(20, tokens + ((t - last) / 1000) * 8);
+    tokens = Math.min(LIMITS.socketBurst, tokens + ((t - last) / 1000) * LIMITS.socketPerSecond);
     last = t;
     if (tokens < 1) return false;
     tokens -= 1;
@@ -1077,7 +1071,7 @@ function limiter() {
 function updatePresence(room: Room) {
   if (room.d.status !== 'active') return;
   let changed = false;
-  for (const c of ['w', 'b'] as Color[]) {
+  for (const c of COLORS) {
     const seat = room.d.seats[c];
     if (!seat || seat.kind === 'bot') continue;
     const online = [...room.sockets].some(s => keyOf(s.data.identity) === seat.key);
@@ -1238,7 +1232,7 @@ export function attachSockets(server: IO) {
           }
           if (p.action === 'accept') return { ok: false, error: 'Aucune proposition de nulle.' };
           if (d.seats[opp]?.kind === 'bot') return { ok: false, error: "L'IA refuse la nulle et veut se battre !" };
-          if (d.state.ply < 2) return { ok: false, error: 'Jouez au moins un coup chacun.' };
+          if (!isStarted(d.state)) return { ok: false, error: 'Jouez au moins un coup chacun.' };
           d.drawOffer = color;
         } else if (d.drawOffer === opp) {
           d.drawOffer = null;
@@ -1251,7 +1245,7 @@ export function attachSockets(server: IO) {
       withRoom(p?.id, ack, (room, color) => {
         const opp = opposite(color);
         const since = room.away[opp];
-        if (room.d.status !== 'active' || since === null || now() - since < CLAIM_AFTER_MS) {
+        if (room.d.status !== 'active' || since === null || now() - since < TIMINGS.claimAfterMs) {
           return { ok: false, error: "Votre adversaire peut encore revenir." };
         }
         // Départ pendant le choix des cartes ou avant le premier coup : la partie sera annulée (délai du premier coup),
@@ -1347,24 +1341,24 @@ export function attachSockets(server: IO) {
   setInterval(() => {
     for (const [id, room] of rooms) {
       const d = room.d;
-      if (d.status === 'ended' && !room.sockets.size && now() - room.endedAt > 10 * 60_000) rooms.delete(id);
-      if (d.status === 'waiting' && now() - d.createdAt > 3 * 86400_000) endGame(room, { winner: null, reason: 'aborted' });
+      if (d.status === 'ended' && !room.sockets.size && now() - room.endedAt > TIMINGS.endedRoomEvictMs) rooms.delete(id);
+      if (d.status === 'waiting' && now() - d.createdAt > TIMINGS.inviteTtlMs) endGame(room, { winner: null, reason: 'aborted' });
       if (d.status !== 'active') continue;
-      const humans = (['w', 'b'] as Color[]).filter(c => d.seats[c] && d.seats[c]!.kind !== 'bot');
+      const humans = COLORS.filter(c => d.seats[c] && d.seats[c]!.kind !== 'bot');
       const allAway = humans.every(c => room.away[c] !== null);
       const awayFor = Math.min(...humans.map(c => now() - (room.away[c] ?? now())));
-      // Contre l'IA, le joueur parti depuis 30 min : partie annulée
-      if (d.mode === 'bot' && allAway && awayFor > BOT_IDLE_MS) endGame(room, { winner: null, reason: 'aborted' });
-      // Sans pendule, aucune action depuis 3 jours : partie annulée
-      else if (!d.clock && now() - (d.lastActivity ?? d.createdAt) > UNTIMED_IDLE_MS) endGame(room, { winner: null, reason: 'aborted' });
+      // Contre l'IA, le joueur parti depuis TIMINGS.botIdleMs (30 min) : partie annulée
+      if (d.mode === 'bot' && allAway && awayFor > TIMINGS.botIdleMs) endGame(room, { winner: null, reason: 'aborted' });
+      // Sans pendule, aucune action depuis TIMINGS.untimedIdleMs (3 jours) : partie annulée
+      else if (!d.clock && now() - (d.lastActivity ?? d.createdAt) > TIMINGS.untimedIdleMs) endGame(room, { winner: null, reason: 'aborted' });
     }
-  }, 60_000).unref();
+  }, TIMINGS.housekeepingMs).unref();
 }
 
 /** Compte supprimé : ses parties en cours se terminent et ses sièges deviennent anonymes. */
 export async function detachUser(userId: string) {
   for (const room of rooms.values()) {
-    for (const c of ['w', 'b'] as Color[]) {
+    for (const c of COLORS) {
       const seat = room.d.seats[c];
       if (seat?.userId !== userId) continue;
       // Pendant le choix des cartes, la partie est annulée (sans effet sur le classement).
@@ -1407,9 +1401,12 @@ export function activeRoomCount() {
 
 export const gamesRouter = Router();
 
+/** Niveau de l'IA demandé (BOT_LEVELS) : une union de littéraux, comme avant (même message d'erreur). */
+const botLevelSchema = z.union(BOT_LEVELS.map(l => z.literal(l)) as unknown as [z.ZodLiteral<BotLevel>, ...z.ZodLiteral<BotLevel>[]]);
+
 const createLimiter = rateLimit({
-  windowMs: 10 * 60_000,
-  limit: 40,
+  windowMs: LIMITS.createWindowMs,
+  limit: LIMITS.createPerWindow,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { error: 'Trop de parties créées, patiente quelques minutes.' },
@@ -1421,7 +1418,7 @@ gamesRouter.post('/', createLimiter, async (req, res) => {
       mode: z.enum(['invite', 'bot']),
       tc: z.string().refine(id => TIME_CONTROLS.some(t => t.id === id), 'Cadence inconnue.'),
       color: z.enum(['w', 'b', 'random']).default('random'),
-      level: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+      level: botLevelSchema.optional(),
       // Mode miroir : plus proposé (chacun choisit ses cartes) ; accepté des anciens clients et ignoré.
       mirror: z.boolean().optional(),
       // Le Duel n'est plus proposé : une demande Duel (ancien client) est ramenée aux Pouvoirs ; une valeur
@@ -1437,18 +1434,18 @@ gamesRouter.post('/', createLimiter, async (req, res) => {
   const o = parsed.data;
   const identity = req.identity;
   const open = [...rooms.values()].filter(r => r.d.status !== 'ended' && r.d.creator === keyOf(identity)).length;
-  if (open >= MAX_OPEN_ROOMS) {
+  if (open >= LIMITS.maxOpenRooms) {
     return res.status(429).json({ error: 'Vous avez déjà trop de parties ouvertes : terminez-en ou annulez-en une.' });
   }
   let name: string | undefined;
   if (!identity.user) {
     const n = guestNameSchema.safeParse(o.name ?? '');
-    if (!n.success) return res.status(400).json({ error: 'Choisissez un pseudo de 2 à 20 caractères.' });
+    if (!n.success) return res.status(400).json({ error: GUEST_NAME.invalid });
     name = n.data;
   }
   const me = await seatFor(identity, name);
   const color: Color = o.color === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : o.color;
-  const other = o.mode === 'bot' ? botSeat(o.level ?? 2) : null;
+  const other = o.mode === 'bot' ? botSeat(o.level ?? DEFAULT_BOT_LEVEL) : null;
   const seats = color === 'w' ? { w: me, b: other } : { w: other, b: me };
   const room = newRoom({ mode: o.mode, rated: false, tc: o.tc, catalog: o.catalog, creator: keyOf(identity), seats });
   await saveRoom(room);
@@ -1465,7 +1462,7 @@ gamesRouter.get('/live', (_req, res) => {
       mode: r.d.mode,
       rated: r.d.rated,
       tc: r.d.tc,
-      catalog: r.d.catalog ?? r.d.state.catalog ?? 'duel',
+      catalog: roomCatalog(r.d),
       white: r.d.seats.w?.name ?? null,
       black: r.d.seats.b?.name ?? null,
       whiteRating: r.d.seats.w?.rating ?? null,
@@ -1476,7 +1473,7 @@ gamesRouter.get('/live', (_req, res) => {
       lastActivity: r.d.lastActivity ?? r.d.createdAt,
     }))
     .sort((a, b) => Number(a.vsBot) - Number(b.vsBot) || (b.whiteRating ?? 0) + (b.blackRating ?? 0) - ((a.whiteRating ?? 0) + (a.blackRating ?? 0)))
-    .slice(0, 40);
+    .slice(0, LIMITS.liveList);
   res.json({ games: list });
 });
 
@@ -1491,7 +1488,7 @@ gamesRouter.get('/mine', (req, res) => {
       opponent: (r.d.seats.w?.key === k ? r.d.seats.b : r.d.seats.w)?.name ?? null,
       tc: r.d.tc,
       rated: r.d.rated,
-      catalog: catalogOf(r.d.state),
+      catalog: roomCatalog(r.d),
       createdAt: r.d.createdAt,
     }));
   res.json({ games: mine });
@@ -1501,7 +1498,7 @@ gamesRouter.get('/recent', async (req, res) => {
   const u = req.identity.user;
   if (!u) return res.json({ games: [] });
   const rows = await q(
-    `SELECT * FROM games WHERE (white_user_id = $1 OR black_user_id = $1) AND status = 'ended' ORDER BY ended_at DESC NULLS LAST LIMIT 30`,
+    `SELECT * FROM games WHERE (white_user_id = $1 OR black_user_id = $1) AND status = 'ended' ORDER BY ended_at DESC NULLS LAST LIMIT ${LIMITS.recentGames}`,
     [u.id],
   );
   res.json({ games: rows.map(toSummary) });

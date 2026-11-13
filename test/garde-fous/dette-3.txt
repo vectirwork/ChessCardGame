@@ -2,7 +2,6 @@
 # Occurrences actuelles de textes chiffrés ou du nom de la marque écrits en dur dans les fichiers du lot :
 # à dériver de src/shared/text/regles.ts, text/fr.ts ou config/*, puis à retirer d’ici. Le lot rend ce fichier vide.
 # Une ligne par occurrence : chemin<TAB>texte trouvé (en minuscules)<TAB># ligne au relevé (indicative) : extrait.
-src/server/auth.ts	spellmate	# 204 : .refine(n => !/^(admin|administrateur|moderateur|support|bot|ia|spellmate|anonyme|invite)$/i.test(n), 'Ce pseu
 src/server/config.ts	spellmate	# 20 : appName: env.APP_NAME ?? 'Spellmate',
 src/server/config.ts	spellmate	# 41 : from: env.MAIL_FROM ?? 'Spellmate <no-reply@localhost>',
 src/server/games.ts	3 cartes	# 448 : * Choix de `color` : validé (`confirm`, exactement 3 cartes, définitif, idempotent) ou provisoire (0 à 3 carte

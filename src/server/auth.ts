@@ -5,11 +5,13 @@ import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { FREE_ITEMS } from '../shared/catalog';
 import type { ItemKind } from '../shared/catalog';
+import { PASSWORD, USERNAME } from '../shared/config/limits';
 import type { MeUser } from '../shared/protocol';
 import { config } from './config';
 import { one, q } from './db';
 import { sendPasswordReset, sendVerification } from './mail';
 import { hashPassword, randomToken, sha256, sign, unsign, verifyPassword } from './security';
+import { ACCOUNT, LIMITS } from './settings';
 
 export interface UserRow {
   id: string;
@@ -57,8 +59,24 @@ declare global {
 
 const SESSION_COOKIE = 'sm_session';
 const GUEST_COOKIE = 'sm_guest';
-const SESSION_DAYS = 30;
+const SESSION_DAYS = ACCOUNT.sessionDays;
+const DAY_MS = 86400_000;
 const secureCookies = config.publicUrl.startsWith('https://');
+
+/**
+ * Durée en intervalle SQL, dans la plus grande unité exacte : « 3 days », « 1 hour », « 90 minutes ». Le nombre vient
+ * des réglages (ACCOUNT), jamais d'une requête.
+ */
+export function pgInterval(ms: number): string {
+  const units: [number, string][] = [[DAY_MS, 'day'], [3_600_000, 'hour'], [60_000, 'minute'], [1000, 'second']];
+  for (const [size, unit] of units) {
+    if (ms % size === 0) {
+      const n = ms / size;
+      return `${n} ${unit}${n > 1 ? 's' : ''}`;
+    }
+  }
+  return `${ms} milliseconds`;
+}
 
 export function parseCookies(header: string | undefined): Record<string, string> {
   const out: Record<string, string> = {};
@@ -94,7 +112,7 @@ async function userFromSession(token: string | undefined): Promise<{ user: UserR
   const user = await userById(row.user_id);
   if (!user) return null;
   // Prolongation glissante, au plus une fois par jour
-  if (row.expires_at.getTime() - Date.now() < (SESSION_DAYS - 1) * 86400_000) {
+  if (row.expires_at.getTime() - Date.now() < (SESSION_DAYS - 1) * DAY_MS) {
     await q(`UPDATE sessions SET expires_at = now() + interval '${SESSION_DAYS} days' WHERE id = $1`, [sid]);
     await q('UPDATE users SET last_seen_at = now() WHERE id = $1', [user.id]);
   }
@@ -118,7 +136,7 @@ export async function identify(req: Request, res: Response, next: NextFunction) 
     if (!guestId) {
       guestId = randomToken(12);
       res.cookie(GUEST_COOKIE, sign(guestId), {
-        httpOnly: true, sameSite: 'lax', secure: secureCookies, maxAge: 365 * 86400_000, path: '/',
+        httpOnly: true, sameSite: 'lax', secure: secureCookies, maxAge: ACCOUNT.guestCookieDays * DAY_MS, path: '/',
       });
     }
     req.identity = { user: session?.user ?? null, sessionId: session?.sessionId ?? null, guestId };
@@ -171,7 +189,7 @@ export async function createSession(req: Request, res: Response, userId: string)
     [sha256(token), userId, (req.headers['user-agent'] ?? '').slice(0, 300), req.ip ?? null],
   );
   res.cookie(SESSION_COOKIE, token, {
-    httpOnly: true, sameSite: 'lax', secure: secureCookies, maxAge: SESSION_DAYS * 86400_000, path: '/',
+    httpOnly: true, sameSite: 'lax', secure: secureCookies, maxAge: SESSION_DAYS * DAY_MS, path: '/',
   });
 }
 
@@ -181,7 +199,7 @@ export function clearSessionCookie(res: Response) {
 
 export async function createEmailToken(userId: string, kind: 'verify' | 'reset'): Promise<string> {
   const token = randomToken();
-  const ttl = kind === 'verify' ? '3 days' : '1 hour';
+  const ttl = pgInterval(kind === 'verify' ? ACCOUNT.verifyTokenMs : ACCOUNT.resetTokenMs);
   await q(`DELETE FROM email_tokens WHERE user_id = $1 AND kind = $2`, [userId, kind]);
   await q(`INSERT INTO email_tokens (id, user_id, kind, expires_at) VALUES ($1, $2, $3, now() + interval '${ttl}')`, [sha256(token), userId, kind]);
   return token;
@@ -195,14 +213,16 @@ async function consumeEmailToken(token: string, kind: 'verify' | 'reset'): Promi
   return row?.user_id ?? null;
 }
 
+/** Pseudo d'un compte : bornes, caractères, mots réservés et messages de USERNAME (src/shared/config/limits.ts). */
 export const usernameSchema = z
   .string()
   .trim()
-  .min(3, 'Le pseudo doit faire au moins 3 caractères.')
-  .max(20, 'Le pseudo doit faire au plus 20 caractères.')
-  .regex(/^[A-Za-z0-9_-]+$/, 'Lettres, chiffres, tirets et soulignés uniquement.')
-  .refine(n => !/^(admin|administrateur|moderateur|support|bot|ia|spellmate|anonyme|invite)$/i.test(n), 'Ce pseudo est réservé.');
-export const passwordSchema = z.string().min(8, 'Le mot de passe doit faire au moins 8 caractères.').max(200);
+  .min(USERNAME.min, USERNAME.tooShort)
+  .max(USERNAME.max, USERNAME.tooLong)
+  .regex(USERNAME.chars, USERNAME.badChars)
+  .refine(n => !USERNAME.reservedPattern.test(n), USERNAME.isReserved);
+/** Mot de passe : PASSWORD (src/shared/config/limits.ts). */
+export const passwordSchema = z.string().min(PASSWORD.min, PASSWORD.tooShort).max(PASSWORD.max);
 export const emailSchema = z.string().trim().max(254).email('Adresse e-mail invalide.');
 
 /** Renvoie le premier message d'erreur zod, lisible. */
@@ -211,8 +231,8 @@ export function zodError(e: z.ZodError): string {
 }
 
 const authLimiter = rateLimit({
-  windowMs: 10 * 60_000,
-  limit: config.isProd ? 30 : 1000,
+  windowMs: LIMITS.authWindowMs,
+  limit: config.isProd ? LIMITS.authPerWindow : LIMITS.authPerWindowDev,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { error: 'Trop de tentatives, réessayez dans quelques minutes.' },
@@ -255,7 +275,7 @@ authRouter.post('/register', authLimiter, async (req, res) => {
 });
 
 authRouter.post('/login', authLimiter, async (req, res) => {
-  const parsed = z.object({ login: z.string().trim().min(1).max(254), password: z.string().min(1).max(200) }).safeParse(req.body);
+  const parsed = z.object({ login: z.string().trim().min(1).max(254), password: z.string().min(1).max(PASSWORD.max) }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Identifiants manquants.' });
   const { login, password } = parsed.data;
   const row = await one<{ id: string; password_hash: string }>(

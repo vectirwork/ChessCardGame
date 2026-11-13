@@ -1,7 +1,7 @@
 // Réglages du serveur, nommés : délais, classement, appariement, relais, IA, limites, comptes, interrupteurs.
-// Valeurs actuelles du serveur ; rien ne les consomme encore (le lot 3 remplace les littéraux de games.ts, auth.ts,
-// account.ts, index.ts et bot-pool.ts par ces constantes). Les durées couplées au client sont dans
-// src/shared/config/timings.ts, les règles du jeu dans src/shared/config/rules.ts.
+// Lus par games.ts, rating.ts, auth.ts, index.ts, bot-pool.ts et db.ts (aucun de ces nombres n'y est recopié) ; les
+// tests les importent. Les durées couplées au client sont dans src/shared/config/timings.ts, les règles du jeu dans
+// src/shared/config/rules.ts, la configuration lue dans l'environnement dans config.ts.
 
 import type { BotLevel } from '../shared/bot';
 import { FEATURES as FEATURE_DEFAULTS, FEATURE_KEYS, featureEnvName } from '../shared/config/features';

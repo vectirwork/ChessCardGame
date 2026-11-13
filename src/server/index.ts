@@ -16,6 +16,7 @@ import { config } from './config';
 import { connectDb, db, migrate } from './db';
 import { attachSockets, flushRooms, gamesRouter, restoreRooms } from './games';
 import { honorPackPromises, shopRouter, stripeWebhook } from './shop';
+import { LIMITS } from './settings';
 import { serveBuiltSite } from './site';
 
 async function main() {
@@ -59,7 +60,7 @@ async function main() {
   // Le webhook Stripe a besoin du corps brut : déclaré avant express.json()
   app.post('/api/stripe/webhook', ...stripeWebhook);
 
-  app.use('/api', express.json({ limit: '100kb' }), sameOrigin, identify);
+  app.use('/api', express.json({ limit: LIMITS.jsonBody }), sameOrigin, identify);
   app.get('/api/health', async (_req, res) => {
     await db.query('SELECT 1');
     res.json({ ok: true });
@@ -102,8 +103,8 @@ async function main() {
   const io = new Server<ClientToServer, ServerToClient>(server, {
     serveClient: false,
     cors: { origin: false },
-    pingInterval: 10_000,
-    pingTimeout: 8_000,
+    pingInterval: LIMITS.pingIntervalMs,
+    pingTimeout: LIMITS.pingTimeoutMs,
   });
   attachSockets(io);
   botPool.start();

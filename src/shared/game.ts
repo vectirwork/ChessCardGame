@@ -31,7 +31,7 @@ import {
   basicFenError, cardEndsTurn, castsLeft, poolOf, rulesFor, rulesOf, stampRules, tuneOf, validHand,
 } from './rules';
 import { cap, compte } from './text/fr';
-import { limitesMain, refusBudget } from './text/regles';
+import { limitesMain, refusBudget, regle50, repetition } from './text/regles';
 
 export interface Effect {
   id: number;
@@ -1350,18 +1350,29 @@ export function canStillMate(s: GameState, c: Color): boolean {
 // ---------------------------------------------------------------------------------------------
 // Affichage
 
+/**
+ * Libellés des fins de partie, aux règles des nouvelles parties (GAME_RULES) : « Triple répétition », « Règle des 50
+ * coups ». Pour une partie donnée, resultText(raison, rulesOf(état)).
+ */
 export const RESULT_TEXT: Record<ResultReason, string> = {
   checkmate: 'Échec et mat',
   stalemate: 'Pat',
   resign: 'Abandon',
   timeout: 'Temps écoulé',
-  repetition: 'Triple répétition',
-  fifty: 'Règle des 50 coups',
+  repetition: repetition(GAME_RULES, true),
+  fifty: regle50(GAME_RULES, true),
   insufficient: 'Matériel insuffisant',
   agreement: 'Nulle par accord',
   abandon: 'Adversaire parti',
   aborted: 'Partie annulée',
 };
+
+/** Libellé d'une fin de partie selon les règles de la partie (nulles réglementaires : nombre de coups, répétitions). */
+export function resultText(reason: ResultReason, r: Pick<Rules, 'fiftyHalfmoves' | 'repetitions'>): string {
+  if (reason === 'fifty') return regle50(r, true);
+  if (reason === 'repetition') return repetition(r, true);
+  return RESULT_TEXT[reason];
+}
 
 /**
  * Libellé d'une carte jouée, pour le journal. Les journaux des parties jouées avant le retrait de quatre cartes

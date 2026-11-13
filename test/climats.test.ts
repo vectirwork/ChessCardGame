@@ -14,7 +14,7 @@ import type { Rules } from '../src/shared/config/rules';
 import {
   Effect, GameState, canStillMate, cardOptions, cardPlayable, cardRefusalInfo, castsThisTurn, checkKind, clockRate,
   completeDraft, createGame, createGameFromFen, dealHands, draftRefusal, evaluateEnd, incrementSuspended, inferCatalog,
-  legalMovesOf, modsFromEffects, playCard, playMove, positionKey, sideInCheck, viewState,
+  legalMovesOf, modsFromEffects, playCard, playMove, positionKey, resultText, sideInCheck, viewState,
 } from '../src/shared/game';
 import { RULES_V1, castsLeft } from '../src/shared/rules';
 import { chooseBotDraft } from '../src/shared/bot';
@@ -822,6 +822,13 @@ describe('règles de la partie : équilibrage des cartes (tuneOf)', () => {
     const autres = regles({ tuning: { ...RULES_V1.tuning, ice_wall: { ranks: [1, 2, 3, 4, 5, 6] } } });
     expect(evaluateEnd(avecRegles(autres, fen, ['ice_wall']))).toBeNull();
     expect(evaluateEnd(avecRegles(autres, fen))).toEqual({ winner: null, reason: 'insufficient' });
+  });
+  it('libellés des fins selon les règles de la partie', () => {
+    expect(resultText('fifty', RULES_V1)).toBe('Règle des 50 coups');
+    expect(resultText('repetition', RULES_V1)).toBe('Triple répétition');
+    expect(resultText('fifty', regles({ fiftyHalfmoves: 150 }))).toBe('Règle des 75 coups');
+    expect(resultText('repetition', regles({ repetitions: 2 }))).toBe('Double répétition');
+    expect(resultText('checkmate', RULES_V1)).toBe('Échec et mat');
   });
   it('nulles réglementaires selon les règles : répétition double, 50 coups', () => {
     let s = createGameFromFen('4k3/8/8/8/8/8/8/R3K3 w - - 0 1', { w: [], b: [] }, true, 'aucune', { rules: regles({ repetitions: 2 }) });

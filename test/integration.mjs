@@ -20,7 +20,7 @@ import { Client as BaseClient, baseUrl, sleep, sq } from './lib/client.mjs';
 const BASE = baseUrl(process.argv[2]);
 const { CARDS, cardsOf } = await tsImport('../src/shared/cards.ts', import.meta.url);
 const { DEAL, RULES_V1 } = await tsImport('../src/shared/config/rules.ts', import.meta.url);
-const { poolOf, rulesOf, validHand: r9 } = await tsImport('../src/shared/rulesCore.ts', import.meta.url);
+const { poolOf, rulesOf, sameRules, validHand: r9 } = await tsImport('../src/shared/rulesCore.ts', import.meta.url);
 const { BOT_RUNTIME, RATING, RELAY, TIMINGS } = await tsImport('../src/server/settings.ts', import.meta.url);
 
 /** Les Pouvoirs (catalogue 'climats'), dans l'ordre des réserves. */
@@ -694,6 +694,29 @@ step('accueil : deux visiteurs prêts appariés (pays d’après le fuseau, part
   v2.socket.close();
 }
 step(`accueil : recherche d’un vrai joueur ; un joueur qui ne joue pas est relayé par l’IA (${RELAY.firstMoveMs / 1000} s), puis reprend la main`);
+
+// 8 ter. Résumés des parties terminées (GameSummary : historique du compte, profil public) : les champs d'avant, plus
+// `rules` seulement pour une partie dont les règles diffèrent de RULES_V1 (rien de nouveau au défaut), égales alors à
+// celles de son état.
+{
+  const CHAMPS = ['id', 'mode', 'rated', 'status', 'white', 'black', 'whiteRating', 'blackRating', 'winner', 'reason', 'timeControl', 'createdAt', 'plies'];
+  const recent = (await alice.api('/games/recent')).data.games;
+  const publics = (await alice.api(`/users/alice_${stamp}`)).data.games;
+  assert.ok(recent.length > 0, 'parties terminées d’Alice');
+  let hors = 0;
+  for (const g of [...recent, ...publics]) {
+    await sleep(150); // limiteur par socket (réserve de 20 actions, 8 par seconde)
+    const jg = await alice.emit('game:join', { id: g.id, sit: false });
+    assert.ok(jg.ok, `partie ${g.id} relue`);
+    const v1 = sameRules(rulesOf(jg.view.state), RULES_V1);
+    assert.deepEqual(Object.keys(g), v1 ? CHAMPS : [...CHAMPS, 'rules'], `résumé de ${g.id} : champs`);
+    if (!v1) {
+      assert.deepEqual(g.rules, jg.view.state.rules, `résumé de ${g.id} : règles de la partie`);
+      hors++;
+    }
+  }
+  step(`résumés des parties (historique, profil) : ${hors ? `${hors} avec leurs règles (hors RULES_V1)` : 'champs d’avant, sans règles (RULES_V1)'}`);
+}
 
 // 9. Compte : profil public (roi, échiquier, sorts, sceau), classement, export, suppression
 r = await alice.api(`/users/ALICE_${stamp}`);

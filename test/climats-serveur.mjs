@@ -369,7 +369,20 @@ async function botGame(level, tc, maxPlies) {
   const j = await me.join(id);
   const you = j.view.you;
   const bot = you === 'w' ? 'b' : 'w';
-  const stats = { id, level, tc, you, botCards: [], humanCards: [], botMs: [], plies: 0, result: null, errors: [], relaxed: 0 };
+  const stats = { id, level, tc, you, botCards: [], humanCards: [], botMs: [], plies: 0, result: null, errors: [], relaxed: 0, maxTurnCards: 0 };
+  // Cartes de l'IA dans le tour en cours : jamais plus que les règles de la partie (cardsPerTurn) ; le plus grand nombre
+  // joué en un tour est relevé (avec {"cardsPerTurn":2}, l'IA doit en jouer deux : IA_CARTES_PAR_TOUR).
+  let turnCards = 0;
+  const seeBot = u => {
+    if (u.event.type === 'card' && u.event.info.caster === bot) {
+      stats.botCards.push(u.event.info.card);
+      turnCards++;
+      stats.maxTurnCards = Math.max(stats.maxTurnCards, turnCards);
+      const max = rulesOf(u.view.state).cardsPerTurn;
+      if (turnCards > max) stats.errors.push(`l'IA a joué ${turnCards} cartes dans un tour (au plus ${max})`);
+    }
+    if (u.view.state.pos.turn !== bot) turnCards = 0;
+  };
   if (j.view.draft?.pool.includes('hourglass')) problem(`partie IA ${id} : Sablier fou proposé`);
   let view = await draftAlone(me, id, j.view);
   const t0 = Date.now();
@@ -414,7 +427,7 @@ async function botGame(level, tc, maxPlies) {
       // Réponse de l'IA : une ou plusieurs mises à jour (carte puis coup) jusqu'à ce que le trait revienne.
       while (view.status === 'active' && !view.state.result && view.state.pos.turn === bot) {
         const u = await me.next(() => true, 30000, `réponse de l'IA (ply ${view.state.ply})`);
-        if (u.event.type === 'card' && u.event.info.caster === bot) stats.botCards.push(u.event.info.card);
+        seeBot(u);
         if (u.event.type === 'move' && u.event.color === bot) {
           stats.botMs.push(u.at - sent);
           if (u.event.info.move.flags & 1024) stats.relaxed++;
@@ -425,7 +438,7 @@ async function botGame(level, tc, maxPlies) {
       // L'IA commence (Blancs) ou rejoue après un Rituel humain
       const sent = Date.now();
       const u = await me.next(() => true, 30000, `IA (ply ${s.ply})`);
-      if (u.event.type === 'card' && u.event.info.caster === bot) stats.botCards.push(u.event.info.card);
+      seeBot(u);
       if (u.event.type === 'move' && u.event.color === bot) stats.botMs.push(u.at - sent);
       view = u.view;
     }
@@ -455,9 +468,13 @@ async function ia() {
     const avg = ms.reduce((a, b) => a + b, 0) / Math.max(1, ms.length);
     log(`   ${s.id} IA${s.level} ${s.tc} humain=${s.you} plies=${s.plies} résultat=${JSON.stringify(s.result)} durée=${s.durationS}s`);
     log(`     cartes IA : ${s.botCards.join(', ') || 'aucune'} | humain : ${s.humanCards.join(', ') || 'aucune'} | mains : w=${s.hands.w} b=${s.hands.b}`);
-    log(`     réponse IA : moy ${Math.round(avg)} ms, médiane ${ms[ms.length >> 1]} ms, max ${ms[ms.length - 1]} ms (${ms.length} coups) ; coups « la magie cède » de l'IA : ${s.relaxed}`);
+    log(`     réponse IA : moy ${Math.round(avg)} ms, médiane ${ms[ms.length >> 1]} ms, max ${ms[ms.length - 1]} ms (${ms.length} coups) ; coups « la magie cède » de l'IA : ${s.relaxed} ; au plus ${s.maxTurnCards} carte(s) de l'IA en un tour`);
     for (const e of s.errors) problem(`partie IA ${s.id} : ${e}`);
   }
+  // IA_CARTES_PAR_TOUR=n : l'IA doit avoir joué n cartes dans un même tour au moins une fois (serveur à n cartes par tour).
+  const attendu = Number(process.env.IA_CARTES_PAR_TOUR ?? 0);
+  const vu = Math.max(0, ...res.map(s => s.maxTurnCards));
+  if (attendu && vu < attendu) problem(`l'IA n'a jamais joué ${attendu} cartes dans un même tour (au plus ${vu})`);
   return res;
 }
 

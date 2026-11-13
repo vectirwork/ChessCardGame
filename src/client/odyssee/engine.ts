@@ -129,7 +129,7 @@ interface SceneRec {
 }
 
 /** Inclinaison de l'échiquier posé dans le texte (mobile), en radians. */
-const SLOT_TILT = 0.62;
+export const SLOT_TILT = 0.62;
 /** Les images d'un lieu (nuées) sont demandées quand il reste moins de ce nombre d'écrans à parcourir. */
 const PRELOAD_SCREENS = 2.4;
 /** Boucle d'images arrêtée après ce temps sans aucun changement (ms). */

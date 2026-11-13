@@ -3,10 +3,11 @@ import { memo, useEffect, useId, useRef } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { CARDS, RARITY_LABEL } from '../../shared/cards';
 import type { CardId } from '../../shared/cards';
+import { nombre } from '../../shared/text/fr';
 import { SpellCard } from '../components/SpellCard';
 import { howToPlay } from './data';
 
-/** Étoile à quatre branches dans son cercle : la marque Spellmate au trait de l'Odyssée. */
+/** Étoile à quatre branches dans son cercle : la marque du site au trait de l'Odyssée. */
 export function Mark({ size = 28 }: { size?: number }) {
   const id = `mk${useId().replace(/:/g, '')}`;
   return (
@@ -42,7 +43,7 @@ export function Kicker({ num, name, alt }: { num: string; name: string; alt?: nu
     <p className="o-kicker o-rv">
       <span className="o-num">{num}</span>
       <span>{name}</span>
-      {alt !== undefined && <span className="o-kicker-alt">{alt.toLocaleString('fr-FR')} m</span>}
+      {alt !== undefined && <span className="o-kicker-alt">{nombre(alt)} m</span>}
     </p>
   );
 }

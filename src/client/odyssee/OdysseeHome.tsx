@@ -1,7 +1,9 @@
-// Spellmate · L'Odyssée : une descente verticale à travers six lieux, avec un échiquier-astre qui l'accompagne.
-// Zéro clic : l'échiquier du premier écran est une vraie partie. Le visiteur joue les Blancs dès qu'il touche
-// une pièce ; au premier coup, la page s'efface vers la gauche et la partie passe en plein écran.
-import { Suspense, lazy, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+// L'Odyssée (accueil) : une descente verticale à travers les lieux de PLACES (data.ts), avec un échiquier-astre qui
+// l'accompagne. Zéro clic : l'échiquier du premier écran est une vraie partie. Le visiteur joue (HOME.playerColor : les
+// Blancs) dès qu'il touche une pièce ; au premier coup, la page s'efface vers la gauche et la partie passe en plein écran.
+// Réglages : HOME (src/shared/config/home.ts), règles de l'accueil (rulesFor('accueil'), puis celles de la partie
+// ouverte : rulesOf), interrupteurs (useFeature), lieux et textes (data.ts).
+import { Component, Suspense, lazy, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MutableRefObject, PointerEvent as RPointerEvent, ReactNode } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { prewarmVfx, releaseVfx } from '../vfx/useVfx';
@@ -9,32 +11,44 @@ import { Link, useNavigate } from 'react-router-dom';
 import gsap from 'gsap';
 import { CARDS, CATALOGS, offeredCatalog } from '../../shared/cards';
 import type { Catalog, CardId } from '../../shared/cards';
-import { DEFAULT_KING, itemById, kingStyle, normKing } from '../../shared/catalog';
-import { RESULT_TEXT } from '../../shared/game';
+import { DEFAULT_KING, formatPrice, itemById, kingStyle, normKing } from '../../shared/catalog';
+import type { FeatureKey } from '../../shared/config/features';
+import { HOME } from '../../shared/config/home';
+import { GAME_RULES } from '../../shared/config/rules';
+import { resultText } from '../../shared/game';
 import type { MeUser } from '../../shared/protocol';
+import { DEFAULT_QUICK, TIME_CONTROLS } from '../../shared/protocol';
+import { cardEndsTurn, castsLeft, rulesOf } from '../../shared/rulesCore';
+import { SLOT_DEFS } from '../../shared/skins/slots';
 import { api, errMsg } from '../api';
 import { Board } from '../components/Board';
+import { cellOf, squareAt } from '../components/boardGeometry';
 import { CollectionSeal } from '../components/CollectionSeal';
 import { crestUrl, kingUrl } from '../components/pieces';
 import { SpellCard } from '../components/SpellCard';
-import { CLASSIC_KINGS_PREF } from '../features/history';
+import { readJson } from '../features/storage';
 import { equippedId, isEquipped, owns } from '../skins';
-import { getGuestName, setGuestName, useApp, usePref } from '../store';
+import { KEYS } from '../storageKeys';
+import { getGuestName, setGuestName, useApp, useFeature } from '../store';
 import { BOT_PROFILES } from '../ai';
 import type { BotLevel } from '../ai';
 import {
-  BOARDS, INTERLUDE, KINGS, LEVELS, MODES, PACKS, PLACES, PLACE_COPY, SKINS, idleCasts, liveCatalog, placeCards, priceOf, principle,
+  BOARDS, INTERLUDE, KINGS, LEVELS, MODES, MORE_SLOTS, PACKS, PAGE_TEXTS, PLACE, PLACES, PLACE_COPY, SKINS, doorKicker, doorNum, doorsLabel,
+  idleCasts, itemsOf, liveTexts, placeAttrs, placeCards, priceOf, principle,
 } from './data';
-import { Engine, isMobile } from './engine';
+import type { ModeKey } from './data';
+import { Engine, SLOT_TILT, isMobile, poseFor } from './engine';
 import { Chapter, EQ, EqRing, Kicker, Lines, Mark, OrbitRings, Sheet, Slot } from './parts';
 import { SceneStack } from './scenery';
-import { GameShell, OracleEye, PowersPanel, PremoveNote, cardName, castMessage, castThisTurn, handNotes } from './shell';
+import { GameShell, MOBILE_MAX, OracleEye, PowersPanel, PremoveNote, cardName, castMessage, castsThisTurn, handNotes } from './shell';
 import type { ShellAction } from './shell';
+import { REF_HAND } from './shell/layout';
+import { GUEST_NAME } from '../../shared/config/limits';
 import type { Act } from './StageBoard';
 import { useHomeLobby } from './useHomeLobby';
 import type { HomeLobby } from './useHomeLobby';
 import { countryName, fromCountry } from './country';
-import { useLiveGame } from './useLiveGame';
+import { abortedEmpty, useLiveGame } from './useLiveGame';
 import type { LiveGame } from './useLiveGame';
 import './odyssee.css';
 
@@ -83,6 +97,25 @@ const LIVE_IN_EASE = 'cubic-bezier(0.33333, 1, 0.66667, 1)';
 const liveOutEase = lazyEasing('power2.inOut');
 /** Rideau hors de l'écran : sa lisière dorée (150 px à sa gauche) comprise, sinon elle reste en bordure d'écran. */
 const CURTAIN_OUT = 'translateX(calc(101% + 160px))';
+/**
+ * Durées du passage en partie et du retour, en millisecondes : le compositeur (engine.fly, fondus) les prend telles
+ * quelles, gsap en secondes (sec(T.x) : T.x / 1000, le même nombre que le littéral en secondes d'avant).
+ */
+const T = {
+  /** Vol de l'échiquier vers la partie (gameMix) et retour. */
+  flyIn: 1450,
+  flyOut: 1300,
+  /** Fondu d'entrée de l'échiquier de la partie (depuis un lieu de démonstration), et son délai. */
+  liveIn: 700,
+  liveInDelay: 150,
+  /** Fondu de sortie au retour, et son délai. */
+  liveOut: 600,
+  liveOutDelay: 100,
+  /** Retour : sortie de l'éventail et du HUD avant le changement de mode. */
+  leaveDelay: 420,
+} as const;
+const sec = (ms: number) => ms / 1000;
+
 /** Glissement : sélecteur, deux états (transform seule ou images clés), durée et délai en secondes. */
 type Slide = [string, [string, string] | [Keyframe, Keyframe], number, number];
 const SLIDE_ANIMS = new WeakMap<Element, Animation>();
@@ -124,27 +157,42 @@ const loadStageBoard = () => import('./StageBoard');
 const GESTURES = ['touchmove', 'wheel', 'keydown'] as const;
 const StageBoard = lazy(() => loadStageBoard().then(m => ({ default: m.StageBoard })));
 
+/**
+ * Limite d'erreur de l'échiquier de démonstration, décoratif : un échec de son chargement (morceau introuvable après une
+ * mise en ligne, réseau coupé) ou de son rendu le retire, sans remplacer tout l'accueil par l'écran d'erreur de la page.
+ * Aucun nœud de plus.
+ */
+class DecorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
 type Mode = 'page' | 'entering' | 'game' | 'leaving';
 type SheetKind = 'friend' | 'ai' | null;
 
-const IDS = ['observatoire', 'foret', 'pics', 'sablier', 'bazar', 'seuil'];
-const INTRO_KEY = 'sm:intro';
-
 const levelName = (l: BotLevel) => BOT_PROFILES[l].name;
+/** Les trois principes (Forêt de givre) : le jeu en général, règles des nouvelles parties (calculés une fois). */
+const PRINCIPLE = principle(GAME_RULES);
 
 /**
  * Halo sous la pièce jouable survolée (échiquier du héros, souris). Son propre état : passer d'une case à l'autre ne
- * rend que ce span, au lieu de tout l'accueil (décor, chapitres, échiquiers) à chaque case franchie.
+ * rend que ce span, au lieu de tout l'accueil (décor, chapitres, échiquiers) à chaque case franchie. Il reçoit la
+ * cellule affichée (y × 8 + x, cellOf : orientation de l'échiquier comprise), un nombre : la même cellule ne rend rien.
  */
-function HoverHalo({ setRef }: { setRef: MutableRefObject<((sq: number | null) => void) | null> }) {
-  const [sq, setSq] = useState<number | null>(null);
+function HoverHalo({ setRef }: { setRef: MutableRefObject<((cell: number | null) => void) | null> }) {
+  const [cell, setCell] = useState<number | null>(null);
   useLayoutEffect(() => {
-    setRef.current = setSq;
+    setRef.current = setCell;
     return () => {
       setRef.current = null;
     };
   }, [setRef]);
-  return sq === null ? null : <span className="o-halo" style={{ left: `${(sq & 7) * 12.5}%`, top: `${(7 - (sq >> 3)) * 12.5}%` }} />;
+  return cell === null ? null : <span className="o-halo" style={{ left: `${(cell & 7) * 12.5}%`, top: `${(cell >> 3) * 12.5}%` }} />;
 }
 
 function fmtWait(since: number | null) {
@@ -211,7 +259,7 @@ function statusOf(g: LiveGame) {
 }
 
 export default function OdysseeHome() {
-  const { me, setMe, toast: notify } = useApp();
+  const { me, ready: identityKnown, setMe, toast: notify } = useApp();
   const navigate = useNavigate();
   const rootRef = useRef<HTMLDivElement>(null);
   const astreRef = useRef<HTMLDivElement>(null);
@@ -238,11 +286,11 @@ export default function OdysseeHome() {
   /** Fondu de l'échiquier de la partie joué par le compositeur (passage depuis un lieu de démonstration, ou retour). */
   const liveFade = useRef<Animation | null>(null);
   const [hover, setHover] = useState(false);
-  /** Case jouable survolée (souris, échiquier du héros) : rendue par HoverHalo seul, pas par tout l'accueil. */
-  const haloRef = useRef<((sq: number | null) => void) | null>(null);
-  const hoverTo = (sq: number | null) => {
-    haloRef.current?.(sq);
-    liveRef.current?.classList.toggle('is-grab', sq !== null);
+  /** Cellule affichée sous une pièce jouable survolée (souris, échiquier du héros) : rendue par HoverHalo seul. */
+  const haloRef = useRef<((cell: number | null) => void) | null>(null);
+  const hoverTo = (cell: number | null) => {
+    haloRef.current?.(cell);
+    liveRef.current?.classList.toggle('is-grab', cell !== null);
   };
   const [sheet, setSheet] = useState<SheetKind>(null);
   const [cast, setCast] = useState<{ card: CardId; skin: string } | null>(null);
@@ -253,22 +301,43 @@ export default function OdysseeHome() {
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   useEffect(() => setHeaderSlot(document.getElementById('header-slot')), []);
 
-  const catalog = useMemo(() => liveCatalog(), []);
+  const catalog = HOME.catalog;
   const storyCards = useMemo(() => placeCards(catalog), [catalog]);
+
+  // Interrupteurs (FEATURES, FEATURE_* du serveur) : une porte, un lien ou une recherche ne sont montrés que si le
+  // serveur les accepte. Créer une partie demande aussi newGames (maintenance), et guestPlay pour un invité.
+  const feature: Readonly<Record<FeatureKey, boolean>> = {
+    ranked: useFeature('ranked'),
+    friendlyQueue: useFeature('friendlyQueue'),
+    invites: useFeature('invites'),
+    botGames: useFeature('botGames'),
+    guestPlay: useFeature('guestPlay'),
+    live: useFeature('live'),
+    homeDuel: useFeature('homeDuel'),
+    homeRelay: useFeature('homeRelay'),
+    puzzles: useFeature('puzzles'),
+    learn: useFeature('learn'),
+    analysis: useFeature('analysis'),
+    shop: useFeature('shop'),
+    newGames: useFeature('newGames'),
+  };
+  const canPlayOnline = feature.newGames && (!!me || feature.guestPlay);
+  const shop = feature.shop;
 
   // Bazar : aperçu d'un roi, d'un échiquier ou de sorts sur l'échiquier de démonstration (au départ, la collection du
   // lieu : Jardin de jade, dont le rose est celui du Bazar ; le Sablier montre déjà la Forge d'Inferno)
-  const [kingPick, setKingPick] = useState(PLACES[4].king);
-  const [skinPick, setSkinPick] = useState(PLACES[4].skin);
-  const [boardPick, setBoardPick] = useState(PLACES[4].theme);
-  const [pick, setPick] = useState<string>(PLACES[4].king);
+  const [kingPick, setKingPick] = useState(PLACE.bazar.king);
+  const [skinPick, setSkinPick] = useState(PLACE.bazar.skin);
+  const [boardPick, setBoardPick] = useState(PLACE.bazar.theme);
+  const [pick, setPick] = useState<string>(PLACE.bazar.king);
   const [pulse, setPulse] = useState(0);
 
   const mySkin = equippedId(me, 'skin');
   const myBoard = equippedId(me, 'board');
   const myKing = equippedId(me, 'king');
   // Rois adverses classiques (réglage du compte) : l'Oracle et l'adversaire en direct en roi Arcane
-  const [classicKings] = usePref<boolean>(CLASSIC_KINGS_PREF, false);
+  // Lue une fois, sans abonnement (§9 : aucun écouteur de plus au niveau de l'accueil), comme avant le lot 7
+  const [classicKings] = useState(() => readJson<boolean>(KEYS.classicKings, false));
   // Scène 3D de la partie (three.js et un contexte WebGL) : préparée seulement à la première intention de jouer
   // (survol d'une pièce jouable, toucher de l'échiquier, survol ou focus des cartes, bouton Jouer). Jamais à la simple
   // ouverture de la page (D6) : un visiteur qui ne fait que lire ne la télécharge pas.
@@ -277,6 +346,10 @@ export default function OdysseeHome() {
   const g = useLiveGame({ skin: mySkin, theme: myBoard, king: myKing, classicKings, active: mode === 'game', warm: intent });
   const gRef = useRef(g);
   gRef.current = g;
+  // Règles de la partie ouverte (celles de l'accueil, ou d'une partie en direct) et ses textes, calculés une fois par
+  // objet de règles (au défaut, RULES_V1 : toujours le même objet)
+  const rules = rulesOf(g.state);
+  const texts = useMemo(() => liveTexts(rules), [rules]);
 
   // ------------------------------------------------------------------------------------------
   // Moteur, apparitions, ouverture
@@ -337,8 +410,8 @@ export default function OdysseeHome() {
     // Ouverture : une étoile tombe dans l'astrolabe, éclair doré, l'échiquier s'éveille (une fois par visite)
     let seen = false;
     try {
-      seen = sessionStorage.getItem(INTRO_KEY) === '1';
-      sessionStorage.setItem(INTRO_KEY, '1');
+      seen = sessionStorage.getItem(KEYS.intro) === '1';
+      sessionStorage.setItem(KEYS.intro, '1');
     } catch {
       // stockage indisponible
     }
@@ -480,13 +553,13 @@ export default function OdysseeHome() {
     };
   }, []);
 
-  // Repos (D6) : 30 s sans aucun geste, les décors animés en boucle (anneaux, étoiles, lanternes, flottement…) se
+  // Repos (D6) : HOME.idleMs (30 s) sans aucun geste, les décors animés en boucle (anneaux, étoiles, lanternes, flottement…) se
   // figent là où ils en sont (attribut data-still, odyssee.css) ; le premier geste les relance. Une seule minuterie,
   // réarmée au plus tard à l'échéance : rien ne tourne pendant le repos.
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    const STILL_MS = 30000;
+    const STILL_MS = HOME.idleMs;
     let last = performance.now();
     let timer = 0;
     const check = () => {
@@ -607,9 +680,9 @@ export default function OdysseeHome() {
       // (t0), pas à la première image validée après eux
       const ease = live ? flightEase() : null;
       const t0 = e.clockAt(tl.startTime());
-      if (ease) e.fly(1, 1450 * k, ease, t0, live!.querySelector<HTMLElement>('.board'), live!.querySelector<HTMLElement>('.o-live-plane'));
+      if (ease) e.fly(1, T.flyIn * k, ease, t0, live!.querySelector<HTMLElement>('.board'), live!.querySelector<HTMLElement>('.o-live-plane'));
       const flown = !!ease;
-      tl.to(e, { gameMix: 1, duration: 1.45 * k, ease: 'expo.inOut', onUpdate: () => e.markDirty() }, 0);
+      tl.to(e, { gameMix: 1, duration: sec(T.flyIn) * k, ease: 'expo.inOut', onUpdate: () => e.markDirty() }, 0);
       // Rideau, voile, page et décor : animations du compositeur (fluides même pendant le montage de la partie).
       // Téléphone : la page glisse sans fondu et le décor ne bouge pas (le rideau les couvre ; un fondu ou un zoom de
       // ces grands groupes de calques coûtait plusieurs passages plein écran à chaque image)
@@ -626,8 +699,8 @@ export default function OdysseeHome() {
       // L'échiquier de la partie remplace celui de la démonstration en fondu (le compositeur le joue avec le vol)
       if (fromDemo && live) {
         liveFade.current?.cancel();
-        if (flown) liveFade.current = fade(live, 0, 1, 700 * k, 150 * k, LIVE_IN_EASE, t0);
-        else tl.fromTo(live, { opacity: 0 }, { opacity: 1, duration: 0.7 * k, ease: 'power2.out' }, 0.15 * k);
+        if (flown) liveFade.current = fade(live, 0, 1, T.liveIn * k, T.liveInDelay * k, LIVE_IN_EASE, t0);
+        else tl.fromTo(live, { opacity: 0 }, { opacity: 1, duration: sec(T.liveIn) * k, ease: 'power2.out' }, sec(T.liveInDelay) * k);
       }
       // Coque de la partie rendue d'avance, cachée, pendant le glissement du rideau : à l'arrivée, il ne reste qu'à la
       // montrer. Une image après le départ, en transition (interruptible) : rien ne retarde le rideau ni le vol, que le
@@ -645,13 +718,18 @@ export default function OdysseeHome() {
   const leave = useCallback(() => {
     const e = engineRef.current;
     const root = rootRef.current;
-    // Un second « Retour » pendant les 0,42 s qui précèdent le changement de mode relancerait tous les glissements
+    // Un second « Retour » pendant les 0,42 s (T.leaveDelay) qui précèdent le changement de mode relancerait tous les
+    // glissements
     if (!e || !root || modeRef.current !== 'game' || leaving.current) return;
     leaving.current = true;
     const k = reduced ? 0.25 : 1;
-    gsap.to(root.querySelectorAll('.gs-fan-slot'), { y: 360, opacity: 0, duration: 0.5 * k, ease: 'expo.in', stagger: 0.04 * k });
+    // Cartes de la main : 0,04 s de décalage de l'une à l'autre (0,08 s en tout pour la main de référence, REF_HAND),
+    // borné pour une main plus longue : la dernière part toujours avant le changement de mode
+    const slots = root.querySelectorAll('.gs-fan-slot');
+    const stagger = Math.min(0.04, 0.24 / Math.max(1, slots.length - 1));
+    gsap.to(slots, { y: 360, opacity: 0, duration: 0.5 * k, ease: 'expo.in', stagger: stagger * k });
     gsap.to(root.querySelectorAll('.gs-in, .gs-toast, .gs-opponent'), { opacity: 0, y: 14, duration: 0.35 * k, ease: 'power2.in' });
-    gsap.delayedCall(0.42 * k, () => {
+    gsap.delayedCall(sec(T.leaveDelay) * k, () => {
       // Rendu immédiat : la page et le décor redeviennent visibles (plus de is-game) avant que leurs glissements soient
       // créés, pour que le compositeur les joue
       flushSync(() => setMode('leaving'));
@@ -675,14 +753,14 @@ export default function OdysseeHome() {
       // Retour de l'échiquier : même vol, à l'envers, parti avec la timeline (voir play)
       const ease = live ? flightEase() : null;
       const t0 = e.clockAt(tl.startTime());
-      if (ease) e.fly(0, 1300 * k, ease, t0, live!.querySelector<HTMLElement>('.board'), live!.querySelector<HTMLElement>('.o-live-plane'));
+      if (ease) e.fly(0, T.flyOut * k, ease, t0, live!.querySelector<HTMLElement>('.board'), live!.querySelector<HTMLElement>('.o-live-plane'));
       const flown = !!ease;
-      tl.to(e, { gameMix: 0, duration: 1.3 * k, ease: 'expo.inOut', onUpdate: () => e.markDirty() }, 0);
+      tl.to(e, { gameMix: 0, duration: sec(T.flyOut) * k, ease: 'expo.inOut', onUpdate: () => e.markDirty() }, 0);
       if (toDemo && live) {
         const out = flown ? liveOutEase() : null;
         liveFade.current?.cancel();
-        if (out) liveFade.current = fade(live, 1, 0, 600 * k, 100 * k, out, t0);
-        else tl.to(live, { opacity: 0, duration: 0.6 * k, ease: 'power2.inOut' }, 0.1 * k);
+        if (out) liveFade.current = fade(live, 1, 0, T.liveOut * k, T.liveOutDelay * k, out, t0);
+        else tl.to(live, { opacity: 0, duration: sec(T.liveOut) * k, ease: 'power2.inOut' }, sec(T.liveOutDelay) * k);
       }
       const phone = slidePhone.current ?? isMobile(window.innerWidth);
       slides(root, [
@@ -714,10 +792,12 @@ export default function OdysseeHome() {
     return () => document.removeEventListener('visibilitychange', on);
   }, []);
   // Prêt : échiquier du haut sous les yeux (ou partie en plein écran), partie contre l'Oracle à peine commencée
-  const lobbyReady = tabVisible && !g.duel && !g.result && g.state.ply <= 4 && (mode === 'game' || (mode === 'page' && place === 0));
+  const lobbyReady = tabVisible && !g.duel && !g.result && g.state.ply <= HOME.readyMaxPly && (mode === 'game' || (mode === 'page' && place === 0));
+  // Parties en direct de l'accueil ouvertes (homeDuel, création, invités), et identité connue avant la connexion
+  const duelOn = feature.homeDuel && canPlayOnline;
   const startDuel = g.startDuel;
   const searchedRef = useRef(false);
-  const lobby = useHomeLobby(lobbyReady, d => {
+  const lobby = useHomeLobby(duelOn && identityKnown, lobbyReady, d => {
     startDuel(d);
     const where = fromCountry(d.country);
     notify(
@@ -781,18 +861,19 @@ export default function OdysseeHome() {
     return () => window.clearInterval(i);
   }, [away]);
   const claimIn = away !== null && g.duelInfo ? Math.max(0, Math.ceil((away + g.duelInfo.claimAfterMs - Date.now()) / 1000)) : 0;
-  // Partie en direct annulée avant le moindre coup (personne n'a joué en 45 s) : retour à l'Oracle, sans rien demander
-  const abortedEmpty = !!g.duel && g.result?.reason === 'aborted' && g.state.ply === 0;
+  // Partie en direct annulée avant le moindre coup (personne n'a joué) : retour à l'Oracle après
+  // HOME.duelAbortReturnMs, sans rien demander. Annulée plus tard (abortedEmpty, useLiveGame) : l'écran de fin reste.
+  const abortedNow = abortedEmpty(!!g.duel, g.state);
   const newGameNow = g.newGame;
   useEffect(() => {
-    if (!abortedEmpty) return;
+    if (!abortedNow) return;
     const t = window.setTimeout(() => {
       newGameNow();
       notify('Personne n’a joué : la partie en direct est annulée, l’Oracle reprend.');
-    }, 2500);
+    }, HOME.duelAbortReturnMs);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [abortedEmpty]);
+  }, [abortedNow]);
   const duelBanner = meRelayed ? (
     <div className="gp-offer is-away" role="status">
       <p>Vous ne jouiez pas : l’IA joue pour vous en attendant.</p>
@@ -884,12 +965,13 @@ export default function OdysseeHome() {
     const board = liveRef.current?.querySelector<HTMLElement>('.board');
     if (!board) return;
     const r = board.getBoundingClientRect();
-    const x = Math.floor(((e.clientX - r.left) / r.width) * 8);
-    const y = Math.floor(((e.clientY - r.top) / r.height) * 8);
-    const sq = x < 0 || x > 7 || y < 0 || y > 7 ? null : (7 - y) * 8 + x;
+    // Case sous la souris dans l'orientation de l'échiquier (le visiteur a les Noirs dans certaines parties en direct)
+    const sq = squareAt((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height, g.me);
     // La souris passe sur une pièce jouable : la scène 3D se prépare pendant que le visiteur hésite
     if (sq !== null && movers.has(sq) && !intent) setIntent(true);
-    hoverTo(sq !== null && movers.has(sq) && g.selected === null ? sq : null);
+    if (sq === null || !movers.has(sq) || g.selected !== null) return hoverTo(null);
+    const c = cellOf(sq, g.me);
+    hoverTo(c.y * 8 + c.x);
   };
 
   /** Une carte de la main, touchée depuis l'accueil : la partie s'ouvre, la carte est prête à lancer. */
@@ -911,7 +993,9 @@ export default function OdysseeHome() {
   const stageTheme = placeDef.id === 'bazar' ? boardPick : placeDef.theme;
   // Les deux camps portent le roi du lieu (au Bazar, le roi choisi : ses deux palettes face à face)
   const stageKing = placeDef.id === 'bazar' ? kingPick : placeDef.king;
-  const castTilt = reduced ? 0 : mobile ? 0.62 : place === 5 ? 0.7 : 0.66;
+  // Inclinaison de la scène 3D des sorts : celle du plateau (posé dans le texte sur téléphone, sinon la pose du lieu sur
+  // ordinateur, lue à la largeur MOBILE_MAX). Le héros n'a pas d'échiquier de démonstration.
+  const castTilt = reduced ? 0 : mobile ? SLOT_TILT : place === 0 ? 0 : poseFor(placeDef.id, MOBILE_MAX, MOBILE_MAX).tilt;
   const onCast = useCallback((card: CardId, s: string) => setCast({ card, skin: s }), []);
   const onCanvas = useCallback((c: HTMLCanvasElement | null) => engineRef.current?.setCanvas(c), []);
   useEffect(() => {
@@ -932,6 +1016,20 @@ export default function OdysseeHome() {
     }
   };
   const pickItem = itemById(pick);
+  /**
+   * « · 3,99 € » (ou « · Possédé ») après le nom d'un objet ; boutique fermée : seulement « · Possédé ». Deux nœuds de
+   * texte, comme avant (« · » puis le prix).
+   */
+  const tagOf = (id: string): ReactNode =>
+    owned(id) && me ? <> · {'Possédé'}</> : shop ? <> · {priceOf(id)}</> : null;
+  /** Nom lu d'un objet : « Rubis, 1,99 € », « Rubis, possédé » ; boutique fermée : le nom, ou « Rubis, possédé ». */
+  const labelOf = (it: { id: string; name: string }) => (owned(it.id) && me ? `${it.name}, possédé` : shop ? `${it.name}, ${priceOf(it.id)}` : it.name);
+
+  // ------------------------------------------------------------------------------------------
+  // Portes du Seuil : celles dont la fonction est ouverte (MODES.needs) ; « Défier un ami » demande aussi que le
+  // visiteur puisse créer une partie (invité : guestPlay). Nombre, numéros et surtitres en découlent.
+  const doors = MODES.filter(m => m.needs.every(k => feature[k]) && (m.key !== 'ami' || canPlayOnline));
+  const doorIndex = (key: ModeKey) => Math.max(0, doors.findIndex(m => m.key === key));
 
   // ------------------------------------------------------------------------------------------
   // Textes
@@ -940,7 +1038,11 @@ export default function OdysseeHome() {
   const resume = inProgress;
   const castDef = cast ? CARDS[cast.card] : null;
   const chapterCard = chapter && chapter in CARDS ? CARDS[chapter as CardId] : null;
-  const copy = PLACE_COPY[catalog];
+  const copy = PLACE_COPY[catalog] ?? PLACE_COPY.climats;
+  const interlude = INTERLUDE[catalog] ?? INTERLUDE.climats;
+  // Cartes lancées ce tour par le visiteur, en attendant son coup : la dernière fait le message au-dessus de sa main
+  const casts = g.myTurn ? castsThisTurn(g.state, g.me) : [];
+  const castNow = casts.length ? casts[casts.length - 1] : null;
 
   let captionBody: ReactNode;
   if (place === 0 || (mode !== 'page' && place === 0)) {
@@ -1015,7 +1117,7 @@ export default function OdysseeHome() {
       label: lobby.searching ? 'Annuler la recherche' : 'Chercher un vrai joueur',
       icon: 'search',
       onClick: () => lobby.setSearching(!lobby.searching),
-      hidden: !!g.duel,
+      hidden: !!g.duel || !duelOn,
     },
     { label: 'Prendre la main', icon: 'hand', onClick: g.takeOver, hidden: !meRelayed },
     { label: 'Nouvelle partie', icon: 'new', onClick: g.newGame, hidden: g.state.ply === 0 },
@@ -1081,22 +1183,25 @@ export default function OdysseeHome() {
                     l'échiquier traverse la nuée. En pause pendant les traversées (transit ; sur téléphone, il dure
                     jusqu'à ce que l'échiquier soit posé dans le texte, presque opaque) */}
                 {place !== 0 && mode === 'page' && (
-                  <Suspense fallback={null}>
-                    <StageBoard
-                      act={act}
-                      catalog={catalog}
-                      theme={stageTheme}
-                      resetSignal={place}
-                      paused={mode !== 'page' || transit}
-                      tilt={castTilt}
-                      still={reduced}
-                      playSignal={playSignal}
-                      onCast={onCast}
-                      onCanvas={onCanvas}
-                      kingW={stageKing}
-                      kingB={stageKing}
-                    />
-                  </Suspense>
+                  <DecorBoundary>
+                    <Suspense fallback={null}>
+                      <StageBoard
+                        act={act}
+                        catalog={catalog}
+                        theme={stageTheme}
+                        resetSignal={place}
+                        paused={mode !== 'page' || transit}
+                        tilt={castTilt}
+                        still={reduced}
+                        playSignal={playSignal}
+                        onCast={onCast}
+                        onCanvas={onCanvas}
+                        kingW={stageKing}
+                        kingB={stageKing}
+                        idleMs={HOME.idleMs}
+                      />
+                    </Suspense>
+                  </DecorBoundary>
                 )}
               </div>
               <div className="o-astre-game" ref={liveRef}>
@@ -1104,7 +1209,9 @@ export default function OdysseeHome() {
                 <div className="o-live-overlay" aria-hidden="true">
                   <div className="o-live-plane">
                     <HoverHalo setRef={haloRef} />
-                    {g.state.ply === 0 && mode === 'page' && place === 0 && (
+                    {/* Invitation au premier coup, e2-e4 : seulement si c'est au visiteur, avec les Blancs en bas, dans la
+                        position standard (règles de la partie : startFen nul) */}
+                    {g.state.ply === 0 && mode === 'page' && place === 0 && g.me === 'w' && g.state.pos.turn === g.me && rules.startFen === null && (
                       <svg className="o-hint-arrow" viewBox="0 0 8 8" preserveAspectRatio="none">
                         <defs>
                           <linearGradient id="o-arrow-g" x1="0" y1="1" x2="0" y2="0">
@@ -1183,7 +1290,7 @@ export default function OdysseeHome() {
           <span className="o-alt-fill" />
           {PLACES.map((p, i) => (
             <li key={p.id} className={place === i ? 'on' : place > i ? 'past' : ''}>
-              <button onClick={() => scrollTo(`#${IDS[i]}`)} aria-label={p.name}>
+              <button onClick={() => scrollTo(`#${p.anchor}`)} aria-label={p.name}>
                 <span className="o-alt-num">{p.num}</span>
                 <span className="o-alt-name">{p.name}</span>
               </button>
@@ -1194,12 +1301,14 @@ export default function OdysseeHome() {
 
       <div className="o-content">
         {/* I. L'Observatoire : la partie est déjà ouverte */}
-        <section className="o-place o-hero" id="observatoire" data-pose="hero" data-scene="0" data-place="0">
+        <section className="o-place o-hero" {...placeAttrs('hero')}>
           <div className="o-hero-copy">
-            <Kicker num="I" name="L'Observatoire" />
+            <Kicker num={PLACE.hero.num} name={PLACE.hero.name} />
             <Lines as="h1" className="o-display" lines={['Les échecs', 'ont appris', <em key="m">la magie.</em>]} />
             <p className="o-lede o-rv" style={{ '--i': 3 } as CSSProperties}>
-              Une vraie partie d'échecs, trois cartes de pouvoir, un sort par tour. La partie est déjà ouverte : {mobile ? 'touchez une pièce' : 'déplacez une pièce'} sur l'échiquier, {g.duel ? 'votre adversaire vous répond' : 'l’Oracle, une IA, vous répond'}.
+              {/* Un seul nœud de texte jusqu'aux deux-points, comme la phrase écrite d'avant (même rendu des glyphes) */}
+              {`${texts.lede} La partie est déjà ouverte : `}
+              {mobile ? 'touchez une pièce' : 'déplacez une pièce'} sur l'échiquier, {g.duel ? 'votre adversaire vous répond' : 'l’Oracle, une IA, vous répond'}.
             </p>
             {g.duel && (
               <p className={`o-duel-note ${away !== null ? 'is-away' : ''}`} role="status">
@@ -1231,7 +1340,13 @@ export default function OdysseeHome() {
               </p>
             )}
             <div className="o-hand-row o-rv" style={{ '--i': 4 } as CSSProperties} onPointerEnter={wantPlay} onFocus={wantPlay}>
-              <div className="o-hand-mini" aria-label="Vos trois sorts">
+              {/* Au-delà de REF_HAND cartes, elles se chevauchent dans la largeur de trois (data-crowd, --n : odyssee.css) */}
+              <div
+                className="o-hand-mini"
+                aria-label={texts.hand}
+                data-crowd={g.hand.length > REF_HAND ? '' : undefined}
+                style={g.hand.length > REF_HAND ? ({ '--n': g.hand.length } as CSSProperties) : undefined}
+              >
                 {g.hand.map((h, i) =>
                   h.card ? (
                     <SpellCard key={i} id={h.card} size="mini" used={h.used} disabled={!h.used && !g.myTurn} onClick={() => heroCard(i)} />
@@ -1239,15 +1354,16 @@ export default function OdysseeHome() {
                 )}
               </div>
               <div className="o-hand-copy">
-                <span className="o-hand-k">{g.state.ply === 0 ? 'Vos trois sorts' : `Votre main · coup ${moveNo}`}</span>
+                <span className="o-hand-k">{g.state.ply === 0 ? texts.hand : `Votre main · coup ${moveNo}`}</span>
                 <span className="o-hand-names">
                   {g.hand.map((h, i) =>
                     h.card ? (
                       <button key={i} type="button" className={h.used ? 'is-used' : ''} onClick={() => heroCard(i)} title={CARDS[h.card].tagline}>
                         <span className="o-hand-n">{CARDS[h.card].name}</span>
-                        {/* Effet sur le tour (décision D1) : le Rituel, l'exception, le dit à côté de son nom. <wbr> : sur un
-                            téléphone, la pastille passe sous le nom plutôt que d'élargir la colonne au-delà de l'écran */}
-                        {CARDS[h.card].ritual && (
+                        {/* Effet sur le tour (décision D1) : une carte qui remplace le coup (le Rituel, ou toutes si les
+                            règles le veulent) le dit à côté de son nom. <wbr> : sur un téléphone, la pastille passe sous le
+                            nom plutôt que d'élargir la colonne au-delà de l'écran */}
+                        {cardEndsTurn(CARDS[h.card], rules) && (
                           <>
                             <wbr />
                             <small className="o-hand-turn">remplace votre coup</small>
@@ -1257,11 +1373,7 @@ export default function OdysseeHome() {
                     ) : null,
                   )}
                 </span>
-                <span className="o-hand-t">
-                  {g.hand.some(h => h.card && CARDS[h.card].ritual)
-                    ? 'Touchez-en un pour le lire et le lancer ; les autres sorts s’ajoutent à votre coup.'
-                    : 'Touchez-en un pour le lire et le lancer, puis jouez votre coup.'}
-                </span>
+                <span className="o-hand-t">{texts.touch(g.hand.some(h => h.card && CARDS[h.card].ritual))}</span>
               </div>
             </div>
             {g.state.hands[g.them].length > 0 && (
@@ -1309,7 +1421,7 @@ export default function OdysseeHome() {
                   )}
                 </p>
               )}
-              {!g.duel && <SearchOption lobby={lobby} />}
+              {!g.duel && duelOn && <SearchOption lobby={lobby} />}
             </div>
             <button type="button" className="o-kbd-play" onClick={() => play()}>
               Ouvrir la partie en plein écran
@@ -1327,13 +1439,13 @@ export default function OdysseeHome() {
         </section>
 
         {/* II. La Forêt de givre */}
-        <section className="o-place o-side-left" id="foret" data-pose="foret" data-scene="1" data-place="1">
+        <section className="o-place o-side-left" {...placeAttrs('foret')}>
           <div className="o-col" data-col>
             <header className="o-place-head o-veil" data-chapter="principe">
-              <Kicker num="II" name="La Forêt de givre" alt={PLACES[1].alt} />
-              <Lines className="o-h2" lines={["Une partie d'échecs.", <><em>Trois sorts</em> en main.</>]} />
+              <Kicker num={PLACE.foret.num} name={PLACE.foret.name} alt={PLACE.foret.alt} />
+              <Lines className="o-h2" lines={["Une partie d'échecs.", <><em>{PAGE_TEXTS.sortsEnMain}</em> en main.</>]} />
               <ol className="o-principle">
-                {principle(catalog).map((p, i) => (
+                {PRINCIPLE.map((p, i) => (
                   <li key={p.n} className="o-rv" style={{ '--i': i } as CSSProperties}>
                     <span className="o-pr-n">{p.n}</span>
                     <div>
@@ -1356,10 +1468,10 @@ export default function OdysseeHome() {
         </section>
 
         {/* III. Les Pics de l'orage */}
-        <section className="o-place o-side-right" id="pics" data-pose="pics" data-scene="2" data-place="2">
+        <section className="o-place o-side-right" {...placeAttrs('pics')}>
           <div className="o-col" data-col>
             <header className="o-place-head o-veil">
-              <Kicker num="III" name="Les Pics de l'orage" alt={PLACES[2].alt} />
+              <Kicker num={PLACE.pics.num} name={PLACE.pics.name} alt={PLACE.pics.alt} />
               <Lines className="o-h2" lines={[copy.pics.title[0], <em key="e">{copy.pics.title[1]}</em>]} />
               <p className="o-rv o-place-text">{copy.pics.text}</p>
             </header>
@@ -1370,10 +1482,10 @@ export default function OdysseeHome() {
         </section>
 
         {/* IV. Le Sablier */}
-        <section className="o-place o-side-left" id="sablier" data-pose="sablier" data-scene="3" data-place="3">
+        <section className="o-place o-side-left" {...placeAttrs('sablier')}>
           <div className="o-col" data-col>
             <header className="o-place-head o-veil">
-              <Kicker num="IV" name="Le Sablier" alt={PLACES[3].alt} />
+              <Kicker num={PLACE.sablier.num} name={PLACE.sablier.name} alt={PLACE.sablier.alt} />
               <Lines className="o-h2" lines={[copy.sablier.title[0], <em key="e">{copy.sablier.title[1]}</em>]} />
               <p className="o-rv o-place-text">{copy.sablier.text}</p>
             </header>
@@ -1381,18 +1493,18 @@ export default function OdysseeHome() {
               <Chapter key={id} id={id} active={chapter === id} />
             ))}
             <div className="o-interlude o-veil o-interlude-end">
-              <Lines as="h3" className="o-h3" lines={[INTERLUDE[catalog].title[0], <em key="e">{INTERLUDE[catalog].title[1]}</em>]} />
-              <p className="o-rv">{INTERLUDE[catalog].text}</p>
+              <Lines as="h3" className="o-h3" lines={[interlude.title[0], <em key="e">{interlude.title[1]}</em>]} />
+              <p className="o-rv">{interlude.text}</p>
               <p className="o-rv o-more">
                 <Link to="/cartes">Toutes les règles et les cartes</Link>
-                <Link to="/apprendre">Apprendre pas à pas</Link>
+                {feature.learn && <Link to="/apprendre">Apprendre pas à pas</Link>}
               </p>
             </div>
           </div>
         </section>
 
         {/* V. Le Bazar céleste : la vraie boutique */}
-        <section className="o-place o-bazar" id="bazar" data-pose="bazar" data-scene="4" data-place="4">
+        <section className="o-place o-bazar" {...placeAttrs('bazar')}>
           <div className="o-sticky">
             <div className="o-bazar-col o-veil" data-col>
               <header className="o-place-head">
@@ -1412,12 +1524,12 @@ export default function OdysseeHome() {
                     <Mark size={34} />
                   </div>
                 </div>
-                <Kicker num="V" name="Le Bazar céleste" alt={PLACES[4].alt} />
+                <Kicker num={PLACE.bazar.num} name={PLACE.bazar.name} alt={PLACE.bazar.alt} />
                 <Lines className="o-h2" lines={['Du style.', <em key="e">Jamais d'avantage.</em>]} />
                 <p className="o-rv o-place-text">
                   La boutique ne vend que de l'apparence : votre roi, votre échiquier et l'habillage de vos sorts. Toutes les cartes, tous les modes et le classement restent gratuits.{' '}
                   <span className="o-inline-more">
-                    <Link to="/boutique">Entrer dans la boutique</Link>
+                    {shop && <Link to="/boutique">Entrer dans la boutique</Link>}
                     {me && <Link to="/compte">Ma collection</Link>}
                   </span>
                 </p>
@@ -1426,9 +1538,10 @@ export default function OdysseeHome() {
               <Slot label={"Essayez-les\u00a0: l'échiquier les porte"} />
               <div className="o-shelf o-rv">
                 <div className="o-shelf-head">
-                  <span>Rois</span>
+                  <span>{SLOT_DEFS.king.plural}</span>
                   <small>
-                    {itemById(kingPick)?.name} · {owned(kingPick) && me ? 'Possédé' : priceOf(kingPick)}
+                    {itemById(kingPick)?.name}
+                    {tagOf(kingPick)}
                   </small>
                 </div>
                 {/* Vignettes figées : le roi blanc devant, le noir derrière (kingUrl, data URI en cache) ; le roi choisi
@@ -1445,7 +1558,7 @@ export default function OdysseeHome() {
                           setKingPick(k.id);
                           setPick(k.id);
                         }}
-                        aria-label={`${k.name}, ${owned(k.id) && me ? 'possédé' : priceOf(k.id)}`}
+                        aria-label={labelOf(k)}
                         aria-pressed={kingPick === k.id}
                         title={k.name}
                       >
@@ -1459,12 +1572,13 @@ export default function OdysseeHome() {
               </div>
               <div className="o-shelf o-rv">
                 <div className="o-shelf-head">
-                  <span>Sorts</span>
+                  <span>{SLOT_DEFS.skin.plural}</span>
                   {/* Écran d'ordinateur de hauteur ordinaire : le nom et le prix des sorts allumés remplacent la consigne,
                       comme pour les rois et les échiquiers (odyssee.css) ; chaque lanterne garde son nom et son prix */}
                   <small className="o-shelf-hint">Allumez une lanterne : l'échiquier lance un sort à ses couleurs</small>
                   <small className="o-shelf-pick">
-                    {itemById(skinPick)?.name} · {owned(skinPick) && me ? 'Possédé' : priceOf(skinPick)}
+                    {itemById(skinPick)?.name}
+                    {tagOf(skinPick)}
                   </small>
                 </div>
                 <div className="o-lanterns">
@@ -1478,7 +1592,7 @@ export default function OdysseeHome() {
                         setPick(s.id);
                         setPulse(n => n + 1);
                       }}
-                      aria-label={`${s.name}, ${owned(s.id) && me ? 'possédé' : priceOf(s.id)}`}
+                      aria-label={labelOf(s)}
                       aria-pressed={skinPick === s.id}
                     >
                       <span className="o-lantern-cord" />
@@ -1486,16 +1600,17 @@ export default function OdysseeHome() {
                         <span className="o-lantern-orb" />
                       </span>
                       <span className="o-lantern-name">{s.name}</span>
-                      <span className="o-lantern-price">{owned(s.id) && me ? 'Possédé' : priceOf(s.id)}</span>
+                      {(shop || (owned(s.id) && me)) && <span className="o-lantern-price">{owned(s.id) && me ? 'Possédé' : priceOf(s.id)}</span>}
                     </button>
                   ))}
                 </div>
               </div>
               <div className="o-shelf o-rv">
                 <div className="o-shelf-head">
-                  <span>Échiquiers</span>
+                  <span>{SLOT_DEFS.board.plural}</span>
                   <small>
-                    {itemById(boardPick)?.name} · {owned(boardPick) && me ? 'Possédé' : priceOf(boardPick)}
+                    {itemById(boardPick)?.name}
+                    {tagOf(boardPick)}
                   </small>
                 </div>
                 <div className="o-stall">
@@ -1509,7 +1624,7 @@ export default function OdysseeHome() {
                           setBoardPick(b.id);
                           setPick(b.id);
                         }}
-                        aria-label={`${b.name}, ${owned(b.id) && me ? 'possédé' : priceOf(b.id)}`}
+                        aria-label={labelOf(b)}
                         aria-pressed={boardPick === b.id}
                       >
                         <span className="o-swatch-tile">
@@ -1521,6 +1636,27 @@ export default function OdysseeHome() {
                   <span className="o-stall-shelf" />
                 </div>
               </div>
+              {MORE_SLOTS.map(kind => (
+                <div key={kind} className="o-shelf o-rv">
+                  <div className="o-shelf-head">
+                    <span>{SLOT_DEFS[kind].plural}</span>
+                    <small>
+                      {itemById(pick)?.kind === kind && itemById(pick)?.name}
+                      {itemById(pick)?.kind === kind && tagOf(pick)}
+                    </small>
+                  </div>
+                  <div className="o-stall">
+                    <div className="o-swatches">
+                      {itemsOf(kind).map(it => (
+                        <button key={it.id} type="button" className={`o-swatch ${pick === it.id ? 'on' : ''}`} onClick={() => setPick(it.id)} aria-label={labelOf(it)} aria-pressed={pick === it.id} title={it.name}>
+                          <span className="o-swatch-tile" />
+                        </button>
+                      ))}
+                    </div>
+                    <span className="o-stall-shelf" />
+                  </div>
+                </div>
+              ))}
               {pickItem && (
                 <div className="o-pick o-rv" aria-live="polite">
                   <div>
@@ -1537,34 +1673,36 @@ export default function OdysseeHome() {
                     )
                   ) : owned(pick) ? (
                     <span className="o-pick-state">Offert</span>
-                  ) : (
+                  ) : shop ? (
                     <Link className="btn-gold sm" to="/boutique">
                       {priceOf(pick)} · Boutique
                     </Link>
-                  )}
+                  ) : null}
                 </div>
               )}
-              <div className="o-packs o-rv">
-                {PACKS.map(p => (
-                  <Link key={p.id} to="/boutique" className="o-pack">
-                    <b>{p.name}</b>
-                    <span>{p.description}</span>
-                    <em>
-                      {(p.priceCents / 100).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
-                      {p.compareAtCents && <s>{(p.compareAtCents / 100).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}</s>}
-                    </em>
-                  </Link>
-                ))}
-              </div>
+              {shop && (
+                <div className="o-packs o-rv">
+                  {PACKS.map(p => (
+                    <Link key={p.id} to="/boutique" className="o-pack">
+                      <b>{p.name}</b>
+                      <span>{p.description}</span>
+                      <em>
+                        {formatPrice(p.priceCents)}
+                        {p.compareAtCents && <s>{formatPrice(p.compareAtCents)}</s>}
+                      </em>
+                    </Link>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </section>
 
         {/* VI. Le Seuil : les vrais modes */}
-        <section className="o-place o-seuil" id="seuil" data-pose="seuil" data-scene="5" data-place="5">
+        <section className="o-place o-seuil" {...placeAttrs('seuil')}>
           <div className="o-sticky o-seuil-grid">
             <div className="o-seuil-left o-veil">
-              <Kicker num="VI" name="Le Seuil" alt={0} />
+              <Kicker num={PLACE.seuil.num} name={PLACE.seuil.name} alt={PLACE.seuil.alt} />
               <Lines className="o-h2" lines={["La descente s'achève.", <em key="e">La partie commence.</em>]} />
               <p className="o-rv o-place-text">Une partie dure de 5 à 20 minutes. La vôtre vous attend sur l'échiquier, sans inscription.</p>
               <div className="o-rv">
@@ -1580,15 +1718,15 @@ export default function OdysseeHome() {
               <Slot />
             </div>
             <div className="o-seuil-right o-veil">
-              <p className="o-doors-label o-rv">Trois portes</p>
-              {MODES.map((m, i) => (
+              <p className="o-doors-label o-rv">{doorsLabel(doors.length)}</p>
+              {doors.map((m, i) => (
                 <button
                   key={m.key}
                   className="o-door o-rv"
                   style={{ '--i': i } as CSSProperties}
                   onClick={() => (m.key === 'ami' ? setSheet('friend') : m.key === 'ia' ? setSheet('ai') : navigate('/jouer?mode=quick'))}
                 >
-                  <span className="o-door-n">{['I', 'II', 'III'][i]}</span>
+                  <span className="o-door-n">{doorNum(i)}</span>
                   <span className="o-door-body">
                     <span className="o-door-title">
                       {m.title} <span className="o-tag">{m.tag}</span>
@@ -1600,12 +1738,12 @@ export default function OdysseeHome() {
                   </span>
                 </button>
               ))}
-              <nav className="o-also o-rv" aria-label="Aussi sur Spellmate">
-                <Link to="/apprendre">Apprendre</Link>
-                <Link to="/problemes">Problèmes</Link>
-                <Link to="/analyse">Analyse</Link>
-                <Link to="/direct">En direct</Link>
-                <Link to="/classement">Classement</Link>
+              <nav className="o-also o-rv" aria-label={`Aussi sur ${__SM__.marque}`}>
+                {feature.learn && <Link to="/apprendre">Apprendre</Link>}
+                {feature.puzzles && <Link to="/problemes">Problèmes</Link>}
+                {feature.analysis && <Link to="/analyse">Analyse</Link>}
+                {feature.live && <Link to="/direct">En direct</Link>}
+                {feature.ranked && <Link to="/classement">Classement</Link>}
               </nav>
             </div>
           </div>
@@ -1638,22 +1776,22 @@ export default function OdysseeHome() {
               {g.duel ? (themRelayed ? 'L’IA joue pour votre adversaire.' : 'Votre adversaire réfléchit.') : 'L’Oracle, une IA, prépare sa réponse.'}
               <PremoveNote n={premoves} mobile={mobile} onCancel={g.clearPremoves} />
             </>
-          ) : g.state.cardPlayed && g.myTurn ? (
+          ) : (g.state.cardPlayed || castNow) && g.myTurn ? (
             <>
-              {castMessage(castThisTurn(g.state, g.me) ?? 'tide')}
-              <small>Une seule carte par tour. Revenez à la page quand vous voulez : la partie vous attend.</small>
+              {castMessage(castNow ?? 'tide', rules, castsLeft(g.state))}
+              <small>{texts.budget}</small>
             </>
           ) : (
             <>
-              Lancez une carte avant votre coup, ou jouez directement.
-              <small>Une seule carte par tour. Revenez à la page quand vous voulez : la partie vous attend.</small>
+              {texts.before}
+              <small>{texts.budget}</small>
             </>
           )
         }
         result={
           g.result
             ? {
-                text: <p>{RESULT_TEXT[g.result.reason] ?? 'Partie terminée'}.</p>,
+                text: <p>{resultText(g.result.reason, rules) ?? 'Partie terminée'}.</p>,
                 actions: (
                   <>
                     <button type="button" className="btn-gold sm" onClick={g.newGame}>
@@ -1669,12 +1807,12 @@ export default function OdysseeHome() {
         }
         prompt={prompt}
         actions={shellActions}
-        powers={!g.result && g.state.effects.length > 0 && <PowersPanel effects={g.state.effects} you={g.me} names={{ [g.them]: oppLabel }} mobile={mobile} />}
+        powers={!g.result && g.state.effects.length > 0 && <PowersPanel effects={g.state.effects} you={g.me} names={{ [g.them]: oppLabel }} mobile={mobile} rules={rules} />}
         statusExtra={
           g.duel ? undefined : (
             <div className="o-shell-extra">
               <LevelPick level={g.level} onChange={g.setLevel} />
-              <SearchOption lobby={lobby} compact={mobile} />
+              {duelOn && <SearchOption lobby={lobby} compact={mobile} />}
             </div>
           )
         }
@@ -1687,14 +1825,18 @@ export default function OdysseeHome() {
                 hand: g.state.hands[g.them],
                 handLabel: 'Cartes de votre adversaire',
               }
-            : { name: "L'Oracle", sub: `IA · niveau ${levelName(g.level)}`, hand: g.state.hands.b, handLabel: "Cartes de l'Oracle" }
+            : { name: "L'Oracle", sub: `IA · niveau ${levelName(g.level)}`, hand: g.state.hands[g.them], handLabel: "Cartes de l'Oracle" }
         }
         hand={g.hand}
+        // Appariement en attente de game:join (startDuel : mains vides) : pas de « Partie sans cartes »
+        emptyHand={g.duel && !g.duelInfo ? null : undefined}
+        rules={rules}
         playable={g.playable}
         selected={g.selected}
         onPickCard={g.pickCard}
         notes={mode === 'game' ? handNotes(g.state, g.me, g.myTurn, g.playable) : undefined}
-        cast={g.myTurn ? castThisTurn(g.state, g.me) : null}
+        cast={castNow}
+        castsLeft={castsLeft(g.state)}
         toast={toast}
       />
 
@@ -1704,10 +1846,10 @@ export default function OdysseeHome() {
         </div>
       )}
 
-      {sheet === 'friend' && <FriendSheet onClose={() => setSheet(null)} catalog={catalog} signedIn={!!me} />}
+      {sheet === 'friend' && <FriendSheet onClose={() => setSheet(null)} catalog={catalog} signedIn={!!me} kicker={doorKicker(doorIndex('ami'))} />}
       {sheet === 'ai' && (
         <Sheet
-          kicker="Deuxième porte"
+          kicker={doorKicker(doorIndex('ia'))}
           title="Affronter l'IA"
           onClose={() => setSheet(null)}
           actions={
@@ -1725,7 +1867,14 @@ export default function OdysseeHome() {
             ))}
           </div>
           <p className="o-sheet-note">
-            La partie se joue dans votre navigateur, sans pendule. Avec une pendule et un historique : <Link to="/jouer?mode=bot">partie contre l'IA sur le serveur</Link>.
+            {feature.botGames && canPlayOnline ? (
+              <>
+                {`La partie se joue dans votre navigateur${HOME.timed ? '' : ', sans pendule'}. Avec une pendule et un historique : `}
+                <Link to="/jouer?mode=bot">partie contre l'IA sur le serveur</Link>.
+              </>
+            ) : (
+              `La partie se joue dans votre navigateur${HOME.timed ? '' : ', sans pendule'}.`
+            )}
           </p>
         </Sheet>
       )}
@@ -1733,20 +1882,28 @@ export default function OdysseeHome() {
   );
 }
 
-/** Première porte : créer une invitation (vraie partie sur le serveur) et partir vers /partie/:id. */
-function FriendSheet({ onClose, catalog: initial, signedIn }: { onClose: () => void; catalog: string; signedIn: boolean }) {
+/** Cadences proposées par « Défier un ami » (TIME_CONTROLS.invite), et celle choisie à l'ouverture : DEFAULT_QUICK si
+ *  elle en fait partie, sinon la première (une cadence que le visiteur ne voit pas ne part jamais). */
+const INVITE_TCS = TIME_CONTROLS.filter(t => t.invite && !t.archived);
+const INVITE_TC0 = INVITE_TCS.some(t => t.id === DEFAULT_QUICK) ? DEFAULT_QUICK : INVITE_TCS[0]?.id ?? DEFAULT_QUICK;
+
+/**
+ * Porte « Défier un ami » : créer une invitation (vraie partie sur le serveur) et partir vers /partie/:id. Cadences
+ * proposées : INVITE_TCS, INVITE_TC0 à l'ouverture ; pseudo d'invité : GUEST_NAME.
+ */
+function FriendSheet({ onClose, catalog: initial, signedIn, kicker }: { onClose: () => void; catalog: string; signedIn: boolean; kicker: string }) {
   const navigate = useNavigate();
   const [name, setName] = useState(getGuestName());
-  const [tc, setTc] = useState('10+0');
+  const [tc, setTc] = useState(INVITE_TC0);
   // Jeu proposé : « Pouvoirs » (par défaut) ou « Sans cartes » ; le Duel n'est plus proposé.
   const [catalog, setCatalog] = useState<Catalog>(() => offeredCatalog(initial));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const valid = signedIn || /^[\p{L}\p{N} _.-]{2,20}$/u.test(name.trim());
+  const valid = signedIn || GUEST_NAME.full.test(name.trim());
   const create = async () => {
     setError(null);
     if (!valid) {
-      setError('Choisissez un pseudo de 2 à 20 caractères.');
+      setError(GUEST_NAME.invalid);
       return;
     }
     setBusy(true);
@@ -1761,7 +1918,7 @@ function FriendSheet({ onClose, catalog: initial, signedIn }: { onClose: () => v
   };
   return (
     <Sheet
-      kicker="Première porte"
+      kicker={kicker}
       title="Défier un ami"
       onClose={onClose}
       actions={
@@ -1781,7 +1938,7 @@ function FriendSheet({ onClose, catalog: initial, signedIn }: { onClose: () => v
         {!signedIn && (
           <label className="field">
             <span className="label">Votre pseudo</span>
-            <input className="input" maxLength={20} value={name} onChange={e => setName(e.target.value)} placeholder="Ex. : Fou du roi" autoComplete="nickname" />
+            <input className="input" maxLength={GUEST_NAME.max} value={name} onChange={e => setName(e.target.value)} placeholder="Ex. : Fou du roi" autoComplete="nickname" />
           </label>
         )}
         <div className="field">
@@ -1797,12 +1954,7 @@ function FriendSheet({ onClose, catalog: initial, signedIn }: { onClose: () => v
         <div className="field">
           <span className="label">Cadence</span>
           <div className="segmented">
-            {[
-              ['5+0', '5 min'],
-              ['10+0', '10 min'],
-              ['15+10', '15 + 10'],
-              ['none', 'Sans limite'],
-            ].map(([id, label]) => (
+            {INVITE_TCS.map(({ id, short: label }) => (
               <button key={id} type="button" className={tc === id ? 'on' : ''} onClick={() => setTc(id)}>
                 {label}
               </button>

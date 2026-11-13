@@ -2825,6 +2825,17 @@ html:not(.is-immersive) .vfx-canvas.o-live-canvas {
   filter: saturate(0.7) brightness(0.85);
   cursor: default;
 }
+/* Main plus longue que la main de référence (REF_HAND, shell/layout.ts) : data-crowd et --n (nombre de cartes), posés
+   par l'accueil au-delà de REF_HAND seulement. Les cartes gardent leur taille et se chevauchent dans la largeur de la
+   main de référence (REF_HAND cartes, deux écarts de 8 px) ; la carte survolée passe devant ses voisines. Main de
+   référence ou plus courte : aucune de ces règles ne s'applique. */
+.ody .o-hand-mini[data-crowd] .spell-card + .spell-card {
+  margin-left: calc((3 * var(--w) + 16px - var(--n) * var(--w)) / (var(--n) - 1) - 8px);
+}
+.ody .o-hand-mini[data-crowd] .spell-card:hover,
+.ody .o-hand-mini[data-crowd] .spell-card:focus-visible {
+  z-index: 1;
+}
 .ody .o-hand-copy {
   display: grid;
   gap: 4px;

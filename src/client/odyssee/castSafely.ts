@@ -10,6 +10,11 @@ export interface SafeCastHooks {
   hide: (ids: number[]) => void;
   show: () => void;
   victimAtBottom?: boolean;
+  /**
+   * Mains cachées (règles de la partie : !rulesOf(état).handsVisible) : l'annonce d'un Présage ne trahit pas la carte
+   * (teinte du skin seul, sans la fiche de la carte). Transmis tel quel à playCast.
+   */
+  secret?: boolean;
 }
 
 /** Durée maximale d'un sort animé avant que la partie reprenne d'elle-même. */

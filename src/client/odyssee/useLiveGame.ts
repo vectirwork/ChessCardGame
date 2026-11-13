@@ -1,5 +1,6 @@
-// Partie locale de l'accueil : le visiteur (Blancs) contre l'IA du navigateur (Web Worker, src/client/ai),
-// avec ses trois cartes, les vrais effets 3D et une sauvegarde locale qui survit au rechargement.
+// Partie locale de l'accueil : le visiteur (HOME.playerColor : les Blancs) contre l'IA du navigateur (Web Worker,
+// src/client/ai), avec sa main (règles de l'accueil, rulesFor('accueil')), les vrais effets 3D et une sauvegarde
+// locale qui survit au rechargement (format v1, KEYS.homeGame).
 //
 //   const g = useLiveGame({ skin, theme, active });
 //   <Board ref={g.boardRef} {...g.boardProps} />
@@ -15,7 +16,7 @@
 // ceux de l'adversaire arrivent par game:update et s'animent. Rien n'est sauvegardé localement : la partie est au
 // serveur, et la partie contre l'Oracle reprend ensuite.
 //
-// Rois : contre l'Oracle, le visiteur (Blancs) porte son roi équipé et l'Oracle le Roi éclipse (ORACLE_LOOK) ; en
+// Rois : contre l'Oracle, le visiteur porte son roi équipé et l'Oracle le Roi éclipse (ORACLE_LOOK) ; en
 // direct, chaque camp porte le roi de son siège (view.seats[c].king, comme sur la page de partie). La préférence
 // « Rois adverses classiques » remet le roi d'en face en roi Arcane. Deux chaînes dans boardProps (Board est mémoïsé).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -23,14 +24,18 @@ import { BOT_PROFILES, askBot } from '../ai';
 import { rememberLocalGame, seatKings, shownKings } from '../features/history';
 import type { Kings } from '../features/history';
 import type { BotLevel } from '../ai';
+import { botLevelOr } from '../../shared/bot';
 import { CARDS, isCardId } from '../../shared/cards';
-import type { CardDef, Catalog } from '../../shared/cards';
+import type { CardDef } from '../../shared/cards';
 import { opposite } from '../../shared/chess';
 import type { Color, PieceType } from '../../shared/chess';
 import { DEFAULT_KING, ORACLE_LOOK, normKing, skinStyle } from '../../shared/catalog';
+import { HOME } from '../../shared/config/home';
 import { cardOptions, cardPlayable, createGame, dealHands, legalMovesOf, playCard, playMove, positionKey, sideInCheck } from '../../shared/game';
-import type { Ack, GameUpdate, GameView, JoinReply } from '../../shared/protocol';
+import type { Ack, GameUpdate, GameView } from '../../shared/protocol';
+import { rulesFor, rulesOf, sameRules } from '../../shared/rulesCore';
 import { emitAck, getSocket } from '../socket';
+import { KEYS } from '../storageKeys';
 import type { CardInfo, GameState, Result } from '../../shared/game';
 import { checkSquare } from '../components/Board';
 import type { BoardHandle } from '../components/Board';
@@ -39,7 +44,6 @@ import { playCardSound, playSound } from '../sound';
 import { useSharedVfx } from '../vfx/useVfx';
 import type { Vfx } from '../vfx/useVfx';
 import { castSafely } from './castSafely';
-import { liveCatalog } from './data';
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -71,44 +75,66 @@ interface DuelInfo {
   seals: Record<Color, string | null>;
 }
 
-export const PLAYER: Color = 'w';
-export const BOT: Color = 'b';
-const STORE_KEY = 'sm:odyssee:partie';
-const LEVEL_KEY = 'sm:odyssee:niveau';
+/** Camp du visiteur contre l'Oracle (HOME.playerColor), et celui de l'Oracle. */
+export const PLAYER: Color = HOME.playerColor;
+export const BOT: Color = opposite(PLAYER);
 
+/** Sauvegarde locale de la partie contre l'Oracle (clé KEYS.homeGame). Format v1 : { v, state, savedAt }. */
 interface Saved {
-  v: 1;
+  v: typeof HOME.saveVersion;
   state: GameState;
   savedAt: number;
 }
 
+/** Règles des parties de l'accueil (contre l'Oracle, et position d'attente d'une partie en direct) : objet gelé, le même à chaque appel. */
+const homeRules = () => rulesFor('accueil');
+
+/** Partie neuve contre l'Oracle : mains tirées (catalogue, pendule et réserve de l'accueil), règles de l'accueil. */
 function newGame(): GameState {
-  const catalog = liveCatalog();
-  return createGame(dealHands(false, false, Math.random, catalog), false, catalog);
+  const rules = homeRules();
+  return createGame(dealHands(HOME.timed, false, Math.random, HOME.catalog, { vsBot: HOME.vsBot, rules }), HOME.timed, HOME.catalog, { rules });
 }
 
-/** Une sauvegarde est rejetée si sa forme ne correspond plus au moteur (cartes renommées, champs manquants). */
-function validState(x: unknown): x is GameState {
+/**
+ * Une sauvegarde est rejetée (la partie repart de zéro) si sa forme ne correspond plus au moteur (cartes renommées,
+ * champs manquants), si elle vient d'un autre catalogue que celui de l'accueil (Duel, ou carte retirée : Couronnement,
+ * Portails…), si ses règles ne sont plus celles de l'accueil (rulesFor('accueil')), ou si ses mains n'ont pas le nombre
+ * de cartes de ces règles.
+ */
+export function validState(x: unknown): x is GameState {
   const s = x as GameState | null;
   if (!s || typeof s !== 'object' || !s.pos || !Array.isArray(s.pos.board) || s.pos.board.length !== 64) return false;
   if (s.pos.turn !== 'w' && s.pos.turn !== 'b') return false;
   if (!s.hands || !Array.isArray(s.hands.w) || !Array.isArray(s.hands.b)) return false;
-  // Une sauvegarde d'avant les huit pouvoirs (Duel, ou carte retirée : Couronnement, Portails…) repart de zéro
-  if (s.catalog !== 'climats') return false;
+  if (s.catalog !== HOME.catalog) return false;
   if (![...s.hands.w, ...s.hands.b].every(h => h && isCardId(h.card))) return false;
   if (!Array.isArray(s.effects) || !s.effects.every(e => e && isCardId(e.card))) return false;
   if (!Array.isArray(s.log) || !Array.isArray(s.keys) || !Array.isArray(s.snaps) || !s.captured) return false;
+  const rules = homeRules();
+  if (!sameRules(rulesOf(s), rules)) return false;
+  if (s.hands.w.length !== rules.cardsPerPlayer || s.hands.b.length !== rules.cardsPerPlayer) return false;
   return true;
 }
 
-function loadSaved(): GameState | null {
+/**
+ * Partie en direct annulée avant le moindre coup (personne n'a joué dans le délai du serveur) : l'accueil revient de
+ * lui-même à l'Oracle (HOME.duelAbortReturnMs). Une partie annulée plus tard, avant d'avoir commencé (un joueur a
+ * cliqué « Jouer plutôt contre l'Oracle », « Nouvelle partie » ou « Abandonner » avant son premier coup, ou n'a pas
+ * joué à temps, relais coupé), garde l'écran de fin et son bouton « Rejouer contre l'Oracle » : le client ne sait pas
+ * pourquoi elle a été annulée.
+ */
+export function abortedEmpty(duel: boolean, s: Pick<GameState, 'ply' | 'result'>): boolean {
+  return duel && s.result?.reason === 'aborted' && s.ply === 0;
+}
+
+export function loadSaved(): GameState | null {
   try {
-    const raw = localStorage.getItem(STORE_KEY);
+    const raw = localStorage.getItem(KEYS.homeGame);
     if (!raw) return null;
     const data = JSON.parse(raw) as Saved;
-    if (data?.v !== 1 || !validState(data.state) || data.state.result) return null;
-    // Une partie oubliée depuis plus de 30 jours repart de zéro
-    if (Date.now() - (data.savedAt ?? 0) > 30 * 24 * 3600 * 1000) return null;
+    if (data?.v !== HOME.saveVersion || !validState(data.state) || data.state.result) return null;
+    // Une partie oubliée depuis trop longtemps (HOME.saveMaxAgeMs : 30 jours) repart de zéro
+    if (Date.now() - (data.savedAt ?? 0) > HOME.saveMaxAgeMs) return null;
     legalMovesOf(data.state);
     return data.state;
   } catch {
@@ -118,21 +144,25 @@ function loadSaved(): GameState | null {
 
 function persist(s: GameState) {
   try {
-    if (s.result) localStorage.removeItem(STORE_KEY);
-    else localStorage.setItem(STORE_KEY, JSON.stringify({ v: 1, state: s, savedAt: Date.now() } satisfies Saved));
+    if (s.result) localStorage.removeItem(KEYS.homeGame);
+    else localStorage.setItem(KEYS.homeGame, JSON.stringify({ v: HOME.saveVersion, state: s, savedAt: Date.now() } satisfies Saved));
   } catch {
     // stockage indisponible (navigation privée) : la partie vit le temps de la page
   }
 }
 
+/** Niveau de l'Oracle choisi par le visiteur (KEYS.homeLevel) ; absent ou inconnu : HOME.botLevel. */
 function loadLevel(): BotLevel {
   try {
-    const n = Number(localStorage.getItem(LEVEL_KEY));
-    return n === 1 || n === 2 || n === 3 ? n : 2;
+    return botLevelOr(Number(localStorage.getItem(KEYS.homeLevel)), HOME.botLevel);
   } catch {
-    return 2;
+    return HOME.botLevel;
   }
 }
+
+/** Rois de la partie contre l'Oracle : celui du visiteur dans son camp, celui de l'Oracle en face. */
+const oracleKings = (king: string, botKing: string): Kings =>
+  PLAYER === 'w' ? { w: normKing(king), b: normKing(botKing) } : { w: normKing(botKing), b: normKing(king) };
 
 export interface LastCast {
   card: string;
@@ -184,7 +214,6 @@ export function useLiveGame({
   const [selected, setSelected] = useState<number | null>(null);
   const [partial, setPartial] = useState<number[]>([]);
   const [casting, setCasting] = useState(false);
-  const [thinking, setThinking] = useState(false);
   const [lastCast, setLastCast] = useState<LastCast | null>(null);
   const [botTick, setBotTick] = useState(0);
   const [armed, setArmed] = useState(false);
@@ -215,7 +244,7 @@ export function useLiveGame({
     const s = stateRef.current;
     v.stage.setOrientation(meRef.current, s.effects, s.pos);
     // Calque WebGL de la partie : masqué hors mode immersif (voir odyssee.css)
-    (v.stage as unknown as { canvas?: HTMLCanvasElement | null }).canvas?.classList.add('o-live-canvas');
+    v.stage.canvas?.classList.add('o-live-canvas');
     v.stage.syncMarkers(activeRef.current ? s.effects : [], s.pos);
   }, []);
   const { ready: vfxReady, now: vfxNow } = useSharedVfx(armed ? wrapEl : null, PLAYER, 'odyssee-stage', !active, onVfx);
@@ -245,8 +274,8 @@ export function useLiveGame({
 
   const stateRef = useRef(state);
   /** Rois de la partie contre l'Oracle, tels qu'ils sont portés (gardés avec la partie terminée, pour l'analyse). */
-  const oracleKingsRef = useRef<Kings>({ w: normKing(king), b: normKing(botKing) });
-  oracleKingsRef.current = { w: normKing(king), b: normKing(botKing) };
+  const oracleKingsRef = useRef<Kings>(oracleKings(king, botKing));
+  oracleKingsRef.current = oracleKings(king, botKing);
   const activeRef = useRef(active);
   const levelRef = useRef(level);
   const epochRef = useRef(0);
@@ -275,7 +304,8 @@ export function useLiveGame({
       // direct est gardée par le serveur.
       if (!duelRef.current && n.result && !stateRef.current.result && n.result.reason !== 'aborted') {
         try {
-          rememberLocalGame(n, { white: 'Vous', black: `L'Oracle (${BOT_PROFILES[levelRef.current].name})`, you: PLAYER, vsBot: true, kings: oracleKingsRef.current });
+          const names = { [PLAYER]: 'Vous', [BOT]: `L'Oracle (${BOT_PROFILES[levelRef.current].name})` } as Record<Color, string>;
+          rememberLocalGame(n, { white: names.w, black: names.b, you: PLAYER, vsBot: true, kings: oracleKingsRef.current });
         } catch {
           // stockage indisponible : la partie n'est simplement pas gardée
         }
@@ -298,7 +328,7 @@ export function useLiveGame({
   const setLevel = useCallback((l: BotLevel) => {
     setLevelState(l);
     try {
-      localStorage.setItem(LEVEL_KEY, String(l));
+      localStorage.setItem(KEYS.homeLevel, String(l));
     } catch {
       // stockage indisponible
     }
@@ -316,6 +346,7 @@ export function useLiveGame({
           hide: ids => setHidden(new Set(ids)),
           show: () => setHidden(new Set()),
           victimAtBottom: info.caster !== meRef.current,
+          secret: !rulesOf(n).handsVisible,
         });
       } else {
         apply(n);
@@ -325,41 +356,41 @@ export function useLiveGame({
     [vfxReady, vfxNow, apply],
   );
 
-  // Tour de l'IA : la décision est calculée tout de suite (Worker), elle n'est jouée qu'en mode immersif
+  // Tour de l'IA : la décision est calculée tout de suite (Worker), elle n'est jouée qu'en mode immersif. Sans état
+  // « réfléchit » : l'accueil n'est pas rendu deux fois de plus à chaque tour de l'Oracle (rien ne l'affichait).
+  // Exception : l'Oracle a le trait au départ (HOME.playerColor 'b', ou position de départ aux Noirs) ; il joue alors
+  // son premier coup sur la page, sinon le visiteur n'aurait aucun coup à jouer sur l'échiquier du héros. Au défaut,
+  // le visiteur a les Blancs : l'Oracle n'a jamais le trait au demi-coup 0.
   const botTurn = useCallback(async () => {
     const epoch = epochRef.current;
     const s0 = stateRef.current;
-    setThinking(true);
     const started = performance.now();
     const d = await askBot(s0, levelRef.current);
     const stale = () => epoch !== epochRef.current || stateRef.current !== s0;
-    while (!activeRef.current && !stale()) await sleep(150);
+    while (!activeRef.current && s0.ply > 0 && !stale()) await sleep(150);
     // Un temps de réflexion lisible, même quand le calcul est instantané
-    const minThink = 520 + Math.random() * 380;
+    const minThink = HOME.oracleThinkMs + Math.random() * HOME.oracleThinkJitterMs;
     const elapsed = performance.now() - started;
     if (elapsed < minThink) await sleep(minThink - elapsed);
-    if (stale()) {
-      setThinking(false);
-      return;
-    }
+    if (stale()) return;
+    // Les cartes de la décision dans l'ordre (une au plus au réglage par défaut), chacune animée, puis le coup
     let s = s0;
-    if (d.card) {
-      const r = playCard(s, BOT, d.card.index, d.card.targets, botSkin);
-      if (r.ok) {
-        setThinking(false);
-        setCasting(true);
-        await runCast(r.state, r.info, botSkin);
-        setCasting(false);
-        if (epoch !== epochRef.current) return;
-        s = r.state;
-        await sleep(380);
-      }
+    for (const c of d.cards) {
+      if (s.result || s.pos.turn !== BOT) break;
+      const r = playCard(s, BOT, c.index, c.targets, botSkin);
+      if (!r.ok) break;
+      setCasting(true);
+      await runCast(r.state, r.info, botSkin);
+      setCasting(false);
+      if (epoch !== epochRef.current) return;
+      s = r.state;
+      await sleep(HOME.oracleAfterCastMs);
     }
     if (!s.result && s.pos.turn === BOT && epoch === epochRef.current) {
       let r = d.move ? playMove(s, d.move.from, d.move.to, d.move.promo) : null;
       if (!r || !r.ok) {
-        // Décision devenue invalide (carte refusée) : on redemande un coup sur la position réelle
-        const again = await askBot({ ...s, cardPlayed: true }, levelRef.current);
+        // Décision devenue invalide (carte refusée) : on redemande le coup seul, sur la position réelle
+        const again = await askBot(s, levelRef.current, { cards: false });
         if (epoch !== epochRef.current) return;
         r = again.move ? playMove(s, again.move.from, again.move.to, again.move.promo) : null;
       }
@@ -368,7 +399,6 @@ export function useLiveGame({
         playSound(r.state.result ? 'end' : r.info.check ? 'check' : r.info.capturedId !== null ? 'capture' : 'move');
       }
     }
-    setThinking(false);
   }, [apply, runCast, botSkin]);
 
   useEffect(() => {
@@ -412,7 +442,7 @@ export function useLiveGame({
       }
       const d = duelRef.current;
       // En direct : la carte part au serveur tout de suite, l'animation se joue pendant ce temps
-      const sent = d ? emitAck<Ack>('game:card', { id: d.id, index, targets }).catch(() => ({ ok: false }) as Ack) : null;
+      const sent = d ? emitAck('game:card', { id: d.id, index, targets }).catch((): Ack => ({ ok: false })) : null;
       setCasting(true);
       await runCast(r.state, r.info, skin);
       setCasting(false);
@@ -454,8 +484,8 @@ export function useLiveGame({
       playSound(r.state.result ? 'end' : r.info.check ? 'check' : r.info.capturedId !== null ? 'capture' : 'move');
       const d = duelRef.current;
       if (d) {
-        void emitAck<Ack>('game:move', { id: d.id, from, to, promo })
-          .catch(() => ({ ok: false }) as Ack)
+        void emitAck('game:move', { id: d.id, from, to, promo })
+          .catch((): Ack => ({ ok: false }))
           .then(a => {
             if (!a.ok) resyncRef.current();
           });
@@ -540,7 +570,7 @@ export function useLiveGame({
     const sock = getSocket();
     let dead = false;
     const join = () => {
-      void emitAck<JoinReply>('game:join', { id: duel.id })
+      void emitAck('game:join', { id: duel.id })
         .then(r => {
           if (dead || !r.ok || !r.view) return;
           takeView(r.view);
@@ -565,20 +595,21 @@ export function useLiveGame({
     };
   }, [duelId, takeView]);
 
-  /** Signe de présence (le joueur touche l'échiquier) : l'IA attend avant de jouer pour lui. Au plus toutes les 3 s. */
+  /** Signe de présence (le joueur touche l'échiquier) : l'IA attend avant de jouer pour lui. Au plus une fois par
+   *  HOME.activityPingMs (3 s). */
   const lastPing = useRef(0);
   const activity = useCallback(() => {
     const d = duelRef.current;
     if (!d || stateRef.current.result) return;
     const t = Date.now();
-    if (t - lastPing.current < 3000) return;
+    if (t - lastPing.current < HOME.activityPingMs) return;
     lastPing.current = t;
     getSocket().emit('game:activity', { id: d.id });
   }, []);
   /** Reprendre la main : l'IA cesse de jouer pour ce joueur. */
   const takeOver = useCallback(() => {
     const d = duelRef.current;
-    if (d) void emitAck<Ack>('game:takeover', { id: d.id }).catch(() => {});
+    if (d) void emitAck('game:takeover', { id: d.id }).catch(() => {});
   }, []);
 
   /** Le serveur a apparié ce visiteur avec un autre : la partie contre l'Oracle laisse place à la partie en direct. */
@@ -589,22 +620,24 @@ export function useLiveGame({
       setPartial([]);
       setHidden(new Set());
       setCasting(false);
-      setThinking(false);
       setLastCast(null);
       setDuelInfo(null);
-      // La position de départ, en attendant celle du serveur (mêmes règles : rien ne bouge avant le premier coup)
       duelRef.current = p;
       setDuel(p);
+      // En attendant la partie du serveur (réponse de game:join) : position de départ, mains vides, règles de
+      // l'accueil. La partie contre l'Oracle ne reste pas affichée (retournée si le visiteur a les Noirs, mains
+      // inversées), ni pour de bon si game:join échoue. Rien n'est sauvegardé : apply ne garde pas une partie en direct.
+      apply(createGame({ w: [], b: [] }, HOME.timed, HOME.catalog, { rules: homeRules() }));
       playSound('start');
     },
-    [],
+    [apply],
   );
 
   const newGameNow = useCallback(() => {
     // Quitter une partie en direct : annulée si personne n'a encore joué, sinon abandonnée
     const d = duelRef.current;
     if (d) {
-      if (!stateRef.current.result) void emitAck<Ack>(duelInfoRef.current?.started ? 'game:resign' : 'game:abort', { id: d.id }).catch(() => {});
+      if (!stateRef.current.result) void emitAck(duelInfoRef.current?.started ? 'game:resign' : 'game:abort', { id: d.id }).catch(() => {});
       duelRef.current = null;
       setDuel(null);
       setDuelInfo(null);
@@ -614,7 +647,6 @@ export function useLiveGame({
     setPartial([]);
     setHidden(new Set());
     setCasting(false);
-    setThinking(false);
     setLastCast(null);
     apply(newGame());
     playSound('start');
@@ -629,7 +661,6 @@ export function useLiveGame({
     setPartial([]);
     setHidden(new Set());
     setCasting(false);
-    setThinking(false);
     setLastCast(null);
     apply(p);
   }, [previous, apply]);
@@ -640,7 +671,7 @@ export function useLiveGame({
     const d = duelRef.current;
     if (d) {
       // Le serveur annonce la fin à tous les deux (game:update, événement « end »)
-      void emitAck<Ack>(duelInfoRef.current?.started ? 'game:resign' : 'game:abort', { id: d.id }).catch(() => {});
+      void emitAck(duelInfoRef.current?.started ? 'game:resign' : 'game:abort', { id: d.id }).catch(() => {});
       return;
     }
     epochRef.current++;
@@ -651,9 +682,6 @@ export function useLiveGame({
     playSound('end');
   }, [apply]);
 
-  // Catalogue absent : ancienne sauvegarde (Duel) ; les nouvelles parties sont toujours aux Pouvoirs
-  const catalog: Catalog = state.catalog ?? 'duel';
-
   // Rois portés : contre l'Oracle, le roi équipé du visiteur et celui de l'Oracle ; en direct, ceux des sièges. Écart
   // accepté à « en ligne, le roi vient de view.seats » : entre l'appariement et la réponse de game:join (un aller-retour,
   // pendant lequel la position est de toute façon remise par le serveur), le visiteur garde son roi et l'adversaire est
@@ -661,7 +689,7 @@ export function useLiveGame({
   // classiques ».
   const worn: Kings = duel
     ? duelInfo?.kings ?? (duel.me === 'w' ? { w: normKing(king), b: DEFAULT_KING } : { w: DEFAULT_KING, b: normKing(king) })
-    : { w: normKing(king), b: normKing(botKing) };
+    : oracleKings(king, botKing);
   const { w: kingW, b: kingB } = shownKings(worn, me, classicKings);
 
   // Propriétés de l'échiquier jouable : le même objet tant que la partie ne change pas. Recréées à chaque rendu, elles
@@ -692,7 +720,6 @@ export function useLiveGame({
 
   return {
     state,
-    catalog,
     level,
     setLevel,
     /** Partie de la visite précédente, encore en cours : coup où elle en était (rien après le premier coup de la nouvelle). */
@@ -710,7 +737,7 @@ export function useLiveGame({
     /** Réclamer la victoire : l'adversaire a quitté la page depuis assez longtemps. */
     claim: () => {
       const d = duelRef.current;
-      if (d) void emitAck<Ack>('game:claim', { id: d.id }).catch(() => {});
+      if (d) void emitAck('game:claim', { id: d.id }).catch(() => {});
     },
     boardRef,
     /** Annule les pré-coups en attente sur l'échiquier de la partie. */
@@ -734,8 +761,6 @@ export function useLiveGame({
       setPartial([]);
     },
     myTurn,
-    /** L'IA calcule son coup. */
-    thinking,
     /** Un sort est en cours d'animation. */
     casting,
     lastCast,

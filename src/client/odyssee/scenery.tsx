@@ -1,7 +1,7 @@
 // Décors de la descente : chaque lieu est une pile de calques (data-d = profondeur de parallaxe).
 // Les reliefs sont générés (graine fixe) pour rester légers : des chemins SVG pleins, sans filtre animé.
 import { memo, useEffect, useRef, useState } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, ComponentType, ReactNode } from 'react';
 import frostA from './assets/cloud-frost-a.webp';
 import frostB from './assets/cloud-frost-b.webp';
 import stormA from './assets/cloud-storm-a.webp';
@@ -12,6 +12,8 @@ import roseA from './assets/cloud-rose-a.webp';
 import roseB from './assets/cloud-rose-b.webp';
 import duskA from './assets/cloud-dusk-a.webp';
 import duskB from './assets/cloud-dusk-b.webp';
+import { PLACES } from './data';
+import type { PoseKey } from './data';
 
 const CLOUDS = {
   frost: [frostA, frostB],
@@ -1045,7 +1047,15 @@ export function SceneSeuil({ part }: { part: 'back' | 'front' }) {
   );
 }
 
-export const SCENES = [SceneObservatoire, SceneForet, ScenePics, SceneSablier, SceneBazar, SceneSeuil];
+/** Décor de chaque lieu, par identifiant (PLACES, data.ts) : le compilateur en exige un par lieu. */
+export const SCENES: Record<PoseKey, ComponentType<{ part: 'back' | 'front' }>> = {
+  hero: SceneObservatoire,
+  foret: SceneForet,
+  pics: ScenePics,
+  sablier: SceneSablier,
+  bazar: SceneBazar,
+  seuil: SceneSeuil,
+};
 
 /**
  * Tous les lieux d'un plan (fond ou premier plan). Mémoïsé : l'accueil se re-rend à chaque lieu, chapitre ou
@@ -1055,11 +1065,14 @@ export const SCENES = [SceneObservatoire, SceneForet, ScenePics, SceneSablier, S
 export const SceneStack = memo(function SceneStack({ part }: { part: 'back' | 'front' }) {
   return (
     <>
-      {SCENES.map((Scene, i) => (
-        <div key={i} className={`o-scene o-scene-${i}${i ? ' o-paused' : ''}`} data-scene-layer={i} data-part={part}>
-          <Scene part={part} />
-        </div>
-      ))}
+      {PLACES.map(({ id }, i) => {
+        const Scene = SCENES[id];
+        return (
+          <div key={i} className={`o-scene o-scene-${i}${i ? ' o-paused' : ''}`} data-scene-layer={i} data-part={part}>
+            <Scene part={part} />
+          </div>
+        );
+      })}
     </>
   );
 });

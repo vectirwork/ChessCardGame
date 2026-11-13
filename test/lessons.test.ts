@@ -1,4 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
+import { createElement } from 'react';
+import type { ReactElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { describe, expect, it, vi } from 'vitest';
 import { cardsOf } from '../src/shared/cards';
 import { F_RELAXED, fromFen, sqIndex, sqName } from '../src/shared/chess';
 import { GameState, legalMovesOf, playMove, sideInCheck } from '../src/shared/game';
@@ -6,6 +11,13 @@ import {
   LESSONS, LESSON_GROUPS, LessonStep, freeMove, lessonById, loneKingReply, matedBy, stepStart, studentOf,
 } from '../src/shared/lessons';
 import { applyAction, stepOptions } from '../src/shared/puzzles';
+import { TIME_CONTROLS, tcLabel } from '../src/shared/protocol';
+import Rules from '../src/client/pages/Rules';
+import Play from '../src/client/pages/Play';
+import Learn from '../src/client/pages/Learn';
+import Puzzles from '../src/client/pages/Puzzles';
+import Auth from '../src/client/pages/Auth';
+import { AppProvider } from '../src/client/store';
 
 /** Toutes les étoiles peuvent-elles être ramassées ? (parcours en largeur sur les coups libres) */
 function starsReachable(step: LessonStep, stars: string[]): boolean {
@@ -181,5 +193,158 @@ describe('leçons', () => {
     const hanging = stepStart({ ...l.steps[3], fen: '8/8/8/3k4/4Q3/8/8/4K3 b - - 0 1' });
     const r = loneKingReply(hanging)!;
     expect(sqName(r.to)).toBe('e4');
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Réglage par défaut : photographies des textes (lot 8). Elles ont été relevées sur le code d'avant la dérivation des
+// textes ; un réglage changé (GAME_RULES, DEAL, CARDS, BRAND) doit les faire changer, rien d'autre.
+
+const sha = (x: unknown) => createHash('sha256').update(JSON.stringify(x)).digest('hex').slice(0, 16);
+
+/** Contenu d'une leçon tel qu'il existait avant le lot 8 (sans les champs ajoutés depuis). */
+const photo = (list: typeof LESSONS) => list.map(l => ({
+  id: l.id, title: l.title, group: l.group, summary: l.summary,
+  steps: l.steps.map(s => ({
+    fen: s.fen, text: s.text, goal: s.goal, success: s.success, hint: s.hint, marks: s.marks, arrows: s.arrows, last: s.last,
+    hands: s.hands, effects: s.effects, catalog: s.catalog, panel: s.panel,
+  })),
+}));
+
+describe('leçons au réglage par défaut', () => {
+  it('textes, positions, mains et objectifs identiques à la photographie', () => {
+    expect(sha(photo(LESSONS))).toBe('d8b079be811b03f8');
+  });
+
+  it('textes chiffrés des leçons (mains, tour, rangées, durées, coups permis)', () => {
+    const step = (id: string, i: number) => lessonById(id)!.steps[i];
+    expect(lessonById('cartes')!.summary).toBe('Trois cartes chacun, visibles des deux joueurs ; une par tour, avant le coup.');
+    expect(step('cartes', 0).text).toBe(
+      'Spellmate, ce sont les échecs, plus trois cartes de pouvoir par joueur. Au début d’une partie, vous choisissez vos trois cartes ; sur l’accueil, elles sont tirées au hasard. Les deux mains sont visibles : vous voyez les cartes de l’adversaire, il voit les vôtres, et une carte jouée reste grisée à sa place. À votre tour, vous pouvez jouer une carte avant votre coup : une seule par tour, et chaque carte ne sert qu’une fois.',
+    );
+    expect(step('cartes', 1).text).toContain('Un Mur se pose sur une case vide, de la 3e à la 6e rangée.');
+    expect(lessonById('catalogues')!.summary).toBe('Avec les huit pouvoirs ou sans cartes ; Climats, Terrains, Événement.');
+    expect(step('catalogues', 0).text).toBe('Chaque partie choisit son jeu. Par défaut, les Pouvoirs : huit cartes qui changent la partie pour les deux camps. Ou sans cartes : les échecs classiques, rien d’autre.');
+    expect(step('catalogues', 1).text).toMatch(/^Les huit pouvoirs forment trois familles\. /);
+    expect(step('presage-rituel', 1).text).toBe('Annoncez la Trêve (aucune capture pendant 3 coups, sauf pour sortir d’un échec), puis jouez un coup. Les Noirs répondent ; la Trêve arrive ensuite.');
+    expect(step('presage-rituel', 1).success).toBe('La Trêve est arrivée : regardez la liste des effets sous l’échiquier. Elle vaut pour vous aussi : vous ne prendrez rien pendant 3 coups.');
+    expect(step('presage-rituel', 2).text).toContain('Tous les pions des deux camps sur leurs 2e à 5e rangées avancent d’une case');
+    expect(step('mains-visibles', 0).text).toContain('elle peut ouvrir un gouffre sur la 4e ou la 5e rangée, même pour parer un échec.');
+    expect(step('mat-dame', 3).text).toBe('À vous, sans aide : matez le roi noir, qui se défend. Vous avez 30 coups.');
+    expect(step('mat-dame', 3).goal).toEqual({ kind: 'hunt', maxMoves: 30 });
+    expect(step('mat-tour', 2).text).toBe('À vous : matez le roi noir avec la tour. Vous avez 40 coups.');
+    expect(step('mat-tour', 2).goal).toEqual({ kind: 'hunt', maxMoves: 40 });
+  });
+});
+
+/** Rendu serveur d'une page (sans effets) : texte visible, une ligne par nœud de texte. */
+function pageText(url: string, path: string, el: ReactElement): string {
+  const html = renderToStaticMarkup(
+    createElement(AppProvider, null, createElement(MemoryRouter, { initialEntries: [url] }, createElement(Routes, null, createElement(Route, { path, element: el })))),
+  );
+  return html
+    .replace(/<[^>]+>/g, '\n')
+    .replace(/&#x27;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .split('\n')
+    .map(x => x.trim())
+    .filter(Boolean)
+    .join('\n');
+}
+/** Attributs lus par les lecteurs d'écran (aria-label). */
+function pageLabels(url: string, path: string, el: ReactElement): string[] {
+  const html = renderToStaticMarkup(
+    createElement(AppProvider, null, createElement(MemoryRouter, { initialEntries: [url] }, createElement(Routes, null, createElement(Route, { path, element: el })))),
+  );
+  return [...html.matchAll(/aria-label="([^"]*)"/g)].map(m => m[1].replace(/&#x27;/g, "'"));
+}
+
+describe('pages au réglage par défaut : textes chiffrés et libellés', () => {
+  it('Règles et cartes', () => {
+    const t = pageText('/cartes', '/cartes', createElement(Rules));
+    for (const s of [
+      'et huit pouvoirs',
+      'Spellmate, ce sont les échecs que vous connaissez, plus trois cartes de pouvoir chacun. Les deux mains sont visibles, et chaque pouvoir change la partie pour les deux camps.',
+      'Les huit pouvoirs\nDeux formules',
+      'Six règles, rien de plus',
+      'Toutes les règles officielles s’appliquent : roque, prise en passant, promotion, pat, triple répétition, règle des 50 coups. On gagne par mat, au temps ou par abandon.',
+      'Trois cartes chacun, à découvert\nAu début d’une partie, vous choisissez vos trois cartes ; sur l’accueil, elles sont tirées au hasard. Votre choix reste secret jusqu’à ce que votre adversaire ait choisi, puis les deux mains restent visibles de tous jusqu’à la fin ; une carte jouée reste à sa place, grisée.',
+      'Un sort par tour, avant votre coup\nÀ votre tour, vous pouvez lancer une carte, puis vous jouez votre coup. Chaque carte ne sert qu’une fois. Seule exception : un Rituel remplace votre coup.',
+      'Le sort est annoncé avant votre coup et arrive au début de votre tour suivant. En attendant, il est affiché pour tous : l’adversaire a toujours un coup pour s’y préparer.',
+      'Le Mur de glace et la Faille agissent dès le lancement, avant votre coup : vous jouez déjà sur le terrain transformé.',
+      'La Grande Marée est votre coup : elle termine votre tour, et l’adversaire profite le premier de la nouvelle position.',
+      'Exemple : la Trêve\n, un Climat de 3 coups (vous, lui, vous). Aucune capture n’est permise pendant ces trois coups, sauf pour sortir d’un échec.',
+      'Vous\nVous lancez la Trêve, puis vous jouez.\nAnnoncée\nAdversaire\nIl répond : il la voit venir.\nArrive au coup suivant\nVous\nElle arrive : vous jouez sans capturer.\n1er coup sur 3\nAdversaire\nIl joue sans capturer.\n2e coup sur 3\nVous\nVous jouez sans capturer.\n3e coup sur 3\nAdversaire\nIl peut capturer le premier.\nTerminée',
+      'Les huit pouvoirs\nTrois familles,\nhuit cartes',
+      'Entre humains, avec pendule',
+      'Trois cartes chacun, choisies parmi les huit pouvoirs au début de la partie.\nLes deux mains visibles, du premier au dernier coup.\nUn sort par tour au plus, toujours facultatif.',
+      'Le Sablier fou n’est proposé qu’entre humains, dans les parties avec pendule.',
+      'Le choix des cartes dure 45 secondes : trois cartes différentes parmi les huit pouvoirs, sans autre contrainte. Si le temps s’écoule, celles qui vous manquent sont tirées au hasard. Sur l’accueil, le tirage favorise les cartes les moins rares, avec au plus deux Climats par main.',
+      'Pour choisir vos cartes et votre adversaire, passez par la page\nJouer',
+    ]) expect(t).toContain(s);
+    expect(t.match(/Entre humains, avec pendule/g)).toHaveLength(1);
+  });
+
+  it('Jouer : portes, niveaux de l’IA, cadences, aide du choix des cartes', () => {
+    const bot = pageText('/jouer?mode=bot', '/jouer', createElement(Play));
+    for (const s of [
+      'Les échecs, plus trois cartes de pouvoir chacun, que vous choisissez au début de la partie. Une IA, un ami, ou le premier joueur venu : la partie s’ouvre en plein écran.',
+      'I\nContre l\'IA\n3 niveaux\nApprenti, Sorcier ou Archimage : une IA qui calcule et garde ses sorts pour le bon moment.',
+      'II\nDéfier un ami\nSans compte', 'III\nPartie amicale\nOuverte à tous', 'IV\nPartie classée\nElo',
+      'Porte I · contre l\'IA',
+      'Apprenti\nJoue vite, lance ses sorts au hasard.\n≈ 800 Elo\nSorcier\nCalcule, protège ses pièces, garde une carte pour la fin.\n≈ 1300 Elo\nArchimage\nCalcule en profondeur et punit chaque sort gaspillé.\n≈ 1800 Elo',
+      'Vous choisirez vos trois cartes au début de la partie, en 45 secondes : votre choix reste secret jusqu’à ce que votre adversaire ait choisi aussi.',
+      '1 + 0\nBullet\n3 + 2\nBlitz\n5 + 0\nBlitz\n10 + 0\nRapide\n15 + 10\nRapide\nSans limite\nLibre',
+      'Contre le Sorcier · 10 + 0',
+    ]) expect(bot).toContain(s);
+    expect(pageText('/jouer?mode=invite', '/jouer', createElement(Play))).toContain('Porte II · entre amis');
+    expect(pageText('/jouer?mode=invite', '/jouer', createElement(Play))).toContain('Pouvoirs · 10 + 0');
+    const friendly = pageText('/jouer?mode=friendly', '/jouer', createElement(Play));
+    expect(friendly).toContain('Cadence\n3 + 2\nBlitz\n5 + 0\nBlitz\n10 + 0\nRapide\n15 + 10\nRapide\nVotre pseudo (facultatif)');
+    expect(friendly).toContain('Amicale · 10 + 0 · Pouvoirs');
+    expect(pageText('/jouer?mode=ranked', '/jouer', createElement(Play))).toContain('Porte IV · classement Elo');
+  });
+
+  it('Apprendre : sommaire et encarts', () => {
+    const t = pageText('/apprendre', '/apprendre', createElement(Learn));
+    expect(t).toContain('De la marche des pièces aux mats élémentaires, puis les cartes de Spellmate.');
+    expect(t).toContain('0 / 22 leçons');
+    expect(t.split('\n').filter(x => /^[IV]+$/.test(x))).toEqual(['I', 'II', 'III', 'IV', 'V']);
+    const cat = pageText('/apprendre/catalogues', '/apprendre/:lesson', createElement(Learn));
+    expect(cat).toContain('Pouvoirs\n· 8 cartes');
+  });
+
+  it('Problèmes : chapeau et filtres', () => {
+    vi.setSystemTime(new Date(2026, 10, 13, 12));
+    const t = pageText('/problemes', '/problemes', createElement(Puzzles));
+    vi.useRealTimers();
+    expect(t).toContain('et des énigmes sur les huit pouvoirs, où la bonne carte (ou celle de l’adversaire, toujours visible) fait la différence.');
+    expect(t).toContain('Tous\n49\nMat en 1\n16\nMat en 2\n12\nMat en 3\n4\nFourchettes\n6\nClouages\n4\nEnfilades\n3\nDéviations\n6\nDécouvertes\n2\nMats élémentaires\n7\nCartes\n8');
+    expect(t).toContain('Problème du jour · vendredi 13 novembre');
+  });
+
+  it('Connexion et inscription : bornes du pseudo et du mot de passe', () => {
+    const reg = pageText('/x', '/x', createElement(Auth, { mode: 'register' }));
+    expect(reg).toContain('3 à 20 caractères : lettres, chiffres, - et _');
+    expect(reg).toContain('8 caractères minimum.');
+    const reset = pageText('/x', '/x', createElement(Auth, { mode: 'reset' }));
+    expect(reset).toContain('Choisissez un mot de passe d’au moins 8 caractères. Vos autres appareils seront déconnectés.');
+    expect(pageLabels('/x', '/x', createElement(Auth, { mode: 'login' }))).toEqual([]);
+  });
+
+  it('libellés de cadence identiques pour les 6 cadences (Jouer, Mes parties, Direct, Analyse, historique)', () => {
+    expect(TIME_CONTROLS.map(t => tcLabel(t.id))).toEqual(['1 + 0', '3 + 2', '5 + 0', '10 + 0', '15 + 10', 'Sans limite']);
+    expect(TIME_CONTROLS.map(t => tcLabel(t.id, 'family'))).toEqual(['Bullet 1 + 0', 'Blitz 3 + 2', 'Blitz 5 + 0', 'Rapide 10 + 0', 'Rapide 15 + 10', 'Sans limite']);
+    expect(TIME_CONTROLS.map(t => tcLabel(t.tc, 'compact'))).toEqual(['1+0', '3+2', '5+0', '10+0', '15+10', 'Sans limite']);
+    // Copies supprimées par le lot 8 : MyGames (identifiant → libellé), Live (famille et libellé), Analyse et historique
+    // (pendule → « m+i »). Mêmes chaînes.
+    for (const t of TIME_CONTROLS) {
+      expect(tcLabel(t.id)).toBe(t.label);
+      expect(tcLabel(t.id, 'family')).toBe(t.tc ? `${t.family} ${t.label}` : t.label);
+      expect(tcLabel(t.tc, 'compact')).toBe(t.tc ? `${Math.round(t.tc.initial / 60)}+${t.tc.increment}` : 'Sans limite');
+    }
+    expect(tcLabel('inconnue')).toBe('inconnue');
+    expect(tcLabel(undefined)).toBe('');
   });
 });

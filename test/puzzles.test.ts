@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { analyse } from '../src/shared/bot';
 import { CARDS, CardId, cardsOf } from '../src/shared/cards';
@@ -255,5 +256,35 @@ describe('problème du jour et notation', () => {
     expect(parseAction('@coronation:a7')).toBeNull(); // carte retirée
     expect(parseAction('@inconnue:a1')).toBeNull();
     expect(stepOptions('e2e4|d2d4')).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Réglage par défaut : photographies (lot 8), relevées sur le code d'avant la dérivation des textes.
+
+const sha = (x: unknown) => createHash('sha256').update(JSON.stringify(x)).digest('hex').slice(0, 16);
+
+/** Contenu d'un problème tel qu'il existait avant le lot 8 (sans les champs ajoutés depuis). */
+const photo = (list: Puzzle[]) => list.map(p => ({
+  id: p.id, title: p.title, themes: p.themes, level: p.level, fen: p.fen, solution: p.solution, mate: p.mate, goal: p.goal,
+  hint: p.hint, moral: p.moral, hands: p.hands, effects: p.effects,
+}));
+
+describe('problèmes au réglage par défaut', () => {
+  it('textes, positions, solutions et mains identiques à la photographie', () => {
+    expect(sha(photo(PUZZLES))).toBe('b98dd400d90d3790');
+  });
+
+  it('textes chiffrés des problèmes à cartes (rangées du Mur)', () => {
+    expect(puzzleById('carte-mur-sauve')!.hint).toBe('Un Mur se pose entre la 3e et la 6e rangée : une seule case de la diagonale convient.');
+    expect(puzzleById('carte-main-visible')!.moral).toBe('Les mains sont visibles : un échec à distance qui traverse les rangées 3 à 6 se pare d’un Mur. Sur la 8e rangée, aucun Mur ne peut se poser.');
+  });
+
+  it('problème du jour : même calendrier qu’avant le lot 8', () => {
+    const days: string[] = [];
+    for (let i = 0; i < 120; i++) days.push(dailyPuzzle(new Date(2026, 0, 1 + i, 12)).id);
+    expect(days.slice(0, 6)).toEqual(['philidor-3', 'fourchette-f6', 'enfilade-colonne', 'carte-maree', 'epaulettes', 'legs-de-philidor']);
+    expect(sha(days)).toBe('1dbebfb31f6b60a5');
+    expect(dailyPuzzle(new Date(2026, 10, 13, 12)).id).toBe('etouffe');
   });
 });

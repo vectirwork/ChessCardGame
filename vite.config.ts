@@ -90,9 +90,12 @@ export function loadSettings(): Promise<Settings> {
  * au build depuis les réglages. Le code du paquet principal les lit en `__SM__.<nom>` (remplacé par la valeur à la
  * construction, en développement et sous Vitest) : il n'importe ainsi ni BRAND, ni KEYS, ni protocol.ts, ni les
  * phrases de règles, qui l'alourdiraient (BRAND : +0,1 ko compressé ; KEYS : +0,2 ko ; protocol.ts : un morceau de
- * plus à télécharger avant le premier rendu ; bot.ts : tout le moteur). Ailleurs, importer directement BRAND, KEYS,
+ * plus à télécharger avant le premier rendu ; bot.ts : tout le moteur). Une page s'en sert aussi quand un import
+ * ferait un morceau de plus ou chargerait du code pour une valeur fixe (bornes des pseudos : Jouer, Connexion, « Défier
+ * un ami » ; durée du choix : Règles, Jouer ; marque du partage : partie). Ailleurs, importer directement BRAND, KEYS,
  * PROTOCOL_VERSION.
- * Ne s'écrit qu'avec une propriété : `__SM__.marque`, jamais `__SM__` seul (non défini à l'exécution).
+ * Ne s'écrit qu'avec une propriété : `__SM__.marque`, jamais `__SM__` seul (non défini à l'exécution). Le banc de la
+ * coque (test/identite.mjs, assemblé par esbuild sans ces constantes) ne doit en lire aucune au chargement d'un module.
  */
 export interface BuildConstants {
   /** BRAND.name : « Spellmate ». */

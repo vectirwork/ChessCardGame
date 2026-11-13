@@ -1176,9 +1176,30 @@
 .gs .gs-opp-fan[data-crowd] .gs-opp-slot + .gs-opp-slot {
   margin-left: calc(var(--w) * -0.3);
 }
-/* Petites cartes (pastille courte) : la pastille suit la largeur de la carte */
+/* Petites cartes (pastille courte) : la pastille suit la largeur de la carte, sur une ligne, et tient dans la partie
+   visible de la carte (6,4 fois la taille du texte pour « + En plus », marges comprises) */
 .gs .gs-fan[data-crowd] .sc-turn.is-compact {
-  font-size: min(9px, max(7.5px, calc(var(--w) * 0.13)));
+  white-space: nowrap;
+  font-size: min(9px, max(7.5px, calc(var(--w) * 0.13)), calc((var(--w) + var(--ho) - 4px) / 6.4));
+}
+/* Noms des petites cartes : la carte suivante recouvre le bord droit de chacune (--ho). Le nom tient dans la partie
+   visible : un nom de plusieurs mots passe sur deux lignes, un mot seul rapetisse à sa mesure (« Déflagration », le plus
+   long : 7,8 fois la taille du texte en Cinzel 800, sans espacement des lettres) ; jamais coupé dans un mot. */
+.gs .gs-fan[data-crowd] .sc-hand .sc-name {
+  max-width: calc(var(--w) + var(--ho) - 6px);
+  font-size: min(calc(var(--w) * 0.094), calc((var(--w) + var(--ho) - 6px) / 7.8));
+  letter-spacing: 0;
+}
+/* Nom et pastille centrés dans la partie visible : décalés de la moitié du recouvrement, sauf sur la dernière carte,
+   que rien ne recouvre (position fixe, rien d'animé) */
+.gs .gs-fan[data-crowd] .gs-fan-slot:not(:last-child) :is(.sc-name, .sc-turn) {
+  translate: calc(var(--ho) / 2) 0;
+}
+/* Mobile : les cartes nombreuses sont plus petites que celles de la main de référence ; l'invite et le message après un
+   lancement se posent au-dessus d'elles au lieu d'en chevaucher le haut (18 px y couvraient l'étiquette du moment et le
+   haut de l'image). Le tout reste sous la hauteur réservée à la main de référence (layout.ts, MOBILE_BELOW). */
+.gs.is-mobile .gs-fan[data-crowd] .gs-fan-note {
+  bottom: calc(100% + 6px);
 }
 /* Mobile : la bande de la main adverse nombreuse est plus longue ; l'intitulé passe sur deux lignes plutôt que de
    sortir de l'écran (360 px, 6 cartes) */

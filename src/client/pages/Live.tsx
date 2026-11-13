@@ -2,10 +2,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, errMsg } from '../api';
-import { catalogLabel, movesFromPlies } from '../features/format';
+import { movesFromPlies } from '../features/format';
 import { PageHead, useTitle } from '../features/ui';
+import { CATALOGS } from '../../shared/cards';
 import type { Catalog } from '../../shared/cards';
-import { TIME_CONTROLS } from '../../shared/protocol';
+import { tcLabel } from '../../shared/protocol';
+import { LOCALE, compte } from '../../shared/text/fr';
+import { catalogLabel, colorName } from '../../shared/text/libelles';
 
 interface LiveGame {
   id: string;
@@ -24,12 +27,7 @@ interface LiveGame {
 }
 
 const REFRESH_MS = 10_000;
-const TIME_FMT = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-function tcText(id: string): string {
-  const t = TIME_CONTROLS.find(x => x.id === id);
-  return t ? (t.tc ? `${t.family} ${t.label}` : t.label) : id;
-}
+const TIME_FMT = new Intl.DateTimeFormat(LOCALE, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 export default function Live() {
   useTitle('Parties en direct');
@@ -77,7 +75,7 @@ export default function Live() {
       <PageHead
         kicker="En direct"
         title={<>Les parties <em>en cours</em></>}
-        sub="Regardez les parties qui se jouent en ce moment sur Spellmate, sans vous asseoir à l’échiquier. Les parties entre joueurs d’abord."
+        sub={`Regardez les parties qui se jouent en ce moment sur ${__SM__.marque}, sans vous asseoir à l’échiquier. Les parties entre joueurs d’abord.`}
       >
         <div className="ft-head-row">
           <button type="button" className="btn btn-sm" onClick={() => void load()} disabled={loading}>Actualiser</button>
@@ -108,17 +106,17 @@ function LiveSection({ title, games }: { title: string; games: LiveGame[] }) {
       <ul className="ft-live">
         {games.map(g => (
           <li key={g.id}>
-            <Link to={`/partie/${g.id}`} className="ft-live-card" aria-label={`Regarder ${g.white ?? 'Blancs'} contre ${g.black ?? 'Noirs'}`}>
+            <Link to={`/partie/${g.id}`} className="ft-live-card" aria-label={`Regarder ${g.white ?? colorName('w')} contre ${g.black ?? colorName('b')}`}>
               <span className="ft-live-top">
                 <span className="ft-dot" aria-hidden="true" />
-                <span>{g.rated ? 'Classée' : 'Amicale'} · {tcText(g.tc)}</span>
-                <span className="ft-live-cat">{catalogLabel(g.catalog)}</span>
+                <span>{g.rated ? 'Classée' : 'Amicale'} · {tcLabel(g.tc, 'family')}</span>
+                <span className="ft-live-cat">{catalogLabel(g.catalog, CATALOGS, true)}</span>
               </span>
-              <span className="ft-pl w"><i aria-hidden="true" />{g.white ?? 'Blancs'}{g.whiteRating ? <small> {g.whiteRating}</small> : null}</span>
-              <span className="ft-pl b"><i aria-hidden="true" />{g.black ?? 'Noirs'}{g.blackRating ? <small> {g.blackRating}</small> : null}</span>
+              <span className="ft-pl w"><i aria-hidden="true" />{g.white ?? colorName('w')}{g.whiteRating ? <small> {g.whiteRating}</small> : null}</span>
+              <span className="ft-pl b"><i aria-hidden="true" />{g.black ?? colorName('b')}{g.blackRating ? <small> {g.blackRating}</small> : null}</span>
               <span className="ft-live-foot">
                 <span>{g.plies ? `Coup ${movesFromPlies(g.plies + 1)}` : 'Premiers coups'}</span>
-                {g.spectators > 0 && <span>{g.spectators} spectateur{g.spectators > 1 ? 's' : ''}</span>}
+                {g.spectators > 0 && <span>{compte(g.spectators, 'spectateur')}</span>}
                 <span className="ft-live-go">Regarder →</span>
               </span>
             </Link>

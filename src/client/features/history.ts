@@ -5,15 +5,21 @@
 //   rememberView(view);                  // partie en ligne terminée (GameView du serveur)
 //   rememberLocalGame(state, { white, black, you });   // partie locale terminée (contre l'IA dans le navigateur)
 //
-// Les parties en ligne se rouvrent dans l'Analyse par leur identifiant ; les parties locales emportent leur journal.
+// Les parties en ligne se rouvrent dans l'Analyse par leur identifiant ; les parties locales emportent leur journal et,
+// si elles en avaient d'autres que RULES_V1, leurs règles (`rules`) : l'Analyse les rejoue avec. Au réglage par défaut,
+// rien de plus n'est écrit (aucune partie ne porte de règles).
 //
 // Rois d'une partie (skins) : chaque camp porte son roi, pris à l'assise (view.seats[c].king) et vu de tous. La
 // préférence locale « Rois adverses classiques » (CLASSIC_KINGS_PREF, réglée dans le compte) remplace à l'affichage
 // les rois des autres par le roi Arcane : shownKings, lu par la partie, l'accueil et l'analyse.
 // Ce module ne charge pas le catalogue (« Mes parties » s'en passe) : le serveur normalise déjà les rois des sièges
 // (seatView), et un identifiant inconnu est dessiné en roi Arcane par pieceUrl.
+// Il est chargé par l'accueil (useLiveGame) : rien d'autre que des types n'y est importé du code partagé. Le catalogue
+// des parties sans catalogue est donc écrit ici ('duel', LEGACY_CATALOG de cards.ts), et le libellé de cadence calculé
+// sans tcLabel (protocol.ts n'est pas sur le chemin de l'accueil) : « 10+0 », comme le style 'compact' de tcLabel.
 import type { Color } from '../../shared/chess';
 import type { CardId, Catalog } from '../../shared/cards';
+import type { Rules } from '../../shared/config/rules';
 import type { GameState, LogEntry, ResultReason } from '../../shared/game';
 import type { GameView, SeatView } from '../../shared/protocol';
 import { readJson, writeJson } from './storage';
@@ -43,6 +49,7 @@ export function shownKings(kings: Partial<Kings> | null | undefined, you: Color 
   return { w: you === 'w' ? w : ARCANE_KING, b: you === 'b' ? b : ARCANE_KING };
 }
 
+/** Clé de la liste (KEYS.history de storageKeys.ts, valeur inchangée). */
 export const HISTORY_KEY = 'sm:parties';
 const MAX = 60;
 
@@ -61,6 +68,8 @@ export interface PlayedGame {
   vsBot?: boolean;
   /** Rois des deux camps (absent : partie enregistrée avant les rois, Arcane). */
   kings?: Kings;
+  /** Règles de la partie, si elles différaient de RULES_V1 (absent : RULES_V1, toujours au réglage par défaut). */
+  rules?: Rules;
   /** Partie locale : de quoi la rejouer. */
   local?: { log: LogEntry[]; hands: Record<Color, CardId[]>; timed: boolean; catalog: Catalog };
 }
@@ -101,6 +110,7 @@ export function rememberView(view: GameView) {
     timeControl: tc,
     vsBot: view.seats.w?.kind === 'bot' || view.seats.b?.kind === 'bot',
     kings: seatKings(view.seats),
+    ...(view.state.rules ? { rules: view.state.rules } : {}),
   });
 }
 
@@ -124,5 +134,6 @@ export function rememberLocalGame(state: GameState, meta: { white: string; black
     vsBot: meta.vsBot ?? true,
     kings: meta.kings ? shownKings(meta.kings, null, false) : undefined,
     local: { log: state.log, hands, timed: state.timed, catalog: state.catalog ?? 'duel' },
+    ...(state.rules ? { rules: state.rules } : {}),
   });
 }

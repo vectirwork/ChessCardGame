@@ -9,27 +9,32 @@ import { EvalBar, EvalGraph, evalText } from '../features/EvalViews';
 import { useEngine, reviewStates, REVIEW_DEPTH } from '../features/engine';
 import type { Analysis as EngineAnalysis } from '../features/engine';
 import { EffectsLine, HandView } from '../features/CardHand';
-import { catalogLabel, formatDate, formatEval, frSan, outcomeFor, reasonText, scoreText } from '../features/format';
-import { CLASSIC_KINGS_PREF, localGame, rememberView, seatKings, shownKings } from '../features/history';
+import { formatDate, formatEval, frSan, outcomeFor, reasonText, scoreText } from '../features/format';
+import { localGame, rememberView, seatKings, shownKings } from '../features/history';
 import type { Kings } from '../features/history';
 import { MoveTree } from '../features/MoveTree';
 import { PositionEditor } from '../features/PositionEditor';
 import { JUDGEMENT_LABEL, JUDGEMENT_SIGN, judge } from '../features/review';
 import type { Judgement } from '../features/review';
-import { useStored } from '../features/storage';
+import { usePref, useStored } from '../features/storage';
 import { Switch, useTitle } from '../features/ui';
 import { emitAck, getSocket } from '../socket';
-import { useApp, usePref } from '../store';
+import { useApp } from '../store';
 import { playSound } from '../sound';
+import { KEYS } from '../storageKeys';
 import type { Color, Move, PieceType } from '../../shared/chess';
 import { opposite } from '../../shared/chess';
-import { isCardId } from '../../shared/cards';
+import { CATALOGS, LEGACY_CATALOG, isCardId } from '../../shared/cards';
+import type { Rules } from '../../shared/config/rules';
 import { GameState, createGame, legalMovesOf, playMove } from '../../shared/game';
 import {
   PgnError, START_FEN, TreeNode, fenOf, initialStateOf, mainline, makeRoot, normalizeFen, pgnDate, pgnResult, playFrom,
   readPgn, stateFromFen, treeFromLog, validateFen, writePgn,
 } from '../../shared/pgn';
-import type { JoinReply } from '../../shared/protocol';
+import { tcLabel } from '../../shared/protocol';
+import { rulesOf } from '../../shared/rulesCore';
+import { compte, nombre } from '../../shared/text/fr';
+import { catalogLabel, colorName } from '../../shared/text/libelles';
 
 interface GameInfo {
   id: string;
@@ -47,6 +52,8 @@ interface GameInfo {
   local?: boolean;
   /** Rois des deux camps (sièges de la partie, ou partie locale enregistrée avec eux) ; absent : Arcane. */
   kings?: Kings;
+  /** Règles de la partie relue (libellé de la fin : nombre de coups, répétitions). */
+  rules: Rules;
 }
 
 type Tab = 'coups' | 'importer' | 'exporter';
@@ -81,8 +88,8 @@ function AnalysisBoard({ gameId, fen, imported }: { gameId?: string; fen: string
   const [orientation, setOrientation] = useState<Color>('w');
   const [mode, setMode] = useState<'analyse' | 'edit'>('analyse');
   const [tab, setTab] = useState<Tab>('coups');
-  const [engineOn, setEngineOn] = useStored<boolean>('sm:analyse:moteur', true);
-  const [classicKings] = usePref<boolean>(CLASSIC_KINGS_PREF, false);
+  const [engineOn, setEngineOn] = useStored<boolean>(KEYS.analysisEngine, true);
+  const [classicKings] = usePref<boolean>(KEYS.classicKings, false);
   const [game, setGame] = useState<GameInfo | null>(null);
   const [loading, setLoading] = useState(!!gameId);
   const [problem, setProblem] = useState<ReactNode>(init.error);
@@ -131,17 +138,19 @@ function AnalysisBoard({ gameId, fen, imported }: { gameId?: string; fen: string
         return;
       }
       // Une carte retirée du jeu depuis (ancienne partie) est écartée de la main : la relecture s'arrête à son tour.
+      // La partie est rejouée avec ses règles (RULES_V1 si elle n'en a pas gardé), jamais avec celles du jour.
       const hands = { w: (g.local.hands?.w ?? []).filter(isCardId), b: (g.local.hands?.b ?? []).filter(isCardId) };
-      const start = createGame(hands, !!g.local.timed, g.local.catalog ?? 'duel');
+      const rules = rulesOf(g);
+      const start = createGame(hands, !!g.local.timed, g.local.catalog ?? LEGACY_CATALOG, { rules });
       const { root: r, complete } = treeFromLog(start, g.local.log);
       const final = mainline(r).at(-1)!.state;
       replaceTree(r, {
-        Event: 'Partie Spellmate (locale)', Site: 'Spellmate', Date: pgnDate(new Date(g.at)), White: g.white, Black: g.black,
+        Event: `Partie ${__SM__.marque} (locale)`, Site: __SM__.marque, Date: pgnDate(new Date(g.at)), White: g.white, Black: g.black,
         Result: g.winner === 'w' ? '1-0' : g.winner === 'b' ? '0-1' : g.winner === 'draw' ? '1/2-1/2' : pgnResult(final),
       });
       setGame({
         id: g.id, white: g.white, black: g.black, whiteRating: null, blackRating: null, winner: g.winner ?? null, reason: g.reason ?? null,
-        catalog: g.catalog, tc: 'Sans limite', date: g.at, you: g.you, complete, local: true, kings: g.kings,
+        catalog: g.catalog, tc: tcLabel(null), date: g.at, you: g.you, complete, local: true, kings: g.kings, rules,
       });
       setOrientation(g.you ?? 'w');
       startReview(r);
@@ -149,7 +158,7 @@ function AnalysisBoard({ gameId, fen, imported }: { gameId?: string; fen: string
     }
     let alive = true;
     setLoading(true);
-    emitAck<JoinReply>('game:join', { id: gameId, sit: false }, 10000)
+    emitAck('game:join', { id: gameId, sit: false }, 10000)
       .then(rep => {
         if (!alive) return;
         setLoading(false);
@@ -167,9 +176,10 @@ function AnalysisBoard({ gameId, fen, imported }: { gameId?: string; fen: string
         const start = initialStateOf(v.state);
         const { root: r, complete } = treeFromLog(start, v.state.log);
         const w = v.seats.w, b = v.seats.b;
-        const tc = v.clock ? `${Math.round(v.clock.initial / 60)}+${v.clock.increment}` : 'Sans limite';
+        const tc = tcLabel(v.clock, 'compact');
+        const rules = rulesOf(v.state);
         const h: Record<string, string> = {
-          Event: v.rated ? 'Partie classée Spellmate' : 'Partie Spellmate',
+          Event: v.rated ? `Partie classée ${__SM__.marque}` : `Partie ${__SM__.marque}`,
           Site: `${window.location.origin}/partie/${v.id}`,
           Date: pgnDate(new Date(v.createdAt)),
           White: w?.name ?? '?',
@@ -179,12 +189,12 @@ function AnalysisBoard({ gameId, fen, imported }: { gameId?: string; fen: string
         if (w?.rating) h.WhiteElo = String(w.rating);
         if (b?.rating) h.BlackElo = String(b.rating);
         if (v.clock) h.TimeControl = `${v.clock.initial}+${v.clock.increment}`;
-        if (v.state.result) h.Termination = reasonText(v.state.result.reason);
+        if (v.state.result) h.Termination = reasonText(v.state.result.reason, rules);
         replaceTree(r, h);
         setGame({
-          id: v.id, white: w?.name ?? 'Blancs', black: b?.name ?? 'Noirs', whiteRating: w?.rating ?? null, blackRating: b?.rating ?? null,
+          id: v.id, white: w?.name ?? colorName('w'), black: b?.name ?? colorName('b'), whiteRating: w?.rating ?? null, blackRating: b?.rating ?? null,
           winner: v.state.result ? v.state.result.winner ?? 'draw' : null, reason: v.state.result?.reason ?? null,
-          catalog: v.state.catalog ?? 'duel', tc, date: v.createdAt, you: v.you, complete, kings: seatKings(v.seats),
+          catalog: v.state.catalog ?? LEGACY_CATALOG, tc, date: v.createdAt, you: v.you, complete, kings: seatKings(v.seats), rules,
         });
         setOrientation(v.you ?? 'w');
         if (v.you) rememberView(v);
@@ -318,7 +328,7 @@ function AnalysisBoard({ gameId, fen, imported }: { gameId?: string; fen: string
 
   const fenNow = fenOf(cur.state);
   const pgn = useMemo(() => {
-    const h = { Event: 'Analyse', Site: 'Spellmate', Date: pgnDate(new Date()), ...headers };
+    const h = { Event: 'Analyse', Site: __SM__.marque, Date: pgnDate(new Date()), ...headers };
     return writePgn(h, root, headers.Result ?? '*');
   }, [root, headers, version]);
 
@@ -334,7 +344,8 @@ function AnalysisBoard({ gameId, fen, imported }: { gameId?: string; fen: string
     const blob = new Blob([pgn], { type: 'application/x-chess-pgn' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    const base = game ? `spellmate-${game.id}` : 'spellmate-analyse';
+    const prefix = __SM__.marque.toLowerCase();
+    const base = game ? `${prefix}-${game.id}` : `${prefix}-analyse`;
     a.download = `${base}.pgn`;
     document.body.appendChild(a);
     a.click();
@@ -435,13 +446,13 @@ function AnalysisBoard({ gameId, fen, imported }: { gameId?: string; fen: string
             {engineOn && (
               <div className="ft-engine-body">
                 {cur.state.result ? (
-                  <p className="ft-meta">Partie terminée : {reasonText(cur.state.result.reason).toLowerCase()}.</p>
+                  <p className="ft-meta">Partie terminée : {reasonText(cur.state.result.reason, rulesOf(cur.state)).toLowerCase()}.</p>
                 ) : (
                   <>
                     <p className="ft-meta">
                       {live.analysis ? `Profondeur ${live.analysis.depth}` : 'Calcul…'}
                       {live.running && live.analysis ? ' · calcul en cours' : ''}
-                      {live.analysis ? ` · ${live.analysis.nodes.toLocaleString('fr-FR')} positions` : ''}
+                      {live.analysis ? ` · ${nombre(live.analysis.nodes)} positions` : ''}
                     </p>
                     {pv.length > 0 && (
                       <p className="ft-pv">
@@ -589,7 +600,7 @@ function AnalysisHead({ game, title }: { game: GameInfo | null; title: string })
       </h1>
       <p className="ft-meta">
         {game.you && <span className={`ft-outcome ${o.tone}`}>{o.text}</span>}
-        {game.reason ? `${reasonText(game.reason)} · ` : ''}Cartes : {catalogLabel(game.catalog as never)} · Cadence : {game.tc}
+        {game.reason ? `${reasonText(game.reason, game.rules)} · ` : ''}Cartes : {catalogLabel(game.catalog, CATALOGS, true)} · Cadence : {game.tc}
       </p>
     </header>
   );
@@ -600,13 +611,13 @@ function ErrorList({ flags, onPick, cur }: { flags: ReturnType<typeof judge>; on
   const sum = (c: Color) => {
     const g = count(c, 'gaffe'), e = count(c, 'erreur');
     const parts = [];
-    if (g) parts.push(`${g} gaffe${g > 1 ? 's' : ''}`);
-    if (e) parts.push(`${e} erreur${e > 1 ? 's' : ''}`);
+    if (g) parts.push(compte(g, 'gaffe'));
+    if (e) parts.push(compte(e, 'erreur'));
     return parts.join(', ') || 'aucune erreur grave';
   };
   return (
     <div className="ft-errors">
-      <p className="ft-meta">Blancs : {sum('w')} · Noirs : {sum('b')}</p>
+      <p className="ft-meta">{`${colorName('w')} : ${sum('w')} · ${colorName('b')} : ${sum('b')}`}</p>
       <ul>
         {flags.map(f => {
           const e = f.node.entry!;

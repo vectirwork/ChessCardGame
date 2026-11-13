@@ -3,21 +3,18 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, errMsg } from '../api';
-import { catalogLabel, formatDate, movesFromPlies, outcomeFor, reasonText } from '../features/format';
+import { formatDate, movesFromPlies, outcomeFor, reasonText } from '../features/format';
 import { HISTORY_KEY, PlayedGame, forgetGame } from '../features/history';
 import { useStored } from '../features/storage';
 import { PageHead, useTitle } from '../features/ui';
 import { useApp } from '../store';
+import { CATALOGS } from '../../shared/cards';
 import type { Color } from '../../shared/chess';
-import { TIME_CONTROLS } from '../../shared/protocol';
-import type { GameMode, GameSummary } from '../../shared/protocol';
-
-const MODE: Record<GameMode, string> = { bot: 'Contre l’IA', quick: 'Partie rapide', invite: 'Invitation' };
-
-function tcLabel(id: string | undefined): string {
-  if (!id) return '';
-  return TIME_CONTROLS.find(t => t.id === id)?.label ?? id;
-}
+import type { Rules } from '../../shared/config/rules';
+import { tcLabel } from '../../shared/protocol';
+import type { GameSummary } from '../../shared/protocol';
+import { compte } from '../../shared/text/fr';
+import { catalogLabel, colorName, modeLabel } from '../../shared/text/libelles';
 
 interface Row {
   id: string;
@@ -31,6 +28,8 @@ interface Row {
   date: number | string;
   plies?: number;
   tags: string[];
+  /** Règles de la partie, si l'appareil les a gardées (parties locales et en ligne d'autres règles que RULES_V1). */
+  rules?: Rules;
 }
 
 export default function MyGames() {
@@ -59,8 +58,8 @@ export default function MyGames() {
 
   const serverRows: Row[] = (server ?? []).map(g => ({
     id: g.id,
-    white: g.white ?? 'Blancs',
-    black: g.black ?? 'Noirs',
+    white: g.white ?? colorName('w'),
+    black: g.black ?? colorName('b'),
     whiteRating: g.whiteRating,
     blackRating: g.blackRating,
     you: me ? (g.white === me.username ? 'w' : g.black === me.username ? 'b' : null) : null,
@@ -68,7 +67,7 @@ export default function MyGames() {
     reason: g.reason,
     date: g.createdAt,
     plies: g.plies,
-    tags: [g.rated ? 'Classée' : MODE[g.mode] ?? '', tcLabel(g.timeControl)].filter(Boolean),
+    tags: [modeLabel(g.mode, g.rated, 'liste'), tcLabel(g.timeControl)].filter(Boolean),
   }));
   const serverIds = new Set(serverRows.map(r => r.id));
   const localRows: Row[] = (Array.isArray(local) ? local : [])
@@ -82,7 +81,12 @@ export default function MyGames() {
       reason: g.reason,
       date: g.at,
       plies: g.plies,
-      tags: [g.local ? 'Sur cet appareil' : g.vsBot ? MODE.bot : 'En ligne', g.catalog ? catalogLabel(g.catalog) : '', g.timeControl ?? ''].filter(Boolean),
+      rules: g.rules,
+      tags: [
+        g.local ? 'Sur cet appareil' : g.vsBot ? modeLabel('bot', false, 'liste') : 'En ligne',
+        g.catalog ? catalogLabel(g.catalog, CATALOGS, true) : '',
+        g.timeControl ?? '',
+      ].filter(Boolean),
     }));
 
   const openLink = (e: FormEvent) => {
@@ -159,7 +163,7 @@ function GameList({ rows, onForget }: { rows: Row[]; onForget?: (id: string) => 
               <span className={`ft-pl b ${r.you === 'b' ? 'me' : ''}`}><i aria-hidden="true" />{r.black}{r.blackRating ? <small> {r.blackRating}</small> : null}</span>
             </span>
             <span className="ft-game-meta">
-              <span>{[reasonText(r.reason), r.plies ? `${movesFromPlies(r.plies)} coups` : ''].filter(Boolean).join(' · ')}</span>
+              <span>{[reasonText(r.reason, r.rules), r.plies ? compte(movesFromPlies(r.plies), 'coup') : ''].filter(Boolean).join(' · ')}</span>
               <small>{r.tags.join(' · ')}</small>
             </span>
             <span className="ft-game-date">{formatDate(r.date)}</span>

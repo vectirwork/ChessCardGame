@@ -27,6 +27,11 @@ const { BOT_RUNTIME, RATING, RELAY, TIMINGS } = await tsImport('../src/server/se
 const POUVOIRS = poolOf('climats', { timed: true });
 /** Cartes annoncées (Présage) : l'effet est public avant son arrivée. */
 const PRESAGE = cardsOf('climats').filter(c => CARDS[c].presage);
+/**
+ * Règles où le délai d'un Présage lancé doit être vérifié (étape 4) : délai changé, ou carte à la place du coup (le
+ * délai affiché est alors décompté du demi-coup de la carte). Au défaut : non, le Mur de glace est joué d'abord.
+ */
+const presageChecked = (r) => r.presageDelay !== RULES_V1.presageDelay || r.cardEndsTurn;
 
 /** Client de test/lib (cookies, socket, mises à jour), sur le serveur de BASE. */
 class Client extends BaseClient {
@@ -154,9 +159,9 @@ if (DRAFTING) {
   a = await spectator.emit('game:draft', { id: gameId, cards: first(count) });
   assert.equal(a.ok, false, 'un spectateur ne choisit pas');
   assert.ok((await alice.emit('game:draft', { id: gameId, cards: ['truce'], confirm: false })).ok, 'sélection provisoire');
-  // Délai du Présage changé (SPELLMATE_TEST_RULES) : Alice met un Présage en tête, pour que son délai soit vérifié à
-  // l'étape 4 (au défaut, le Mur de glace d'abord, comme avant).
-  const presageFirst = rulesOf(j.view.state).presageDelay !== RULES_V1.presageDelay;
+  // Délai du Présage changé, ou carte à la place du coup (SPELLMATE_TEST_RULES) : Alice met un Présage en tête, pour que
+  // son délai soit vérifié à l'étape 4 (au défaut, le Mur de glace d'abord, comme avant).
+  const presageFirst = presageChecked(rulesOf(j.view.state));
   const ALICE = prefer(presageFirst ? ['blood_moon', 'ice_wall', 'tide'] : ['ice_wall', 'blood_moon', 'tide'], POUVOIRS, count);
   const BOB = prefer(['rift', 'truce', 'blast'], POUVOIRS, count);
   assert.ok(!sameSet(ALICE, BOB));
@@ -237,9 +242,12 @@ for (let i = 0; i < hand.length && !played; i++) {
   assert.deepEqual(v.snaps, [], 'aucun instantané hors Duel');
   const rules = rulesOf(v);
   if (PRESAGE.includes(card)) {
-    assert.ok(v.effects.some(e => e.card === card && e.pending && e.delay === rules.presageDelay), 'le Présage est public, avec son délai');
-  } else if (DRAFTING && rules.presageDelay !== RULES_V1.presageDelay) {
-    assert.fail(`délai du Présage changé, mais la carte jouée (${card}) n’est pas un Présage : délai non vérifié`);
+    // Une carte qui termine le tour (cardEndsTurn, ou un Rituel) passe le trait : le moteur décompte aussitôt ce demi-coup,
+    // et le Présage arrive toujours au début d'un tour de son lanceur.
+    const delay = rules.presageDelay - (v.pos.turn !== 'w' ? 1 : 0);
+    assert.ok(v.effects.some(e => e.card === card && e.pending && e.delay === delay), `le Présage est public, avec son délai (${delay})`);
+  } else if (DRAFTING && presageChecked(rules)) {
+    assert.fail(`délai du Présage changé ou carte à la place du coup, mais la carte jouée (${card}) n’est pas un Présage : délai non vérifié`);
   }
   if (card === 'ice_wall') assert.ok(v.effects.some(e => e.card === 'ice_wall' && e.permanent && e.square === sq('e3')), 'Mur permanent');
   // Rituel (Grande Marée), ou toute carte si elle remplace le coup (cardEndsTurn) : le trait et la pendule passent.

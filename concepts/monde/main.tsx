@@ -26,7 +26,10 @@ import { Sky, World } from './world';
 type Mode = 'page' | Phase;
 
 const HAND_FAN = [-9, 0, 9];
-/** Aperçu de la forge : échiquier figé en position initiale (la démonstration DemoBoard a été supprimée au lot 8). */
+/**
+ * Aperçu de la forge : échiquier figé en position initiale, avec le plateau choisi (la démonstration DemoBoard, qui
+ * jouait aussi le skin choisi, a été supprimée au lot 8 : le skin ne se voit plus que dans sa fiche).
+ */
 const FORGE_POS = initialPosition().pos;
 const LIT_DEFAULT = { light: '#c3baf0', dark: '#4e3eb4' };
 
@@ -474,7 +477,7 @@ function App() {
                   {forgeLive ? <Board pos={FORGE_POS} orientation="w" theme={theme ?? 'board:obsidian'} locked coords={false} /> : <div className="forge-ph" />}
                 </div>
                 <div className="forge-pick" style={{ '--p': skinItem.skin!.primary, '--q': skinItem.skin!.secondary } as CSSProperties}>
-                  <span className="forge-live"><i />Aperçu en direct</span>
+                  <span className="forge-live">Aperçu du plateau</span>
                   <strong className="forge-skin"><i />{skinItem.name}<em>{skinPrice}</em></strong>
                   <p>{skinItem.description}</p>
                   <div className="skin-dots" role="radiogroup" aria-label="Skins d’animation">

@@ -32,6 +32,10 @@
 //
 // ── Cartes, catalogues, cadences, IA (hors de ce dossier) ───────────────────────────────────────────────────────
 // CARDS (shared/cards.ts)     coups, ranks, clockRate, genre, retired de chaque carte ; textes des cartes
+// CATALOG_IDS, CATALOG_RULES (shared/cards.ts) catalogues et leurs règles (proposé, la magie cède, effets des deux camps,
+//                             tirage uniforme ou pondéré, Mur à toute rangée, instantanés…) ; un catalogue de plus : une
+//                             entrée dans chacun, et `catalogs` sur ses cartes ; ne jamais retirer un identifiant
+// DEFAULT_CATALOG 'climats'   catalogue des nouvelles parties ; LEGACY_CATALOG 'duel' : parties enregistrées sans catalogue
 // TIME_CONTROLS (protocol.ts) cadences : quick (files), invite (accueil), archived (retirée) ; DEFAULT_QUICK '10+0'
 // PROTOCOL_VERSION            1      à monter quand cartes, catalogues, cadences ou règles par défaut changent
 // BOT_LEVELS (shared/bot.ts)  [1, 2, 3] et BOT_PROFILES ; DEFAULT_BOT_LEVEL 2
@@ -60,6 +64,8 @@
 // SLOT_DEFS (skins/slots.ts)  emplacements roi, échiquier, sorts : libellés, rayon, vu par l'adversaire, objet par
 //                             défaut, colonne SQL (un emplacement de plus : une migration, db.ts)
 // PRICE, RARITY               grille des prix (centimes TTC) et libellés des raretés
+// packProducts (catalog.ts)   packs en vente ; `display` : en tête d'un rayon d'emplacement de la boutique ou en bandeau
+//                             sous les collections (sans `display` : montré seulement au Bazar de l'accueil)
 // TRESOR                      contenu du Trésor du Bazar : 'premium' (tous les objets payants) ; future : [] (aucune promesse)
 // SHOP_FEATURED               { king: 'king:braise' } mis en essai à la première visite de la boutique
 // CURRENCY 'eur' · PAYMENT_PROVIDER 'Stripe' · LOCALE 'fr-FR' (text/fr.ts : dates, nombres, prix)

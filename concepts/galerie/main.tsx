@@ -477,7 +477,6 @@ function App() {
             <Hall
               hand={hand}
               boardRef={heroBoardRef}
-              live={!playing && !loupe}
               paused={paused}
               onPlay={openGame}
               onVisit={() => goto(1)}

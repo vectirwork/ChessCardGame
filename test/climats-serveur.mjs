@@ -10,7 +10,8 @@
 // redemarrage et drapeau choisissent une main précise : avec le tirage partout (DEAL.draft faux), ils sont sautés ;
 // sablier et drapeau suivent un calendrier écrit pour un Présage à 2 demi-coups et la carte avant le coup, mur la
 // carte avant le coup : sautés sinon (SPELLMATE_TEST_RULES). IA_CARTES_PAR_TOUR=n (avec {"cardsPerTurn":n} et
-// IA_GAMES=10) exige que l'IA ait joué n cartes dans un même tour.
+// IA_GAMES=10) exige que l'IA ait joué n cartes dans un même tour (d'autres parties sont jouées tant qu'elle ne l'a pas
+// fait, jusqu'à IA_CARTES_MAX parties en tout, 40 par défaut).
 // Variables : RESTART_CMD (commande qui redémarre l'instance en gardant sa base, pour « redemarrage »),
 //             IA_GAMES (nombre de parties contre l'IA, 4 par défaut), IA_PLIES (120), THINK_MS (réflexion avant
 //             l'arrêt du serveur, 2000).
@@ -460,12 +461,26 @@ async function botGame(level, tc, maxPlies) {
   return stats;
 }
 
+/** Une série de `n` parties contre l'IA, en parallèle (niveaux 2 et 3, avec et sans pendule, en alternance). */
+const botGames = (n) => Promise.all(Array.from({ length: n }, (_, k) => botGame(k % 2 ? 3 : 2, k % 2 ? 'none' : '10+0', Number(process.env.IA_PLIES ?? 120))));
+
 async function ia() {
   log('\n== Parties contre l’IA, catalogue Pouvoirs ==');
   const n = Number(process.env.IA_GAMES ?? 4);
-  const jobs = [];
-  for (let k = 0; k < n; k++) jobs.push(botGame(k % 2 ? 3 : 2, k % 2 ? 'none' : '10+0', Number(process.env.IA_PLIES ?? 120)));
-  const res = await Promise.all(jobs);
+  const res = await botGames(n);
+  // IA_CARTES_PAR_TOUR=n : l'IA doit avoir joué n cartes dans un même tour au moins une fois (serveur à n cartes par tour).
+  // Elle n'en joue plusieurs que si elles sont toutes utiles, ce qui est rare (environ une partie sur sept à deux cartes
+  // par tour) : faute de l'avoir vu, d'autres séries sont jouées, jusqu'à IA_CARTES_MAX parties en tout (40 par défaut,
+  // moins d'une chance sur cent d'un échec à tort), avant de le signaler.
+  const attendu = Number(process.env.IA_CARTES_PAR_TOUR ?? 0);
+  const plafond = Math.max(n, Number(process.env.IA_CARTES_MAX ?? 40));
+  const vu = () => Math.max(0, ...res.map(s => s.maxTurnCards));
+  const parties = (k) => `${k} partie${k > 1 ? 's' : ''}`;
+  while (attendu && vu() < attendu && res.length < plafond) {
+    const k = Math.min(Math.max(1, n), plafond - res.length);
+    log(`   (pas encore de tour à ${attendu} cartes de l'IA après ${parties(res.length)} : ${k} de plus)`);
+    res.push(...await botGames(k));
+  }
   for (const s of res) {
     const ms = s.botMs.slice().sort((a, b) => a - b);
     const avg = ms.reduce((a, b) => a + b, 0) / Math.max(1, ms.length);
@@ -474,10 +489,7 @@ async function ia() {
     log(`     réponse IA : moy ${Math.round(avg)} ms, médiane ${ms[ms.length >> 1]} ms, max ${ms[ms.length - 1]} ms (${ms.length} coups) ; coups « la magie cède » de l'IA : ${s.relaxed} ; au plus ${s.maxTurnCards} carte(s) de l'IA en un tour`);
     for (const e of s.errors) problem(`partie IA ${s.id} : ${e}`);
   }
-  // IA_CARTES_PAR_TOUR=n : l'IA doit avoir joué n cartes dans un même tour au moins une fois (serveur à n cartes par tour).
-  const attendu = Number(process.env.IA_CARTES_PAR_TOUR ?? 0);
-  const vu = Math.max(0, ...res.map(s => s.maxTurnCards));
-  if (attendu && vu < attendu) problem(`l'IA n'a jamais joué ${attendu} cartes dans un même tour (au plus ${vu})`);
+  if (attendu && vu() < attendu) problem(`l'IA n'a jamais joué ${attendu} cartes dans un même tour en ${parties(res.length)} (au plus ${vu()})`);
   return res;
 }
 

@@ -163,15 +163,22 @@ describe('seuil mobile : MOBILE_MAX (layout.ts) = requêtes de média des feuill
 // ---------------------------------------------------------------------------------------------
 // Paquet principal
 
+/**
+ * Chemins des imports et réexports STATIQUES d'un source, entre guillemets simples ou doubles (aucun formateur ne les
+ * impose). `import type` et `export type` n'entrent pas dans le paquet ; les imports nommés mêlés de types, si.
+ */
+function importsStatiques(src: string): string[] {
+  const re = /^\s*(?:import|export)\s+(?!type\s)[^;]*?from\s+(['"])([^'"]+)\1|^\s*import\s+(['"])([^'"]+)\3/gm;
+  return [...src.matchAll(re)].map(m => m[2] ?? m[4]);
+}
+
 /** Modules atteints par les imports STATIQUES depuis `entree` (les import() dynamiques sont des morceaux à part). */
 function grapheStatique(entree: string, vus = new Set<string>()): Set<string> {
   if (vus.has(entree)) return vus;
   vus.add(entree);
   if (entree.endsWith('.css')) return vus;
   const src = readFileSync(entree, 'utf8');
-  // `import type` n'entre pas dans le paquet ; les imports nommés mêlés de types, si.
-  for (const m of src.matchAll(/^\s*(?:import|export)\s+(?!type\s)[^;]*?from\s+'([^']+)'|^\s*import\s+'([^']+)'/gm)) {
-    const spec = m[1] ?? m[2];
+  for (const spec of importsStatiques(src)) {
     if (!spec.startsWith('.')) continue;
     const base = path.resolve(path.dirname(entree), spec);
     const f = [base, `${base}.tsx`, `${base}.ts`, path.join(base, 'index.ts'), path.join(base, 'index.tsx')].find(
@@ -201,6 +208,21 @@ describe('paquet principal (src/client/main.tsx) : liste fermée', () => {
     'src/client/styles/cards.css',
   ];
   const PARTAGES_PERMIS = /^src\/shared\/(config|text)\/[\w-]+\.ts$/;
+
+  it('lecture des imports : guillemets simples ou doubles, réexports, effets de bord ; ni types ni import()', () => {
+    const src = [
+      `import { a } from './simple';`,
+      `import { b } from "./double";`,
+      `import "./effet.css";`,
+      `import './effet2';`,
+      `export * from "./reexport";`,
+      `import {\n  c,\n  type D,\n} from '../multiligne';`,
+      `import type { E } from './type-seul';`,
+      `export type { F } from "./type-reexport";`,
+      `const G = lazy(() => import('./dynamique'));`,
+    ].join('\n');
+    expect(importsStatiques(src)).toEqual(['./simple', './double', './effet.css', './effet2', './reexport', '../multiligne']);
+  });
 
   it('aucun module hors de la liste ; jamais le moteur', () => {
     const graphe = [...grapheStatique(path.join(ROOT, 'src/client/main.tsx'))].map(f => path.relative(ROOT, f).split(path.sep).join('/'));

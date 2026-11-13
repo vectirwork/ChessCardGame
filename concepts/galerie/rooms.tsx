@@ -1,5 +1,5 @@
 // Spellmate · La Galerie : les cinq salles de la visite.
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import type { CSSProperties, RefObject } from 'react';
 import { Board } from '../../src/client/components/Board';
 import { CardEmblem } from '../../src/client/components/CardArt';
@@ -13,7 +13,7 @@ import type { Position } from '../../src/shared/chess';
 import { Cabinet, Prochaine } from './cabinet';
 import { BOARDS, COLLECTION, ELO_CURVE, LEGAL, LEVELS, MASTERPIECE, PACK, RULES, SKINS, WINGS } from './data';
 import { HOUSE_BOARD } from './maison';
-import { Arrow, Eyebrow, Lines, Star, useInView } from './ui';
+import { Arrow, Eyebrow, Lines, Star } from './ui';
 
 const STATIC_POS = initialPosition().pos;
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -32,7 +32,6 @@ export interface Paused {
 interface HallProps {
   hand: CardId[];
   boardRef: RefObject<HTMLDivElement | null>;
-  live: boolean;
   paused: Paused | null;
   onPlay: () => void;
   onVisit: () => void;
@@ -40,10 +39,9 @@ interface HallProps {
 
 export const FAN = [-13, -3, 8];
 
-export function Hall({ hand, boardRef, live, paused, onPlay, onVisit }: HallProps) {
-  // Légende de la démonstration en direct (DemoBoard, supprimé au lot 8 : l'échiquier reste figé).
-  const [caption] = useState('');
-  const inView = useInView(boardRef);
+// La démonstration en direct du Hall et de la vitrine de l'Atelier (DemoBoard) a été supprimée au lot 8 : leurs échiquiers
+// restent figés en position initiale, et le skin choisi dans l'Atelier ne se voit plus que dans la légende.
+export function Hall({ hand, boardRef, paused, onPlay, onVisit }: HallProps) {
   const resume = !!paused;
   const move = paused ? Math.floor(paused.ply / 2) + 1 : 0;
   return (
@@ -98,8 +96,6 @@ export function Hall({ hand, boardRef, live, paused, onPlay, onVisit }: HallProp
           <div className="hall-board maison" ref={boardRef}>
             {paused ? (
               <Board pos={paused.pos} orientation="w" theme={HOUSE_BOARD} lastMove={paused.lastMove} effects={paused.effects} locked coords={false} />
-            ) : live && inView ? (
-              <Board pos={STATIC_POS} orientation="w" theme={HOUSE_BOARD} locked coords={false} />
             ) : (
               <Board pos={STATIC_POS} orientation="w" theme={HOUSE_BOARD} locked coords={false} />
             )}
@@ -132,8 +128,8 @@ export function Hall({ hand, boardRef, live, paused, onPlay, onVisit }: HallProp
             <>
               <span className="ct-num">N° 001</span>
               <span className="ct-title"><em>La partie en cours</em>, 2026</span>
-              <span className="ct-line">Échiquier ivoire et taupe, onze sortilèges. Jouée en direct par deux automates.</span>
-              <span className="ct-live"><i className="live-dot" />{caption ? `Dernier sort : ${caption.replace(' · skin Encre & vermillon', '')}` : 'Démonstration en direct'}</span>
+              <span className="ct-line">Échiquier ivoire et taupe, onze sortilèges.</span>
+              <span className="ct-live">Position de départ</span>
             </>
           )}
         </figcaption>
@@ -388,8 +384,6 @@ function Bottle({ id, k, name, refNo, p, s2, a }: { id: string; k: number; name:
 export function Atelier() {
   const [skin, setSkin] = useState('skin:inferno');
   const [board, setBoard] = useState('board:marble');
-  const caseRef = useRef<HTMLDivElement>(null);
-  const inView = useInView(caseRef);
   const skinName = itemById(skin)?.name ?? '';
   const boardName = itemById(board)?.name ?? '';
   return (
@@ -415,13 +409,9 @@ export function Atelier() {
       </div>
 
       <div className="noire-wrap">
-        <div className="noire" ref={caseRef} data-rv="curtain">
+        <div className="noire" data-rv="curtain">
           <div className="noire-board">
-            {inView ? (
-              <Board pos={STATIC_POS} orientation="w" theme={board} locked coords={false} />
-            ) : (
-              <Board pos={STATIC_POS} orientation="w" theme={board} locked coords={false} />
-            )}
+            <Board pos={STATIC_POS} orientation="w" theme={board} locked coords={false} />
           </div>
           <div className="noire-cap">
             <span className="ct-num">Vitrine</span>
@@ -436,7 +426,7 @@ export function Atelier() {
         <Eyebrow>Skins d’animation</Eyebrow>
         <div className="sec-head">
           <Lines lines={[<>Six <em>essences</em></>]} className="sec-title" as="h3" />
-          <p className="sec-lede" data-rv="up">Chaque skin change la manière dont vos sorts éclatent. Touchez un flacon : la vitrine le joue aussitôt.</p>
+          <p className="sec-lede" data-rv="up">Chaque skin change la manière dont vos sorts éclatent. Touchez un flacon pour le choisir.</p>
         </div>
         <div className="flacons-row">
           {SKINS.map((s, i) => (

@@ -83,9 +83,22 @@ export type ResultReason =
   | 'abandon'
   | 'aborted';
 
+/**
+ * Cause d'une annulation (raison 'aborted'), posée par le serveur :
+ * - 'first-move' : le joueur au trait n'a pas joué son premier coup dans le délai (TIMINGS.firstMoveMs) ;
+ * - 'player' : un joueur a annulé la partie (ou abandonné avant son début, ou supprimé son compte) ;
+ * - 'idle' : partie délaissée (invitation jamais acceptée, plus personne sur la page, aucune action depuis longtemps).
+ */
+export type AbortCause = 'first-move' | 'player' | 'idle';
+
 export interface Result {
   winner: Color | null;
   reason: ResultReason;
+  /**
+   * Annulation seulement : sa cause. Absente pour toute autre fin, pour les parties d'avant, et pour une partie que le
+   * serveur annule à la reprise (carte retirée, règles illisibles).
+   */
+  cause?: AbortCause;
 }
 
 export type LogEntry =

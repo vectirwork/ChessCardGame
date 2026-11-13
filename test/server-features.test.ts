@@ -368,13 +368,35 @@ describe('interrupteurs coupés : refus du serveur', () => {
     expect(room.d.firstMoveDeadline).toBe(Date.now() - settings.RELAY.firstMoveMs - 1 + settings.TIMINGS.firstMoveMs);
     await vi.advanceTimersByTimeAsync(settings.TIMINGS.firstMoveMs);
     expect(room.d.status).toBe('ended');
-    expect(room.d.state.result).toEqual({ winner: null, reason: 'aborted' });
+    expect(room.d.state.result).toEqual({ winner: null, reason: 'aborted', cause: 'first-move' });
     // Ouvert (défaut) : le relais est armé, pas de délai du premier coup (l'IA joue pour celui qui ne joue pas).
     const { games: g2 } = await load();
     const open = g2.newRoom({ mode: 'quick', rated: false, tc: 'none', catalog: 'climats', creator: 'g:p1', seats: { w: seat('g:p1'), b: seat('g:p2') }, deal: true, relay: true });
     g2.armRelay(open);
     expect(open.relayTimer).not.toBeNull();
     expect(open.d.firstMoveDeadline).toBeNull();
+  });
+
+  it('cause d’une annulation (Result.cause) : premier coup pas joué à temps, annulation voulue, partie délaissée', async () => {
+    const { games, settings } = await load({ FEATURE_HOME_RELAY: '0' });
+    const room = () =>
+      games.newRoom({ mode: 'quick', rated: false, tc: 'none', catalog: 'climats', creator: 'g:p1', seats: { w: seat('g:p1'), b: seat('g:p2') }, deal: true, relay: true });
+    // Les Blancs jouent, les Noirs ne répondent pas dans le délai (relais coupé) : 'first-move', au demi-coup 1.
+    const late = room();
+    expect(games.applyMove(late, 'w', 12, 28)).toEqual({ ok: true });
+    await vi.advanceTimersByTimeAsync(settings.TIMINGS.firstMoveMs + 1);
+    expect([late.d.state.ply, late.d.state.result]).toEqual([1, { winner: null, reason: 'aborted', cause: 'first-move' }]);
+    // Un joueur annule avant son premier coup : 'player'.
+    const quit = room();
+    expect(games.applyMove(quit, 'w', 12, 28)).toEqual({ ok: true });
+    expect(games.abortRoom(quit)).toEqual({ ok: true });
+    expect(quit.d.state.result).toEqual({ winner: null, reason: 'aborted', cause: 'player' });
+    // Toute autre fin : pas de cause.
+    const resigned = room();
+    expect(games.applyMove(resigned, 'w', 12, 28)).toEqual({ ok: true });
+    expect(games.applyMove(resigned, 'b', 52, 36)).toEqual({ ok: true });
+    expect(games.resignRoom(resigned, 'b')).toEqual({ ok: true });
+    expect(resigned.d.state.result).toEqual({ winner: 'w', reason: 'resign' });
   });
 
   it('maintenance (newGames coupé) : file, POST /games, accueil et revanche refusés ; les parties en cours continuent', async () => {

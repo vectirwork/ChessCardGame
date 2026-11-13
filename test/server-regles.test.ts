@@ -39,6 +39,7 @@ import {
   rematchExpired, resignRoom, resumeRoom, setupOf, submitDraft, takeSeat,
 } from '../src/server/games';
 import { BOT_RUNTIME, BOT_THREADS, setDealOverride } from '../src/server/settings';
+import { toSummary } from '../src/server/summary';
 import { bot, human } from './helpers/sieges';
 
 const T0 = 1_800_000_000_000;
@@ -227,7 +228,7 @@ describe('reprise des salles témoins v1 avec les règles du jour à 5 cartes', 
         const room = new Room(data);
         resumeRoom(room);
         expect(room.d.status).toBe('ended');
-        expect(room.d.state.result).toEqual({ winner: null, reason: 'aborted' });
+        expect(room.d.state.result).toEqual({ winner: null, reason: 'aborted' }); // sans cause : annulée par le serveur
       }
       expect(log).toHaveBeenCalledWith(expect.stringMatching(/annulée à la reprise : ses règles enregistrées sont illisibles/));
       // Des règles lisibles sont gardées telles quelles (gelées).
@@ -490,5 +491,29 @@ describe('fil de calcul de l’IA mort (bot-pool)', () => {
       log.mockRestore();
       warn.mockRestore();
     }
+  });
+});
+
+describe('résumé d’une partie enregistrée (GameSummary, summary.ts)', () => {
+  const salle = (nom: string): RoomData =>
+    JSON.parse(readFileSync(new URL(`./fixtures/v1/salles/${nom}.json`, import.meta.url), 'utf8')) as RoomData;
+  const ligne = (data: unknown) => ({
+    id: 'abc123', mode: 'invite', rated: false, status: 'ended', white_name: 'Aurore', black_name: 'Basile', white_rating: null,
+    black_rating: null, winner: 'draw', reason: 'fifty', time_control: '5+0', created_at: new Date(T0), plies: 120, data,
+  });
+  it('au défaut (règles absentes ou égales à RULES_V1) : les mêmes champs qu’avant, sans « rules »', () => {
+    const attendu = {
+      id: 'abc123', mode: 'invite', rated: false, status: 'ended', white: 'Aurore', black: 'Basile', whiteRating: null,
+      blackRating: null, winner: 'draw', reason: 'fifty', timeControl: '5+0', createdAt: new Date(T0).toISOString(), plies: 120,
+    };
+    for (const data of [salle('terminee-classee'), salle('pouvoirs-en-cours'), { state: { rules: RULES_V1 } }, {}, null]) {
+      expect(JSON.stringify(toSummary(ligne(data)))).toBe(JSON.stringify(attendu));
+    }
+  });
+  it('règles hors RULES_V1 : envoyées ; illisibles : absentes (le client suit alors RULES_V1)', () => {
+    const r: Rules = { ...RULES_V1, fiftyHalfmoves: 150 };
+    expect(toSummary(ligne({ state: { rules: r } })).rules).toEqual(r);
+    expect(toSummary(ligne({ state: { rules: { ...RULES_V1, schema: 2 } } }))).not.toHaveProperty('rules');
+    expect(toSummary(ligne({ state: { rules: { ...RULES_V1, cardsPerTurn: 9 } } }))).not.toHaveProperty('rules');
   });
 });

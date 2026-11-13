@@ -117,14 +117,17 @@ export function validState(x: unknown): x is GameState {
 }
 
 /**
- * Partie en direct annulée avant le moindre coup (personne n'a joué dans le délai du serveur) : l'accueil revient de
- * lui-même à l'Oracle (HOME.duelAbortReturnMs). Une partie annulée plus tard, avant d'avoir commencé (un joueur a
- * cliqué « Jouer plutôt contre l'Oracle », « Nouvelle partie » ou « Abandonner » avant son premier coup, ou n'a pas
- * joué à temps, relais coupé), garde l'écran de fin et son bouton « Rejouer contre l'Oracle » : le client ne sait pas
- * pourquoi elle a été annulée.
+ * Partie en direct annulée sans qu'on y ait vraiment joué : l'accueil revient de lui-même à l'Oracle
+ * (HOME.duelAbortReturnMs).
+ * - Avant le moindre coup, quelle qu'en soit la raison (comme avant la cause d'annulation).
+ * - Plus tard, quand le joueur au trait n'a pas joué son premier coup dans le délai du serveur (relais coupé :
+ *   FEATURE_HOME_RELAY=0) : le serveur le dit (Result.cause 'first-move').
+ * Une partie annulée plus tard par un joueur (« Jouer plutôt contre l'Oracle », « Nouvelle partie » ou « Abandonner »
+ * avant son premier coup : cause 'player') ou délaissée (cause 'idle'), ou par un serveur d'avant la cause, garde
+ * l'écran de fin et son bouton « Rejouer contre l'Oracle ».
  */
 export function abortedEmpty(duel: boolean, s: Pick<GameState, 'ply' | 'result'>): boolean {
-  return duel && s.result?.reason === 'aborted' && s.ply === 0;
+  return duel && s.result?.reason === 'aborted' && (s.ply === 0 || s.result.cause === 'first-move');
 }
 
 export function loadSaved(): GameState | null {

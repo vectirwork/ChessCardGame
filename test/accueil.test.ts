@@ -289,15 +289,24 @@ describe('relecture du lot 7', () => {
     expect(howToPlay(rituel, { presageDelay: 4 })).toBe('Rituel : la carte remplace votre coup.');
   });
 
-  it('partie en direct annulée : retour automatique à l’Oracle au demi-coup 0 seulement (comme avant le lot 7)', () => {
+  it('partie en direct annulée : retour automatique à l’Oracle au demi-coup 0 (comme avant le lot 7)', () => {
     const annulee = { winner: null, reason: 'aborted' as const };
     expect(abortedEmpty(true, { ply: 0, result: annulee })).toBe(true);
+    for (const cause of ['first-move', 'player', 'idle'] as const) expect(abortedEmpty(true, { ply: 0, result: { ...annulee, cause } })).toBe(true);
     // Les Blancs ont joué, les Noirs annulent avant leur premier coup (game:abort, partie pas commencée) : l'écran de
     // fin reste, avec « Rejouer contre l'Oracle »
     expect(abortedEmpty(true, { ply: 1, result: annulee })).toBe(false);
+    expect(abortedEmpty(true, { ply: 1, result: { ...annulee, cause: 'player' } })).toBe(false);
+    expect(abortedEmpty(true, { ply: 1, result: { ...annulee, cause: 'idle' } })).toBe(false);
     expect(abortedEmpty(false, { ply: 0, result: annulee })).toBe(false);
     expect(abortedEmpty(true, { ply: 0, result: null })).toBe(false);
     expect(abortedEmpty(true, { ply: 0, result: { winner: 'w', reason: 'resign' } })).toBe(false);
+  });
+
+  it('partie en direct annulée parce que les Noirs n’ont pas joué leur premier coup à temps (relais coupé) : retour à l’Oracle', () => {
+    // Cause posée par le serveur (Result.cause, lot 9) ; jamais après une annulation voulue (cause 'player').
+    expect(abortedEmpty(true, { ply: 1, result: { winner: null, reason: 'aborted', cause: 'first-move' } })).toBe(true);
+    expect(abortedEmpty(false, { ply: 1, result: { winner: null, reason: 'aborted', cause: 'first-move' } })).toBe(false);
   });
 
   it('perspective du plateau : la même valeur dans StageBoard (morceau à part), engine.ts et vfx/config', () => {

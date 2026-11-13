@@ -16,7 +16,7 @@ import type { ViteDevServer } from 'vite';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { GAME_RULES } from '../src/shared/config/rules';
 import { checkRules } from '../src/shared/rules';
-import { brand, fillMarkers } from '../vite.config';
+import { brand, fillMarkers, precompress } from '../vite.config';
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -159,6 +159,17 @@ describe('règles impossibles : la construction s’arrête', () => {
     expect(e).toBeInstanceOf(Error);
     expect(String((e as Error).message)).toContain('Règles impossibles : construction arrêtée.');
     for (const m of erreurs) expect(String((e as Error).message)).toContain(m);
+  }, 60_000);
+  it('construction neuve (dossier de sortie absent, comme dans l’image Docker) : le message de checkRules reste visible', async () => {
+    // Avec la compression des fichiers construits (precompress, vite.config.ts), qui ne doit rien lire après un échec
+    const sortie = path.join(racine, 'neuf', 'client');
+    const e = await build({
+      root: racine, configFile: false, logLevel: 'silent', plugins: [brand({ check: () => ['6 cartes par joueur : impossible.'] }), precompress()],
+      build: { outDir: sortie, emptyOutDir: true },
+    }).catch((x: Error) => x);
+    expect(e).toBeInstanceOf(Error);
+    expect(String((e as Error).message)).toContain('Règles impossibles : construction arrêtée.\n- 6 cartes par joueur : impossible.');
+    expect(String((e as Error).message)).not.toContain('ENOENT');
   }, 60_000);
   it('règles jouables : la même construction aboutit, marqueurs remplacés', async () => {
     await construire(() => []);

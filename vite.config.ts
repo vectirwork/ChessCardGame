@@ -1,6 +1,6 @@
 /// <reference types="vitest/config" />
 import react from '@vitejs/plugin-react';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -18,7 +18,7 @@ import type { Plugin } from 'vite';
  * (src/server/site.ts). Brotli 11 donne 15 à 20 % de moins que la compression à la volée (brotli 4), sans coût CPU par
  * requête. Les formats déjà compressés (woff2, webp, png, jpg) ne sont pas touchés.
  */
-function precompress(): Plugin {
+export function precompress(): Plugin {
   const COMPRESSIBLE = /\.(js|mjs|css|html|svg|json|webmanifest|txt)$/;
   let outDir = 'dist/client';
   const br = promisify(brotliCompress);
@@ -34,7 +34,10 @@ function precompress(): Plugin {
     configResolved(config) {
       outDir = path.resolve(config.root, config.build.outDir);
     },
-    async closeBundle() {
+    // Après une construction en échec (règles impossibles…), rien à compresser : le dossier de sortie peut ne pas
+    // exister (construction neuve, image Docker), et une erreur ENOENT remplacerait le message utile.
+    async closeBundle(error) {
+      if (error || !existsSync(outDir)) return;
       const files = (await walk(outDir)).filter(f => COMPRESSIBLE.test(f) && !f.includes(`${path.sep}.vite${path.sep}`));
       await Promise.all(
         files.map(async file => {
@@ -69,14 +72,16 @@ interface Settings {
   check: typeof import('./src/shared/rules');
   fr: typeof import('./src/shared/text/fr');
   regles: typeof import('./src/shared/text/regles');
+  bot: typeof import('./src/shared/bot');
 }
 let settings: Promise<Settings> | undefined;
 export function loadSettings(): Promise<Settings> {
   const load = (p: string) => tsImport(p, import.meta.url);
   return (settings ??= Promise.all(
     ['./src/client/storageKeys.ts', './src/shared/config/brand.ts', './src/shared/config/rules.ts', './src/shared/config/routes.ts',
-      './src/shared/protocol.ts', './src/shared/rules.ts', './src/shared/text/fr.ts', './src/shared/text/regles.ts'].map(load),
-  ).then(([keys, brand, rules, routes, protocol, check, fr, regles]) => ({ keys, brand, rules, routes, protocol, check, fr, regles })));
+      './src/shared/protocol.ts', './src/shared/rules.ts', './src/shared/text/fr.ts', './src/shared/text/regles.ts',
+      './src/shared/bot.ts'].map(load),
+  ).then(([keys, brand, rules, routes, protocol, check, fr, regles, bot]) => ({ keys, brand, rules, routes, protocol, check, fr, regles, bot })));
 }
 
 /**
@@ -84,7 +89,8 @@ export function loadSettings(): Promise<Settings> {
  * au build depuis les réglages. Le code du paquet principal les lit en `__SM__.<nom>` (remplacé par la valeur à la
  * construction, en développement et sous Vitest) : il n'importe ainsi ni BRAND, ni KEYS, ni protocol.ts, ni les
  * phrases de règles, qui l'alourdiraient (BRAND : +0,1 ko compressé ; KEYS : +0,2 ko ; protocol.ts : un morceau de
- * plus à télécharger avant le premier rendu). Ailleurs, importer directement BRAND, KEYS, PROTOCOL_VERSION.
+ * plus à télécharger avant le premier rendu ; bot.ts : tout le moteur). Ailleurs, importer directement BRAND, KEYS,
+ * PROTOCOL_VERSION.
  * Ne s'écrit qu'avec une propriété : `__SM__.marque`, jamais `__SM__` seul (non défini à l'exécution).
  */
 export interface BuildConstants {
@@ -100,6 +106,8 @@ export interface BuildConstants {
   titreAccueil: string;
   /** cartesDePouvoir(GAME_RULES) : « trois cartes de pouvoir » (pied de page). */
   cartesDePouvoir: string;
+  /** Noms des niveaux de l'IA (BOT_LEVELS, BOT_PROFILES) : « Apprenti, Sorcier, Archimage » (menu). */
+  niveauxIA: string;
   /** KEYS.reload : garde d'une minute du rechargement automatique. */
   cleRechargement: string;
   /** PROTOCOL_VERSION, annoncée à la connexion du socket. */
@@ -111,7 +119,7 @@ declare global {
   const __SM__: Readonly<BuildConstants>;
 }
 
-export function buildConstants({ brand, rules, regles, keys, protocol }: Settings): BuildConstants {
+export function buildConstants({ brand, rules, regles, keys, protocol, bot }: Settings): BuildConstants {
   return {
     marque: brand.BRAND.name,
     marqueCapitales: brand.BRAND.nameCaps,
@@ -119,6 +127,7 @@ export function buildConstants({ brand, rules, regles, keys, protocol }: Setting
     suffixeTitre: `${brand.BRAND.titleSeparator}${brand.BRAND.name}`,
     titreAccueil: brand.pageTitle(),
     cartesDePouvoir: regles.cartesDePouvoir(rules.GAME_RULES),
+    niveauxIA: regles.nomsNiveaux(bot.BOT_LEVELS.map(l => bot.BOT_PROFILES[l].name), ','),
     cleRechargement: keys.KEYS.reload,
     protocole: protocol.PROTOCOL_VERSION,
   };

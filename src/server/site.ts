@@ -257,7 +257,7 @@ export function serveBuiltSite(app: Express, clientDist: string, opts: SiteOptio
     }),
   );
   // Fichier à empreinte absent (onglet resté ouvert sur une ancienne version) : 404 franc plutôt que le HTML du site,
-  // le client recharge alors la page (App.tsx, reloadForNewVersion).
+  // l'import échoue et la limite d'erreur de la page recharge le site (App.tsx, PageBoundary).
   app.use('/assets', (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.status(404).type('text/plain').send('Fichier introuvable.');

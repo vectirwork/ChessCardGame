@@ -1,11 +1,12 @@
 // En-tête, menu complet, pied de page et petites briques communes (modale, chargement), au style Odyssée.
 // Le menu est sobre : quelques entrées dans l'en-tête, toutes les fonctions dans le panneau « Menu ».
 //
-// Marque, accroches et nombre de cartes : constantes figées au build depuis src/shared/config (__SM__, vite.config.ts).
+// Marque, accroches, nombre de cartes et noms des niveaux de l'IA : constantes figées au build depuis les réglages
+// (__SM__, vite.config.ts).
 // Liens : chacun porte l'interrupteur de sa fonction (`f`, src/shared/config/features.ts) et disparaît quand elle est
 // coupée ; test/routes.test.ts vérifie qu'il couvre celui de sa page (ROUTES).
 import { useContext, useEffect, useId, useRef, useState } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { FeaturesContext, useApp } from '../store';
 import type { Features, FeatureKey } from '../../shared/config/features';
@@ -52,7 +53,7 @@ export const SECTIONS: { title: string; links: SiteLink[] }[] = [
     title: 'Jouer',
     links: [
       { to: '/', label: 'Partie immédiate', hint: "Sur l'échiquier de l'accueil, sans compte" },
-      { to: '/jouer?mode=bot', label: "Contre l'IA", hint: 'Apprenti, Sorcier, Archimage', f: 'botGames' },
+      { to: '/jouer?mode=bot', label: "Contre l'IA", hint: __SM__.niveauxIA, f: 'botGames' },
       { to: '/jouer?mode=invite', label: 'Inviter un ami', hint: 'Un lien, même sans compte', f: 'invites' },
       { to: '/jouer?mode=quick', label: 'Parties classées', hint: 'Elo, adversaire de votre niveau', f: 'ranked' },
       { to: '/direct', label: 'Parties en direct', hint: 'Regarder les parties en cours', f: 'live' },
@@ -86,18 +87,11 @@ export const NAV: SiteLink[] = [
   { to: '/boutique', label: 'Boutique', f: 'shop' },
 ];
 
-/** Le lien mène-t-il à une fonction ouverte ? */
-const linkOn = (on: Readonly<Features>) => (l: SiteLink) => !l.f || on[l.f];
-
 /**
- * Sections du menu et du pied de page, sans les liens coupés, et `--n` des grilles quand le nombre de colonnes (une
- * par section, plus Compte ou Légal) n'est plus 4 (CSS : repeat(var(--n, 4), …)). Au défaut : tout, aucun style.
+ * Le lien mène-t-il à une fonction ouverte ? Les liens coupés disparaissent du menu et du pied de page ; chaque section
+ * garde au moins un lien sans interrupteur (test/routes.test.ts), donc ses colonnes (quatre, avec Compte ou Légal).
  */
-function useSections(): [typeof SECTIONS, CSSProperties | undefined] {
-  const on = useContext(FeaturesContext);
-  const sections = SECTIONS.map(s => ({ ...s, links: s.links.filter(linkOn(on)) })).filter(s => s.links.length);
-  return [sections, sections.length === 3 ? undefined : ({ '--n': sections.length + 1 } as CSSProperties)];
-}
+const linkOn = (on: Readonly<Features>) => (l: SiteLink) => !l.f || on[l.f];
 
 function useOutside(ref: React.RefObject<HTMLElement | null>, on: boolean, close: () => void) {
   useEffect(() => {
@@ -155,7 +149,7 @@ function UserMenu() {
 /** Panneau « Menu » : toutes les fonctions, en colonnes, dans la nuit de l'Odyssée. */
 function SiteMenu({ onClose }: { onClose: () => void }) {
   const { me, logout } = useApp();
-  const [sections, grid] = useSections();
+  const on = useContext(FeaturesContext);
   const navigate = useNavigate();
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -170,11 +164,11 @@ function SiteMenu({ onClose }: { onClose: () => void }) {
   }, [onClose]);
   return (
     <div className="site-menu" role="dialog" aria-modal="true" aria-label="Menu" ref={ref}>
-      <div className="site-menu-in" style={grid}>
-        {sections.map(s => (
+      <div className="site-menu-in">
+        {SECTIONS.map(s => (
           <nav key={s.title} className="site-menu-col" aria-label={s.title}>
             <p className="site-menu-k">{s.title}</p>
-            {s.links.map(l => (
+            {s.links.filter(linkOn(on)).map(l => (
               <Link key={l.to + l.label} to={l.to} onClick={onClose}>
                 <span>{l.label}</span>
                 {l.hint && <small>{l.hint}</small>}
@@ -269,7 +263,7 @@ export function Header() {
 }
 
 export function Footer() {
-  const [sections, grid] = useSections();
+  const on = useContext(FeaturesContext);
   return (
     <footer className="site-footer">
       <div className="site-footer-in">
@@ -278,11 +272,11 @@ export function Footer() {
             <Logo />
             <p>{`Les échecs que vous aimez, avec ${__SM__.cartesDePouvoir} pour renverser la partie. Gratuit, sans publicité, sans pay-to-win.`}</p>
           </div>
-          <div className="site-footer-links" style={grid}>
-            {sections.map(s => (
+          <div className="site-footer-links">
+            {SECTIONS.map(s => (
               <nav key={s.title} aria-label={s.title}>
                 <h4>{s.title}</h4>
-                {s.links.map(l => (
+                {s.links.filter(linkOn(on)).map(l => (
                   <Link key={l.to + l.label} to={l.to}>
                     {l.label}
                   </Link>

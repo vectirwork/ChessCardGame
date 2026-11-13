@@ -19,7 +19,7 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
       headers: opts.body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
       credentials: 'same-origin',
-      signal: AbortSignal.timeout(API_TIMEOUT_MS),
+      signal: AbortSignal.timeout?.(API_TIMEOUT_MS), // navigateur sans AbortSignal.timeout : pas de délai maximal
     });
   } catch {
     // « Failed to fetch », « Load failed », « NetworkError… » (anglais, propres au navigateur) ou délai dépassé

@@ -14,11 +14,13 @@ import path from 'node:path';
 import express from 'express';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { NAV, SECTIONS } from '../src/client/components/Layout';
+import { BOT_LEVELS, BOT_PROFILES } from '../src/shared/bot';
 import { FEATURES } from '../src/shared/config/features';
 import type { Features } from '../src/shared/config/features';
 import { NOT_INDEXED, PAGE_MODULES, ROUTES, ROUTE_TITLES } from '../src/shared/config/routes';
 import { routePattern, serveBuiltSite } from '../src/server/site';
 import type { SiteOptions } from '../src/server/site';
+import { identify } from '../src/server/auth';
 import { sign } from '../src/server/security';
 
 const ROOT = path.resolve(__dirname, '..');
@@ -90,6 +92,12 @@ describe('table des routes', () => {
       expect(read(`src/client/pages/${page}.tsx`), `${chemin} : ${titre}`).toContain(`'${titre}'`);
     }
   });
+  it('useTitle : même code dans features/ui.tsx et pages/PageScene.tsx (deux copies, pour le découpage en morceaux)', () => {
+    const corps = (f: string) => read(f).match(/^export function useTitle\(title: string\) \{\n[\s\S]*?\n\}\n/m)?.[0];
+    const ui = corps('src/client/features/ui.tsx');
+    expect(ui).toContain('__SM__.suffixeTitre');
+    expect(corps('src/client/pages/PageScene.tsx')).toBe(ui);
+  });
   it('robots.txt : pages non indexées connues', () => {
     for (const p of NOT_INDEXED) expect(ROUTES.some(r => r.path === p), p).toBe(true);
   });
@@ -100,6 +108,12 @@ describe('table des routes', () => {
       if (page!.feature) expect(l.f, l.to).toBe(page!.feature);
       if (l.to.startsWith('/boutique')) expect(l.f, l.to).toBe('shop');
     }
+    // Niveaux de l'IA dans le menu : tirés de BOT_LEVELS et BOT_PROFILES au build (__SM__.niveauxIA)
+    expect(SECTIONS[0].links.find(l => l.to === '/jouer?mode=bot')?.hint).toBe(BOT_LEVELS.map(l => BOT_PROFILES[l].name).join(', '));
+    expect(BOT_LEVELS.map(l => BOT_PROFILES[l].name).join(', ')).toBe('Apprenti, Sorcier, Archimage');
+    // Chaque section du menu et du pied de page garde un lien sans interrupteur : elle ne disparaît jamais, et les
+    // grilles gardent leurs quatre colonnes (Layout.tsx, global.css)
+    for (const s of SECTIONS) expect(s.links.some(l => !l.f), s.title).toBe(true);
     // Page introuvable : ses liens vers Apprendre et la boutique suivent leurs interrupteurs
     const nf = read('src/client/pages/NotFound.tsx');
     expect(nf).toContain("useFeature('learn')");
@@ -207,6 +221,20 @@ describe('site construit : HTML servi par site.ts', () => {
     expect((await page('/jouer', defaut.base, 'sm_guest=faux.cookie')).cookie).toMatch(/^sm_guest=/);
     expect((await page('/jouer', defaut.base, `autre=1; sm_guest=${encodeURIComponent(sign('abc'))}`)).cookie).toBeNull();
     expect((await page('/inconnu')).cookie).toMatch(/^sm_guest=/);
+  });
+  it('cookie d’invité du HTML : mêmes nom et options que celui de l’API (identify, src/server/auth.ts)', async () => {
+    const app = express();
+    app.get('/api/x', identify, (_req, res) => void res.end());
+    const server = app.listen(0);
+    await new Promise(r => server.once('listening', r));
+    try {
+      const api = (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/api/x`)).headers.get('set-cookie');
+      const forme = (c: string | null) => c?.replace(/^sm_guest=[^;]+/, 'sm_guest=‹v›').replace(/Expires=[^;]+/, 'Expires=‹d›');
+      expect(forme(api)).toMatch(/^sm_guest=‹v›; /);
+      expect(forme((await page('/jouer')).cookie)).toBe(forme(api));
+    } finally {
+      await new Promise(r => server.close(r));
+    }
   });
   it('304 si le HTML n’a pas changé (ETag), jamais pour une page introuvable', async () => {
     // node:http plutôt que fetch, qui ajoute « Cache-Control: no-cache » aux requêtes conditionnelles

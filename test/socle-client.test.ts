@@ -8,7 +8,7 @@ import { renderToStaticMarkup, renderToString } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { ApiError, NETWORK_ERROR, api, errMsg } from '../src/client/api';
-import { PageBoundary, page } from '../src/client/App';
+import { PageBoundary, importFailed, page } from '../src/client/App';
 import { Footer, Header } from '../src/client/components/Layout';
 import { emitAck, reloadForNewVersion } from '../src/client/socket';
 import type { AckEvent, AckPayload, AckReply } from '../src/client/socket';
@@ -95,7 +95,11 @@ describe('limite d’erreur des pages (page blanche)', () => {
   };
   const tick = () => new Promise(r => setTimeout(r, 0));
 
-  it('chargement rejeté : React garde le rejet (d’où le rechargement de « Réessayer ») ; failed() le signale', async () => {
+  it('chargement rejeté : React garde le rejet (d’où le rechargement par PageBoundary) ; un préchargement ne recharge rien', async () => {
+    const store = new Map<string, string>();
+    const reload = vi.fn();
+    vi.stubGlobal('sessionStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v) });
+    vi.stubGlobal('window', { location: { reload } });
     let appels = 0;
     let echec = true;
     const Page = page<object>((): Promise<{ default: ComponentType<object> }> => {
@@ -103,36 +107,79 @@ describe('limite d’erreur des pages (page blanche)', () => {
       return echec ? Promise.reject(new TypeError('Failed to fetch dynamically imported module')) : Promise.resolve({ default: () => createElement('b', null, 'page chargée') });
     });
     const el = () => createElement(Suspense, { fallback: createElement('i', null, 'attente') }, createElement(Page));
-    expect(Page.failed()).toBe(false);
+    // Préchargement en échec (survol d'un lien) : rejeté, sans rechargement du site (une partie en cours continue)
+    await expect(Page.preload()).rejects.toThrow('dynamically imported module');
+    expect([appels, reload.mock.calls.length, store.size]).toEqual([1, 0, 0]);
     rendu(el());
     await tick();
-    expect([appels, Page.failed()]).toEqual([1, true]);
+    expect(appels).toBe(2);
     // Le même composant paresseux, rejeté pour toujours, ne recharge rien (le navigateur garde aussi l'échec de l'import)
     rendu(el());
     await tick();
-    expect(appels).toBe(1);
+    expect([appels, reload.mock.calls.length]).toEqual([2, 0]);
     // Un nouvel essai explicite (préchargement au survol d'un lien) : code chargé, la page remontée s'affiche
     echec = false;
     await Page.preload();
-    expect([appels, Page.failed()]).toEqual([2, false]);
+    expect(appels).toBe(3);
     expect(rendu(el())).toContain('page chargée');
   });
-  it('erreur de chargement ou de rendu : écran « Réessayer » à la place de la page, le reste du site intact', () => {
-    expect(PageBoundary.getDerivedStateFromError()).toEqual({ error: true });
-    const b = new PageBoundary({ children: createElement('b', null, 'page') });
+  it('échec de chargement reconnu (Chromium, Firefox, Safari, feuille de style), pas une autre erreur', () => {
+    for (const e of [
+      new TypeError('Failed to fetch dynamically imported module: https://x/assets/StageBoard-a1.js'),
+      new TypeError('error loading dynamically imported module: https://x/assets/Learn-b2.js'),
+      new TypeError('Importing a module script failed.'),
+      new Error('Unable to preload CSS for https://x/assets/Learn-b2.css'),
+    ]) expect(importFailed(e), e.message).toBe(true);
+    for (const e of [new TypeError("Cannot read properties of undefined (reading 'step')"), new Error('Failed to fetch'), null, undefined]) {
+      expect(importFailed(e), String(e)).toBe(false);
+    }
+  });
+  it('erreur : écran « Réessayer » à la place de la page, le reste du site intact', () => {
+    const b = new PageBoundary({ children: createElement('b', null, 'page'), at: '/apprendre' });
     expect(renderToStaticMarkup(b.render() as ReactElement)).toBe('<b>page</b>');
-    b.state = { error: true };
+    b.state = { failure: 'render', at: '/apprendre' };
     const html = renderToStaticMarkup(b.render() as ReactElement);
     expect(html).toContain('role="alert"');
     expect(html).toContain('Impossible d’afficher cette page.');
     expect(html).toContain('>Réessayer</button>');
-    // Exception de rendu (aucun code de page en échec) : la page est redessinée, sans rechargement
+  });
+  it('exception de rendu : « Réessayer » redessine la page, sans rechargement', () => {
     const reload = vi.fn();
     vi.stubGlobal('window', { location: { reload } });
+    const erreur = new TypeError("Cannot read properties of undefined (reading 'step')");
+    expect(PageBoundary.getDerivedStateFromError(erreur)).toEqual({ failure: 'render' });
+    const b = new PageBoundary({ children: null, at: '/apprendre/x' });
+    b.state = { failure: 'render', at: '/apprendre/x' };
+    b.componentDidCatch(erreur);
     const setState = vi.spyOn(b, 'setState').mockImplementation(() => undefined);
     b.retry();
-    expect(setState).toHaveBeenCalledWith({ error: false });
+    expect(setState).toHaveBeenCalledWith({ failure: null });
     expect(reload).not.toHaveBeenCalled();
+  });
+  it('code introuvable (page, ou composant paresseux d’une page : échiquier de l’accueil) : rechargement automatique, puis « Réessayer » recharge', () => {
+    const store = new Map<string, string>();
+    const reload = vi.fn();
+    vi.stubGlobal('sessionStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v) });
+    vi.stubGlobal('window', { location: { reload } });
+    const erreur = new TypeError('Failed to fetch dynamically imported module: https://x/assets/StageBoard-a1.js');
+    expect(PageBoundary.getDerivedStateFromError(erreur)).toEqual({ failure: 'import' });
+    const b = new PageBoundary({ children: null, at: '/' });
+    b.state = { failure: 'import', at: '/' };
+    // Premier échec : rechargement (garde d'une minute) ; un second dans la minute : l'écran « Réessayer » reste
+    b.componentDidCatch(erreur);
+    b.componentDidCatch(erreur);
+    expect(reload).toHaveBeenCalledTimes(1);
+    const setState = vi.spyOn(b, 'setState').mockImplementation(() => undefined);
+    b.retry();
+    expect(reload).toHaveBeenCalledTimes(2);
+    expect(setState).not.toHaveBeenCalled();
+  });
+  it('l’erreur s’efface quand le chemin change, même vers une page du même module (/apprendre/x → /apprendre)', () => {
+    const s = { failure: 'render' as const, at: '/apprendre/x' };
+    expect(PageBoundary.getDerivedStateFromProps({ children: null, at: '/apprendre/x' }, s)).toBeNull();
+    expect(PageBoundary.getDerivedStateFromProps({ children: null, at: '/apprendre' }, s)).toEqual({ failure: null, at: '/apprendre' });
+    // Premier rendu : le chemin est retenu, aucune erreur
+    expect(PageBoundary.getDerivedStateFromProps({ children: null, at: '/' }, { failure: null })).toEqual({ failure: null, at: '/' });
   });
 });
 
@@ -142,13 +189,18 @@ describe('rechargement après une nouvelle version (code de page introuvable, se
     const reload = vi.fn();
     vi.stubGlobal('sessionStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v) });
     vi.stubGlobal('window', { location: { reload } });
-    expect(reloadForNewVersion()).toBe(true);
+    reloadForNewVersion();
     expect([...store.keys()]).toEqual(['spellmate:reload']);
-    expect(reloadForNewVersion()).toBe(false);
     expect(reload).toHaveBeenCalledTimes(1);
+    reloadForNewVersion();
+    expect(reload).toHaveBeenCalledTimes(1);
+    // Plus d'une minute après : nouveau rechargement possible
+    store.set('spellmate:reload', String(Date.now() - 61_000));
+    reloadForNewVersion();
+    expect(reload).toHaveBeenCalledTimes(2);
     vi.stubGlobal('sessionStorage', { getItem: () => { throw new Error('bloqué'); } });
-    expect(reloadForNewVersion()).toBe(false);
-    expect(reload).toHaveBeenCalledTimes(1);
+    reloadForNewVersion();
+    expect(reload).toHaveBeenCalledTimes(2);
   });
 });
 

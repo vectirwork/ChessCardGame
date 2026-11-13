@@ -950,8 +950,7 @@ kbd {
 }
 .site-menu-in {
   display: grid;
-  /* --n : colonnes (sections du menu, plus Compte), posé par Layout seulement quand une fonction coupée en retire une */
-  grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 40px;
   max-width: 1240px;
   margin: 0 auto;
@@ -1136,8 +1135,7 @@ html.ody-home .site-footer {
 }
 .site-footer-links {
   display: grid;
-  /* --n : colonnes (sections, plus Légal), comme .site-menu-in */
-  grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 30px;
 }
 .site-footer h4 {

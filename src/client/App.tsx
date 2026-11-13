@@ -5,7 +5,7 @@ import { Footer, Header, PageLoader } from './components/Layout';
 import { reloadForNewVersion } from './socket';
 import { FeaturesContext } from './store';
 import { ROUTES, routeOpen } from '../shared/config/routes';
-import type { PageModule } from '../shared/config/routes';
+import type { PageModule, PropsOf } from '../shared/config/routes';
 
 /**
  * Page chargée à la demande (un morceau de code et de CSS par page, décision D6). `preload()` récupère son code à
@@ -13,25 +13,19 @@ import type { PageModule } from '../shared/config/routes';
  * dont le code est déjà là s'affiche d'un coup, sans écran d'attente. Le choix entre rendu direct et attente Suspense
  * est fait au montage et ne change plus ensuite (aucun remontage en cours de vie).
  *
- * Code de la page introuvable (onglet resté ouvert après une mise en ligne, réseau coupé) : la page est rechargée,
- * au plus une fois par minute (reloadForNewVersion) ; sinon l'erreur va à PageBoundary. `failed()` : le code de la
- * page n'a pas pu être chargé (ni depuis).
+ * Code de la page introuvable (onglet resté ouvert après une mise en ligne, réseau coupé) : un préchargement en échec
+ * ne fait rien (survol d'un lien : aucun rechargement en pleine partie) ; à l'affichage, l'erreur va à PageBoundary,
+ * qui recharge le site.
  */
-type Page<P> = ComponentType<P> & {
-  preload: () => Promise<unknown>;
-  failed: () => boolean;
-};
+type Page<P> = ComponentType<P> & { preload: () => Promise<unknown> };
 export function page<P extends object>(load: () => Promise<{ default: ComponentType<P> }>): Page<P> {
   let ready: ComponentType<P> | undefined;
   let pending: Promise<ComponentType<P>> | undefined;
-  let failed = false;
   const preload = () =>
     (pending ??= load().then(
       m => (ready = m.default),
       e => {
         pending = undefined; // nouvel essai possible (réseau coupé, nouvelle version)
-        failed = true;
-        if (reloadForNewVersion()) return new Promise<never>(() => undefined); // l'attente dure jusqu'au rechargement
         throw e;
       },
     ));
@@ -40,14 +34,15 @@ export function page<P extends object>(load: () => Promise<{ default: ComponentT
     const [Now] = useState(() => ready);
     return createElement((Now ?? Lazy) as ComponentType<P>, props);
   }
-  return Object.assign(Paged, { preload, failed: () => failed && !ready });
+  return Object.assign(Paged, { preload });
 }
 
 /**
  * Chargeur de chaque module de page (src/shared/config/routes.ts) : un import() littéral par module, donc un morceau
- * de code par page. Le type exige un chargeur pour chaque module de PAGE_MODULES.
+ * de code par page. Le type exige un chargeur pour chaque module de PAGE_MODULES, et des propriétés conformes à
+ * PageProps (Auth : mode ; Legal : page).
  */
-const PAGES: Record<PageModule, Page<any>> = {
+const PAGES: { [M in PageModule]: Page<PropsOf<M>> } = {
   Home: page<object>(() => import('./pages/Home').then(m => ({ default: m.Home }))),
   Play: page(() => import('./pages/Play')),
   GameRoute: page(() => import('./pages/GameRoute')),
@@ -74,25 +69,49 @@ export function preloadRoute(pathname: string): Promise<unknown> {
 }
 
 /**
- * Limite d'erreur d'une page : code de la page introuvable, ou exception pendant son rendu. Sans elle, React démonte
- * tout le site (page blanche, sans en-tête pour repartir). « Réessayer » :
- * - code d'une page introuvable : recharge le site. Ni React (composant paresseux rejeté) ni le navigateur (import
- *   en échec, vérifié dans Chromium) ne retentent le même module ; le rechargement prend aussi la version en ligne ;
- * - exception de rendu : redessine la page.
- * Une limite par page, de clé le module de la page : changer de page l'efface, et une page saine n'est jamais
- * remontée (même module, même instance, comme avant).
+ * Échec du chargement d'un module (code d'une page, ou composant paresseux d'une page comme l'échiquier de l'accueil) :
+ * « Failed to fetch dynamically imported module » (Chromium), « error loading dynamically imported module » (Firefox),
+ * « Importing a module script failed. » (Safari), « Unable to preload CSS for … » (feuille du module, Vite).
  */
-export class PageBoundary extends Component<{ children: ReactNode }, { error: boolean }> {
-  state = { error: false };
-  static getDerivedStateFromError() {
-    return { error: true };
+export const importFailed = (e: unknown) => /dynamically imported|a module script|preload CSS/.test(String(e));
+
+/**
+ * Limite d'erreur d'une page : code introuvable, ou exception pendant le rendu. Sans elle, React démonte tout le site
+ * (page blanche, sans en-tête pour repartir).
+ * - Code introuvable (onglet resté ouvert après une mise en ligne, réseau coupé) : le site est rechargé tout de suite,
+ *   au plus une fois par minute (reloadForNewVersion), ce qui prend aussi la version en ligne ; sinon « Réessayer »
+ *   recharge. Ni React (composant paresseux rejeté) ni le navigateur (import en échec, vérifié dans Chromium) ne
+ *   retentent le même module : redessiner ne suffirait pas.
+ * - Exception de rendu : « Réessayer » redessine la page.
+ * Une limite par module de page (clé) : une page saine n'est jamais remontée (même module, même instance, comme
+ * avant) ; l'erreur s'efface quand le chemin change (`at`), même vers une autre page du même module.
+ */
+interface BoundaryProps {
+  children: ReactNode;
+  /** Chemin affiché : quand il change, l'erreur est oubliée. */
+  at: string;
+}
+interface BoundaryState {
+  failure: 'import' | 'render' | null;
+  at?: string;
+}
+export class PageBoundary extends Component<BoundaryProps, BoundaryState> {
+  state: BoundaryState = { failure: null };
+  static getDerivedStateFromError(e: unknown): Partial<BoundaryState> {
+    return { failure: importFailed(e) ? 'import' : 'render' };
+  }
+  static getDerivedStateFromProps(p: BoundaryProps, s: BoundaryState): Partial<BoundaryState> | null {
+    return p.at === s.at ? null : { failure: null, at: p.at };
+  }
+  componentDidCatch(e: unknown) {
+    if (importFailed(e)) reloadForNewVersion();
   }
   retry = () => {
-    if (Object.values(PAGES).some(p => p.failed())) window.location.reload();
-    else this.setState({ error: false });
+    if (this.state.failure === 'import') window.location.reload();
+    else this.setState({ failure: null });
   };
   render() {
-    if (!this.state.error) return this.props.children;
+    if (!this.state.failure) return this.props.children;
     return (
       <div className="page-loader" role="alert">
         <p>
@@ -107,8 +126,10 @@ export class PageBoundary extends Component<{ children: ReactNode }, { error: bo
 }
 
 /** Élément d'une route : la page dans sa limite d'erreur. */
-const pageElement = (page: PageModule, props?: object) => (
-  <PageBoundary key={page}>{createElement(PAGES[page], props)}</PageBoundary>
+const pageElement = (page: PageModule, at: string, props?: object) => (
+  <PageBoundary key={page} at={at}>
+    {createElement(PAGES[page] as ComponentType<object>, props)}
+  </PageBoundary>
 );
 
 /**
@@ -168,9 +189,9 @@ export function App() {
         <Suspense fallback={<PageLoader />}>
           <Routes>
             {ROUTES.filter(r => routeOpen(r, features)).map(r => (
-              <Route key={r.path} path={r.path} element={pageElement(r.page, r.props)} />
+              <Route key={r.path} path={r.path} element={pageElement(r.page, loc.pathname, r.props)} />
             ))}
-            <Route path="*" element={pageElement('NotFound')} />
+            <Route path="*" element={pageElement('NotFound', loc.pathname)} />
           </Routes>
         </Suspense>
       </main>

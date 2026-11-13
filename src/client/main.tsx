@@ -24,13 +24,16 @@ import { BrowserRouter } from 'react-router-dom';
 import { App, preloadRoute } from './App';
 import { AppProvider } from './store';
 
-// Code d'une page introuvable après une mise en ligne (onglet resté ouvert) : App.tsx recharge la page, au plus une
-// fois par minute (reloadForNewVersion). Les modules facultatifs (three.js, Lenis) gèrent eux-mêmes leur échec : la page
-// n'est plus rechargée pour eux (aucun écouteur de vite:preloadError, Vite transmet l'erreur à l'appelant).
+// Code introuvable après une mise en ligne (onglet resté ouvert) ou réseau coupé : aucun écouteur de
+// vite:preloadError, Vite transmet l'erreur à l'appelant.
+// - Code d'une page, ou d'un composant paresseux affiché par une page (échiquier des lieux de l'accueil) : l'erreur va
+//   à la limite de la page (PageBoundary, App.tsx), qui recharge le site au plus une fois par minute
+//   (reloadForNewVersion), puis propose « Réessayer ».
+// - Préchargement qui rattrape son échec (survol d'un lien, StageBoard ou GameRoute au repos, effets, Lenis) : rien
+//   n'est rechargé ; le module sera redemandé à l'affichage.
 // Erreur hors d'une page (en-tête, pied de page) : React démonte tout ; elle est notée avec sa pile de composants.
-// Celles d'une page sont arrêtées par PageBoundary (App.tsx).
 const root = createRoot(document.getElementById('root')!, {
-  onUncaughtError: (error, info) => console.error('[app] Erreur non rattrapée :', error, info.componentStack),
+  onUncaughtError: (error, info) => console.error(error, info.componentStack),
 });
 const render = () =>
   root.render(

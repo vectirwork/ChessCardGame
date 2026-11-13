@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { api, errMsg } from '../api';
 import { PageLoader } from '../components/Layout';
+import type { PageProps } from '../../shared/config/routes';
 import { PageHead, PlacePage, useTitle } from './PageScene';
 
 interface LegalInfo {
@@ -18,7 +19,7 @@ interface LegalInfo {
   url: string;
 }
 
-type Page = 'cgu' | 'cgv' | 'privacy' | 'mentions';
+type Page = PageProps['Legal']['page'];
 
 const DOCS: { page: Page; to: string; title: string; short: string }[] = [
   { page: 'mentions', to: '/mentions-legales', title: 'Mentions légales', short: 'Mentions légales' },
@@ -27,7 +28,7 @@ const DOCS: { page: Page; to: string; title: string; short: string }[] = [
   { page: 'privacy', to: '/confidentialite', title: 'Politique de confidentialité', short: 'Confidentialité' },
 ];
 
-export default function Legal({ page }: { page: Page }) {
+export default function Legal({ page }: PageProps['Legal']) {
   const doc = DOCS.find(d => d.page === page)!;
   useTitle(doc.short);
   const [l, setL] = useState<LegalInfo | null>(null);

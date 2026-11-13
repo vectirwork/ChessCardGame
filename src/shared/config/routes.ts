@@ -14,7 +14,8 @@
 // seulement, sont dans des tables séparées (chaque octet du paquet principal compte).
 //
 // Ajouter une page : une entrée dans ROUTES, son module dans PAGE_MODULES et son chargeur dans App.tsx (le compilateur
-// le demande), son titre dans ROUTE_TITLES si la page en pose un. Chemins à la syntaxe de React Router (« :param »).
+// le demande), ses propriétés dans PageProps si elle en prend, son titre dans ROUTE_TITLES si la page en pose un.
+// Chemins à la syntaxe de React Router (« :param »).
 
 import type { FeatureKey } from './features';
 
@@ -25,19 +26,32 @@ export const PAGE_MODULES = [
 ] as const;
 export type PageModule = (typeof PAGE_MODULES)[number];
 
-export interface RouteDef {
+/**
+ * Propriétés des pages qui en prennent (les autres modules n'en prennent aucune). Vérifiées par le compilateur dans
+ * ROUTES et contre le composant de la page (App.tsx).
+ */
+export interface PageProps {
+  Auth: { mode: 'login' | 'register' | 'forgot' | 'reset' | 'verify' };
+  Legal: { page: 'cgu' | 'cgv' | 'privacy' | 'mentions' };
+}
+/** Propriétés du module de page M (objet vide s'il n'en prend aucune). */
+export type PropsOf<M extends PageModule> = M extends keyof PageProps ? PageProps[M] : object;
+
+/** Une page de ROUTES, pour le module M. */
+interface RouteOf<M extends PageModule> {
   /** Chemin (React Router) : « /apprendre/:lesson ». */
   path: string;
   /** Module de src/client/pages qui affiche la page. */
-  page: PageModule;
-  /** Propriétés passées à la page (Auth : mode ; Legal : page). */
-  props?: Readonly<Record<string, string>>;
+  page: M;
+  /** Propriétés passées à la page : obligatoires pour un module de PageProps, interdites sinon. */
+  props?: M extends keyof PageProps ? PageProps[M] : never;
   /**
    * Interrupteur (FEATURES) : coupé, la page disparaît (page introuvable, 404). La boutique n'en a pas : coupée, elle
    * affiche elle-même sa page fermée (Shop.tsx, DemoCheckout.tsx) ; ses liens sont cachés (interrupteur des liens).
    */
   feature?: FeatureKey;
 }
+export type RouteDef = { [M in PageModule]: M extends keyof PageProps ? RouteOf<M> & { props: PageProps[M] } : RouteOf<M> }[PageModule];
 
 /** ← Pages du site, dans l'ordre de recherche (la première qui correspond l'emporte). */
 export const ROUTES: readonly RouteDef[] = [

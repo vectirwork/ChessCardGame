@@ -3,21 +3,21 @@
 // Version du protocole : le client l'annonce à la connexion (auth.v, PROTOCOL_VERSION figée au build : __SM__) ; un
 // onglet resté ouvert après une mise en ligne reçoit server:outdated et recharge la page (au plus une fois par minute).
 import { io, Socket } from 'socket.io-client';
+import type { ManagerOptions, SocketOptions } from 'socket.io-client';
 import type { ClientToServer, ServerToClient } from '../shared/protocol';
 import { ApiError } from './api';
 
 export type AppSocket = Socket<ServerToClient, ClientToServer>;
 
 /**
- * Réglages de la connexion : les valeurs par défaut de socket.io-client, écrites ici pour être visibles. Reconnexion
- * sans fin, après 1 s puis jusqu'à 5 s (± 50 %) ; connexion abandonnée (puis reprise) au bout de 20 s.
+ * Réglages de la connexion, passés à io(). Seuls ceux qui diffèrent de socket.io-client sont écrits (chaque octet du
+ * paquet principal compte) ; les autres valent ses défauts : reconnexion sans fin (`reconnection: true`), après 1 s
+ * puis jusqu'à 5 s (`reconnectionDelay: 1000`, `reconnectionDelayMax: 5000`, ± 50 % : `randomizationFactor: 0.5`) ;
+ * connexion abandonnée puis reprise au bout de 20 s (`timeout: 20_000`). Pour en changer un, l'ajouter ici.
  */
-export const SOCKET = {
+export const SOCKET: Partial<ManagerOptions & SocketOptions> = {
+  // WebSocket d'emblée, l'interrogation HTTP en secours (défaut : interrogation d'abord, puis WebSocket, WebTransport)
   transports: ['websocket', 'polling'],
-  reconnectionDelay: 1000,
-  reconnectionDelayMax: 5000,
-  randomizationFactor: 0.5,
-  timeout: 20_000,
 };
 /** Délai de réponse d'une action (emitAck), en ms. */
 export const ACK_TIMEOUT_MS = 8000;
@@ -27,7 +27,7 @@ let socket: AppSocket | null = null;
 export function getSocket(): AppSocket {
   if (!socket) {
     socket = io({ ...SOCKET, withCredentials: true, auth: { v: __SM__.protocole } });
-    socket.on('server:outdated', () => void reloadForNewVersion());
+    socket.on('server:outdated', reloadForNewVersion);
   }
   return socket;
 }
@@ -40,19 +40,18 @@ export function resetSocket() {
 }
 
 /**
- * Nouvelle version du site (code d'une page introuvable, server:outdated) : recharge la page, au plus une fois par
- * minute pour ne jamais boucler. Vrai si le rechargement est lancé ; faux dans la minute qui suit un rechargement, ou
- * si le stockage de session est indisponible (aucun risque de boucle).
+ * Nouvelle version du site (code introuvable, server:outdated) : recharge la page, au plus une fois par minute pour ne
+ * jamais boucler. Rien dans la minute qui suit un rechargement, ni si le stockage de session est indisponible (aucun
+ * risque de boucle).
  */
-export function reloadForNewVersion(): boolean {
+export function reloadForNewVersion(): void {
   try {
-    if (Date.now() - Number(sessionStorage.getItem(__SM__.cleRechargement) ?? 0) < 60_000) return false;
+    if (Date.now() - Number(sessionStorage.getItem(__SM__.cleRechargement) ?? 0) < 60_000) return;
     sessionStorage.setItem(__SM__.cleRechargement, String(Date.now()));
   } catch {
-    return false;
+    return;
   }
   window.location.reload();
-  return true;
 }
 
 // Actions avec accusé de réception, typées par le contrat ClientToServer (src/shared/protocol.ts).

@@ -3,14 +3,16 @@ import { describe, expect, it } from 'vitest';
 import { analyse } from '../src/shared/bot';
 import { CARDS, CardId, cardsOf } from '../src/shared/cards';
 import { Color, isCapture, sqIndex } from '../src/shared/chess';
+import { GAME_RULES, RULES_V1 } from '../src/shared/config/rules';
 import { GameState, cardOptions, legalMovesOf, playCard, playMove, sideInCheck } from '../src/shared/game';
 import { material, uciOf, validateFen } from '../src/shared/pgn';
 import {
-  PUZZLES, Puzzle, PuzzleAction, applyAction, dailyPuzzle, goalOf, parseAction, puzzleById, puzzleStart, sameAction,
-  solverOf, stepOptions,
+  ALL_PUZZLES, PUZZLES, Puzzle, PuzzleAction, THEME_LABEL, THEME_PLURAL, applyAction, dailyPuzzle, dayNumber, goalOf, parseAction,
+  puzzleById, puzzleStart, puzzlesFor, sameAction, solverOf, stepOptions,
 } from '../src/shared/puzzles';
 
-const cardPuzzles = PUZZLES.filter(p => p.themes.includes('cartes'));
+/** Tout le contenu est vérifié, même ce que les règles du moment masquent. */
+const cardPuzzles = ALL_PUZZLES.filter(p => p.themes.includes('cartes'));
 
 /** Toutes les cartes jouables par `c`, avec toutes leurs cibles. */
 function allCardPlays(s: GameState, c: Color): (PuzzleAction & { kind: 'card' })[] {
@@ -27,6 +29,22 @@ function allCardPlays(s: GameState, c: Color): (PuzzleAction & { kind: 'card' })
     };
     walk([]);
   });
+  return out;
+}
+
+/** Suites de 1 à `k` cartes jouables par `c` dans le même tour, avec l'état obtenu. */
+function cardSequences(s: GameState, c: Color, k: number): { plays: (PuzzleAction & { kind: 'card' })[]; after: GameState }[] {
+  const out: { plays: (PuzzleAction & { kind: 'card' })[]; after: GameState }[] = [];
+  const walk = (st: GameState, plays: (PuzzleAction & { kind: 'card' })[]) => {
+    if (plays.length >= k || st.pos.turn !== c) return;
+    for (const play of allCardPlays(st, c)) {
+      const after = applyAction(st, play);
+      if (!after) continue;
+      out.push({ plays: [...plays, play], after });
+      walk(after, [...plays, play]);
+    }
+  };
+  walk(s, []);
   return out;
 }
 
@@ -60,22 +78,22 @@ function playLine(p: Puzzle) {
 
 describe('problèmes', () => {
   it('au moins 40 problèmes classiques et 6 problèmes à cartes, identifiants uniques', () => {
-    const classic = PUZZLES.filter(p => !p.themes.includes('cartes'));
+    const classic = ALL_PUZZLES.filter(p => !p.themes.includes('cartes'));
     expect(classic.length).toBeGreaterThanOrEqual(40);
     expect(cardPuzzles.length).toBeGreaterThanOrEqual(6);
-    expect(new Set(PUZZLES.map(p => p.id)).size).toBe(PUZZLES.length);
-    for (const p of PUZZLES) {
+    expect(new Set(ALL_PUZZLES.map(p => p.id)).size).toBe(ALL_PUZZLES.length);
+    for (const p of ALL_PUZZLES) {
       expect(p.id).toMatch(/^[a-z0-9-]+$/);
       expect(validateFen(p.fen), p.id).toBeNull();
       expect(p.hint.length).toBeGreaterThan(10);
       expect(p.moral.length).toBeGreaterThan(10);
       expect(goalOf(p)).toMatch(/\.$/);
-      expect(puzzleById(p.id)).toBe(p);
+      if (PUZZLES.includes(p)) expect(puzzleById(p.id)).toBe(p);
     }
   });
 
   it('chaque solution est légale, le solveur termine la ligne', () => {
-    for (const p of PUZZLES) {
+    for (const p of ALL_PUZZLES) {
       const states = playLine(p);
       const last = states[states.length - 2];
       // La dernière étape est jouée par le camp qui résout
@@ -84,7 +102,7 @@ describe('problèmes', () => {
   });
 
   it('les mats annoncés sont des mats, et le moteur les confirme', () => {
-    for (const p of PUZZLES.filter(x => x.mate)) {
+    for (const p of ALL_PUZZLES.filter(x => x.mate)) {
       const states = playLine(p);
       const end = states[states.length - 1];
       expect(end.result, p.id).toMatchObject({ reason: 'checkmate', winner: solverOf(p) });
@@ -100,7 +118,7 @@ describe('problèmes', () => {
   }, 240_000);
 
   it('les problèmes tactiques gagnent du matériel, et le moteur trouve le coup clé', () => {
-    for (const p of PUZZLES.filter(x => !x.mate && !x.hands && !x.effects)) {
+    for (const p of ALL_PUZZLES.filter(x => !x.mate && !x.hands && !x.effects)) {
       const states = playLine(p);
       const me = solverOf(p);
       const other = me === 'w' ? 'b' : 'w';
@@ -116,13 +134,15 @@ describe('problèmes', () => {
 });
 
 describe('problèmes à cartes', () => {
-  it('seulement les huit pouvoirs, en mains de trois cartes au plus, catalogue Pouvoirs', () => {
+  it('seulement les pouvoirs, en mains de RULES_V1.cardsPerPlayer cartes au plus, catalogue Pouvoirs', () => {
     const allowed = cardsOf('climats');
     for (const p of cardPuzzles) {
       const s = puzzleStart(p);
       expect(s.catalog, p.id).toBe('climats');
+      // Joués avec les règles de leurs solutions : aucune règle écrite dans la partie (RULES_V1)
+      expect(s.rules, p.id).toBeUndefined();
       for (const c of ['w', 'b'] as Color[]) {
-        expect(s.hands[c].length, p.id).toBeLessThanOrEqual(3);
+        expect(s.hands[c].length, p.id).toBeLessThanOrEqual(Math.min(RULES_V1.cardsPerPlayer, GAME_RULES.cardsPerPlayer));
         for (const h of s.hands[c]) expect(allowed, `${p.id} : ${h.card}`).toContain(h.card);
       }
       for (const e of p.effects ?? []) expect(allowed).toContain(e.card);
@@ -138,23 +158,28 @@ describe('problèmes à cartes', () => {
     expect(new Set([...used].map(id => CARDS[id].family))).toEqual(new Set(['climat', 'terrain', 'evenement']));
   });
 
-  it('la carte est nécessaire et seule la solution convient (mat confirmé par le moteur)', () => {
+  it('la carte est nécessaire et seule la solution convient, jusqu’à cardsPerTurn cartes (mat confirmé par le moteur)', () => {
     for (const p of cardPuzzles.filter(x => x.mate && stepOptions(x.solution[0])[0].kind === 'card')) {
-      const start = puzzleStart(p);
+      // Cartes par tour à essayer : celles des nouvelles parties, sauf pour un problème qui suppose une carte par tour
+      // (il est alors masqué si GAME_RULES en permet plus). Au défaut : 1, l'essai historique.
+      const k = p.requires?.cardsPerTurn ?? GAME_RULES.cardsPerTurn;
+      const start = puzzleStart(p, { ...RULES_V1, cardsPerTurn: k });
       const me = solverOf(p);
       const n = p.mate!;
       // Sans carte : pas de mat aussi rapide
       expect(mateWithin(start, me, n), `${p.id} : mat sans carte`).toBe(false);
-      // Chaque carte jouable (toutes cibles) : elle mène au mat en n si et seulement si la solution l'accepte
+      // Chaque suite de 1 à k cartes jouables (toutes cibles) : elle mène au mat en n seulement si sa première carte est
+      // acceptée par la solution ; une carte seule y mène si et seulement si la solution l'accepte.
       const accepted = stepOptions(p.solution[0]);
-      const plays = allCardPlays(start, me);
-      expect(plays.length, p.id).toBeGreaterThan(0);
-      for (const play of plays) {
-        const after = applyAction(start, play)!;
+      const seqs = cardSequences(start, me, k);
+      expect(seqs.length, p.id).toBeGreaterThan(0);
+      for (const { plays, after } of seqs) {
         // Un Rituel tient lieu de coup : il reste n − 1 coups
         const works = after.pos.turn === me ? mateWithin(after, me, n) : mateWithin(after, me, n - 1);
-        const isSolution = accepted.some(o => sameAction(o, play));
-        expect(works, `${p.id} : @${play.card} ${play.targets.join(',')}`).toBe(isSolution);
+        const first = accepted.some(o => sameAction(o, plays[0]));
+        const where = `${p.id} : ${plays.map(x => `@${x.card} ${x.targets.join(',')}`).join(' puis ')}`;
+        if (plays.length === 1) expect(works, where).toBe(first);
+        else if (works) expect(first, where).toBe(true);
       }
     }
   }, 240_000);
@@ -250,6 +275,36 @@ describe('problème du jour et notation', () => {
     expect(seen.size).toBe(PUZZLES.length);
   });
 
+  it('ajouter un problème ne change pas le problème du jour (il entre au calendrier le lendemain de son ajout)', () => {
+    const today = new Date(2026, 10, 13, 12);
+    const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const added: Puzzle = { ...PUZZLES[0], id: 'nouveau', since: iso(today) };
+    const list = [...PUZZLES, added];
+    // Le jour de l'ajout (déploiement à midi), et toute la journée : même problème du jour
+    for (const h of [0, 12, 23]) expect(dailyPuzzle(new Date(2026, 10, 13, h), list).id).toBe(dailyPuzzle(new Date(2026, 10, 13, h)).id);
+    // Dès le lendemain, il fait partie du calendrier, qui parcourt alors toute la liste
+    const seen = new Set<string>();
+    for (let i = 1; i <= list.length; i++) seen.add(dailyPuzzle(new Date(2026, 10, 13 + i, 12), list).id);
+    expect(seen.size).toBe(list.length);
+    expect(dayNumber(new Date(2026, 10, 14))).toBe(dayNumber(new Date(2026, 10, 13)) + 1);
+  });
+
+  it('requires masque ce qui contredit les règles des nouvelles parties ; filtres tirés des thèmes', () => {
+    const ids = (r: Parameters<typeof puzzlesFor>[0]) => puzzlesFor(r).map(p => p.id);
+    expect(PUZZLES).toEqual(puzzlesFor(GAME_RULES));
+    expect(ids(RULES_V1)).toEqual(ALL_PUZZLES.map(p => p.id));
+    expect(ids({ ...RULES_V1, handsVisible: false })).not.toContain('carte-main-visible');
+    expect(ids({ ...RULES_V1, cardEndsTurn: true })).not.toContain('carte-mur-sauve');
+    expect(ids({ ...RULES_V1, cardEndsTurn: true })).toContain('carte-maree');
+    expect(ids({ ...RULES_V1, cardsPerTurn: 2 })).not.toContain('carte-maree');
+    expect(ids({ ...RULES_V1, cardsPerTurn: 2 })).toContain('carte-lune');
+    // Un problème de mains (pas d'effet seul) qui ne déclare rien doit tenir pour toutes les règles permises
+    for (const p of cardPuzzles.filter(x => x.hands?.[solverOf(x)]?.length && stepOptions(x.solution[0])[0].kind === 'card')) {
+      expect(p.requires?.cardsPerTurn, `${p.id} : unicité vérifiée pour une carte par tour`).toBe(1);
+    }
+    expect(Object.keys(THEME_PLURAL)).toEqual(Object.keys(THEME_LABEL));
+  });
+
   it('lit les étapes : coups, promotions, cartes et alternatives', () => {
     expect(parseAction('e7e8n')).toMatchObject({ kind: 'move', promo: 'n' });
     expect(parseAction('@ice_wall:f3')).toMatchObject({ kind: 'card', card: 'ice_wall', targets: [21] });
@@ -272,7 +327,8 @@ const photo = (list: Puzzle[]) => list.map(p => ({
 
 describe('problèmes au réglage par défaut', () => {
   it('textes, positions, solutions et mains identiques à la photographie', () => {
-    expect(sha(photo(PUZZLES))).toBe('b98dd400d90d3790');
+    expect(sha(photo(ALL_PUZZLES))).toBe('b98dd400d90d3790');
+    expect(PUZZLES).toEqual(ALL_PUZZLES);
   });
 
   it('textes chiffrés des problèmes à cartes (rangées du Mur)', () => {

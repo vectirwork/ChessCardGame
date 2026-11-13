@@ -4,7 +4,7 @@
 // identiques au réglage par défaut).
 //
 //   node scripts/banc-ia.mjs [--racine=<dépôt>] [--passages=7] [--sortie=<fichier.json>] [--comparer=<ref.json>]
-//                            [--scenarios=coup3,coup5,carte] [--rapide]
+//                            [--entrelacer=<dépôt de référence>] [--scenarios=coup3,coup5,carte] [--rapide]
 //
 // - --racine : dépôt dont on mesure le code (défaut : ce dépôt). Pour la référence, une copie de travail au commit
 //   d'avant (git worktree add --detach <dossier> 7148547, puis npm ci ou un lien vers node_modules) ;
@@ -12,6 +12,10 @@
 // - --sortie : résultats en JSON (médianes, min, max, décisions) ;
 // - --comparer : résultats d'une autre version (JSON de --sortie) ; affiche l'écart des médianes (en %) et signale
 //   toute décision différente ; code de sortie 1 si une décision diffère ou si une médiane sort de ±3 % ;
+// - --entrelacer : la référence (ce dépôt-là) et --racine dans le même processus, un passage de chacune à tour de
+//   rôle, ordre alterné (réf., copie, puis copie, réf.…) ; affiche les deux médianes et la médiane des rapports
+//   appariés copie / réf., critère du ±3 % (une position de moins d'une milliseconde n'est jugée que sur sa
+//   décision) ; code de sortie 1 si une décision diffère ou si ce rapport sort de ±3 %. Pas avec --comparer ;
 // - --rapide : 1 passage, sans chauffe, scénarios coup3 et carte seulement (vérifier que le banc tourne : ce n'est
 //   pas une mesure).
 //
@@ -25,6 +29,20 @@
 // Le code est assemblé par esbuild (comme en production : un seul module, sans transformation au vol). Mesurer sur
 // une machine au repos : aucune autre mesure, construction ou suite de tests en même temps (la charge moyenne du
 // système est notée dans les résultats). Durée : quelques minutes avec 7 passages.
+//
+// Bruit de la machine : sur une machine virtuelle partagée (environnement de développement en nuage, 4 processeurs), la
+// vitesse d'un processeur varie par phases de quelques secondes, jusqu'à ±20 %, même au repos et pour une simple boucle
+// de calcul (novembre 2026 : 190 à 280 ms pour la même boucle ; les phases ne coïncident pas d'un processeur à
+// l'autre). Deux exécutions séparées du même code peuvent donc différer de 20 % sur une position (coup3 milieu : 39 ou
+// 48 ms selon la phase) : un écart de --comparer n'est un ralentissement que s'il se répète sur plusieurs exécutions
+// alternées. --entrelacer expose les deux versions aux mêmes phases : avec 41 passages, coup3 tient dans ±2 %
+// (référence contre elle-même aussi) ; avec 15, une position courte s'écarte encore de 3 à 5 %. Une recherche de coup5
+// dure 0,3 à 2,7 s, autant qu'une phase : 9 passages laissent des écarts jusqu'à 9 % sur certaines positions (milieu
+// dans ±1,5 %) ; répéter, et ne retenir que l'écart qui se répète, dans le même sens. Limite : les deux versions
+// partagent le tas, donc le coût du ramasse-miettes d'allocations en plus se répartit entre elles. Les allocations se
+// comparent à part : octets alloués par recherche, v8.getHeapStatistics().used_heap_size avant et après chooseBotMove,
+// sous node --expose-gc --min-semi-space-size=512 --max-semi-space-size=512 (gc() juste avant : aucun ramasse-miettes
+// pendant la recherche). Les temps absolus restent ceux du mode séparé.
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -43,6 +61,8 @@ const PASSAGES = RAPIDE ? 1 : Math.max(1, Number(opt('passages', '7')));
 const CHAUFFE = RAPIDE ? 0 : 1;
 const SCENARIOS = opt('scenarios', RAPIDE ? 'coup3,carte' : 'coup3,coup5,carte').split(',').filter(Boolean);
 const TOLERANCE = 0.03;
+/** Mode entrelacé : en dessous de cette médiane (ms), la position n'est pas mesurable (jugée sur sa décision). */
+const SEUIL_MS = 1;
 
 /** Positions fixes : ouverture, milieu de partie, finale, et mains de Pouvoirs (l'IA évalue ses cartes). */
 const POSITIONS = [
@@ -77,8 +97,8 @@ const mediane = xs => {
   return t.length % 2 ? t[(t.length - 1) / 2] : (t[t.length / 2 - 1] + t[t.length / 2]) / 2;
 };
 
-async function mesurer() {
-  const { bot, game } = await charger(RACINE);
+/** Scénarios d'une version chargée : `etat(p)` (hors chronomètre), `scenarios[nom](s)` → décision, `restaurer()`. */
+function version({ bot, game }) {
   const profil = bot.BOT_PROFILES[3];
   const origine = { ...profil };
   const etat = p => {
@@ -101,20 +121,36 @@ async function mesurer() {
       return c ? [s.hands[s.pos.turn][c.index].card, ...c.targets.map(caseNom)].join(' ') : '—';
     },
   };
+  return { etat, scenarios, restaurer: () => Object.assign(profil, origine) };
+}
+
+const scenario = (v, nom) => {
+  const f = v.scenarios[nom];
+  if (!f) throw new Error(`Scénario inconnu : ${nom} (scénarios : ${Object.keys(v.scenarios).join(', ')})`);
+  return f;
+};
+
+/** Un passage : état neuf (non chronométré), puis la décision chronométrée. */
+function passage(v, f, p) {
+  const s = v.etat(p);
+  const t0 = process.hrtime.bigint();
+  const d = f(s);
+  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  v.restaurer();
+  return { ms, d };
+}
+
+async function mesurer() {
+  const v = version(await charger(RACINE));
   const resultats = [];
   try {
     for (const nom of SCENARIOS) {
-      const f = scenarios[nom];
-      if (!f) throw new Error(`Scénario inconnu : ${nom} (scénarios : ${Object.keys(scenarios).join(', ')})`);
+      const f = scenario(v, nom);
       for (const p of POSITIONS) {
         const temps = [];
         let decision = null;
         for (let k = 0; k < CHAUFFE + PASSAGES; k++) {
-          const s = etat(p);
-          const t0 = process.hrtime.bigint();
-          const d = f(s);
-          const ms = Number(process.hrtime.bigint() - t0) / 1e6;
-          Object.assign(profil, origine);
+          const { ms, d } = passage(v, f, p);
           if (decision !== null && d !== decision) throw new Error(`${nom}/${p.nom} : décision instable (${decision} puis ${d}).`);
           decision = d;
           if (k >= CHAUFFE) temps.push(ms);
@@ -125,12 +161,71 @@ async function mesurer() {
       }
     }
   } finally {
-    Object.assign(profil, origine);
+    v.restaurer();
   }
   return { racine: RACINE, date: new Date().toISOString(), charge: os.loadavg(), passages: PASSAGES, rapide: RAPIDE, resultats };
 }
 
-const res = await mesurer();
+/**
+ * Mode entrelacé : la référence et ce dépôt dans le même processus, un passage de chacun à tour de rôle (ordre
+ * alterné : réf., copie, puis copie, réf., …). Le critère porte sur la médiane des rapports appariés copie / réf.
+ */
+async function entrelacer(racineRef) {
+  const versions = { ref: version(await charger(racineRef)), copie: version(await charger(RACINE)) };
+  const resultats = [];
+  let ecarts = 0;
+  try {
+    for (const nom of SCENARIOS) {
+      const f = { ref: scenario(versions.ref, nom), copie: scenario(versions.copie, nom) };
+      for (const p of POSITIONS) {
+        const temps = { ref: [], copie: [] };
+        const decision = { ref: null, copie: null };
+        const rapports = [];
+        for (let k = 0; k < CHAUFFE + PASSAGES; k++) {
+          const ms = {};
+          for (const cle of k % 2 ? ['copie', 'ref'] : ['ref', 'copie']) {
+            const r = passage(versions[cle], f[cle], p);
+            if (decision[cle] !== null && r.d !== decision[cle]) {
+              throw new Error(`${nom}/${p.nom} (${cle === 'ref' ? 'référence' : 'copie'}) : décision instable (${decision[cle]} puis ${r.d}).`);
+            }
+            decision[cle] = r.d;
+            ms[cle] = r.ms;
+          }
+          if (k >= CHAUFFE) {
+            temps.ref.push(ms.ref);
+            temps.copie.push(ms.copie);
+            rapports.push(ms.copie / ms.ref);
+          }
+        }
+        const r = {
+          scenario: nom, position: p.nom, decision: decision.copie, decisionRef: decision.ref,
+          medianeRef: mediane(temps.ref), mediane: mediane(temps.copie), rapport: mediane(rapports) - 1, passages: rapports.length,
+        };
+        // Une recherche de moins d'une milliseconde (position sans coup) n'est pas mesurable : décision seulement.
+        const mesurable = !RAPIDE && r.medianeRef >= SEUIL_MS;
+        const horsTolerance = mesurable && Math.abs(r.rapport) > TOLERANCE;
+        const memeDecision = r.decision === r.decisionRef;
+        if (!memeDecision || horsTolerance) ecarts++;
+        resultats.push(r);
+        const pct = x => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)} %`;
+        console.log(
+          `${nom.padEnd(6)} ${p.nom.padEnd(11)} ${r.decision.padEnd(18)} réf. ${r.medianeRef.toFixed(1).padStart(8)} ms` +
+            `  copie ${r.mediane.toFixed(1).padStart(8)} ms  rapports appariés ${mesurable ? pct(r.rapport) : '—'}` +
+            `${horsTolerance ? ' (hors de ±3 %)' : ''}${memeDecision ? '' : `  DÉCISION DIFFÉRENTE : ${r.decisionRef} → ${r.decision}`}`,
+        );
+      }
+    }
+  } finally {
+    versions.ref.restaurer();
+    versions.copie.restaurer();
+  }
+  if (ecarts) process.exitCode = 1;
+  return { mode: 'entrelace', racine: RACINE, reference: racineRef, date: new Date().toISOString(), charge: os.loadavg(), passages: PASSAGES, rapide: RAPIDE, resultats };
+}
+
+const refEntrelacee = opt('entrelacer');
+if (refEntrelacee && opt('comparer')) throw new Error('--entrelacer et --comparer ne vont pas ensemble : le mode entrelacé compare déjà.');
+const res = refEntrelacee ? await entrelacer(path.resolve(refEntrelacee)) : await mesurer();
 const fichier = opt('sortie');
 if (fichier) writeFileSync(fichier, `${JSON.stringify(res, null, 2)}\n`);
 console.log(`Charge moyenne du système (1, 5, 15 min) : ${res.charge.map(x => x.toFixed(2)).join(', ')}${RAPIDE ? ' — mode rapide : pas une mesure.' : ''}`);

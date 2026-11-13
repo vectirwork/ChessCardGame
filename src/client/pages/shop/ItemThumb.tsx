@@ -6,9 +6,9 @@
 // - Sorts : le sceau du skin (anneau, cœur, 8 particules à sa forme) sur un fond à ses deux couleurs.
 // - Collection : le triptyque (sceau des sorts derrière, échiquier incliné, les deux rois devant).
 // Remplace l'ancienne pastille `Swatch` de Shop.tsx.
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { RARITY, boardStyle, collectionById, itemById, kingStyle } from '../../../shared/catalog';
-import type { SkinRarity } from '../../../shared/catalog';
+import type { ItemKind, SkinRarity } from '../../../shared/catalog';
 import { boardTheme } from '../../components/boardTheme';
 import { crestUrl, kingUrl } from '../../components/pieces';
 import { gemOf } from './trial';
@@ -16,6 +16,13 @@ import './thumbs.css';
 
 /** Taille : `card` (carte de rayon), `chip` (44 px : emplacement, ligne de récapitulatif), `mini` (24 px). */
 export type ThumbSize = 'card' | 'chip' | 'mini';
+
+/** Dessin de la vignette de chaque emplacement (un nouvel emplacement doit avoir le sien : le compilateur le réclame). */
+const THUMB: Record<ItemKind, (id: string, size: ThumbSize) => ReactNode> = {
+  king: (id, size) => (size === 'card' ? <KingDuo id={id} /> : <span className="th-k th-solo" style={{ backgroundImage: kingUrl('w', id) }} />),
+  board: (id, size) => <BoardTile id={id} tilt={size === 'card'} king={size === 'card'} />,
+  skin: id => <SpellSeal id={id} />,
+};
 
 const CELLS = Array.from({ length: 16 }, (_, i) => <span key={i} className={`sq ${((i >> 2) + (i & 3)) % 2 ? 'd' : 'l'}`} />);
 
@@ -36,16 +43,22 @@ export function BoardTile({ id, tilt = true, king = true, className = '' }: { id
   );
 }
 
+/** Particules du sceau des sorts (réparties sur le tour : --n). */
+const PARTICLES = 8;
+
 /** Sceau des sorts, figé (aucune rotation). */
 export function SpellSeal({ id, className = '' }: { id: string; className?: string }) {
   const s = itemById(id)?.skin;
   if (!s) return null;
   return (
-    <span className={`th-seal p-${s.particle} f-${s.flourish} ${className}`} style={{ '--p': s.primary, '--s': s.secondary, '--a': s.accent } as CSSProperties}>
+    <span
+      className={`th-seal p-${s.particle} f-${s.flourish} ${className}`}
+      style={{ '--p': s.primary, '--s': s.secondary, '--a': s.accent, '--n': PARTICLES } as CSSProperties}
+    >
       <span className="th-seal-ring" />
       <span className="th-seal-ring r2" />
       <span className="th-seal-core" />
-      {Array.from({ length: 8 }, (_, i) => (
+      {Array.from({ length: PARTICLES }, (_, i) => (
         <i key={i} style={{ '--i': i } as CSSProperties} />
       ))}
     </span>
@@ -91,10 +104,7 @@ export function ItemThumb({ id, size = 'card', className = '' }: { id: string; s
       </span>
     );
   }
-  let body;
-  if (it.kind === 'king') body = size === 'card' ? <KingDuo id={id} /> : <span className="th-k th-solo" style={{ backgroundImage: kingUrl('w', id) }} />;
-  else if (it.kind === 'board') body = <BoardTile id={id} tilt={size === 'card'} king={size === 'card'} />;
-  else body = <SpellSeal id={id} />;
+  const body = THUMB[it.kind](id, size);
   return (
     <span className={`${cls} th-is-${it.kind}`} style={size === 'card' && it.kind === 'king' ? ({ '--gem': kingStyle(id).gem } as CSSProperties) : style} aria-hidden="true">
       {body}

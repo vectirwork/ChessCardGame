@@ -6,8 +6,8 @@ import rateLimit from 'express-rate-limit';
 import Stripe from 'stripe';
 import { z } from 'zod';
 import {
-  ALL_PRODUCTS, DEFAULT_ITEM, FREE_ITEMS, ITEMS, PRODUCTS, SLOTS, formatPrice, itemById, productById,
-  productPrice, quoteCart,
+  ALL_PRODUCTS, CURRENCY, DEFAULT_ITEM, FREE_ITEMS, ITEMS, PRODUCTS, SLOTS, alone, bySlot, duplicated, formatPrice, productById,
+  productPrice, quoteCart, selectionLabel,
 } from '../shared/catalog';
 import type { Item, ItemKind, Product } from '../shared/catalog';
 import { CART_PRODUCT_ID } from '../shared/protocol';
@@ -17,6 +17,7 @@ import { config } from './config';
 import { one, q, tx } from './db';
 import type { DbClient } from './db';
 import { purchaseItemLines, sendPurchaseConfirmation } from './mail';
+import { LIMITS } from './settings';
 
 const stripe = config.payments === 'stripe' ? new Stripe(config.stripe.secretKey) : null;
 
@@ -40,11 +41,10 @@ interface PurchaseRow {
  * Exportée pour /account/equip et les tests.
  */
 export function slotSelection(ids: readonly string[]): { items: Item[] } | { status: 400 | 404; error: string } {
-  const items = ids.map(itemById);
-  if (items.some(i => !i)) return { status: 404, error: 'Objet inconnu.' };
-  const kinds = new Set(items.map(i => i!.kind));
-  if (kinds.size !== items.length) return { status: 400, error: 'Un seul objet par emplacement.' };
-  return { items: items as Item[] };
+  const sel = bySlot(ids);
+  if (sel.unknown.length) return { status: 404, error: 'Objet inconnu.' };
+  if (duplicated(sel)) return { status: 400, error: 'Un seul objet par emplacement.' };
+  return { items: sel.items };
 }
 
 /**
@@ -62,11 +62,8 @@ export async function equipItems(userId: string, items: readonly Item[], c?: DbC
 
 /** Objets à équiper à la livraison : pour chaque emplacement, l'objet livré s'il est seul de son emplacement. */
 export function equipAtDelivery(items: readonly string[]): Item[] {
-  const known = items.map(itemById).filter((i): i is Item => !!i);
-  return SLOTS.flatMap(kind => {
-    const of = known.filter(i => i.kind === kind);
-    return of.length === 1 ? of : [];
-  });
+  const sel = bySlot(items);
+  return SLOTS.flatMap(kind => alone(sel, kind) ?? []);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -74,13 +71,13 @@ export function equipAtDelivery(items: readonly string[]): Item[] {
 
 /**
  * Objets promis par un produit : tous les objets payants des emplacements de `future`, y compris ceux ajoutés au
- * catalogue après l'achat. Le Grimoire des sorts promet les sorts, le Grimoire complet (retiré) les sorts et les
- * échiquiers, jamais les rois.
+ * catalogue après l'achat (mais pas ceux retirés de la vente). Le Grimoire des sorts promet les sorts, le Grimoire
+ * complet (retiré) les sorts et les échiquiers, jamais les rois.
  */
 export function promisedItems(productId: string): string[] {
   const future: readonly ItemKind[] = productById(productId)?.future ?? [];
   if (!future.length) return [];
-  return ITEMS.filter(i => !i.free && future.includes(i.kind)).map(i => i.id);
+  return ITEMS.filter(i => !i.free && !i.retired && future.includes(i.kind)).map(i => i.id);
 }
 
 /**
@@ -187,7 +184,7 @@ export function stripeLineItems(order: Order): Stripe.Checkout.SessionCreatePara
   return order.lines.map(l => ({
     quantity: 1,
     price_data: {
-      currency: 'eur',
+      currency: CURRENCY,
       unit_amount: l.cents,
       tax_behavior: 'inclusive',
       product_data: { name: l.name, ...(l.description ? { description: l.description } : {}) },
@@ -202,7 +199,7 @@ export function stripeLineItems(order: Order): Stripe.Checkout.SessionCreatePara
 export function purchaseLabel(productId: string, items: readonly string[], amountCents?: number): string {
   const product = productId === CART_PRODUCT_ID ? undefined : productById(productId);
   if (product) return amountCents === undefined ? product.name : billedName(product.name, product, amountCents);
-  return `Votre sélection (${items.length} skin${items.length > 1 ? 's' : ''})`;
+  return selectionLabel(items.length);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -272,14 +269,22 @@ export async function refundPurchase(paymentRef: string) {
   );
   if (!p?.user_id) return;
   await q(`DELETE FROM user_items WHERE user_id = $1 AND source = $2`, [p.user_id, `purchase:${p.id}`]);
-  await q(UNEQUIP_LOST_SQL, [p.user_id, FREE_ITEMS, ...SLOT_ENTRIES.map(([kind]) => DEFAULT_ITEM[kind])]);
+  await unequipLost(p.user_id);
   console.log(`Achat ${p.id} remboursé : objets retirés.`);
 }
+
+/** Déséquipe ce qui n'est plus possédé (ni offert) : chaque emplacement concerné revient à son défaut. */
+async function unequipLost(userId: string, c?: DbClient): Promise<void> {
+  const params = [userId, FREE_ITEMS, ...SLOT_ENTRIES.map(([kind]) => DEFAULT_ITEM[kind])];
+  if (c) await c.query(UNEQUIP_LOST_SQL, params);
+  else await q(UNEQUIP_LOST_SQL, params);
+}
+
 
 // ---------------------------------------------------------------------------------------------
 // Routes
 
-const checkoutLimiter = rateLimit({ windowMs: 60_000, limit: 15, standardHeaders: 'draft-7', legacyHeaders: false });
+const checkoutLimiter = rateLimit({ windowMs: 60_000, limit: LIMITS.checkoutPerMinute, standardHeaders: 'draft-7', legacyHeaders: false });
 
 /**
  * Corps de POST /api/shop/checkout (CheckoutRequest) : un produit ou un panier, jamais les deux. Tous les messages sont
@@ -317,8 +322,8 @@ shopRouter.post('/checkout', checkoutLimiter, requireUser, async (req, res) => {
   if ('error' in order) return res.status(order.status).json({ error: order.error });
   const purchase = await one<{ id: string }>(
     `INSERT INTO purchases (user_id, product_id, items, provider, amount_cents, currency, status, email, equip)
-     VALUES ($1, $2, $3, $4, $5, 'eur', 'pending', $6, $7) RETURNING id`,
-    [u.id, order.productId, order.items, config.payments, order.amountCents, u.email, equip],
+     VALUES ($1, $2, $3, $4, $5, $8, 'pending', $6, $7) RETURNING id`,
+    [u.id, order.productId, order.items, config.payments, order.amountCents, u.email, equip, CURRENCY],
   );
   if (config.payments === 'demo') {
     return res.json({ url: `/boutique/demo/${purchase!.id}` });

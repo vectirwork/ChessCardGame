@@ -2,8 +2,10 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties, FormEvent } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
-import { COLLECTIONS, ITEMS, SLOTS, collectionById, collectionItems, formatPrice, itemById, productById, sealOf, unitPrice } from '../../shared/catalog';
-import type { ItemKind } from '../../shared/catalog';
+import {
+  ITEMS, PAYMENT_PROVIDER, PREMIUM_COLLECTIONS, SLOTS, SLOT_DEFS, collectionById, collectionItems, formatPrice, itemById, itemLabel, productById,
+  sealOf, selectionLabel, unitPrice, whoSees,
+} from '../../shared/catalog';
 import { CART_PRODUCT_ID } from '../../shared/protocol';
 import type { MeUser, PurchaseRecord } from '../../shared/protocol';
 import { api, errMsg } from '../api';
@@ -11,10 +13,10 @@ import { CollectionSeal } from '../components/CollectionSeal';
 import { PageLoader, Spinner } from '../components/Layout';
 import { crestUrl } from '../components/pieces';
 import { CLASSIC_KINGS_PREF, equippedId, isEquipped, owns } from '../skins';
-import { useApp, usePref } from '../store';
+import { useApp, useFeature, usePref } from '../store';
 import { PageHead, PlacePage, StarMark, useTitle } from './PageScene';
 import { ItemThumb, RarityGem } from './shop/ItemThumb';
-import { gemOf, itemPhrase } from './shop/trial';
+import { gemOf } from './shop/trial';
 
 type Tab = 'profile' | 'security' | 'collection' | 'purchases' | 'data';
 
@@ -270,16 +272,10 @@ function SecurityTab() {
   );
 }
 
-const SLOT_TITLE: Record<ItemKind, string> = { king: 'Rois', board: 'Échiquiers', skin: 'Sorts' };
-const SLOT_RAYON: Record<ItemKind, string> = { king: 'rois', board: 'echiquiers', skin: 'sorts' };
-const SLOT_NOTE: Record<ItemKind, string> = {
-  king: 'Votre roi vous représente : vos adversaires le voient en face d’eux.',
-  board: 'Votre échiquier vous suit dans toutes vos parties. Vos adversaires gardent le leur.',
-  skin: 'Vos sorts s’animent avec ce skin, chez vous comme chez votre adversaire.',
-};
-
 function CollectionTab({ me }: { me: MeUser }) {
   const { setMe, toast } = useApp();
+  // Boutique coupée (FEATURE_SHOP=0) : la collection et l'équipement restent, sans lien vers les rayons ni prix
+  const shop = useFeature('shop');
   const [busy, setBusy] = useState<string | null>(null);
   const [later, setLater] = useState(false);
   const [classic, setClassic] = usePref<boolean>(CLASSIC_KINGS_PREF, false);
@@ -290,7 +286,7 @@ function CollectionTab({ me }: { me: MeUser }) {
       const r = await api<{ user: MeUser }>('/account/equip', { body: { itemId: id } });
       setMe(r.user);
       const it = itemById(id);
-      if (it) toast(`${itemPhrase(it)} ${it.kind === 'skin' ? 'équipés' : 'équipé'}.`, 'success');
+      if (it) toast(`${itemLabel(it)} ${SLOT_DEFS[it.kind].equipped}.`, 'success');
       // Le roi est pris à l'assise : une partie en cours garde l'ancien
       if (itemById(id)?.kind === 'king') {
         const g = await api<{ games: { status: string }[] }>('/games/mine').catch(() => ({ games: [] }));
@@ -305,18 +301,21 @@ function CollectionTab({ me }: { me: MeUser }) {
   return (
     <div className="stack acc-coll-wrap" style={{ gap: 34 }}>
       {SLOTS.map(kind => {
-        const list = ITEMS.filter(i => i.kind === kind);
+        // Un objet retiré de la vente n'est montré qu'à qui le possède
+        const list = ITEMS.filter(i => i.kind === kind && (!i.retired || owns(me, i.id)));
         const has = list.filter(i => owns(me, i.id)).length;
         return (
           <section key={kind} className="acc-coll" aria-labelledby={`acc-coll-${kind}`}>
             <div className="acc-coll-head">
-              <h3 id={`acc-coll-${kind}`}>{SLOT_TITLE[kind]}</h3>
+              <h3 id={`acc-coll-${kind}`}>{SLOT_DEFS[kind].plural}</h3>
               <span className="faint">
                 {has} sur {list.length}
               </span>
-              <Link to={`/boutique?rayon=${SLOT_RAYON[kind]}`} className="acc-coll-more">
-                Voir le rayon
-              </Link>
+              {shop && (
+                <Link to={`/boutique?rayon=${SLOT_DEFS[kind].rayon}`} className="acc-coll-more">
+                  Voir le rayon
+                </Link>
+              )}
             </div>
             {kind === 'king' && later && (
               <p className="notice acc-later" role="status">
@@ -339,16 +338,16 @@ function CollectionTab({ me }: { me: MeUser }) {
                       <button type="button" className="coll-btn" onClick={() => void equip(i.id)} disabled={busy === i.id} aria-label={`Équiper ${i.name}`}>
                         {busy === i.id ? <Spinner /> : 'Équiper'}
                       </button>
-                    ) : (
-                      <Link className="coll-try" to={`/boutique?rayon=${SLOT_RAYON[kind]}&essai=${i.id}`} aria-label={`Essayer ${i.name} dans la boutique`}>
+                    ) : shop ? (
+                      <Link className="coll-try" to={`/boutique?rayon=${SLOT_DEFS[kind].rayon}&essai=${i.id}`} aria-label={`Essayer ${i.name} dans la boutique`}>
                         L’essayer · {formatPrice(unitPrice(i.id))}
                       </Link>
-                    )}
+                    ) : null}
                   </div>
                 );
               })}
             </div>
-            <p className="acc-coll-note">{SLOT_NOTE[kind]}</p>
+            <p className="acc-coll-note">{SLOT_DEFS[kind].note}</p>
             {kind === 'king' && (
               <div className="acc-pref">
                 <span className="acc-pref-t">
@@ -372,19 +371,21 @@ function CollectionTab({ me }: { me: MeUser }) {
         <div className="acc-coll-head">
           <h3 id="acc-seals">Sceaux de collection</h3>
           <span className="faint">{seal ? `Affiché : ${collectionById(seal)?.name}` : 'Aucun pour l’instant'}</span>
-          <Link to="/boutique?rayon=collections" className="acc-coll-more">
-            Voir les collections
-          </Link>
+          {shop && (
+            <Link to="/boutique?rayon=collections" className="acc-coll-more">
+              Voir les collections
+            </Link>
+          )}
         </div>
         <div className="acc-seals">
-          {COLLECTIONS.filter(c => c.rarity !== 'offert').map(c => {
+          {PREMIUM_COLLECTIONS.map(c => {
             const items = collectionItems(c);
             const n = items.filter(i => owns(me, i)).length;
             const done = n === items.length;
             return (
               <Link
                 key={c.id}
-                to={`/boutique?rayon=collections&essai=${items.join(',')}`}
+                to={shop ? `/boutique?rayon=collections&essai=${items.join(',')}` : '/compte?onglet=collection'}
                 className={`acc-seal ${done ? 'done' : ''} ${seal === c.id ? 'shown' : ''}`}
                 style={{ '--gem': c.gem } as CSSProperties}
                 aria-label={`${c.name} : ${n} sur ${items.length}${done ? ', sceau obtenu' : ''}`}
@@ -409,16 +410,19 @@ function CollectionTab({ me }: { me: MeUser }) {
       </section>
       <div className="acc-coll-foot">
         <StarMark size={12} />
-        <span>Votre roi et vos sorts : vos adversaires les voient. Votre échiquier : il vous suit dans toutes vos parties.</span>
-        <Link to="/boutique" className="btn-gold sm">
-          Agrandir ma collection
-        </Link>
+        <span>{whoSees()}</span>
+        {shop && (
+          <Link to="/boutique" className="btn-gold sm">
+            Agrandir ma collection
+          </Link>
+        )}
       </div>
     </div>
   );
 }
 
 function PurchasesTab() {
+  const shop = useFeature('shop');
   const [rows, setRows] = useState<PurchaseRecord[] | null>(null);
   useEffect(() => {
     api<{ purchases: PurchaseRecord[] }>('/account/purchases')
@@ -430,10 +434,14 @@ function PurchasesTab() {
     return (
       <div className="empty">
         Aucun achat pour le moment.
-        <br />
-        <Link to="/boutique" className="btn-line">
-          Découvrir le Bazar céleste
-        </Link>
+        {shop && (
+          <>
+            <br />
+            <Link to="/boutique" className="btn-line">
+              Découvrir le Bazar céleste
+            </Link>
+          </>
+        )}
       </div>
     );
   const status: Record<string, string> = { paid: 'Payé', refunded: 'Remboursé', failed: 'Échoué' };
@@ -472,7 +480,7 @@ function PurchasesTab() {
         </tbody>
       </table>
       <p className="faint" style={{ fontSize: 12.5, padding: '0 14px 12px' }}>
-        Le reçu de chaque paiement vous a été envoyé par e-mail par Stripe.
+        {`Le reçu de chaque paiement vous a été envoyé par e-mail par ${PAYMENT_PROVIDER}.`}
       </p>
     </div>
   );
@@ -482,8 +490,8 @@ function PurchasesTab() {
 function purchaseLabel(r: PurchaseRecord): string {
   const items = (r.items ?? []).map(itemById).filter(i => !!i);
   if (r.product_id !== CART_PRODUCT_ID) return productById(r.product_id)?.name ?? r.product_id;
-  if (items.length === 1) return itemPhrase(items[0]!);
-  return `Votre sélection (${items.length} skins) : ${items.map(i => i!.name).join(', ')}`;
+  if (items.length === 1) return itemLabel(items[0]!);
+  return `${selectionLabel(items.length)} : ${items.map(i => i!.name).join(', ')}`;
 }
 
 function DataTab() {

@@ -1,12 +1,14 @@
-// Types du catalogue des skins : trois emplacements (roi, échiquier, sorts), raretés, collections et produits.
+// Types du catalogue des skins : emplacements (roi, échiquier, sorts : slots.ts), raretés, collections et produits.
 // Les données sont dans les fichiers voisins (un par emplacement) ; src/shared/catalog.ts les assemble.
 import type { Color } from '../chess';
+import type { ItemKind } from './slots';
 
 /**
- * Emplacement d'un objet. `skin` désigne les sorts (habillage des effets des cartes) : l'identifiant technique est
- * gardé parce que `skin:*` est déjà en base (user_items, equipped_skin, achats). À l'écran : « Sorts ».
+ * Emplacement d'un objet : une clé de SLOT_DEFS (slots.ts). `skin` désigne les sorts (habillage des effets des cartes) :
+ * l'identifiant technique est gardé parce que `skin:*` est déjà en base (user_items, equipped_skin, achats). À l'écran :
+ * « Sorts ».
  */
-export type ItemKind = 'king' | 'board' | 'skin';
+export type { ItemKind };
 
 /**
  * Rareté d'un objet ou d'une collection. Invariant testé : `free ⇔ rarity === 'offert'`. Ne pas confondre avec
@@ -128,23 +130,29 @@ export interface Item {
   priceCents?: number;
   /** Nouveauté de la saison (badge « Nouveau »). */
   isNew?: boolean;
+  /** Badge de mise en avant (« Populaire ») : l'emporte sur « Nouveau ». */
+  badge?: string;
+  /**
+   * Retiré de la vente : hors des rayons, du Trésor et des packs, son produit n'est plus en vente ; toujours résolu
+   * (possédé, équipé, historique des achats, remboursement). Ne jamais supprimer ni recycler son identifiant.
+   */
+  retired?: boolean;
   skin?: SkinStyle;
   board?: BoardStyle;
   king?: KingStyle;
 }
 
-export interface Collection {
+/** Collection : un objet par emplacement (champs `king`, `board`, `skin` : identifiants des objets). */
+export interface Collection extends Record<ItemKind, string> {
   /** 'col:inferno'. Jamais réutilisé. */
   id: string;
   name: string;
   tagline: string;
   rarity: SkinRarity;
-  /** Identifiants des trois objets. */
-  king: string;
-  board: string;
-  skin: string;
   /** Teinte du sceau et du triptyque. */
   gem: string;
+  /** Nom du sceau de la collection (« Sceau de la Forge ») ; défaut : « Sceau <nom> ». */
+  sealName?: string;
 }
 
 export interface Product {
@@ -165,4 +173,11 @@ export interface Product {
   future?: ItemKind[];
   /** Retiré de la vente (caché, refusé au paiement) mais toujours résolu : historique, remboursement, administration. */
   retired?: boolean;
+  /**
+   * Pack : où la boutique le montre, en tête du rayon d'un emplacement (carte de pack) ou en bandeau sous les
+   * collections. Sans `display`, il n'est montré qu'à l'accueil.
+   */
+  display?: ItemKind | 'banner';
+  /** Nom court dans les phrases (« le prix du Grimoire ne change pas », « Acheter le Trésor »). */
+  shortName?: string;
 }

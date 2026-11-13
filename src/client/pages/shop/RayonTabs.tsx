@@ -4,10 +4,20 @@
 // « Surprenez-moi » en tête de cabine (shop.css).
 import { useRef } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
+import { SLOTS, SLOT_DEFS } from '../../../shared/catalog';
+import type { ItemKind, SlotRayon } from '../../../shared/catalog';
 
-export type Rayon = 'rois' | 'echiquiers' | 'sorts' | 'collections';
-export const RAYONS: Rayon[] = ['rois', 'echiquiers', 'sorts', 'collections'];
-export const RAYON_LABEL: Record<Rayon, string> = { rois: 'Rois', echiquiers: 'Échiquiers', sorts: 'Sorts', collections: 'Collections' };
+/** Rayons : un par emplacement (SLOT_DEFS), puis les collections. */
+export type Rayon = SlotRayon | 'collections';
+export const RAYONS: Rayon[] = [...SLOTS.map(k => SLOT_DEFS[k].rayon), 'collections'];
+export const RAYON_LABEL = Object.fromEntries([...SLOTS.map(k => [SLOT_DEFS[k].rayon, SLOT_DEFS[k].plural]), ['collections', 'Collections']]) as Record<
+  Rayon,
+  string
+>;
+/** Rayon d'un emplacement. */
+export const rayonOf = (k: ItemKind): Rayon => SLOT_DEFS[k].rayon;
+/** Emplacement d'un rayon (null : les collections). */
+export const kindOfRayon = (r: Rayon): ItemKind | null => SLOTS.find(k => SLOT_DEFS[k].rayon === r) ?? null;
 
 interface Props {
   rayon: Rayon;

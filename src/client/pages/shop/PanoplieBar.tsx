@@ -1,4 +1,4 @@
-// Barre de panoplie : les trois emplacements (Roi, Échiquier, Sorts) de l'essai. Pour chacun : vignette, emplacement,
+// Barre de panoplie : les emplacements (Roi, Échiquier, Sorts : SLOTS) de l'essai, une colonne chacun (--slots). Pour chacun : vignette, emplacement,
 // nom, état (Équipé, En essai · prix, En essai · Possédé). Toucher un emplacement ouvre son rayon et la vue qui va
 // avec ; la croix remet l'objet porté.
 import type { CSSProperties } from 'react';
@@ -19,7 +19,7 @@ interface Props {
 
 export function PanoplieBar({ trial, pano, owned, loggedIn, onOpen, onRevert }: Props) {
   return (
-    <div className="pb" role="group" aria-label="Panoplie essayée">
+    <div className="pb" role="group" aria-label="Panoplie essayée" style={{ '--slots': SLOTS.length } as CSSProperties}>
       {SLOTS.map(k => (
         <SlotChip key={k} kind={k} id={trial[k]} trying={trial[k] !== pano[k]} owned={owned} pano={pano} loggedIn={loggedIn} onOpen={onOpen} onRevert={onRevert} />
       ))}

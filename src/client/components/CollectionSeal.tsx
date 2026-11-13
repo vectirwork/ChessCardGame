@@ -3,13 +3,13 @@
 // de partie, profil, classement). Aucun nouveau dessin, aucune animation.
 // À ne pas confondre avec le sceau « Zéro pay-to-win » de la boutique (Seal, pages/shop/ShopPromise.tsx).
 import type { CSSProperties } from 'react';
-import { collectionById } from '../../shared/catalog';
+import { PREMIUM_COLLECTIONS, collectionById } from '../../shared/catalog';
 import { crestUrl } from './pieces';
 
 export function CollectionSeal({ id, size = 20, className }: { id: string | null | undefined; size?: number; className?: string }) {
   const c = id ? collectionById(id) : undefined;
-  // Arcane (offerte) ne donne jamais de sceau
-  if (!c || c.rarity === 'offert') return null;
+  // Seules les collections premium donnent un sceau (Arcane, offerte, jamais)
+  if (!c || !PREMIUM_COLLECTIONS.includes(c)) return null;
   return (
     <span
       className={className ? `collection-seal ${className}` : 'collection-seal'}

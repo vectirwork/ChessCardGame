@@ -1,12 +1,13 @@
-// Équipement et possession des skins côté client (boutique, compte, accueil), pour les trois emplacements.
+// Équipement et possession des skins côté client (boutique, compte, accueil), pour chaque emplacement (SLOT_DEFS).
 // Non connecté : on possède les objets offerts et l'on porte les objets par défaut.
-import { DEFAULT_ITEM, FREE_ITEMS, SLOTS, itemById } from '../shared/catalog';
+import { DEFAULT_ITEM, FREE_ITEMS, SLOTS, SLOT_DEFS, itemById } from '../shared/catalog';
 import type { ItemKind } from '../shared/catalog';
 import type { MeUser } from '../shared/protocol';
 
 type Me = MeUser | null | undefined;
 
-const FIELD = { king: 'equippedKing', board: 'equippedBoard', skin: 'equippedSkin' } as const satisfies Record<ItemKind, keyof MeUser>;
+/** Champ de MeUser qui porte l'objet de chaque emplacement (un champ absent de MeUser ne compile pas : equippedId). */
+const FIELD = Object.fromEntries(SLOTS.map(k => [k, SLOT_DEFS[k].meField])) as { [K in ItemKind]: (typeof SLOT_DEFS)[K]['meField'] };
 
 /**
  * Préférence locale « Rois adverses classiques » (usePref) : en partie, le roi adverse s'affiche en roi Arcane. Lue en

@@ -1,6 +1,6 @@
 // Collections : un roi, un échiquier et des sorts d'un même monde. Une collection premium complète donne son sceau
-// (sealOf, catalog.ts). Arcane est offerte, sans produit, et ne donne jamais de sceau.
-// Ordre : celui de la boutique (Arcane, puis par rareté).
+// (sealOf, catalog.ts), nommé par `sealName`. Arcane est offerte, sans produit, et ne donne jamais de sceau.
+// Ordre : celui de la boutique (Arcane, puis par rareté). Le bandeau du Trésor les place autrement (TRESOR_RING).
 import type { Collection } from './types';
 
 export const COLLECTIONS: Collection[] = [
@@ -23,6 +23,7 @@ export const COLLECTIONS: Collection[] = [
     board: 'board:jade',
     skin: 'skin:sakura',
     gem: '#ff8fc7',
+    sealName: 'Sceau du Jardin de jade',
   },
   {
     id: 'col:neon',
@@ -33,6 +34,7 @@ export const COLLECTIONS: Collection[] = [
     board: 'board:grille',
     skin: 'skin:neon',
     gem: '#ff3ec8',
+    sealName: 'Sceau de Néon 2084',
   },
   {
     id: 'col:inferno',
@@ -43,6 +45,7 @@ export const COLLECTIONS: Collection[] = [
     board: 'board:obsidian',
     skin: 'skin:inferno',
     gem: '#ff7a1a',
+    sealName: 'Sceau de la Forge',
   },
   {
     id: 'col:olympe',
@@ -53,6 +56,7 @@ export const COLLECTIONS: Collection[] = [
     board: 'board:marble',
     skin: 'skin:laurier',
     gem: '#d9b45a',
+    sealName: 'Sceau de l’Olympe',
   },
   {
     id: 'col:ecarlate',
@@ -63,6 +67,7 @@ export const COLLECTIONS: Collection[] = [
     board: 'board:ruby',
     skin: 'skin:ecarlate',
     gem: '#ff3d5e',
+    sealName: 'Sceau de la Cour écarlate',
   },
   {
     id: 'col:neant',
@@ -73,6 +78,7 @@ export const COLLECTIONS: Collection[] = [
     board: 'board:horizon',
     skin: 'skin:void',
     gem: '#8b3dff',
+    sealName: 'Sceau du Néant',
   },
   {
     id: 'col:celeste',
@@ -83,5 +89,13 @@ export const COLLECTIONS: Collection[] = [
     board: 'board:ciel',
     skin: 'skin:celestial',
     gem: '#ffd36b',
+    sealName: 'Sceau de la Voûte céleste',
   },
 ];
+
+/**
+ * Bandeau du Trésor du Bazar : le sceau du centre, puis ceux de l'anneau dans le sens des aiguilles d'une montre depuis
+ * le haut. Une collection premium absente de cette liste prend place à la suite, par rareté décroissante (tresorSeals,
+ * catalog.ts) ; l'anneau se partage alors en parts égales.
+ */
+export const TRESOR_RING: readonly string[] = ['col:celeste', 'col:neant', 'col:ecarlate', 'col:inferno', 'col:jade', 'col:neon', 'col:olympe'];

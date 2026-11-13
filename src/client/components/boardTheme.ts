@@ -26,7 +26,7 @@
 // Un autre composant (vignettes de la boutique) peut reprendre className et vars sur son propre .board-wrap (avec
 // .board et .squares dedans, comme Board) : la feuille du thème est ajoutée au premier appel.
 import type { CSSProperties } from 'react';
-import { DEFAULT_BOARD, boardStyle, itemById } from '../../shared/catalog';
+import { boardStyle, normItem } from '../../shared/catalog';
 import type { BoardStyle } from '../../shared/catalog';
 
 export interface BoardTheme {
@@ -58,7 +58,7 @@ export const SHEEN_SVG =
 export const cornerOffset = (size: number) => Math.max(1, Math.round((15 - size) / 2));
 
 /** Identifiant du thème réellement affiché (absent, inconnu ou d'un autre emplacement : Nuit arcane). */
-const themeId = (theme: string | undefined) => (itemById(theme ?? '')?.board ? theme! : DEFAULT_BOARD);
+const themeId = (theme: string | undefined) => normItem('board', theme);
 /** Classe des images d'un thème : bt-<id sans préfixe>. */
 const imageClass = (id: string) => `bt-${id.replace(/^board:/, '').replace(/[^a-z0-9-]/gi, '-')}`;
 

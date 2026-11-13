@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Collection, ItemKind } from '../../../shared/catalog';
 import type { MeUser } from '../../../shared/protocol';
 import { ownedIds, panoplieOf } from '../../skins';
+import { RAYONS } from './RayonTabs';
 import { formatEssai, normalize, parseEssai, revertSlot, surprise as draw, toggleItem, trialOf, withCollection } from './trial';
 import type { Trial, TrialDelta } from './trial';
 
@@ -84,7 +85,7 @@ export function useShopUrl(rayon: string, delta: TrialDelta, skip: boolean) {
     if (skip) return;
     const t = window.setTimeout(() => {
       const q: string[] = [];
-      if (rayon !== 'rois') q.push(`rayon=${rayon}`);
+      if (rayon !== RAYONS[0]) q.push(`rayon=${rayon}`);
       if (essai) q.push(`essai=${essai}`);
       const url = `${window.location.pathname}${q.length ? `?${q.join('&')}` : ''}`;
       if (url !== `${window.location.pathname}${window.location.search}`) window.history.replaceState(window.history.state, '', url);

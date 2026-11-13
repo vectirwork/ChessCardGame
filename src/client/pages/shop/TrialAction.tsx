@@ -1,11 +1,10 @@
 // Ligne d'action de la cabine : l'écart entre l'essai et la panoplie portée, et un seul bouton principal (équiper,
 // acheter et équiper, créer un compte, bientôt en vente). Réutilisée en plus court par la barre fixe du téléphone.
-import { formatPrice, itemById } from '../../../shared/catalog';
+import { formatPrice, itemById, itemLabel, itemWithArticle } from '../../../shared/catalog';
+import { pluriel } from '../../../shared/text/fr';
 import { Spinner } from '../../components/Layout';
-import { itemPhrase } from './trial';
+import { isCollectionLine, skins } from './trial';
 import type { CollectionHint, MainAction, TrialQuote } from './trial';
-
-const skins = (n: number) => `${n} skin${n > 1 ? 's' : ''}`;
 
 /** Textes de la ligne d'action : résumé, montant, libellé du bouton principal. */
 export function actionTexts(q: TrialQuote, a: MainAction): { line: string; amount: string | null; button: string | null } {
@@ -17,18 +16,18 @@ export function actionTexts(q: TrialQuote, a: MainAction): { line: string; amoun
     case 'equip': {
       if (a.ids.length === 1) {
         const it = itemById(a.ids[0]);
-        return { line: it ? `${itemPhrase(it)} · ${it.free ? 'Offert' : 'Possédé'}` : '', amount: null, button: 'Équiper' };
+        return { line: it ? `${itemLabel(it)} · ${it.free ? 'Offert' : 'Possédé'}` : '', amount: null, button: 'Équiper' };
       }
       return { line: `${skins(a.ids.length)} à équiper`, amount: null, button: 'Équiper' };
     }
     case 'buy': {
       const one = q.buy.length === 1 && !q.equip.length ? itemById(q.buy[0]) : undefined;
-      const line = one ? itemPhrase(one) : `${skins(q.buy.length)} à acheter${q.equip.length ? ` · ${q.equip.length} à équiper` : ''}`;
+      const line = one ? itemLabel(one) : `${skins(q.buy.length)} à acheter${q.equip.length ? ` · ${q.equip.length} à équiper` : ''}`;
       return { line, amount: formatPrice(total), button: `Acheter et équiper · ${formatPrice(total)}` };
     }
     case 'signup':
       return {
-        line: total ? `Essai : ${skins(n)} · ${formatPrice(total)}` : `Essai : ${skins(n)} offert${n > 1 ? 's' : ''}`,
+        line: total ? `Essai : ${skins(n)} · ${formatPrice(total)}` : `Essai : ${skins(n)} ${pluriel(n, 'offert')}`,
         amount: null,
         button: total ? 'Créer un compte pour l’acheter' : 'Créer un compte pour l’équiper',
       };
@@ -58,7 +57,7 @@ interface Props {
 
 export function TrialAction({ quote, action, hint, busy, waiting, demo, loggedIn, btnsRef, onMain, onEquipOwned, onRevertAll, onHint }: Props) {
   const t = actionTexts(quote, action);
-  const collectionLine = quote.cart?.lines.find(l => l.productId.startsWith('col:'));
+  const collectionLine = quote.cart?.lines.find(isCollectionLine);
   return (
     <div className={`ta ${action.kind === 'none' ? 'is-idle' : ''}`}>
       {collectionLine && action.kind !== 'none' ? (
@@ -119,8 +118,5 @@ export function ActionButton({ label, kind, busy, disabled, onClick, short }: { 
 
 function phraseOf(id: string) {
   const it = itemById(id);
-  if (!it) return '';
-  if (it.kind === 'board') return `l’échiquier ${it.name}`;
-  if (it.kind === 'skin') return `les sorts ${it.name}`;
-  return `le ${it.name.charAt(0).toLowerCase()}${it.name.slice(1)}`;
+  return it ? itemWithArticle(it) : '';
 }

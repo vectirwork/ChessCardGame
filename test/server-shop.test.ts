@@ -11,7 +11,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 // account.ts importe games.ts (salles, minuteries) pour la suppression du compte : inutile ici.
 vi.mock('../src/server/games', () => ({ detachUser: vi.fn(async () => undefined) }));
 
-import { ITEMS, productById, quoteCart } from '../src/shared/catalog';
+import { ITEMS, SLOTS, SLOT_DEFS, productById, quoteCart } from '../src/shared/catalog';
+import { SLOT_COLUMN } from '../src/server/auth';
 import { CART_PRODUCT_ID } from '../src/shared/protocol';
 import { leaderboard, publicProfile } from '../src/server/account';
 import { config } from '../src/server/config';
@@ -186,6 +187,10 @@ describe('commande calculée au serveur (orderFor)', () => {
     expect(purchaseItemLines(['king:braise', 'king:synthe', 'board:jade', 'board:ruby', 'skin:void'])).toEqual([
       '2 rois : Roi de braise et Roi Synthé', '2 échiquiers : Palais de jade et Rubis', 'Sorts Néant',
     ]);
+  });
+
+  it('colonnes d’équipement : celles de SLOT_DEFS (auth.ts garde SLOT_COLUMN jusqu’au lot 9)', () => {
+    expect(SLOT_COLUMN).toEqual(Object.fromEntries(SLOTS.map(k => [k, SLOT_DEFS[k].column])));
   });
 
   it('photographie au défaut (avant la refonte) : lignes du Trésor et du Grimoire, texte entier d’un e-mail', () => {

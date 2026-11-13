@@ -1,7 +1,8 @@
 // Engagements de la boutique, et le sceau « Zéro pay-to-win ».
-// « Qui voit quoi » dit juste : le roi et les sorts se voient chez l'adversaire, l'échiquier non (chacun garde le sien,
-// GamePage passe l'échiquier de celui qui regarde).
+// « Qui voit quoi » dit juste (whoSees, d'après SLOT_DEFS) : le roi et les sorts se voient chez l'adversaire, l'échiquier
+// non (chacun garde le sien, GamePage passe l'échiquier de celui qui regarde).
 import { Link } from 'react-router-dom';
+import { PAYMENT_PROVIDER, whoSees } from '../../../shared/catalog';
 import { StarMark } from '../PageScene';
 
 export function ShopPromise() {
@@ -13,12 +14,13 @@ export function ShopPromise() {
       </div>
       <div>
         <span className="sp-k">Qui voit quoi</span>
-        <p>Votre roi et vos sorts : vos adversaires les voient. Votre échiquier : il vous suit dans toutes vos parties, et vos adversaires gardent le leur.</p>
+        <p>{whoSees({ theirs: true })}</p>
       </div>
       <div>
         <span className="sp-k">Livré à l’instant</span>
         <p>
-          Paiement sécurisé par Stripe, prix TTC, ajouté à votre collection dès la confirmation, et équipé si vous le souhaitez. <Link to="/cgv">Conditions de vente</Link>
+          {`Paiement sécurisé par ${PAYMENT_PROVIDER}, prix TTC, ajouté à votre collection dès la confirmation, et équipé si vous le souhaitez. `}
+          <Link to="/cgv">Conditions de vente</Link>
         </p>
       </div>
     </section>

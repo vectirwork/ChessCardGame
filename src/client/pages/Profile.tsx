@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { DEFAULT_BOARD, DEFAULT_SKIN, itemById, kingStyle, normKing } from '../../shared/catalog';
+import { SLOTS, itemById, kingStyle, normItem } from '../../shared/catalog';
 import { RESULT_TEXT, ResultReason } from '../../shared/game';
 import type { GameSummary, ProfileResponse } from '../../shared/protocol';
 import { TIME_CONTROLS } from '../../shared/protocol';
@@ -57,10 +57,9 @@ export default function Profile() {
   if (!data) return <PageLoader />;
   const p = data.profile;
   const winRate = p.gamesPlayed ? Math.round((p.wins / p.gamesPlayed) * 100) : 0;
-  const skin = itemById(p.skin)?.kind === 'skin' ? itemById(p.skin) : itemById(DEFAULT_SKIN);
-  const king = normKing(p.king);
-  const board = itemById(p.board ?? '')?.kind === 'board' ? p.board : DEFAULT_BOARD;
-  const look = [king, board, skin!.id];
+  // Panoplie normalisée : identifiant inconnu ou d'un autre emplacement → l'objet par défaut (Arcane)
+  const look = SLOTS.map(k => normItem(k, p[k]));
+  const [king, board, skin] = [normItem('king', p.king), normItem('board', p.board), itemById(normItem('skin', p.skin))];
   const isMe = me?.username === p.username;
   const share = (n: number) => (p.gamesPlayed ? `${(n / p.gamesPlayed) * 100}%` : '0%');
   return (

@@ -1,23 +1,44 @@
 // Catalogue de la boutique : rois, échiquiers et sorts (skins), collections, produits et prix.
 // Modifier src/shared/skins/ suffit pour changer l'offre ; les prix sont dans la grille PRICE ci-dessous (centimes
 // d'euro, TTC). Règle (testée) : un identifiant d'objet ou de produit déjà vendu ne disparaît ni ne change de sens
-// (user_items, equipped_*, purchases.product_id le référencent), et son prix ne monte jamais. Les noms, si.
+// (user_items, equipped_*, purchases.product_id le référencent), et son prix ne monte jamais. Les noms, si. Un objet
+// qu'on ne vend plus prend `retired: true` (hors rayons, hors Trésor, mais toujours résolu).
+// Les emplacements (roi, échiquier, sorts) sont décrits dans src/shared/skins/slots.ts : tout ce qui suit en dérive.
 import { BOARD_ITEMS } from './skins/boards';
-import { COLLECTIONS } from './skins/collections';
+import { COLLECTIONS, TRESOR_RING } from './skins/collections';
 import { KING_ITEMS } from './skins/kings';
+import { SLOT_DEFS } from './skins/slots';
 import { SPELL_ITEMS } from './skins/spells';
 import type { BoardStyle, Collection, Item, ItemKind, KingStyle, Product, SkinRarity, SkinStyle } from './skins/types';
 import type { BotLevel } from './bot';
+import { LOCALE, cap, compte, liste } from './text/fr';
 
 export * from './skins/types';
 export { COLLECTIONS } from './skins/collections';
 export { KING_ART, KING_BASE } from './skins/kings';
+export { SLOT_DEFS } from './skins/slots';
+export type { SlotDef, SlotRayon } from './skins/slots';
+export { LOCALE } from './text/fr';
+
+// ---------------------------------------------------------------------------------------------
+// Réglages de la vente
+
+/** Monnaie des prix et des paiements (code ISO, en minuscules comme chez Stripe). */
+export const CURRENCY = 'eur';
+/** Prestataire de paiement, tel que nommé dans les textes (« Paiement sécurisé par Stripe »). */
+export const PAYMENT_PROVIDER = 'Stripe';
+/** Mis en essai à la première arrivée dans la boutique, quand rien d'autre n'est demandé. */
+export const SHOP_FEATURED: Readonly<Partial<Record<ItemKind, string>>> = { king: 'king:braise' };
 
 export const ITEMS: Item[] = [...KING_ITEMS, ...BOARD_ITEMS, ...SPELL_ITEMS];
 
+// ---------------------------------------------------------------------------------------------
+// Emplacements (dérivés de SLOT_DEFS)
+
 /** Emplacements, dans l'ordre d'affichage. */
-export const SLOTS = ['king', 'board', 'skin'] as const satisfies readonly ItemKind[];
-export const SLOT_LABEL: Record<ItemKind, string> = { king: 'Roi', board: 'Échiquier', skin: 'Sorts' };
+export const SLOTS = Object.keys(SLOT_DEFS) as ItemKind[];
+const slotMap = <T>(f: (k: ItemKind) => T) => Object.fromEntries(SLOTS.map(k => [k, f(k)])) as Record<ItemKind, T>;
+export const SLOT_LABEL: Record<ItemKind, string> = slotMap(k => SLOT_DEFS[k].label);
 
 /** Libellé et couleur de chaque rareté (le violet de l'épique et l'or du légendaire sont ceux des cartes de pouvoir). */
 export const RARITY: Record<SkinRarity, { label: string; color: string }> = {
@@ -39,10 +60,10 @@ export const PRICE: Record<Exclude<SkinRarity, 'offert'>, Record<ItemKind | 'col
   legendaire: { king: 499, board: 299, skin: 499, collection: 999 },
 };
 
-export const DEFAULT_SKIN = 'skin:arcane';
-export const DEFAULT_BOARD = 'board:arcane';
-export const DEFAULT_KING = 'king:arcane';
-export const DEFAULT_ITEM: Record<ItemKind, string> = { king: DEFAULT_KING, board: DEFAULT_BOARD, skin: DEFAULT_SKIN };
+export const DEFAULT_ITEM: Record<ItemKind, string> = slotMap(k => SLOT_DEFS[k].default);
+export const DEFAULT_SKIN = DEFAULT_ITEM.skin;
+export const DEFAULT_BOARD = DEFAULT_ITEM.board;
+export const DEFAULT_KING = DEFAULT_ITEM.king;
 
 /**
  * Apparence des IA du serveur (par niveau) et de l'Oracle de l'accueil. Vitrine : elles peuvent porter du payant.
@@ -57,6 +78,42 @@ export const ORACLE_LOOK: { skin: string; king: string } = { skin: 'skin:void', 
 
 export const itemById = (id: string): Item | undefined => ITEMS.find(i => i.id === id);
 export const FREE_ITEMS = ITEMS.filter(i => i.free).map(i => i.id);
+/** Objets des rayons (tous sauf les retirés), dans l'ordre du catalogue. Un objet retiré reste montré à qui le possède. */
+export const SHOP_ITEMS: Item[] = ITEMS.filter(i => !i.retired);
+/** Objets payants en vente (ni offerts, ni retirés), dans l'ordre du catalogue. */
+export const PREMIUM_ITEMS: Item[] = SHOP_ITEMS.filter(i => !i.free);
+
+/** Identifiant d'objet connu et de cet emplacement, sinon l'objet par défaut de l'emplacement. */
+export function normItem(kind: ItemKind, id: string | undefined | null): string {
+  return id && itemById(id)?.kind === kind ? id : DEFAULT_ITEM[kind];
+}
+
+/** Objets d'une liste rangés par emplacement (ordre de la liste) ; `unknown` : identifiants inconnus. */
+export interface SlotSplit {
+  items: Item[];
+  unknown: string[];
+  of: Record<ItemKind, Item[]>;
+}
+/**
+ * Range des objets par emplacement. La règle « au plus un objet par emplacement » (essai, panier, équipement,
+ * livraison) s'écrit avec : `duplicated(bySlot(ids))`, ou `alone(s, k)` pour l'objet seul de son emplacement.
+ */
+export function bySlot(ids: readonly string[]): SlotSplit {
+  const s: SlotSplit = { items: [], unknown: [], of: slotMap(() => []) };
+  for (const id of ids) {
+    const it = itemById(id);
+    if (!it) s.unknown.push(id);
+    else {
+      s.items.push(it);
+      s.of[it.kind].push(it);
+    }
+  }
+  return s;
+}
+/** Un emplacement au moins a plusieurs objets. */
+export const duplicated = (s: SlotSplit): boolean => SLOTS.some(k => s.of[k].length > 1);
+/** L'objet seul de son emplacement, s'il est seul. */
+export const alone = (s: SlotSplit, k: ItemKind): Item | undefined => (s.of[k].length === 1 ? s.of[k][0] : undefined);
 
 /** Prix à l'unité d'un objet (centimes TTC) ; 0 s'il est offert ou inconnu. */
 export function unitPrice(itemId: string): number {
@@ -68,35 +125,82 @@ export function unitPrice(itemId: string): number {
 const sum = (ids: readonly string[]) => ids.reduce((s, id) => s + unitPrice(id), 0);
 
 const COLLECTION_OF = new Map<string, Collection>();
-for (const c of COLLECTIONS) for (const id of [c.king, c.board, c.skin]) COLLECTION_OF.set(id, c);
+/** Les objets d'une collection, un par emplacement, dans l'ordre des emplacements. */
+export const collectionItems = (c: Collection): string[] => SLOTS.map(k => c[k]);
+for (const c of COLLECTIONS) for (const id of collectionItems(c)) COLLECTION_OF.set(id, c);
 /** Collection d'un objet (Bois de chêne et Ardoise n'en ont pas). */
 export const collectionOf = (itemId: string): Collection | undefined => COLLECTION_OF.get(itemId);
 export const collectionById = (id: string): Collection | undefined => COLLECTIONS.find(c => c.id === id);
-/** Les trois objets d'une collection, dans l'ordre des emplacements. */
-export const collectionItems = (c: Collection): string[] => [c.king, c.board, c.skin];
+/** Collections premium (toutes sauf les offertes), dans l'ordre du catalogue. */
+export const PREMIUM_COLLECTIONS: Collection[] = COLLECTIONS.filter(c => c.rarity !== 'offert');
+/** Nom du sceau d'une collection (son exclusivité) : « Sceau de la Forge ». */
+export const sealName = (c: Collection): string => c.sealName ?? `Sceau ${c.name}`;
+
+/**
+ * Sceaux du bandeau du Trésor : toutes les collections premium, celles de TRESOR_RING d'abord (dans son ordre), puis
+ * les autres par rareté décroissante. Le premier est au centre.
+ */
+export function tresorSeals(): Collection[] {
+  const placed = TRESOR_RING.map(collectionById).filter((c): c is Collection => !!c && PREMIUM_COLLECTIONS.includes(c));
+  const rest = PREMIUM_COLLECTIONS.filter(c => !placed.includes(c)).sort((a, b) => RANK[b.rarity] - RANK[a.rarity]);
+  return [...placed, ...rest];
+}
 
 /** Libellé d'un objet vendu à l'unité : « Roi de braise », « Échiquier Obsidienne & Or », « Sorts Inferno ». */
 export function itemLabel(it: Item): string {
-  if (it.kind === 'board') return `Échiquier ${it.name}`;
-  if (it.kind === 'skin') return `Sorts ${it.name}`;
-  return it.name;
+  const d = SLOT_DEFS[it.kind];
+  return d.named ? it.name : `${d.label} ${it.name}`;
 }
 
-const PREMIUM = ITEMS.filter(i => !i.free);
-const premiumOf = (kind: ItemKind) => PREMIUM.filter(i => i.kind === kind).map(i => i.id);
+/** Objet dans une phrase, avec son article : « le roi de braise », « l’échiquier Rubis », « les sorts Inferno ». */
+export function itemWithArticle(it: Item): string {
+  const d = SLOT_DEFS[it.kind];
+  return d.named ? `${d.article}${it.name.charAt(0).toLowerCase()}${it.name.slice(1)}` : `${d.article}${d.word} ${it.name}`;
+}
+
+/** Message après l'équipement d'un objet : « Sorts Inferno équipés : vos adversaires les verront à chacun de vos sorts. » */
+export function equippedMessage(it: Item): string {
+  const d = SLOT_DEFS[it.kind];
+  return `${itemLabel(it)} ${d.equipped}${d.equippedTail}`;
+}
+
+/**
+ * Qui voit quoi : « Votre roi et vos sorts : vos adversaires les voient. Votre échiquier : il vous suit dans toutes vos
+ * parties. » Avec `theirs` : « …, et vos adversaires gardent le leur. » (engagements de la boutique).
+ */
+export function whoSees(opts: { theirs?: boolean } = {}): string {
+  const seen = SLOTS.filter(k => SLOT_DEFS[k].seen);
+  const out: string[] = [];
+  if (seen.length) {
+    const les = seen.length > 1 || SLOT_DEFS[seen[0]].pl ? 'les' : 'le';
+    out.push(`${cap(liste(seen.map(k => SLOT_DEFS[k].mine)))} : vos adversaires ${les} voient.`);
+  }
+  for (const k of SLOTS) {
+    const d: { mine: string; follows?: { verb: string; pronoun: string; theirs: string } } = SLOT_DEFS[k];
+    if (!d.follows) continue;
+    const keep = opts.theirs ? `, et vos adversaires gardent ${d.follows.theirs}` : '';
+    out.push(`${cap(d.mine)} : ${d.follows.pronoun} ${d.follows.verb}${keep}.`);
+  }
+  return out.join(' ');
+}
+
+/** Panier de plusieurs skins : « Votre sélection (2 skins) ». */
+export const selectionLabel = (n: number): string => `Votre sélection (${compte(n, 'skin')})`;
+
 const pct = (price: number, compare: number) => `-${Math.round((1 - price / compare) * 100)} %`;
 
-const unitProducts: Product[] = PREMIUM.map(it => ({
+const unitProducts: Product[] = ITEMS.filter(i => !i.free).map(it => ({
   id: it.id,
   kind: 'item',
   name: itemLabel(it),
   description: it.description,
   priceCents: unitPrice(it.id),
   items: [it.id],
-  badge: it.id === 'skin:inferno' ? 'Populaire' : it.isNew ? 'Nouveau' : undefined,
+  badge: it.badge ?? (it.isNew ? 'Nouveau' : undefined),
+  ...(it.retired ? { retired: true } : {}),
 }));
 
-const collectionProducts: Product[] = COLLECTIONS.filter(c => c.rarity !== 'offert').map(c => {
+const collectionProducts: Product[] = PREMIUM_COLLECTIONS.map(c => {
   const items = collectionItems(c);
   return {
     id: c.id,
@@ -110,50 +214,73 @@ const collectionProducts: Product[] = COLLECTIONS.filter(c => c.rarity !== 'offe
   };
 });
 
+/**
+ * Pack : prix fixe écrit une fois ; prix barré (somme à l'unité) calculé ; badge `'%'` : la remise calculée
+ * (« -46 % »). Mêmes clés, dans le même ordre, que les produits écrits à la main d'avant.
+ */
+function pack(p: Omit<Product, 'kind' | 'compareAtCents'>): Product {
+  const compareAtCents = sum(p.items);
+  const { id, name, description, priceCents, items, badge, future, retired, display, shortName } = p;
+  return {
+    id, kind: 'pack', name, description, priceCents, items, compareAtCents,
+    ...(badge ? { badge: badge === '%' ? pct(priceCents, compareAtCents) : badge } : {}),
+    ...(future ? { future } : {}),
+    ...(retired ? { retired } : {}),
+    ...(display ? { display } : {}),
+    ...(shortName ? { shortName } : {}),
+  };
+}
+
+const premiumOf = (kind: ItemKind) => PREMIUM_ITEMS.filter(i => i.kind === kind).map(i => i.id);
 const skinsPack = premiumOf('skin');
-const tresor = PREMIUM.map(i => i.id);
+/** Contenu du Trésor : tous les objets payants en vente (décision Q2 : rien ne change au défaut). */
+const tresor = PREMIUM_ITEMS.map(i => i.id);
 /** Contenu du Grimoire complet le jour de son retrait (5 sorts et 4 échiquiers) : il ne change plus. */
 const ALL_PACK = ['skin:inferno', 'skin:neon', 'skin:celestial', 'skin:void', 'skin:sakura', 'board:marble', 'board:obsidian', 'board:jade', 'board:ruby'];
 
+/**
+ * Packs. `display` : où la boutique le montre (en tête d'un rayon d'emplacement, ou en bandeau sous les collections) ;
+ * sans `display`, un pack en vente n'est montré qu'à l'accueil.
+ */
 const packProducts: Product[] = [
-  {
+  pack({
     id: 'pack:skins',
-    kind: 'pack',
     name: 'Grimoire des sorts',
     description: `Les ${skinsPack.length} sorts premium, et les prochains offerts.`,
     priceCents: 1299,
     items: skinsPack,
-    compareAtCents: sum(skinsPack),
-    badge: pct(1299, sum(skinsPack)),
+    badge: '%',
     future: ['skin'],
-  },
-  {
+    display: 'skin',
+    shortName: 'Grimoire',
+  }),
+  pack({
     id: 'pack:tresor',
-    kind: 'pack',
     name: 'Trésor du Bazar',
-    description: `Les ${tresor.length} objets des ${COLLECTIONS.length - 1} collections premium : rois, échiquiers et sorts.`,
+    description: `Les ${tresor.length} objets des ${PREMIUM_COLLECTIONS.length} collections premium : ${liste(SLOTS.map(k => SLOT_DEFS[k].words))}.`,
     priceCents: 2499,
     items: tresor,
-    compareAtCents: sum(tresor),
     badge: 'Meilleure offre',
-  },
-  {
+    display: 'banner',
+    shortName: 'Trésor',
+  }),
+  pack({
     id: 'pack:all',
-    kind: 'pack',
     name: 'Grimoire complet',
     description: 'Tous les skins et tous les plateaux premium.',
     priceCents: 1299,
     items: ALL_PACK,
-    compareAtCents: sum(ALL_PACK),
     future: ['skin', 'board'],
     retired: true,
-  },
+  }),
 ];
 
 /** Tous les produits, retirés compris (historique des achats, remboursements, promesses des packs). */
 export const ALL_PRODUCTS: Product[] = [...unitProducts, ...collectionProducts, ...packProducts];
 /** Produits en vente : un par objet payant, un par collection premium, les packs (sans les produits retirés). */
 export const PRODUCTS: Product[] = ALL_PRODUCTS.filter(p => !p.retired);
+/** Packs en vente (Grimoire des sorts, Trésor du Bazar). */
+export const PACKS: Product[] = PRODUCTS.filter(p => p.kind === 'pack');
 
 const PRODUCT_BY_ID = new Map(ALL_PRODUCTS.map(p => [p.id, p]));
 /** Produit par identifiant, retiré compris (le paiement refuse `retired`). */
@@ -170,7 +297,7 @@ export function kingStyle(id: string | undefined): KingStyle {
 }
 /** Identifiant de roi connu, sinon le roi Arcane (parties enregistrées avant les rois, identifiant inconnu). */
 export function normKing(id: string | undefined | null): string {
-  return id && itemById(id)?.kind === 'king' ? id : DEFAULT_KING;
+  return normItem('king', id);
 }
 
 /**
@@ -205,12 +332,10 @@ export interface CartLine {
  * null : panier invalide (objet inconnu, deux objets du même emplacement) ou rien à payer.
  */
 export function quoteCart(itemIds: readonly string[], owned: readonly string[]): { totalCents: number; lines: CartLine[] } | null {
-  const items = itemIds.map(itemById);
-  if (items.some(i => !i)) return null;
-  const kinds = items.map(i => i!.kind);
-  if (new Set(kinds).size !== kinds.length) return null;
+  const sel = bySlot(itemIds);
+  if (sel.unknown.length || duplicated(sel)) return null;
   const have = new Set(owned);
-  const buy = items.filter(i => !i!.free && !have.has(i!.id)).map(i => i!.id);
+  const buy = sel.items.filter(i => !i.free && !have.has(i.id)).map(i => i.id);
   if (!buy.length) return null;
   const lines: CartLine[] = [];
   const done = new Set<string>();
@@ -241,8 +366,7 @@ export function quoteCart(itemIds: readonly string[], owned: readonly string[]):
 export function sealOf(items: readonly string[]): string | null {
   const have = new Set(items);
   let best: Collection | null = null;
-  for (const c of COLLECTIONS) {
-    if (c.rarity === 'offert') continue;
+  for (const c of PREMIUM_COLLECTIONS) {
     if (!collectionItems(c).every(i => have.has(i))) continue;
     if (!best || RANK[c.rarity] > RANK[best.rarity]) best = c;
   }
@@ -250,5 +374,5 @@ export function sealOf(items: readonly string[]): string | null {
 }
 
 export function formatPrice(cents: number): string {
-  return (cents / 100).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
+  return (cents / 100).toLocaleString(LOCALE, { style: 'currency', currency: CURRENCY.toUpperCase() });
 }

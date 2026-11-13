@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { CARDS, cardsOf, isCardId } from '../../../shared/cards';
-import type { CardId } from '../../../shared/cards';
+import type { CardId, Catalog } from '../../../shared/cards';
 import { fileOf, kingSquare, rankOf } from '../../../shared/chess';
 import type { Color } from '../../../shared/chess';
 import { DEFAULT_KING, skinStyle } from '../../../shared/catalog';
@@ -24,17 +24,22 @@ import { gemOf } from './trial';
 
 /** Milieu de partie : rois roqués, quelques pièces échangées, de la place pour la texture et le sort. */
 const MID_FEN = 'r2q1rk1/pp2bppp/4pn2/3p4/3P4/4PN2/PP2BPPP/R2Q1RK1 w - - 0 12';
-const POWERS = cardsOf('climats');
-/** Sorts montrés, dans cet ordre (les 8 pouvoirs). */
-export const PREVIEW_ORDER: CardId[] = (['ice_wall', 'rift', 'tide', 'blast', 'ice_age', 'blood_moon', 'truce', 'hourglass'] as CardId[]).filter(
-  id => isCardId(id) && POWERS.includes(id),
-);
+/** Catalogue des sorts montrés dans la cabine : celui des parties (les Pouvoirs). */
+const PREVIEW_CATALOG: Catalog = 'climats';
+const POWERS = cardsOf(PREVIEW_CATALOG);
+/** Ordre préféré des sorts montrés ; une carte du catalogue absente de cette liste passe à la suite. */
+const PREFERRED: readonly string[] = ['ice_wall', 'rift', 'tide', 'blast', 'ice_age', 'blood_moon', 'truce', 'hourglass'];
+/** Sorts montrés, dans cet ordre : tous ceux du catalogue (les 8 pouvoirs aujourd'hui). */
+export const PREVIEW_ORDER: CardId[] = [
+  ...PREFERRED.filter((id): id is CardId => isCardId(id) && POWERS.includes(id)),
+  ...POWERS.filter(id => !PREFERRED.includes(id)),
+];
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 function freshGame(side: Color): GameState {
   const fen = MID_FEN.replace(' w ', ` ${side} `);
-  return createGameFromFen(fen, { w: [...POWERS], b: [...POWERS] }, true, 'climats');
+  return createGameFromFen(fen, { w: [...POWERS], b: [...POWERS] }, true, PREVIEW_CATALOG);
 }
 
 /** Cibles lisibles : près du centre, un peu de hasard. */

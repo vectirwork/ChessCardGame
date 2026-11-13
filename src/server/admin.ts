@@ -5,6 +5,7 @@ import { itemById } from '../shared/catalog';
 import { requireAdmin, requireUser } from './auth';
 import { one, q } from './db';
 import { activeRoomCount } from './games';
+import { LIMITS } from './settings';
 
 export const adminRouter = Router();
 adminRouter.use(requireUser, requireAdmin);
@@ -27,14 +28,18 @@ adminRouter.get('/overview', async (_req, res) => {
       (SELECT coalesce(sum(amount_cents), 0) FROM purchases WHERE status = 'paid' AND paid_at::date = d)::int AS revenue,
       (SELECT count(*) FROM users WHERE created_at::date = d)::int AS signups,
       (SELECT count(*) FROM games WHERE created_at::date = d)::int AS games
-    FROM generate_series(current_date - 29, current_date, interval '1 day') AS d ORDER BY d`);
+    FROM generate_series(current_date - $1::int + 1, current_date, interval '1 day') AS d ORDER BY d`,
+    [LIMITS.adminDays],
+  );
   const products = await q(`
     SELECT product_id, count(*)::int AS sales, sum(amount_cents)::int AS revenue FROM purchases
     WHERE status = 'paid' GROUP BY product_id ORDER BY revenue DESC`);
   const recent = await q(`
     SELECT p.id, p.product_id, p.amount_cents, p.status, p.provider, p.created_at, u.username
     FROM purchases p LEFT JOIN users u ON u.id = p.user_id WHERE p.status <> 'pending'
-    ORDER BY p.created_at DESC LIMIT 15`);
+    ORDER BY p.created_at DESC LIMIT $1`,
+    [LIMITS.adminPurchases],
+  );
   res.json({ counts, live: activeRoomCount(), daily, products, recent });
 });
 
@@ -44,8 +49,8 @@ adminRouter.get('/users', async (req, res) => {
     `SELECT u.id, u.username, u.email, u.email_verified, u.rating, u.games_played, u.created_at, u.last_seen_at, u.is_admin,
        coalesce(array(SELECT item_id FROM user_items WHERE user_id = u.id), '{}') AS items
      FROM users u WHERE $1 = '' OR u.username ILIKE '%' || $1 || '%' OR u.email ILIKE '%' || $1 || '%'
-     ORDER BY u.created_at DESC LIMIT 50`,
-    [term],
+     ORDER BY u.created_at DESC LIMIT $2`,
+    [term, LIMITS.adminUsers],
   );
   res.json({ users: rows });
 });

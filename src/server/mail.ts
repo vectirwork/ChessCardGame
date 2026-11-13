@@ -1,8 +1,10 @@
 // Envoi des e-mails. Sans SMTP configuré, les messages sont affichés dans la console (développement).
 import nodemailer from 'nodemailer';
-import { COLLECTIONS, SLOTS, collectionOf, itemById, itemLabel } from '../shared/catalog';
-import type { Item, ItemKind } from '../shared/catalog';
+import { COLLECTIONS, SLOTS, SLOT_DEFS, collectionOf, itemById, itemLabel, whoSees } from '../shared/catalog';
+import type { Item } from '../shared/catalog';
+import { duree, liste } from '../shared/text/fr';
 import { config } from './config';
+import { ACCOUNT } from './settings';
 
 const transport = config.smtp.host
   ? nodemailer.createTransport({
@@ -55,8 +57,8 @@ export function sendPasswordReset(to: string, username: string, token: string) {
   return send(
     to,
     `Réinitialisation du mot de passe – ${config.appName}`,
-    layout('Mot de passe oublié ?', `Bonjour ${escape(username)}, cliquez ci-dessous pour choisir un nouveau mot de passe. Ce lien expire dans une heure. Si vous n’êtes pas à l’origine de cette demande, ignorez ce message.`, { label: 'Choisir un nouveau mot de passe', url }),
-    `Réinitialisez votre mot de passe (valable 1 h) : ${url}`,
+    layout('Mot de passe oublié ?', `Bonjour ${escape(username)}, cliquez ci-dessous pour choisir un nouveau mot de passe. Ce lien expire dans ${duree(ACCOUNT.resetTokenMs, { lettres: true })}. Si vous n’êtes pas à l’origine de cette demande, ignorez ce message.`, { label: 'Choisir un nouveau mot de passe', url }),
+    `Réinitialisez votre mot de passe (valable ${duree(ACCOUNT.resetTokenMs, { court: true })}) : ${url}`,
   );
 }
 
@@ -75,20 +77,12 @@ export interface PurchaseMail {
 
 /** Au-delà de ce nombre d'objets, l'e-mail les regroupe (purchaseItemLines). */
 const MAIL_GROUP_ABOVE = 4;
-const SLOT_WORD: Record<ItemKind, { one: string; many: string }> = {
-  king: { one: 'roi', many: 'rois' },
-  board: { one: 'échiquier', many: 'échiquiers' },
-  skin: { one: 'sorts', many: 'sorts' },
-};
-/** « a », « a et b », « a, b et c ». */
-const joinFr = (words: readonly string[]) =>
-  words.length < 2 ? words.join('') : `${words.slice(0, -1).join(', ')} et ${words[words.length - 1]}`;
 
 /**
  * Lignes d'objets pour l'e-mail d'achat. Jusqu'à 4 objets : un libellé par objet (« Roi de braise », « Sorts Inferno »).
  * Au-delà, regroupés : une ligne par collection dont l'achat compte au moins deux pièces (« Jardin de jade : roi,
  * échiquier et sorts »), puis les autres par emplacement (« 7 sorts : Inferno, Néon 2084, … et Écarlate ») ; le Trésor
- * tient en 7 lignes, le Grimoire des sorts en une. Objets inconnus ignorés. Exportée pour les tests.
+ * tient en une ligne par collection premium, le Grimoire des sorts en une. Objets inconnus ignorés. Exportée pour les tests.
  */
 export function purchaseItemLines(ids: readonly string[]): string[] {
   const order = (i: Item) => SLOTS.indexOf(i.kind);
@@ -98,20 +92,20 @@ export function purchaseItemLines(ids: readonly string[]): string[] {
   const rest: Item[] = items.filter(i => !collectionOf(i.id));
   for (const c of COLLECTIONS) {
     const of = items.filter(i => collectionOf(i.id) === c).sort((a, b) => order(a) - order(b));
-    if (of.length >= 2) lines.push(`${c.name} : ${joinFr(of.map(i => SLOT_WORD[i.kind].one))}`);
+    if (of.length >= 2) lines.push(`${c.name} : ${liste(of.map(i => SLOT_DEFS[i.kind].word))}`);
     else rest.push(...of);
   }
   rest.sort((a, b) => items.indexOf(a) - items.indexOf(b));
   for (const kind of SLOTS) {
     const of = rest.filter(i => i.kind === kind);
     if (of.length === 1) lines.push(itemLabel(of[0]));
-    else if (of.length > 1) lines.push(`${of.length} ${SLOT_WORD[kind].many} : ${joinFr(of.map(i => i.name))}`);
+    else if (of.length > 1) lines.push(`${of.length} ${SLOT_DEFS[kind].words} : ${liste(of.map(i => i.name))}`);
   }
   return lines;
 }
 
-/** Qui voit quoi : le roi et les sorts se voient en partie ; l'échiquier, chacun garde le sien. */
-const WHO_SEES = 'Votre roi et vos sorts : vos adversaires les voient. Votre échiquier : il vous suit dans toutes vos parties.';
+/** Qui voit quoi : le roi et les sorts se voient en partie ; l'échiquier, chacun garde le sien (d'après SLOT_DEFS). */
+const WHO_SEES = whoSees();
 
 /** E-mail de confirmation d'achat (objet, HTML, texte), sans l'envoyer. Exportée pour les tests et les aperçus. */
 export function purchaseConfirmationMail(m: PurchaseMail): { subject: string; html: string; text: string } {

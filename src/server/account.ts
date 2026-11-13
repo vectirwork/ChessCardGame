@@ -1,11 +1,11 @@
 // Gestion du compte (profil, sécurité, collection, RGPD) et pages publiques (profils, classement).
 import { Router } from 'express';
 import { z } from 'zod';
-import { COLLECTIONS, DEFAULT_ITEM, SLOTS, collectionItems, itemById, sealOf } from '../shared/catalog';
+import { PREMIUM_COLLECTIONS, SLOTS, collectionItems, normItem, sealOf } from '../shared/catalog';
 import type { ItemKind } from '../shared/catalog';
 import type { LeaderboardResponse, LeaderboardRow, ProfileResponse, PublicProfile } from '../shared/protocol';
 import {
-  clearSessionCookie, createEmailToken, createSession, emailSchema, passwordSchema, requireUser, toMe, userById,
+  SLOT_COLUMN, clearSessionCookie, createEmailToken, createSession, emailSchema, passwordSchema, requireUser, toMe, userById,
   usernameSchema, zodError,
 } from './auth';
 import { one, q } from './db';
@@ -13,6 +13,7 @@ import { detachUser } from './games';
 import { toSummary } from './summary';
 import { sendVerification } from './mail';
 import { hashPassword, verifyPassword } from './security';
+import { LIMITS } from './settings';
 import { equipItems, slotSelection } from './shop';
 
 export const accountRouter = Router();
@@ -58,8 +59,8 @@ accountRouter.post('/email', async (req, res) => {
 });
 
 /**
- * Équiper (EquipRequest) : un objet (`itemId`, anciens clients) ou un essai entier (`itemIds`, 1 à 3 objets, au plus un
- * par emplacement), en une seule requête. Inconnu : 404 ; deux objets du même emplacement : 400 ; un objet ni offert ni
+ * Équiper (EquipRequest) : un objet (`itemId`, anciens clients) ou un essai entier (`itemIds`, un objet au moins, au
+ * plus un par emplacement), en une seule requête. Inconnu : 404 ; deux objets du même emplacement : 400 ; un objet ni offert ni
  * possédé : 403, et rien n'est équipé.
  */
 const equipSchema = z.union([
@@ -83,8 +84,8 @@ accountRouter.post('/equip', async (req, res) => {
 accountRouter.get('/purchases', async (req, res) => {
   const rows = await q(
     `SELECT id, product_id, items, provider, amount_cents, currency, status, created_at, paid_at
-     FROM purchases WHERE user_id = $1 AND status <> 'pending' ORDER BY created_at DESC LIMIT 100`,
-    [req.identity.user!.id],
+     FROM purchases WHERE user_id = $1 AND status <> 'pending' ORDER BY created_at DESC LIMIT $2`,
+    [req.identity.user!.id, LIMITS.purchases],
   );
   res.json({ purchases: rows });
 });
@@ -132,11 +133,10 @@ accountRouter.delete('/', async (req, res) => {
 export const communityRouter = Router();
 
 /** Objets qui comptent pour le sceau : ceux des collections premium (Arcane ne compte jamais). */
-const SEAL_ITEMS = COLLECTIONS.filter(c => c.rarity !== 'offert').flatMap(collectionItems);
+const SEAL_ITEMS = PREMIUM_COLLECTIONS.flatMap(collectionItems);
 
-/** Objet équipé tel qu'on le montre : connu et du bon emplacement, sinon le défaut de l'emplacement (Arcane). */
-const shownItem = (kind: ItemKind, id: string | null | undefined): string =>
-  id && itemById(id)?.kind === kind ? id : DEFAULT_ITEM[kind];
+/** Colonnes des objets portés (une par emplacement), lues par le profil public. Noms tirés de SLOT_COLUMN seulement. */
+const EQUIPPED_COLUMNS = SLOTS.map(k => SLOT_COLUMN[k]).join(', ');
 
 /**
  * Profil public d'un joueur (pseudo sans casse), avec son roi, ses sorts et son échiquier (normalisés comme en partie :
@@ -145,12 +145,14 @@ const shownItem = (kind: ItemKind, id: string | null | undefined): string =>
  */
 export async function publicProfile(username: string): Promise<(PublicProfile & { id: string }) | null> {
   const u = await one(
-    `SELECT id, username, rating, games_played, wins, losses, draws, equipped_skin, equipped_board, equipped_king, created_at,
+    `SELECT id, username, rating, games_played, wins, losses, draws, ${EQUIPPED_COLUMNS}, created_at,
        coalesce(array(SELECT item_id FROM user_items WHERE user_id = users.id AND item_id = ANY($2::text[])), '{}') AS items
      FROM users WHERE lower(username) = lower($1)`,
     [username, SEAL_ITEMS],
   );
   if (!u) return null;
+  /** Objet équipé tel qu'on le montre : connu et du bon emplacement, sinon le défaut de l'emplacement (Arcane). */
+  const shown = (kind: ItemKind): string => normItem(kind, u[SLOT_COLUMN[kind]]);
   const rank = await one<{ rank: string }>(
     'SELECT count(*) + 1 AS rank FROM users WHERE games_played > 0 AND rating > $1',
     [u.rating],
@@ -163,22 +165,22 @@ export async function publicProfile(username: string): Promise<(PublicProfile & 
     wins: u.wins,
     losses: u.losses,
     draws: u.draws,
-    skin: shownItem('skin', u.equipped_skin),
-    board: shownItem('board', u.equipped_board),
-    king: shownItem('king', u.equipped_king),
+    skin: shown('skin'),
+    board: shown('board'),
+    king: shown('king'),
     seal: sealOf(u.items),
     memberSince: u.created_at.toISOString(),
     rank: u.games_played > 0 ? Number(rank?.rank ?? 0) : null,
   };
 }
 
-/** Classement : les 100 meilleurs joueurs classés, avec leur sceau. Exportée pour les tests. */
+/** Classement : les meilleurs joueurs classés (LIMITS.leaderboard : 100), avec leur sceau. Exportée pour les tests. */
 export async function leaderboard(): Promise<LeaderboardRow[]> {
   const rows = await q<Omit<LeaderboardRow, 'seal'> & { items: string[] }>(
     `SELECT username, rating, games_played, wins, losses, draws,
        coalesce(array(SELECT item_id FROM user_items i WHERE i.user_id = u.id AND i.item_id = ANY($1::text[])), '{}') AS items
-     FROM users u WHERE games_played > 0 ORDER BY rating DESC, games_played DESC LIMIT 100`,
-    [SEAL_ITEMS],
+     FROM users u WHERE games_played > 0 ORDER BY rating DESC, games_played DESC LIMIT $2`,
+    [SEAL_ITEMS, LIMITS.leaderboard],
   );
   return rows.map(({ items, ...r }) => ({ ...r, seal: sealOf(items) }));
 }
@@ -189,8 +191,8 @@ communityRouter.get('/users/:username', async (req, res) => {
   const { id, ...profile } = found;
   const games = await q(
     `SELECT * FROM games WHERE (white_user_id = $1 OR black_user_id = $1) AND status = 'ended' AND reason <> 'aborted'
-     ORDER BY ended_at DESC NULLS LAST LIMIT 20`,
-    [id],
+     ORDER BY ended_at DESC NULLS LAST LIMIT $2`,
+    [id, LIMITS.profileGames],
   );
   res.json({ profile, games: games.map(toSummary) } satisfies ProfileResponse);
 });

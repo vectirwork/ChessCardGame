@@ -188,7 +188,8 @@
 .th-seal i {
   position: absolute;
   inset: 0;
-  transform: rotate(calc(var(--i) * 45deg + 22.5deg));
+  /* --n particules en couronne, décalées d'une demi-part (SpellSeal : 8, soit 45° chacune, la première à 22,5°) */
+  transform: rotate(calc(var(--i) * 360deg / var(--n, 8) + 180deg / var(--n, 8)));
 }
 .th-seal i::before {
   content: '';

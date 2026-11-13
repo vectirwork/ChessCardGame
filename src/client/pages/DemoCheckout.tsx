@@ -3,7 +3,7 @@
 // serveur facture, puis revient à la boutique avec les objets livrés : la cabine les déballe.
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { formatPrice, itemById, productById, quoteCart } from '../../shared/catalog';
+import { PAYMENT_PROVIDER, formatPrice, itemById, itemLabel, productById, quoteCart, selectionLabel } from '../../shared/catalog';
 import { CART_PRODUCT_ID } from '../../shared/protocol';
 import type { DemoCompleteResponse, DemoPurchase } from '../../shared/protocol';
 import { api, errMsg } from '../api';
@@ -13,7 +13,7 @@ import { useApp } from '../store';
 import { PageHead, PlacePage, useTitle } from './PageScene';
 import { LockIcon } from './shop/CheckoutModal';
 import { ItemThumb } from './shop/ItemThumb';
-import { itemPhrase } from './shop/trial';
+import { isCollectionLine } from './shop/trial';
 
 export default function DemoCheckout() {
   useTitle('Paiement simulé');
@@ -52,7 +52,7 @@ export default function DemoCheckout() {
   const product = p.productId === CART_PRODUCT_ID ? undefined : productById(p.productId);
   // Objets de l'achat : renvoyés par le serveur ; à défaut (ancien serveur), ceux du produit
   const ids = (p.items?.length ? p.items : product?.items ?? []).filter(i => itemById(i));
-  const title = product?.name ?? (ids.length === 1 ? itemPhrase(itemById(ids[0])!) : `Votre sélection (${ids.length} skins)`);
+  const title = product?.name ?? (ids.length === 1 ? itemLabel(itemById(ids[0])!) : selectionLabel(ids.length));
   // Panier : une ligne par produit facturé (objet, ou collection complétée, même seule), comme sur Stripe. Calculée ici
   // comme au serveur (quoteCart) ; montrée seulement si elle retombe sur le montant facturé, sinon une seule ligne.
   const quoted = !product && p.status === 'pending' ? quoteCart(ids, ownedIds(me)) : null;
@@ -60,7 +60,7 @@ export default function DemoCheckout() {
     quoted && quoted.totalCents === p.amountCents && quoted.lines.length >= 1
       ? quoted.lines.map(l => ({
           label: l.label,
-          note: l.productId.startsWith('col:') ? 'Au prix de la collection, sceau compris' : undefined,
+          note: isCollectionLine(l) ? 'Au prix de la collection, sceau compris' : undefined,
           cents: l.cents,
         }))
       : [{ label: title, note: product?.description, cents: p.amountCents }];
@@ -83,7 +83,7 @@ export default function DemoCheckout() {
         place="La caisse du Bazar"
         aside="Mode démonstration"
         title={title}
-        lede="Cette page remplace Stripe Checkout tant que les clés Stripe ne sont pas configurées. Aucune carte n’est demandée, rien n’est débité."
+        lede={`Cette page remplace ${PAYMENT_PROVIDER} Checkout tant que les clés ${PAYMENT_PROVIDER} ne sont pas configurées. Aucune carte n’est demandée, rien n’est débité.`}
         center
       />
       <div className="co-card panel panel-pad">
@@ -93,7 +93,7 @@ export default function DemoCheckout() {
             {ids.map(i => (
               <span key={i} className="co-item">
                 <ItemThumb id={i} size="chip" />
-                <span>{itemPhrase(itemById(i)!)}</span>
+                <span>{itemLabel(itemById(i)!)}</span>
               </span>
             ))}
           </div>
@@ -120,7 +120,8 @@ export default function DemoCheckout() {
           </Link>
         </div>
         <p className="co-secure">
-          <LockIcon /> En production, le paiement passe par la page sécurisée de Stripe.
+          <LockIcon />
+          {` En production, le paiement passe par la page sécurisée de ${PAYMENT_PROVIDER}.`}
         </p>
       </div>
     </PlacePage>

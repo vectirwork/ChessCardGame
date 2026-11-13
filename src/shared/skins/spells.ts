@@ -19,6 +19,7 @@ export const SPELL_ITEMS: Item[] = [
     description: 'Chaque carte s’embrase : braises, cercle de flammes et onde de chaleur.',
     free: false,
     rarity: 'rare',
+    badge: 'Populaire',
     skin: { primary: '#ff7a1a', secondary: '#ff2d55', accent: '#ffe08a', particle: 'ember', flourish: 'flames', drift: 1, flash: 0.8, shake: 0.6 },
   },
   {

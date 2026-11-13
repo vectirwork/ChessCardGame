@@ -1,18 +1,32 @@
 // Cabine d'essayage de la boutique (src/client/pages/shop/trial.ts) : fonctions pures, sans navigateur.
 // Écart essai / panoplie, essai dans l'adresse (?essai=), prix de l'essai, bouton principal, meilleure collection,
 // « Surprenez-moi », état des cartes.
-import { describe, expect, it } from 'vitest';
-import { DEFAULT_ITEM, FREE_ITEMS, ITEMS, SLOTS, collectionById, productById, productPrice } from '../src/shared/catalog';
+import { createElement } from 'react';
+import type { ComponentProps, ReactElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, expect, it, vi } from 'vitest';
+import { COLLECTIONS, DEFAULT_ITEM, FREE_ITEMS, ITEMS, SLOTS, collectionById, itemLabel, productById, productPrice, sealName } from '../src/shared/catalog';
+import { PackCard, TresorBanner } from '../src/client/pages/shop/CollectionCard';
+import { RAYON_NOTE } from '../src/client/pages/shop/Rack';
+import { RAYONS, RAYON_LABEL } from '../src/client/pages/shop/RayonTabs';
 import {
-  bestCollection, cardLabel, changedSlots, equipNote, formatEssai, itemState, mainAction, normalize, orderSummary, parseEssai, quoteTrial, rackOrder,
-  revertSlot, surprise, toggleItem, trialOf, withCollection,
+  bestCollection, cardLabel, changedSlots, equipNote, formatEssai, isTrying, itemState, mainAction, normalize, orderSummary, parseEssai, quoteTrial,
+  rackOrder, revertSlot, skins, slotWord, surprise, toggleItem, trialOf, withCollection,
 } from '../src/client/pages/shop/trial';
 import type { Trial } from '../src/client/pages/shop/trial';
+import type { Product } from '../src/shared/catalog';
 import { itemById } from '../src/shared/catalog';
 
 const ARCANE: Trial = { ...DEFAULT_ITEM };
 const owned = (...ids: string[]) => [...FREE_ITEMS, ...ids];
 const norm = (s: string) => s.replace(/[  ]/g, ' ');
+/** Tirages de « Surprenez-moi » (hasard de Park et Miller, graine 7), relevés avant la refonte. */
+const SURPRISES: Trial[] = [
+  { king: 'king:arcane', board: 'board:ciel', skin: 'skin:neon' },
+  { king: 'king:printemps', board: 'board:grille', skin: 'skin:void' },
+  { king: 'king:synthe', board: 'board:grille', skin: 'skin:laurier' },
+  { king: 'king:laure', board: 'board:ruby', skin: 'skin:sakura' },
+];
 
 describe('écart entre l’essai et la panoplie', () => {
   it('l’essai complet prend la panoplie, puis les emplacements essayés', () => {
@@ -237,5 +251,196 @@ describe('ordre des rayons', () => {
       expect(list.slice(firstFree).every(i => i.free)).toBe(true);
     }
     expect(rackOrder(ITEMS.filter(i => i.kind === 'board')).slice(0, 3).map(i => i.id)).toEqual(['board:grille', 'board:horizon', 'board:ciel']);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Photographie des textes de la boutique au défaut, prise avant la refonte (lot 2 de la passe « polymorphe ») : les
+// textes dérivés des emplacements (SLOT_DEFS) doivent rester égaux à ces valeurs, au caractère près.
+
+describe('textes des emplacements au défaut (identiques à la boutique d’avant la refonte)', () => {
+  it('mot de l’emplacement, nom d’un objet dans une phrase', () => {
+    expect(SLOTS.map(slotWord)).toEqual(['roi', 'échiquier', 'sorts']);
+    // itemPhrase (trial.ts) recopiait itemLabel (catalog.ts) : remplacé par lui
+    expect(itemLabel(itemById('king:braise')!)).toBe('Roi de braise');
+    expect(itemLabel(itemById('board:ruby')!)).toBe('Échiquier Rubis');
+    expect(itemLabel(itemById('skin:inferno')!)).toBe('Sorts Inferno');
+    expect(ITEMS.map(itemLabel).filter(l => !/^(Roi|Échiquier|Sorts) /.test(l))).toEqual([]);
+  });
+
+  it('phrase d’équipement : toutes les combinaisons d’emplacements', () => {
+    const one = { king: 'king:braise', board: 'board:ruby', skin: 'skin:inferno' };
+    const phrases = [['king'], ['board'], ['skin'], ['king', 'board'], ['king', 'skin'], ['board', 'skin'], ['king', 'board', 'skin']].map(ks =>
+      equipNote(ks.map(k => one[k as keyof typeof one])),
+    );
+    expect(phrases).toEqual([
+      'vos adversaires verront votre roi dès votre prochaine partie',
+      'votre échiquier vous suit dans toutes vos parties',
+      'vos adversaires verront vos sorts dès votre prochaine partie',
+      'vos adversaires verront votre roi dès votre prochaine partie ; votre échiquier vous suit dans toutes vos parties',
+      'vos adversaires verront votre roi et vos sorts dès votre prochaine partie',
+      'vos adversaires verront vos sorts dès votre prochaine partie ; votre échiquier vous suit dans toutes vos parties',
+      'vos adversaires verront votre roi et vos sorts dès votre prochaine partie ; votre échiquier vous suit dans toutes vos parties',
+    ]);
+    expect(equipNote([])).toBe('');
+  });
+
+  it('noms des sceaux de collection', () => {
+    expect(COLLECTIONS.map(sealName)).toEqual([
+      'Sceau Arcane',
+      'Sceau du Jardin de jade',
+      'Sceau de Néon 2084',
+      'Sceau de la Forge',
+      'Sceau de l’Olympe',
+      'Sceau de la Cour écarlate',
+      'Sceau du Néant',
+      'Sceau de la Voûte céleste',
+    ]);
+  });
+
+  it('rayons : ordre, libellés, notes', () => {
+    expect(RAYONS).toEqual(['rois', 'echiquiers', 'sorts', 'collections']);
+    expect(RAYON_LABEL).toEqual({ rois: 'Rois', echiquiers: 'Échiquiers', sorts: 'Sorts', collections: 'Collections' });
+    expect(RAYON_NOTE).toEqual({
+      rois: 'Votre roi vous représente : vos adversaires le voient en face d’eux.',
+      echiquiers: 'Votre échiquier vous suit dans toutes vos parties. Vos adversaires gardent le leur.',
+      sorts: 'Vos sorts s’animent avec ce skin, chez vous comme chez votre adversaire.',
+      collections: 'Trois skins assortis et une exclusivité qu’on ne trouve nulle part ailleurs : le sceau, à côté de votre pseudo.',
+    });
+  });
+
+  it('« Surprenez-moi » : mêmes tirages pour un même hasard', () => {
+    let a = 7;
+    const rand = () => ((a = (a * 16807) % 2147483647) - 1) / 2147483646;
+    const tirages: Trial[] = [];
+    let t: Trial = { ...DEFAULT_ITEM };
+    for (let i = 0; i < 4; i++) tirages.push((t = surprise(t, rand)));
+    expect(tirages).toEqual(SURPRISES);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Marchandisage en données : carte de pack générique, bandeau du Trésor dérivé des collections
+
+describe('carte de pack générique et bandeau du Trésor', () => {
+  const html = (el: ReactElement) => renderToStaticMarkup(el).replace(/[\u00a0\u202f]/g, ' ');
+  const props = (product: Product, owned: string[]) => ({ product, owned, loggedIn: true, sale: true, ready: true, onBuy: () => {} });
+  const packcard = (product: Product, owned: string[]) => createElement(PackCard, props(product, owned) as ComponentProps<typeof PackCard>);
+  const tresorbanner = (product: Product, owned: string[]) => createElement(TresorBanner, props(product, owned) as ComponentProps<typeof TresorBanner>);
+
+  it('le Grimoire des sorts : « Pack · 7 sorts », sorts possédés dits, prix fixe', () => {
+    const g = productById('pack:skins')!;
+    const out = html(packcard(g, [...FREE_ITEMS, 'skin:void', 'skin:neon']));
+    expect(out).toContain('Pack · 7 sorts');
+    expect(out).toContain('Grimoire des sorts');
+    expect(out).toContain('Vous possédez déjà 2 sorts sur 7 : le prix du Grimoire ne change pas.');
+    expect(out).toContain('12,99 €');
+    expect(out.match(/class="ic-pack-orb"/g)).toHaveLength(7);
+    expect(html(packcard(g, [...FREE_ITEMS, 'skin:void']))).toContain('Vous possédez déjà 1 sort sur 7');
+  });
+
+  it('un pack fictif (trois rois, ou des objets mêlés) est rendu par la même carte', () => {
+    const rois: Product = {
+      id: 'pack:rois', kind: 'pack', name: 'Cour des rois', description: 'Trois rois.', priceCents: 699,
+      items: ['king:braise', 'king:synthe', 'king:laure'], compareAtCents: 897, badge: '-22 %', display: 'king', shortName: 'le Coffret',
+    };
+    const out = html(packcard(rois, [...FREE_ITEMS, 'king:braise']));
+    expect(out).toContain('Pack · 3 rois');
+    expect(out).toContain('Cour des rois');
+    expect(out).toContain('-22 %');
+    expect(out).toContain('Vous possédez déjà 1 roi sur 3 : le prix du Coffret ne change pas.');
+    expect(out.match(/class="ic-pack-orb"/g)).toHaveLength(3);
+    const mêlé: Product = { ...rois, id: 'pack:mix', items: ['king:braise', 'board:jade'], shortName: undefined };
+    const out2 = html(packcard(mêlé, [...FREE_ITEMS, 'board:jade']));
+    expect(out2).toContain('Pack · 2 skins');
+    expect(out2).toContain('Vous possédez déjà 1 skin sur 2 : le prix du pack ne change pas.');
+  });
+
+  it('bandeau du Trésor : les sceaux des sept collections, le texte et le bouton d’aujourd’hui', () => {
+    const t = productById('pack:tresor')!;
+    const out = html(tresorbanner(t, [...FREE_ITEMS, 'king:braise', 'skin:void']));
+    expect(out).toContain('Les 21 objets des 7 collections premium : rois, échiquiers et sorts. Les sept sceaux de collection compris.');
+    expect(out).toContain('Vous possédez déjà 2 skins sur 21 : le prix du Trésor ne change pas.');
+    expect(out).toContain('Acheter le Trésor');
+    expect(out).toContain('style="--n:7"');
+    expect(out.match(/class="tb-seal"/g)).toHaveLength(7);
+    expect([...out.matchAll(/Sceau de la collection ([^"]+)"/g)].map(m => m[1]).filter((_, i) => i % 2 === 0)).toEqual([
+      'Voûte céleste', 'Néant', 'Cour écarlate', 'Forge d’Inferno', 'Jardin de jade', 'Néon 2084', 'Olympe',
+    ]);
+  });
+
+  it('bandeau du Trésor au défaut : « Tout le Bazar », titre tb-t, bouton « Acheter le Trésor »', () => {
+    const out = html(tresorbanner(productById('pack:tresor')!, [...FREE_ITEMS]));
+    expect(out).toContain('Tout le Bazar');
+    expect(out).toContain('aria-labelledby="tb-t"');
+    expect(out).toContain('<h3 id="tb-t" class="tb-name">');
+    expect(out).toContain('>Acheter le Trésor<');
+  });
+
+  it('un pack fictif en bandeau : ses sceaux seulement, son libellé, son titre, son article', () => {
+    const cour: Product = {
+      id: 'pack:cour', kind: 'pack', name: 'Cour des rois', description: 'Trois rois.', priceCents: 699,
+      items: ['king:braise', 'king:synthe', 'king:laure'], compareAtCents: 897, display: 'banner', shortName: 'la Cour',
+    };
+    const el = (p: Product, owned: string[]) =>
+      createElement(TresorBanner, { ...props(p, owned), titleId: 'tb-t-2' } as ComponentProps<typeof TresorBanner>);
+    const out = html(el(cour, [...FREE_ITEMS, 'king:braise']));
+    expect(out).toContain('Pack · 3 rois');
+    expect(out).not.toContain('Tout le Bazar');
+    expect(out).not.toContain('sceau');
+    expect(out).not.toContain('class="tb-seal"');
+    expect(out).toContain('aria-labelledby="tb-t-2"');
+    expect(out).toContain('id="tb-t-2"');
+    expect(out).toContain('>Acheter la Cour<');
+    expect(out).toContain('le prix de la Cour ne change pas.');
+    // Un pack qui complète une collection : son seul sceau
+    const forge: Product = { ...cour, id: 'pack:forge', items: ['king:braise', 'board:obsidian', 'skin:inferno', 'king:synthe'], shortName: 'l’Écrin' };
+    const out2 = html(el(forge, [...FREE_ITEMS]));
+    expect(out2).toContain('Trois rois. Le sceau de collection compris.');
+    expect(out2.match(/class="tb-seal"/g)).toHaveLength(1);
+    expect(out2).toContain('Sceau de la collection Forge d’Inferno');
+    expect(out2).toContain('Pack · 4 skins');
+    expect(out2).toContain('>Acheter l’Écrin<');
+  });
+
+  it('isTrying, skins', () => {
+    const forge = collectionById('col:inferno')!;
+    expect(isTrying({ king: 'king:braise', board: 'board:obsidian', skin: 'skin:inferno' }, forge)).toBe(true);
+    expect(isTrying({ ...ARCANE, king: 'king:braise' }, forge)).toBe(false);
+    expect([skins(0), skins(1), skins(2)]).toEqual(['0 skin', '1 skin', '2 skins']);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Objet retiré de la vente : hors de l'essai, sauf pour qui le possède
+
+describe('objet retiré de la vente dans l’essai', () => {
+  it('available : un objet retiré que l’on ne possède pas sort de l’essai ; possédé, il reste ; le reste ne bouge pas', async () => {
+    vi.resetModules();
+    vi.doMock('../src/shared/skins/spells', async orig => {
+      const m = await orig<typeof import('../src/shared/skins/spells')>();
+      return { ...m, SPELL_ITEMS: m.SPELL_ITEMS.map(i => (i.id === 'skin:neon' ? { ...i, retired: true } : i)) };
+    });
+    try {
+      const t = await import('../src/client/pages/shop/trial');
+      const essai = { king: 'king:synthe', board: 'board:grille', skin: 'skin:neon' };
+      expect(t.available(essai, FREE_ITEMS)).toEqual({ king: 'king:synthe', board: 'board:grille' });
+      expect(t.available(essai, [...FREE_ITEMS, 'skin:neon'])).toEqual(essai);
+      expect(t.available(t.parseEssai('skin:neon'), [])).toEqual({});
+      // Panoplie Néon essayée par un visiteur : seuls le roi et l'échiquier sont à acheter, à l'unité
+      const delta = t.normalize(t.available(t.withCollection({}, ARCANE, collectionById('col:neon')!), FREE_ITEMS), ARCANE);
+      const q = t.quoteTrial(t.trialOf(ARCANE, delta), ARCANE, FREE_ITEMS);
+      expect(q.buy).toEqual(['king:synthe', 'board:grille']);
+      expect(q.cart?.lines.map(l => l.productId)).toEqual(['king:synthe', 'board:grille']);
+      expect(t.bestCollection(t.trialOf(ARCANE, delta), ARCANE, FREE_ITEMS)).toBeNull();
+    } finally {
+      vi.doUnmock('../src/shared/skins/spells');
+      vi.resetModules();
+    }
+  });
+
+  it('au défaut, rien n’est retiré : available ne change aucun essai', async () => {
+    const { available } = await import('../src/client/pages/shop/trial');
+    for (const it of ITEMS) expect(available({ [it.kind]: it.id }, [])).toEqual({ [it.kind]: it.id });
   });
 });

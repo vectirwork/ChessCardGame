@@ -2,7 +2,17 @@
 //   node test/boutique.mjs [BASE] [dossier de sortie] [--ferme=<BASE d'un serveur aux paiements fermés>]
 //
 // BASE (défaut http://localhost:3000) : un serveur en mode démo (PAYMENTS_MODE=demo). Avec --ferme, un second serveur
-// (PAYMENTS_MODE=off) sert les captures « paiements bientôt disponibles ». Chaque passage crée 4 ou 5 comptes.
+// (PAYMENTS_MODE=off) sert les captures « paiements bientôt disponibles ». Chaque passage crée 4 ou 5 comptes, aux
+// pseudos fixes (sans_banc2026, tel_banc2026…) : les serveurs doivent être neufs (scripts/serveur-jetable.mjs), ou
+// --suffixe=<8 caractères> donne d'autres pseudos (les images changent alors).
+//
+// Reproductible (images identiques d'une passe à l'autre sur le même code, comparées par node test/identite.mjs
+// --existantes=…) : hasard des pages semé (même graine à chaque page) ; avant chaque capture, animations CSS arrêtées
+// au même instant (4 s, 0,45 s pour le déballage) puis relancées, canevas WebGL (sorts, ciel) masqués, curseur de
+// saisie masqué, pointeur hors de tout survol, défilement instantané ; dates des achats et de l'inscription relues par
+// le navigateur au 11 novembre 2026 ; main de l'IA et décompte de la partie cachés. Restent bruitées (classement :
+// test/fixtures/v1/existantes.json) les captures prises pendant une animation pilotée en temps réel par la scène 3D
+// (sort en cours) ou juste après un changement d'échiquier (vignettes décodées en parallèle).
 // Avec --banc, seulement la mesure de repos sur téléphone (412 × 915, densité 2) : images composées (DrawFrame) et
 // repeintes (Paint) pendant 3 s, en portrait, après la série de sorts de la vue En partie, puis cabine hors de l'écran,
 // le ciel commun des pages intérieures figé (ses animations, composées, ne repeignent rien).
@@ -55,7 +65,8 @@ const FERME = args.find(a => a.startsWith('--ferme='))?.slice('--ferme='.length)
 const BANC = args.includes('--banc');
 mkdirSync(OUT, { recursive: true });
 
-const stamp = Date.now().toString(36);
+/** Suffixe des pseudos (8 caractères, comme l'ancien Date.now().toString(36)) : fixe, pour des images reproductibles. */
+const stamp = args.find(a => a.startsWith('--suffixe='))?.slice('--suffixe='.length) ?? 'banc2026';
 const step = name => console.log('✓', name);
 const DESK = { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 };
 const PHONE = { viewport: { width: 412, height: 915 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
@@ -65,8 +76,42 @@ const SHOW_ALL = '.bz-colls, .tb, .sp { content-visibility: visible !important; 
 const browser = await chromium.launch({ args: ['--enable-unsafe-swiftshader'] });
 const errors = [];
 
+/**
+ * Chaque page : hasard semé (mulberry32, même graine à chaque chargement), défilement instantané (le défilement doux
+ * de global.css finirait après la capture, à un instant qui varie).
+ */
+const HASARD_SEME = `(() => {
+  let a = 0x2545f491;
+  Math.random = () => {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  document.addEventListener('DOMContentLoaded', () => {
+    const st = document.createElement('style');
+    st.textContent = 'html { scroll-behavior: auto !important; }';
+    document.head.append(st);
+  });
+})();`;
+/** Date des achats et de l'inscription, relue par le navigateur (le serveur écrit l'heure réelle). */
+const JOUR_FIXE = '2026-11-11T10:00:00.000Z';
+const DATES = /(_at|At|Since)$/;
+const fixerDates = x => {
+  if (Array.isArray(x)) return x.map(fixerDates);
+  if (!x || typeof x !== 'object') return x;
+  return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, DATES.test(k) && typeof v === 'string' ? JOUR_FIXE : fixerDates(v)]));
+};
+
 async function open(base, opts, url = '/boutique') {
   const ctx = await browser.newContext({ ...opts, reducedMotion: 'no-preference' });
+  await ctx.addInitScript(HASARD_SEME);
+  await ctx.route(/\/api\/(account\/purchases|users\/)/, async route => {
+    const r = await route.fetch();
+    const type = r.headers()['content-type'] ?? '';
+    if (!type.includes('application/json')) return route.fulfill({ response: r });
+    return route.fulfill({ response: r, json: fixerDates(await r.json()) });
+  });
   const page = await ctx.newPage();
   page.on('pageerror', e => errors.push(`${url} : ${e.message}`));
   page.on('console', m => {
@@ -79,12 +124,79 @@ async function go(page, url) {
   await page.goto(url, { waitUntil: 'networkidle' });
   await page.waitForTimeout(700);
 }
-const shot = (page, name, o = {}) => page.screenshot({ path: path.join(OUT, name), ...o });
-async function fullShot(page, name) {
+/**
+ * Image figée : pointeur hors de tout survol, canevas WebGL et curseur de saisie masqués, animations CSS arrêtées à
+ * `t` ms (toutes au même instant, quelle que soit l'heure de leur départ), puis remises où elles étaient et relancées
+ * après la capture.
+ */
+const FIGE = 'canvas { visibility: hidden !important; } * { caret-color: transparent !important; }';
+/**
+ * Échiquier de la cabine pendant un sort : l'inclinaison et le zoom de la cinématique (--tilt, --zoom, posés à chaque
+ * image par stage.ts) ramenés à plat pour la capture (un calque incliné en 3D ne se rastérise pas deux fois pareil),
+ * éclair masqué. L'échiquier incliné est capturé par test/echiquiers.mjs (inclinaison.png).
+ */
+const SORT_FIXE = '.cab .board-wrap { --tilt: 0deg !important; --zoom: 1 !important; } .vfx-flash { display: none !important; }';
+/** Scène 3D de la cabine prête (préparée 1,4 s après l'ouverture de la vue En partie) : l'échiquier ne bouge plus. */
+async function scenePrete(page) {
+  await page.waitForFunction(() => document.querySelector('canvas.vfx-canvas'), null, { timeout: 10_000 }).catch(() => {});
+  await page.waitForTimeout(500);
+}
+async function shot(page, name, { t = 4000, css = '', ...o } = {}) {
+  // Pointeur dans le coin : aucun survol (après un défilement, Chromium met le survol à jour à un instant qui varie)
+  await page.mouse.move(0, 0);
+  await page.evaluate(([fige, css, t]) => {
+    if (!document.getElementById('banc-fige')) {
+      const st = document.createElement('style');
+      st.id = 'banc-fige';
+      st.textContent = fige;
+      document.head.append(st);
+    }
+    if (css) {
+      const st = document.createElement('style');
+      st.id = 'banc-fige-capture';
+      st.textContent = css;
+      document.head.append(st);
+    }
+    window.__fige = document.getAnimations().map(a => {
+      const avant = { a, temps: a.currentTime, etat: a.playState };
+      try {
+        a.pause();
+        a.currentTime = t;
+      } catch {
+        // animation retirée entre-temps
+      }
+      return avant;
+    });
+  }, [FIGE, css, t]);
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  await page.waitForTimeout(150);
+  await page.screenshot({ path: path.join(OUT, name), ...o });
+  await page.evaluate(() => {
+    document.getElementById('banc-fige-capture')?.remove();
+    for (const { a, temps, etat } of window.__fige ?? []) {
+      try {
+        a.currentTime = temps;
+        if (etat === 'running') a.play();
+        else if (etat === 'finished') a.finish();
+      } catch {
+        // animation retirée entre-temps
+      }
+    }
+    window.__fige = null;
+  });
+}
+async function fullShot(page, name, css = '') {
   await page.addStyleTag({ content: SHOW_ALL });
   await page.waitForTimeout(200);
-  await shot(page, name, { fullPage: true });
+  await shot(page, name, { fullPage: true, css });
 }
+/**
+ * Sceau tournant « Zéro pay-to-win » (en tête de la boutique, ordinateur) pour une capture de la page entière : à
+ * l'arrêt, sans animation. Figée à 4 s comme les autres, sa rotation se rastérisait d'une passe à l'autre avec un écart
+ * allant jusqu'à 60 sur un canal (relecture du lot 2) ; les captures de l'écran seul (invite-1440.png…) restent figées
+ * à 4 s.
+ */
+const SCEAU_FIXE = '.bz-seal-text { animation: none !important; }';
 
 /** Appel d'API depuis la page (les cookies de session sont ceux du navigateur). */
 const api = (page, p, body) =>
@@ -199,6 +311,8 @@ if (BANC) {
   await page.waitForTimeout(300);
   await tryCard(page, 'Carte du ciel');
   await page.waitForTimeout(900);
+  // Le clic peut faire défiler la page (Playwright amène la carte à l'écran) : capture en haut de page
+  await page.evaluate(() => window.scrollTo(0, 0));
   await shot(page, 'rayon-echiquiers.png');
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(300);
@@ -207,12 +321,14 @@ if (BANC) {
   // Sorts essayés : un sort part tout de suite
   await tab(page, 'Sorts');
   await page.waitForTimeout(300);
+  await page.evaluate(() => window.scrollTo(0, 0));
   await shot(page, 'rayon-sorts.png');
   await tryCard(page, 'Écarlate');
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForSelector('.cab-cap-k', { timeout: 8000 });
   await page.waitForTimeout(900);
-  await shot(page, 'cabine-sort.png', { clip: (await box(page, '.cab')) ?? undefined });
+  // L'inclinaison du sort (--tilt, --zoom), posée à chaque image par la scène 3D (stage.ts) : fixée pour la capture
+  await shot(page, 'cabine-sort.png', { clip: (await box(page, '.cab')) ?? undefined, css: SORT_FIXE });
   step('vue En partie : échiquier essayé, sort lancé');
 
   // L'essai est dans l'adresse, et revient au rechargement
@@ -234,7 +350,7 @@ if (BANC) {
   await page.waitForTimeout(300);
   assert.equal(await page.locator('.pb .slot.is-trying').count(), 0);
   await page.evaluate(() => window.scrollTo(0, 0));
-  await fullShot(page, 'invite-1440-page.png');
+  await fullShot(page, 'invite-1440-page.png', SCEAU_FIXE);
   await ctx.close();
 }
 
@@ -471,6 +587,7 @@ if (FERME) {
   await tab(page, 'Échiquiers');
   await tryCard(page, 'Palais de jade');
   await page.waitForTimeout(600);
+  await scenePrete(page);
   await shot(page, 'essai-2-skins.png');
   assert.match(await page.locator('.cab .ta-main').innerText(), /Acheter et équiper · 6,98/i);
   await page.locator('.cab .ta-main').click();
@@ -487,7 +604,7 @@ if (FERME) {
   await page.locator('.co-actions .btn-primary').click();
   await page.waitForURL(u => new URL(u).pathname === '/boutique');
   await page.waitForTimeout(450);
-  await shot(page, 'deballage.png');
+  await shot(page, 'deballage.png', { t: 450 });
   await page.waitForTimeout(1600);
   await shot(page, 'apres-achat.png');
   const me = (await api(page, '/me')).data.user;
@@ -517,7 +634,9 @@ if (FERME) {
   await page.locator('.cd-validate').click();
   await page.getByRole('button', { name: /^Jouer$/i }).click({ timeout: 8000 });
   await page.waitForTimeout(1200);
-  await shot(page, 'partie-roi.png');
+  // Main de l'IA tirée au hasard par le serveur (cachée), décompte du premier coup en heure réelle (masqué)
+  await page.mouse.move(0, 0);
+  await shot(page, 'partie-roi.png', { css: '.gs-opp-fan { visibility: hidden !important; }', mask: [page.getByText(/^Premier coup avant/)] });
   step('le roi acheté est vu en partie');
   await ctx.close();
 }

@@ -6,8 +6,8 @@ import rateLimit from 'express-rate-limit';
 import Stripe from 'stripe';
 import { z } from 'zod';
 import {
-  ALL_PRODUCTS, DEFAULT_ITEM, FREE_ITEMS, ITEMS, PRODUCTS, SLOTS, formatPrice, itemById, productById,
-  productPrice, quoteCart,
+  ALL_PRODUCTS, CURRENCY, DEFAULT_ITEM, FREE_ITEMS, ITEMS, LOCALE, PRODUCTS, SHOP_ITEMS, SLOTS, alone, bySlot, duplicated, formatPrice,
+  productById, productPrice, quoteCart, selectionLabel,
 } from '../shared/catalog';
 import type { Item, ItemKind, Product } from '../shared/catalog';
 import { CART_PRODUCT_ID } from '../shared/protocol';
@@ -17,6 +17,7 @@ import { config } from './config';
 import { one, q, tx } from './db';
 import type { DbClient } from './db';
 import { purchaseItemLines, sendPurchaseConfirmation } from './mail';
+import { FEATURES, LIMITS } from './settings';
 
 const stripe = config.payments === 'stripe' ? new Stripe(config.stripe.secretKey) : null;
 
@@ -40,11 +41,10 @@ interface PurchaseRow {
  * Exportée pour /account/equip et les tests.
  */
 export function slotSelection(ids: readonly string[]): { items: Item[] } | { status: 400 | 404; error: string } {
-  const items = ids.map(itemById);
-  if (items.some(i => !i)) return { status: 404, error: 'Objet inconnu.' };
-  const kinds = new Set(items.map(i => i!.kind));
-  if (kinds.size !== items.length) return { status: 400, error: 'Un seul objet par emplacement.' };
-  return { items: items as Item[] };
+  const sel = bySlot(ids);
+  if (sel.unknown.length) return { status: 404, error: 'Objet inconnu.' };
+  if (duplicated(sel)) return { status: 400, error: 'Un seul objet par emplacement.' };
+  return { items: sel.items };
 }
 
 /**
@@ -62,11 +62,8 @@ export async function equipItems(userId: string, items: readonly Item[], c?: DbC
 
 /** Objets à équiper à la livraison : pour chaque emplacement, l'objet livré s'il est seul de son emplacement. */
 export function equipAtDelivery(items: readonly string[]): Item[] {
-  const known = items.map(itemById).filter((i): i is Item => !!i);
-  return SLOTS.flatMap(kind => {
-    const of = known.filter(i => i.kind === kind);
-    return of.length === 1 ? of : [];
-  });
+  const sel = bySlot(items);
+  return SLOTS.flatMap(kind => alone(sel, kind) ?? []);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -74,13 +71,13 @@ export function equipAtDelivery(items: readonly string[]): Item[] {
 
 /**
  * Objets promis par un produit : tous les objets payants des emplacements de `future`, y compris ceux ajoutés au
- * catalogue après l'achat. Le Grimoire des sorts promet les sorts, le Grimoire complet (retiré) les sorts et les
- * échiquiers, jamais les rois.
+ * catalogue après l'achat (mais pas ceux retirés de la vente). Le Grimoire des sorts promet les sorts, le Grimoire
+ * complet (retiré) les sorts et les échiquiers, jamais les rois.
  */
 export function promisedItems(productId: string): string[] {
   const future: readonly ItemKind[] = productById(productId)?.future ?? [];
   if (!future.length) return [];
-  return ITEMS.filter(i => !i.free && future.includes(i.kind)).map(i => i.id);
+  return ITEMS.filter(i => !i.free && !i.retired && future.includes(i.kind)).map(i => i.id);
 }
 
 /**
@@ -150,7 +147,8 @@ function billedName(name: string, product: Product | undefined, cents: number): 
  * Commande d'un produit ou d'un panier pour qui possède `owned` (objets de user_items). Exportée pour les tests.
  * - Produit : prix de productPrice (collection au prix « compléter »), objets du produit. Inconnu ou retiré : 404.
  * - Panier : lignes de quoteCart (une collection complétée par le panier au prix « compléter »), objets à payer
- *   seulement (ni offerts ni possédés). Objet inconnu : 404 ; deux objets du même emplacement : 400.
+ *   seulement (ni offerts ni possédés). Objet inconnu, ou retiré de la vente et non possédé : 404 ; deux objets du
+ *   même emplacement : 400.
  * Rien à payer : 409.
  */
 export function orderFor(req: OrderRequest, owned: readonly string[]): Order | { status: number; error: string } {
@@ -169,6 +167,8 @@ export function orderFor(req: OrderRequest, owned: readonly string[]): Order | {
   }
   const sel = slotSelection(req.itemIds);
   if ('error' in sel) return sel;
+  // Pas dans slotSelection, qui sert aussi à l'équipement : un objet retiré que l'on possède s'équipe encore
+  if (sel.items.some(i => i.retired && !i.free && !owned.includes(i.id))) return { status: 404, error: 'Cet objet n’est plus en vente.' };
   const quote = quoteCart(req.itemIds, owned);
   if (!quote) return { status: 409, error: 'Vous possédez déjà tout le contenu de cette sélection.' };
   return {
@@ -187,7 +187,7 @@ export function stripeLineItems(order: Order): Stripe.Checkout.SessionCreatePara
   return order.lines.map(l => ({
     quantity: 1,
     price_data: {
-      currency: 'eur',
+      currency: CURRENCY,
       unit_amount: l.cents,
       tax_behavior: 'inclusive',
       product_data: { name: l.name, ...(l.description ? { description: l.description } : {}) },
@@ -202,7 +202,7 @@ export function stripeLineItems(order: Order): Stripe.Checkout.SessionCreatePara
 export function purchaseLabel(productId: string, items: readonly string[], amountCents?: number): string {
   const product = productId === CART_PRODUCT_ID ? undefined : productById(productId);
   if (product) return amountCents === undefined ? product.name : billedName(product.name, product, amountCents);
-  return `Votre sélection (${items.length} skin${items.length > 1 ? 's' : ''})`;
+  return selectionLabel(items.length);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -272,14 +272,57 @@ export async function refundPurchase(paymentRef: string) {
   );
   if (!p?.user_id) return;
   await q(`DELETE FROM user_items WHERE user_id = $1 AND source = $2`, [p.user_id, `purchase:${p.id}`]);
-  await q(UNEQUIP_LOST_SQL, [p.user_id, FREE_ITEMS, ...SLOT_ENTRIES.map(([kind]) => DEFAULT_ITEM[kind])]);
+  await unequipLost(p.user_id);
   console.log(`Achat ${p.id} remboursé : objets retirés.`);
+}
+
+/** Déséquipe ce qui n'est plus possédé (ni offert) : chaque emplacement concerné revient à son défaut. */
+async function unequipLost(userId: string, c?: DbClient): Promise<void> {
+  const params = [userId, FREE_ITEMS, ...SLOT_ENTRIES.map(([kind]) => DEFAULT_ITEM[kind])];
+  if (c) await c.query(UNEQUIP_LOST_SQL, params);
+  else await q(UNEQUIP_LOST_SQL, params);
+}
+
+/**
+ * Retrait d'objets (administration, remboursement partiel) : les objets quittent la collection et, s'ils étaient
+ * équipés, leur emplacement revient à son défaut, dans la même transaction. Exportée pour l'administration et les
+ * tests. Renvoie le nombre d'objets retirés.
+ */
+export async function revokeItems(userId: string, ids: readonly string[]): Promise<number> {
+  if (!ids.length) return 0;
+  return tx(async c => {
+    const r = await c.query(`DELETE FROM user_items WHERE user_id = $1 AND item_id = ANY($2::text[]) RETURNING item_id`, [userId, [...ids]]);
+    await unequipLost(userId, c);
+    return r.rows.length;
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
 // Routes
 
-const checkoutLimiter = rateLimit({ windowMs: 60_000, limit: 15, standardHeaders: 'draft-7', legacyHeaders: false });
+const checkoutLimiter = rateLimit({ windowMs: 60_000, limit: LIMITS.checkoutPerMinute, standardHeaders: 'draft-7', legacyHeaders: false });
+
+/**
+ * Boutique coupée (FEATURE_SHOP=0) : plus de nouveau paiement (commande, caisse de démonstration). Les paiements déjà
+ * engagés se livrent encore (retour de Stripe /confirm, webhook) ; le catalogue reste lisible.
+ */
+const shopOpen: express.RequestHandler = (_req, res, next) => {
+  if (FEATURES.shop) return next();
+  res.status(503).json({ error: 'La boutique est fermée.' });
+};
+
+/** Langue de la page de paiement de Stripe, tirée de LOCALE (« fr-FR » → « fr »). */
+const STRIPE_LOCALE = LOCALE.split('-')[0] as Stripe.Checkout.SessionCreateParams.Locale;
+
+/**
+ * Réponse de GET /api/shop/catalog : objets des rayons et produits en vente, avec les seuls champs d'avant la refonte
+ * (badge et retired d'un objet, display et shortName d'un pack servent à la boutique du site) : au défaut, la réponse
+ * est identique, octet pour octet, à celle d'avant.
+ */
+const PUBLIC_CATALOG = {
+  items: SHOP_ITEMS.map(({ badge: _badge, retired: _retired, ...i }) => i),
+  products: PRODUCTS.map(({ display: _display, shortName: _shortName, ...p }) => p),
+};
 
 /**
  * Corps de POST /api/shop/checkout (CheckoutRequest) : un produit ou un panier, jamais les deux. Tous les messages sont
@@ -304,10 +347,10 @@ export const checkoutSchema = z
 export const shopRouter = Router();
 
 shopRouter.get('/catalog', (_req, res) => {
-  res.json({ items: ITEMS, products: PRODUCTS, payments: config.payments });
+  res.json({ ...PUBLIC_CATALOG, payments: config.payments });
 });
 
-shopRouter.post('/checkout', checkoutLimiter, requireUser, async (req, res) => {
+shopRouter.post('/checkout', shopOpen, checkoutLimiter, requireUser, async (req, res) => {
   const parsed = checkoutSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Requête invalide.' });
   if (config.payments === 'off') return res.status(503).json({ error: 'Les paiements ne sont pas encore ouverts.' });
@@ -317,8 +360,8 @@ shopRouter.post('/checkout', checkoutLimiter, requireUser, async (req, res) => {
   if ('error' in order) return res.status(order.status).json({ error: order.error });
   const purchase = await one<{ id: string }>(
     `INSERT INTO purchases (user_id, product_id, items, provider, amount_cents, currency, status, email, equip)
-     VALUES ($1, $2, $3, $4, $5, 'eur', 'pending', $6, $7) RETURNING id`,
-    [u.id, order.productId, order.items, config.payments, order.amountCents, u.email, equip],
+     VALUES ($1, $2, $3, $4, $5, $8, 'pending', $6, $7) RETURNING id`,
+    [u.id, order.productId, order.items, config.payments, order.amountCents, u.email, equip, CURRENCY],
   );
   if (config.payments === 'demo') {
     return res.json({ url: `/boutique/demo/${purchase!.id}` });
@@ -326,7 +369,7 @@ shopRouter.post('/checkout', checkoutLimiter, requireUser, async (req, res) => {
   try {
     const session = await stripe!.checkout.sessions.create({
       mode: 'payment',
-      locale: 'fr',
+      locale: STRIPE_LOCALE,
       customer_email: u.email,
       client_reference_id: u.id,
       line_items: stripeLineItems(order),
@@ -377,7 +420,7 @@ shopRouter.get('/confirm/:sessionId', requireUser, async (req, res) => {
 });
 
 /** Mode démo uniquement : simule un paiement réussi. */
-shopRouter.post('/demo/:purchaseId/complete', requireUser, async (req, res) => {
+shopRouter.post('/demo/:purchaseId/complete', shopOpen, requireUser, async (req, res) => {
   if (config.payments !== 'demo') return res.status(404).json({ error: 'Indisponible.' });
   const p = await one<PurchaseRow>(`SELECT * FROM purchases WHERE id = $1 AND user_id = $2`, [req.params.purchaseId, req.identity.user!.id]);
   if (!p) return res.status(404).json({ error: 'Achat introuvable.' });
@@ -391,7 +434,7 @@ shopRouter.post('/demo/:purchaseId/complete', requireUser, async (req, res) => {
   } satisfies DemoCompleteResponse);
 });
 
-shopRouter.get('/demo/:purchaseId', requireUser, async (req, res) => {
+shopRouter.get('/demo/:purchaseId', shopOpen, requireUser, async (req, res) => {
   if (config.payments !== 'demo') return res.status(404).json({ error: 'Indisponible.' });
   const p = await one<PurchaseRow>(`SELECT * FROM purchases WHERE id = $1 AND user_id = $2`, [req.params.purchaseId, req.identity.user!.id]);
   if (!p) return res.status(404).json({ error: 'Achat introuvable.' });

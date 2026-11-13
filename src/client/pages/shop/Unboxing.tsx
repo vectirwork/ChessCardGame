@@ -5,6 +5,11 @@ import { useEffect, useRef } from 'react';
 import type { CSSProperties } from 'react';
 import { ItemThumb } from './ItemThumb';
 
+/** Éclats de la couronne (répartis sur le tour : --n). */
+const BURST = 12;
+/** Vignettes montées sur le socle, au plus. */
+const SHOWN = 3;
+
 export function Unboxing({ items, onDone }: { items: string[]; onDone: () => void }) {
   // Un seul minuteur par déballage, quels que soient les rendus de la page
   const done = useRef(onDone);
@@ -15,13 +20,13 @@ export function Unboxing({ items, onDone }: { items: string[]; onDone: () => voi
   }, []);
   return (
     <div className="ub" aria-hidden="true">
-      <span className="ub-ring">
-        {Array.from({ length: 12 }, (_, i) => (
+      <span className="ub-ring" style={{ '--n': BURST } as CSSProperties}>
+        {Array.from({ length: BURST }, (_, i) => (
           <i key={i} style={{ '--i': i } as CSSProperties} />
         ))}
       </span>
       <span className="ub-items">
-        {items.slice(0, 3).map((id, i) => (
+        {items.slice(0, SHOWN).map((id, i) => (
           <span key={id} className="ub-item" style={{ '--i': i } as CSSProperties}>
             <ItemThumb id={id} />
           </span>

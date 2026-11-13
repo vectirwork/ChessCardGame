@@ -7,13 +7,13 @@
 // équipés au retour, une fois l'achat livré, et seulement si la case est cochée (Shop.tsx, deliver).
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { SLOTS, formatPrice, itemById } from '../../../shared/catalog';
+import { PAYMENT_PROVIDER, bySlot, duplicated, formatPrice, itemById, itemLabel, selectionLabel } from '../../../shared/catalog';
 import type { CheckoutRequest } from '../../../shared/protocol';
 import { api, errMsg } from '../../api';
 import { Modal } from '../../components/Layout';
 import { StarMark } from '../PageScene';
 import { ItemThumb } from './ItemThumb';
-import { equipNote, itemPhrase, orderSummary } from './trial';
+import { equipNote, orderSummary } from './trial';
 import type { Order } from './trial';
 
 export type { Order } from './trial';
@@ -31,7 +31,7 @@ export interface Delivery {
 
 /** Un objet par emplacement au plus : on peut les équiper à la livraison. */
 function equippable(items: string[]) {
-  return SLOTS.every(k => items.filter(i => itemById(i)?.kind === k).length <= 1);
+  return !duplicated(bySlot(items));
 }
 
 interface Props {
@@ -57,7 +57,7 @@ export function CheckoutModal({ order, owned, demo, equipOwned, onClose }: Props
   useEffect(() => firstRef.current?.focus(), []);
   const total = sum?.totalCents ?? 0;
   const saving = sum?.savingCents ?? 0;
-  const title = order.kind === 'product' ? order.product.name : items.length === 1 ? itemPhrase(itemById(items[0])!) : `Votre sélection (${items.length} skins)`;
+  const title = order.kind === 'product' ? order.product.name : items.length === 1 ? itemLabel(itemById(items[0])!) : selectionLabel(items.length);
 
   const pay = async () => {
     setBusy(true);
@@ -132,7 +132,7 @@ export function CheckoutModal({ order, owned, demo, equipOwned, onClose }: Props
                   Les équiper dès la livraison
                   {also.length > 0 && (
                     <small className="co-also">
-                      Également équipé{also.length > 1 ? 's' : ''} : {also.map(i => `${itemPhrase(itemById(i)!)}`).join(', ')} (déjà à vous).
+                      Également équipé{also.length > 1 ? 's' : ''} : {also.map(i => itemLabel(itemById(i)!)).join(', ')} (déjà à vous).
                     </small>
                   )}
                   <small> {capitalize(equipNote([...items, ...also]))}.</small>
@@ -161,7 +161,9 @@ export function CheckoutModal({ order, owned, demo, equipOwned, onClose }: Props
             </button>
             <p className="co-secure">
               <LockIcon />{' '}
-              {demo ? 'Mode démonstration : une page de paiement simulée remplace Stripe.' : 'Vous allez être redirigé vers la page de paiement sécurisée de Stripe.'}
+              {demo
+                ? `Mode démonstration : une page de paiement simulée remplace ${PAYMENT_PROVIDER}.`
+                : `Vous allez être redirigé vers la page de paiement sécurisée de ${PAYMENT_PROVIDER}.`}
             </p>
           </>
         )}

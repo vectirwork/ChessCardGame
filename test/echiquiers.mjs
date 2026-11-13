@@ -8,6 +8,7 @@
 // - retournes.png : les échiquiers décorés vus des Noirs (les motifs restent sur les cases sombres) ;
 // - etats.png : dernier coup, sélection et indices, échec, Mur de glace, Faille, puis cibles d'une carte, au-dessus
 //   de l'incrustation, y compris sur une case qui est aussi celle du dernier coup (cible en f6, case choisie en g8) ;
+//   pulsations de l'échec et des cibles arrêtées à leur début (image identique d'une passe à l'autre) ;
 // - faille-obsidienne.png : la Faille à côté des craquelures d'Obsidienne, à 64 px ;
 // - coins.png : les coins des cadres (frises en border-image, images d'angle, lueurs) en densité 3, dans l'arrondi
 //   de 14 px ;
@@ -144,8 +145,12 @@ async function pageFor(dpr) {
   if (!pages.has(dpr)) pages.set(dpr, await (await browser.newContext({ viewport: { width: 1400, height: 900 }, deviceScaleFactor: dpr })).newPage());
   return pages.get(dpr);
 }
-/** Rend une planche ; `prepare` agit sur la page avant la capture (clics, classes). */
-async function render(planche, { dpr = 1, prepare } = {}) {
+/**
+ * Rend une planche ; `prepare` agit sur la page avant la capture (clics, classes). `figer` : juste avant la capture,
+ * les animations sans fin (pulsation des cibles et de l'échec) sont arrêtées à leur début et les autres (transitions,
+ * apparitions) menées à leur fin, pour une image identique d'une passe à l'autre.
+ */
+async function render(planche, { dpr = 1, prepare, figer = false } = {}) {
   const page = await pageFor(dpr);
   const width = planche.cols * (planche.cells[0].size * 8 + 28 + (planche.gap ?? 10)) + 40;
   await page.setViewportSize({ width: Math.max(400, width), height: 900 });
@@ -154,6 +159,16 @@ async function render(planche, { dpr = 1, prepare } = {}) {
   if (prepare) await prepare(page);
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(400);
+  if (figer) {
+    await page.evaluate(() => {
+      for (const a of document.getAnimations()) {
+        if (a.effect?.getComputedTiming().iterations === Infinity) {
+          a.pause();
+          a.currentTime = 0;
+        } else a.finish();
+      }
+    });
+  }
   return page;
 }
 async function shoot(name, planche, opts = {}) {
@@ -192,6 +207,7 @@ if (!BANC) {
   ]);
   await shoot('etats.png', { cols: 4, cells: etats }, {
     dpr: 2,
+    figer: true,
     prepare: async page => {
       for (const b of await page.$$('.board.interactive')) {
         const s = await b.$('.sq[data-sq="21"]');

@@ -5,7 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Collection, ItemKind } from '../../../shared/catalog';
 import type { MeUser } from '../../../shared/protocol';
 import { ownedIds, panoplieOf } from '../../skins';
-import { formatEssai, normalize, parseEssai, revertSlot, surprise as draw, toggleItem, trialOf, withCollection } from './trial';
+import { RAYONS } from './RayonTabs';
+import { available, formatEssai, normalize, parseEssai, revertSlot, surprise as draw, toggleItem, trialOf, withCollection } from './trial';
 import type { Trial, TrialDelta } from './trial';
 
 const STORE_KEY = 'sm:essai';
@@ -58,8 +59,9 @@ export function useTrial(me: MeUser | null, initial: () => TrialDelta): TrialApi
   const pano = useMemo(() => panoplieOf(me), [me]);
   const owned = useMemo(() => ownedIds(me), [me]);
   const [raw, setRaw] = useState<TrialDelta>(initial);
-  // Écart minimal recalculé quand la panoplie change (compte chargé après la page, objet équipé)
-  const delta = useMemo(() => normalize(raw, pano), [raw, pano]);
+  // Écart minimal recalculé quand la panoplie change (compte chargé après la page, objet équipé), sans objet retiré de
+  // la vente que l'on ne possède pas
+  const delta = useMemo(() => normalize(available(raw, owned), pano), [raw, owned, pano]);
   const trial = useMemo(() => trialOf(pano, delta), [pano, delta]);
 
   useEffect(() => storeTrial(delta), [delta]);
@@ -84,7 +86,7 @@ export function useShopUrl(rayon: string, delta: TrialDelta, skip: boolean) {
     if (skip) return;
     const t = window.setTimeout(() => {
       const q: string[] = [];
-      if (rayon !== 'rois') q.push(`rayon=${rayon}`);
+      if (rayon !== RAYONS[0]) q.push(`rayon=${rayon}`);
       if (essai) q.push(`essai=${essai}`);
       const url = `${window.location.pathname}${q.length ? `?${q.join('&')}` : ''}`;
       if (url !== `${window.location.pathname}${window.location.search}`) window.history.replaceState(window.history.state, '', url);

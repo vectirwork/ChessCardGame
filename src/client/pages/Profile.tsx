@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { DEFAULT_BOARD, DEFAULT_SKIN, itemById, kingStyle, normKing } from '../../shared/catalog';
+import { LOCALE, SLOTS, itemById, kingStyle, normItem } from '../../shared/catalog';
 import { RESULT_TEXT, ResultReason } from '../../shared/game';
 import type { GameSummary, ProfileResponse } from '../../shared/protocol';
 import { TIME_CONTROLS } from '../../shared/protocol';
@@ -12,7 +12,7 @@ import { api, errMsg } from '../api';
 import { CollectionSeal } from '../components/CollectionSeal';
 import { PageLoader } from '../components/Layout';
 import { crestUrl } from '../components/pieces';
-import { useApp } from '../store';
+import { useApp, useFeature } from '../store';
 import { PageHead, PlacePage, ordinal, useTitle } from './PageScene';
 import { ItemThumb } from './shop/ItemThumb';
 
@@ -23,6 +23,8 @@ export default function Profile() {
   const { username = '' } = useParams();
   useTitle(username || 'Profil');
   const { me } = useApp();
+  // Boutique coupée (FEATURE_SHOP=0) : la panoplie d'un autre joueur se montre sans lien vers la boutique
+  const shop = useFeature('shop');
   const [data, setData] = useState<ProfileData | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -57,12 +59,28 @@ export default function Profile() {
   if (!data) return <PageLoader />;
   const p = data.profile;
   const winRate = p.gamesPlayed ? Math.round((p.wins / p.gamesPlayed) * 100) : 0;
-  const skin = itemById(p.skin)?.kind === 'skin' ? itemById(p.skin) : itemById(DEFAULT_SKIN);
-  const king = normKing(p.king);
-  const board = itemById(p.board ?? '')?.kind === 'board' ? p.board : DEFAULT_BOARD;
-  const look = [king, board, skin!.id];
+  // Panoplie normalisée : identifiant inconnu ou d'un autre emplacement → l'objet par défaut (Arcane)
+  const look = SLOTS.map(k => normItem(k, p[k]));
+  const [king, board, skin] = [normItem('king', p.king), normItem('board', p.board), itemById(normItem('skin', p.skin))];
   const isMe = me?.username === p.username;
   const share = (n: number) => (p.gamesPlayed ? `${(n / p.gamesPlayed) * 100}%` : '0%');
+  /** Panoplie (vignettes, noms) et l'invitation du lien, s'il y en a un. */
+  const lookBody = (cta: string | null) => (
+    <>
+      <span className="prof-look-ths" aria-hidden="true">
+        {look.map(id => (
+          <ItemThumb key={id} id={id} size="chip" />
+        ))}
+      </span>
+      <span className="prof-look-t">
+        <small>{isMe ? 'Ma panoplie' : 'Sa panoplie'}</small>
+        <span>
+          <b className="prof-skin">{itemById(king)?.name}</b> · {itemById(board)?.name} · sorts {skin!.name}
+        </span>
+        {cta && <em>{cta}</em>}
+      </span>
+    </>
+  );
   return (
     <PlacePage place="observatoire" className="prof">
       <div className="prof-head">
@@ -81,7 +99,7 @@ export default function Profile() {
             }
             lede={
               <>
-                Membre depuis {new Date(p.memberSince).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
+                Membre depuis {new Date(p.memberSince).toLocaleDateString(LOCALE, { month: 'long', year: 'numeric' })}
                 {isMe && (
                   <>
                     {' '}
@@ -91,24 +109,17 @@ export default function Profile() {
               </>
             }
           >
-            <Link
-              className="prof-look"
-              to={isMe ? '/compte?onglet=collection' : `/boutique?essai=${look.join(',')}`}
-              aria-label={isMe ? 'Ma panoplie : la changer dans mon compte' : `Essayer la panoplie de ${p.username} dans la boutique`}
-            >
-              <span className="prof-look-ths" aria-hidden="true">
-                {look.map(id => (
-                  <ItemThumb key={id} id={id} size="chip" />
-                ))}
-              </span>
-              <span className="prof-look-t">
-                <small>{isMe ? 'Ma panoplie' : 'Sa panoplie'}</small>
-                <span>
-                  <b className="prof-skin">{itemById(king)?.name}</b> · {itemById(board)?.name} · sorts {skin!.name}
-                </span>
-                <em>{isMe ? 'La changer dans mon compte →' : 'L’essayer dans la boutique →'}</em>
-              </span>
-            </Link>
+            {isMe || shop ? (
+              <Link
+                className="prof-look"
+                to={isMe ? '/compte?onglet=collection' : `/boutique?essai=${look.join(',')}`}
+                aria-label={isMe ? 'Ma panoplie : la changer dans mon compte' : `Essayer la panoplie de ${p.username} dans la boutique`}
+              >
+                {lookBody(isMe ? 'La changer dans mon compte →' : 'L’essayer dans la boutique →')}
+              </Link>
+            ) : (
+              <div className="prof-look">{lookBody(null)}</div>
+            )}
           </PageHead>
         </div>
         <div className="prof-rating">
@@ -201,7 +212,7 @@ export function GamesTable({ games, me }: { games: GameSummary[]; me: string }) 
                   {g.rated ? ' · classée' : ''}
                 </td>
                 <td>{Math.ceil(g.plies / 2)}</td>
-                <td className="faint">{new Date(g.createdAt).toLocaleDateString('fr-FR')}</td>
+                <td className="faint">{new Date(g.createdAt).toLocaleDateString(LOCALE)}</td>
                 <td className="gt-act">
                   <Link to={`/analyse/${g.id}`} className="btn btn-sm">
                     Revoir

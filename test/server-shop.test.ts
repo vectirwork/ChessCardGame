@@ -3,15 +3,20 @@
 // livraison avec équipement dans la même transaction (et objets promis d'un pack créé avant leur ajout), e-mail d'achat
 // (objets nouveaux seuls, regroupés au-delà de 4), promesses des packs (une fois par achat), messages de refus en
 // français, profil public et classement.
+import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import express from 'express';
+import type { Router } from 'express';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 // account.ts importe games.ts (salles, minuteries) pour la suppression du compte : inutile ici.
 vi.mock('../src/server/games', () => ({ detachUser: vi.fn(async () => undefined) }));
 
-import { ITEMS, productById, quoteCart } from '../src/shared/catalog';
+import { FREE_ITEMS, ITEMS, SLOTS, SLOT_DEFS, productById, quoteCart } from '../src/shared/catalog';
+import { SLOT_COLUMN } from '../src/server/auth';
 import { CART_PRODUCT_ID } from '../src/shared/protocol';
 import { leaderboard, publicProfile } from '../src/server/account';
 import { config } from '../src/server/config';
@@ -19,7 +24,7 @@ import { connectDb, db, migrate, one, q } from '../src/server/db';
 import { purchaseConfirmationMail, purchaseItemLines } from '../src/server/mail';
 import {
   checkoutSchema, equipAtDelivery, fulfillPurchase, honorPackPromises, orderFor, promisedItems, purchaseLabel,
-  refundPurchase, slotSelection, stripeLineItems,
+  refundPurchase, shopRouter, slotSelection, stripeLineItems,
 } from '../src/server/shop';
 import type { Order } from '../src/server/shop';
 
@@ -188,6 +193,38 @@ describe('commande calculée au serveur (orderFor)', () => {
     ]);
   });
 
+  it('colonnes d’équipement : celles de SLOT_DEFS (auth.ts garde SLOT_COLUMN jusqu’au lot 9)', () => {
+    expect(SLOT_COLUMN).toEqual(Object.fromEntries(SLOTS.map(k => [k, SLOT_DEFS[k].column])));
+  });
+
+  it('photographie au défaut (avant la refonte) : lignes du Trésor et du Grimoire, texte entier d’un e-mail', () => {
+    expect(purchaseItemLines(productById('pack:tresor')!.items)).toEqual([
+      'Jardin de jade : roi, échiquier et sorts',
+      'Néon 2084 : roi, échiquier et sorts',
+      'Forge d’Inferno : roi, échiquier et sorts',
+      'Olympe : roi, échiquier et sorts',
+      'Cour écarlate : roi, échiquier et sorts',
+      'Néant : roi, échiquier et sorts',
+      'Voûte céleste : roi, échiquier et sorts',
+    ]);
+    expect(purchaseItemLines(productById('pack:skins')!.items)).toEqual(['7 sorts : Inferno, Néon 2084, Céleste, Néant, Sakura, Laurier et Écarlate']);
+    expect(purchaseItemLines(['king:braise', 'king:synthe', 'king:laure', 'board:jade', 'board:ruby'])).toEqual([
+      '3 rois : Roi de braise, Roi Synthé et Roi lauré', '2 échiquiers : Palais de jade et Rubis',
+    ]);
+    const m = purchaseConfirmationMail({ label: 'Roi de braise', amount: '2,99 €', items: ['Roi de braise'], alreadyOwned: ['Sorts Inferno'], equipped: true });
+    expect(m.text).toBe(
+      [
+        'Achat confirmé : Roi de braise · 2,99 €',
+        'Disponible dès maintenant dans votre collection :',
+        '- Roi de braise',
+        'Déjà dans votre collection : Sorts Inferno.',
+        'C’est déjà équipé : tout est prêt pour votre prochaine partie.',
+        'Votre roi et vos sorts : vos adversaires les voient. Votre échiquier : il vous suit dans toutes vos parties.',
+        `${config.publicUrl}/boutique`,
+      ].join('\n'),
+    );
+  });
+
   it('refus du paiement : messages en français, y compris pour une requête forgée', () => {
     const msg = (body: unknown) => {
       const r = checkoutSchema.safeParse(body);
@@ -211,6 +248,82 @@ describe('commande calculée au serveur (orderFor)', () => {
     expect(equipAtDelivery(['king:braise', 'board:obsidian', 'skin:inferno']).map(i => i.id)).toEqual(['king:braise', 'board:obsidian', 'skin:inferno']);
     expect(equipAtDelivery(productById('pack:tresor')!.items)).toEqual([]);
     expect(equipAtDelivery(['skin:void', 'skin:neon', 'king:rubis']).map(i => i.id)).toEqual(['king:rubis']);
+  });
+});
+
+/** Monte les routes de la boutique sur un serveur local le temps de `fn` (sans les gardes de connexion pour les refus). */
+async function withShop(router: Router, fn: (base: string) => Promise<void>) {
+  const server = express().use(express.json()).use('/api/shop', router).listen(0);
+  try {
+    await fn(`http://127.0.0.1:${(server.address() as AddressInfo).port}/api/shop`);
+  } finally {
+    server.close();
+  }
+}
+
+describe('objet retiré, boutique coupée, catalogue public', () => {
+  it('un objet retiré ne s’achète ni seul, ni dans un panier, ni par sa collection ; possédé, il s’équipe encore', async () => {
+    vi.resetModules();
+    vi.doMock('../src/shared/skins/spells', async orig => {
+      const m = await orig<typeof import('../src/shared/skins/spells')>();
+      return { ...m, SPELL_ITEMS: m.SPELL_ITEMS.map(i => (i.id === 'skin:neon' ? { ...i, retired: true } : i)) };
+    });
+    try {
+      const shop = await import('../src/server/shop');
+      const retiré = { status: 404, error: 'Cet objet n’est plus en vente.' };
+      expect(shop.orderFor({ itemIds: ['skin:neon'] }, [])).toEqual(retiré);
+      expect(shop.orderFor({ itemIds: ['king:synthe', 'board:grille', 'skin:neon'] }, ['king:braise'])).toEqual(retiré);
+      expect(shop.orderFor({ productId: 'skin:neon' }, [])).toEqual({ status: 404, error: 'Ce produit n’est plus en vente.' });
+      expect(shop.orderFor({ productId: 'col:neon' }, [])).toEqual({ status: 404, error: 'Ce produit n’est plus en vente.' });
+      // Qui le possède : le panier ne le facture pas, les autres pièces se paient à l'unité (collection plus en vente)
+      expect(shop.orderFor({ itemIds: ['king:synthe', 'board:grille', 'skin:neon'] }, ['skin:neon'])).toMatchObject({
+        productId: CART_PRODUCT_ID,
+        items: ['king:synthe', 'board:grille'],
+        amountCents: 299 + 199,
+      });
+      expect(shop.slotSelection(['skin:neon'])).toMatchObject({ items: [{ id: 'skin:neon' }] });
+      expect(shop.promisedItems('pack:skins')).not.toContain('skin:neon');
+    } finally {
+      vi.doUnmock('../src/shared/skins/spells');
+      vi.resetModules();
+    }
+  });
+
+  it('boutique coupée (FEATURE_SHOP=0) : commande et caisse de démonstration refusées (503), catalogue lisible', async () => {
+    vi.resetModules();
+    process.env.FEATURE_SHOP = '0';
+    try {
+      const shop = await import('../src/server/shop');
+      await withShop(shop.shopRouter, async base => {
+        const fermée = { error: 'La boutique est fermée.' };
+        const post = (p: string, body: unknown) =>
+          fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const r1 = await post('/checkout', { productId: 'king:braise', waiver: true });
+        expect([r1.status, await r1.json()]).toEqual([503, fermée]);
+        const r2 = await post('/checkout', { itemIds: ['king:braise'], waiver: true });
+        expect([r2.status, await r2.json()]).toEqual([503, fermée]);
+        const r3 = await fetch(`${base}/demo/00000000-0000-0000-0000-000000000000`);
+        expect([r3.status, await r3.json()]).toEqual([503, fermée]);
+        const r4 = await post('/demo/00000000-0000-0000-0000-000000000000/complete', {});
+        expect([r4.status, await r4.json()]).toEqual([503, fermée]);
+        expect((await fetch(`${base}/catalog`)).status).toBe(200);
+      });
+    } finally {
+      delete process.env.FEATURE_SHOP;
+      vi.resetModules();
+    }
+  });
+
+  it('GET /api/shop/catalog au défaut : réponse identique à celle d’avant la refonte (empreinte prise sur 5a6684b)', async () => {
+    await withShop(shopRouter, async base => {
+      const r = (await (await fetch(`${base}/catalog`)).json()) as { items: unknown[]; products: unknown[]; payments: string };
+      expect(Object.keys(r)).toEqual(['items', 'products', 'payments']);
+      const json = JSON.stringify({ items: r.items, products: r.products });
+      expect(Buffer.byteLength(json)).toBe(26244);
+      expect(createHash('sha256').update(json).digest('hex').slice(0, 16)).toBe('c89bcaa519c0ff93');
+      expect(r.items).toHaveLength(ITEMS.length);
+      expect(FREE_ITEMS.every(id => (r.items as { id: string }[]).some(i => i.id === id))).toBe(true);
+    });
   });
 });
 

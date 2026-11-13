@@ -1,13 +1,26 @@
-// Remboursement (src/server/shop.ts) exécuté sur une vraie base : PGlite, migrations du serveur, livraison par
-// fulfillPurchase puis refundPurchase. Chaque colonne d'équipement (roi, échiquier, sorts) qui pointe vers un objet ni
-// offert ni encore possédé revient à son défaut ; le reste ne bouge pas.
+// Remboursement et retrait d'objets (src/server/shop.ts, src/server/admin.ts) exécutés sur une vraie base : PGlite,
+// migrations du serveur, livraison par fulfillPurchase puis refundPurchase ou revokeItems (et la route de retrait de
+// l'administration). Chaque colonne d'équipement (roi, échiquier, sorts) qui pointe vers un objet ni offert ni encore
+// possédé revient à son défaut ; le reste ne bouge pas.
 import { mkdtempSync, rmSync } from 'node:fs';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import express from 'express';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+// La route d'administration : sans la garde de connexion (testée ailleurs) ni les salles de games.ts
+vi.mock('../src/server/games', () => ({ activeRoomCount: () => 0 }));
+vi.mock('../src/server/auth', async orig => {
+  const m = await orig<typeof import('../src/server/auth')>();
+  const pass = (_req: unknown, _res: unknown, next: () => void) => next();
+  return { ...m, requireUser: pass, requireAdmin: pass };
+});
+
+import { adminRouter } from '../src/server/admin';
 import { config } from '../src/server/config';
 import { connectDb, db, migrate, one, q } from '../src/server/db';
-import { fulfillPurchase, refundPurchase } from '../src/server/shop';
+import { fulfillPurchase, refundPurchase, revokeItems } from '../src/server/shop';
 
 const dir = mkdtempSync(path.join(tmpdir(), 'spellmate-remboursement-'));
 
@@ -101,5 +114,67 @@ describe('remboursement sur une vraie base', () => {
     expect(await owned(ana)).toEqual(['board:obsidian', 'king:braise', 'skin:inferno']);
     expect(await equipped(ben)).toEqual({ equipped_king: 'king:arcane', equipped_board: 'board:arcane', equipped_skin: 'skin:arcane' });
     expect(await owned(ben)).toEqual([]);
+  });
+});
+
+describe('retrait d’objets (administration, remboursement partiel)', () => {
+  it('revokeItems : l’objet quitte la collection et, s’il était équipé, son emplacement revient au défaut', async () => {
+    const u = await newUser();
+    await buy(u, 'col:inferno', ['king:braise', 'board:obsidian', 'skin:inferno']);
+    await equip(u, 'king:braise', 'board:obsidian', 'skin:inferno');
+    expect(await revokeItems(u, ['king:braise', 'skin:inferno'])).toBe(2);
+    expect(await equipped(u)).toEqual({ equipped_king: 'king:arcane', equipped_board: 'board:obsidian', equipped_skin: 'skin:arcane' });
+    expect(await owned(u)).toEqual(['board:obsidian']);
+    // Objet non équipé : retiré, l'équipement ne bouge pas ; rien à retirer : 0
+    expect(await revokeItems(u, ['board:jade'])).toBe(0);
+    expect(await revokeItems(u, [])).toBe(0);
+    expect(await equipped(u)).toEqual({ equipped_king: 'king:arcane', equipped_board: 'board:obsidian', equipped_skin: 'skin:arcane' });
+  });
+
+  it('route POST /api/admin/grant { revoke: true } : un roi équipé retiré par l’administrateur est déséquipé', async () => {
+    const u = await newUser();
+    const other = await newUser();
+    await buy(u, 'king:braise', ['king:braise']);
+    await buy(other, 'king:braise', ['king:braise']);
+    await equip(u, 'king:braise', 'board:wood', 'skin:arcane');
+    await equip(other, 'king:braise', 'board:arcane', 'skin:arcane');
+    const app = express();
+    app.use(express.json());
+    app.use('/api/admin', adminRouter);
+    const server = app.listen(0);
+    try {
+      const { port } = server.address() as AddressInfo;
+      const r = await fetch(`http://127.0.0.1:${port}/api/admin/grant`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: u, itemId: 'king:braise', revoke: true }),
+      });
+      expect(r.status).toBe(200);
+      // Tableau de bord (listes lues dans LIMITS) : 30 jours de statistiques (série et chiffre d'affaires récent), les
+      // joueurs cherchés. Un achat payé il y a 40 jours compte dans le total, pas dans les 30 derniers jours.
+      await q(
+        `INSERT INTO purchases (user_id, product_id, items, provider, amount_cents, currency, status, paid_at)
+         VALUES ($1, 'skin:void', '{skin:void}', 'demo', 7777, 'eur', 'paid', now() - interval '40 days')`,
+        [other],
+      );
+      const o = (await (await fetch(`http://127.0.0.1:${port}/api/admin/overview`)).json()) as {
+        daily: { day: string }[];
+        recent: unknown[];
+        counts: { revenue: number; revenue_30d: number };
+      };
+      expect(o.counts.revenue - o.counts.revenue_30d).toBeGreaterThanOrEqual(7777);
+      expect(o.counts.revenue_30d).toBeGreaterThanOrEqual(200);
+      expect(o.daily).toHaveLength(30);
+      expect(o.daily[29].day).toBe((await one<{ d: string }>(`SELECT to_char(current_date, 'YYYY-MM-DD') AS d`))!.d);
+      expect(o.recent.length).toBeLessThanOrEqual(15);
+      const found = (await (await fetch(`http://127.0.0.1:${port}/api/admin/users?q=r`)).json()) as { users: { id: string }[] };
+      expect(found.users.some(x => x.id === u)).toBe(true);
+    } finally {
+      server.close();
+    }
+    expect(await owned(u)).toEqual([]);
+    expect(await equipped(u)).toEqual({ equipped_king: 'king:arcane', equipped_board: 'board:wood', equipped_skin: 'skin:arcane' });
+    // L'autre acheteur garde son roi
+    expect((await equipped(other))!.equipped_king).toBe('king:braise');
   });
 });

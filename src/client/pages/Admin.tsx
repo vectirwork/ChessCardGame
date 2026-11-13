@@ -1,7 +1,7 @@
 // Tableau de bord d'administration.
 import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { ITEMS, formatPrice, productById } from '../../shared/catalog';
+import { ITEMS, LOCALE, formatPrice, productById } from '../../shared/catalog';
 import { api, errMsg } from '../api';
 import { PageLoader } from '../components/Layout';
 import { useApp } from '../store';
@@ -34,6 +34,8 @@ export default function Admin() {
   if (!me?.isAdmin) return <Navigate to="/" replace />;
   if (!data) return <PageLoader />;
   const c = data.counts;
+  // Jours de la série quotidienne (LIMITS.adminDays au serveur : 30), aussi ceux du chiffre d'affaires récent
+  const days: number = data.daily.length;
   const maxRev = Math.max(1, ...data.daily.map((d: any) => d.revenue));
   const maxSign = Math.max(1, ...data.daily.map((d: any) => d.signups));
   const grant = async (userId: string, itemId: string, revoke: boolean) => {
@@ -61,7 +63,7 @@ export default function Admin() {
       <div className="kpis">
         {[
           ['Chiffre d’affaires', formatPrice(c.revenue)],
-          ['30 derniers jours', formatPrice(c.revenue_30d)],
+          [`${days} derniers jours`, formatPrice(c.revenue_30d)],
           ['Ventes', c.sales],
           ['Acheteurs', c.buyers],
           ['Joueurs inscrits', c.users],
@@ -77,7 +79,7 @@ export default function Admin() {
       </div>
       <div className="grid-2" style={{ marginTop: 22 }}>
         <div className="panel panel-pad">
-          <h3 className="adm-h">Revenus, 30 jours</h3>
+          <h3 className="adm-h">{`Revenus, ${days} jours`}</h3>
           <div className="bars">
             {data.daily.map((d: any) => (
               <i key={d.day} title={`${d.day} : ${formatPrice(d.revenue)}`} style={{ height: `${(d.revenue / maxRev) * 100}%` }} />
@@ -85,7 +87,7 @@ export default function Admin() {
           </div>
         </div>
         <div className="panel panel-pad">
-          <h3 className="adm-h">Inscriptions, 30 jours</h3>
+          <h3 className="adm-h">{`Inscriptions, ${days} jours`}</h3>
           <div className="bars cyan">
             {data.daily.map((d: any) => (
               <i key={d.day} title={`${d.day} : ${d.signups}`} style={{ height: `${(d.signups / maxSign) * 100}%` }} />
@@ -132,7 +134,7 @@ export default function Admin() {
             <tbody>
               {data.recent.map((p: any) => (
                 <tr key={p.id}>
-                  <td>{new Date(p.created_at).toLocaleDateString('fr-FR')}</td>
+                  <td>{new Date(p.created_at).toLocaleDateString(LOCALE)}</td>
                   <td>{p.username ?? '—'}</td>
                   <td>{productById(p.product_id)?.name}</td>
                   <td>
@@ -175,7 +177,7 @@ export default function Admin() {
                   {u.email} {!u.email_verified && <span className="badge red">non vérifié</span>}
                 </td>
                 <td>{u.rating}</td>
-                <td className="faint">{new Date(u.created_at).toLocaleDateString('fr-FR')}</td>
+                <td className="faint">{new Date(u.created_at).toLocaleDateString(LOCALE)}</td>
                 <td style={{ fontSize: 12.5 }}>
                   {u.items.length ? (
                     u.items.map((i: string) => (

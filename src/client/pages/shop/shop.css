@@ -546,7 +546,8 @@
   border-radius: 50%;
   background: radial-gradient(circle, #fff7d6, #f3c969 55%, transparent 72%);
   opacity: 0;
-  transform: rotate(calc(var(--i) * 30deg)) translateY(0) scale(0.4);
+  /* --n éclats en couronne (Unboxing : 12, soit 30° chacun) */
+  transform: rotate(calc(var(--i) * 360deg / var(--n, 12))) translateY(0) scale(0.4);
   animation: ub-burst 1.1s cubic-bezier(0.2, 0.8, 0.3, 1) 0.15s both;
 }
 @keyframes ub-burst {
@@ -555,7 +556,7 @@
   }
   to {
     opacity: 0;
-    transform: rotate(calc(var(--i) * 30deg)) translateY(calc(var(--cab-h) * -0.34)) scale(1);
+    transform: rotate(calc(var(--i) * 360deg / var(--n, 12))) translateY(calc(var(--cab-h) * -0.34)) scale(1);
   }
 }
 .ub-items {
@@ -591,10 +592,10 @@
   }
 }
 
-/* Barre de panoplie */
+/* Barre de panoplie : une colonne par emplacement (--slots, posé par PanoplieBar) */
 .pb {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--slots, 3), minmax(0, 1fr));
   gap: 10px;
   margin-top: 12px;
 }
@@ -1383,7 +1384,8 @@
   position: absolute;
   left: 50%;
   top: 50%;
-  transform: rotate(calc((var(--i) - 1) * 60deg)) translateY(-40px) rotate(calc((var(--i) - 1) * -60deg));
+  /* Anneau de n − 1 sceaux autour du premier (--n, posé par TresorBanner ; 7 : 60° chacun) */
+  transform: rotate(calc((var(--i) - 1) * 360deg / (var(--n, 7) - 1))) translateY(-40px) rotate(calc((var(--i) - 1) * -360deg / (var(--n, 7) - 1)));
   margin: -17px;
 }
 .tb-seal:first-child {

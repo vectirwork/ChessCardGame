@@ -3,20 +3,27 @@
 // comme un écart à la panoplie portée (`TrialDelta`) : quand le compte arrive après la page, ou quand on équipe, les
 // emplacements que l'on n'a pas touchés suivent la panoplie, sans rien faire.
 import {
-  COLLECTIONS, ITEMS, PRODUCTS, RARITY, SLOTS, SLOT_LABEL, collectionItems, collectionOf, formatPrice, itemById, productById, productPrice,
-  quoteCart, unitPrice,
+  COLLECTIONS, RARITY, SHOP_ITEMS, SLOTS, SLOT_DEFS, collectionItems, collectionOf, formatPrice, itemById, productById, productPrice, quoteCart,
+  unitPrice,
 } from '../../../shared/catalog';
 import type { CartLine, Collection, Item, ItemKind, Product } from '../../../shared/catalog';
+import { compte, liste, pluriel } from '../../../shared/text/fr';
 
 /** Un objet par emplacement. */
 export type Trial = Record<ItemKind, string>;
 /** Écart d'un essai à la panoplie portée : les seuls emplacements essayés. */
 export type TrialDelta = Partial<Trial>;
 
+/** Un objet par emplacement, dans l'ordre des emplacements. */
+const perSlot = (f: (k: ItemKind) => string): Trial => Object.fromEntries(SLOTS.map(k => [k, f(k)])) as Trial;
+
 /** Essai complet : la panoplie, et par-dessus les emplacements essayés. */
 export function trialOf(pano: Trial, delta: TrialDelta): Trial {
-  return { king: delta.king ?? pano.king, board: delta.board ?? pano.board, skin: delta.skin ?? pano.skin };
+  return perSlot(k => delta[k] ?? pano[k]);
 }
+
+/** L'essai est-il exactement cette collection ? */
+export const isTrying = (trial: Trial, c: Collection): boolean => SLOTS.every(k => trial[k] === c[k]);
 
 /** Écart minimal : sans les emplacements identiques à la panoplie ni les objets inconnus ou mal rangés. */
 export function normalize(delta: TrialDelta, pano: Trial): TrialDelta {
@@ -24,6 +31,21 @@ export function normalize(delta: TrialDelta, pano: Trial): TrialDelta {
   for (const k of SLOTS) {
     const id = delta[k];
     if (id && id !== pano[k] && itemById(id)?.kind === k) out[k] = id;
+  }
+  return out;
+}
+
+/**
+ * Essai sans les objets payants retirés de la vente que l'on ne possède pas (ni achetables, ni équipables : ils peuvent
+ * venir d'un lien `?essai=`, d'un essai gardé dans la session, d'une collection ou de SHOP_FEATURED). Qui possède un
+ * objet retiré l'essaie encore.
+ */
+export function available(delta: TrialDelta, owned: readonly string[]): TrialDelta {
+  const out: TrialDelta = {};
+  for (const k of SLOTS) {
+    const id = delta[k];
+    const it = id ? itemById(id) : undefined;
+    if (id && !(it?.retired && !it.free && !owned.includes(id))) out[k] = id;
   }
   return out;
 }
@@ -46,9 +68,9 @@ export function toggleItem(delta: TrialDelta, pano: Trial, id: string): TrialDel
   return normalize(next, pano);
 }
 
-/** Essayer une collection : ses trois objets. */
+/** Essayer une collection : tous ses objets. */
 export function withCollection(delta: TrialDelta, pano: Trial, c: Collection): TrialDelta {
-  return normalize({ ...delta, king: c.king, board: c.board, skin: c.skin }, pano);
+  return normalize({ ...delta, ...perSlot(k => c[k]) }, pano);
 }
 
 /** Remettre un emplacement sur l'objet porté. */
@@ -139,18 +161,19 @@ export function bestCollection(trial: Trial, pano: Trial, owned: readonly string
  */
 export function surprise(current: Trial, rand: () => number = Math.random): Trial {
   const pick = (k: ItemKind) => {
-    const list = ITEMS.filter(i => i.kind === k);
+    const list = SHOP_ITEMS.filter(i => i.kind === k);
     return list[Math.min(list.length - 1, Math.floor(rand() * list.length))].id;
   };
   let t = current;
   for (let i = 0; i < 8; i++) {
-    t = { king: pick('king'), board: pick('board'), skin: pick('skin') };
+    t = perSlot(pick);
     if (SLOTS.some(k => t[k] !== current[k])) return t;
   }
-  // Hasard qui retombe toujours sur l'essai : on change au moins le roi
-  const kings = ITEMS.filter(i => i.kind === 'king');
-  const next = kings[(kings.findIndex(i => i.id === current.king) + 1) % kings.length].id;
-  return { ...t, king: next };
+  // Hasard qui retombe toujours sur l'essai : on change au moins le premier emplacement (le roi)
+  const k0 = SLOTS[0];
+  const first = SHOP_ITEMS.filter(i => i.kind === k0);
+  const next = first[(first.findIndex(i => i.id === current[k0]) + 1) % first.length].id;
+  return { ...t, [k0]: next };
 }
 
 /** État d'une carte de skin. */
@@ -166,29 +189,30 @@ export function itemState(id: string, pano: Trial, owned: readonly string[]): Ca
   return 'price';
 }
 
-/** Libellé d'emplacement en minuscules, pour les phrases (« roi », « échiquier », « sorts »). */
-export const slotWord = (k: ItemKind) => SLOT_LABEL[k].toLowerCase();
-
-/** Nom d'un objet dans une phrase : « Roi de braise », « Échiquier Rubis », « Sorts Inferno ». */
-export function itemPhrase(it: Item): string {
-  if (it.kind === 'board') return `Échiquier ${it.name}`;
-  if (it.kind === 'skin') return `Sorts ${it.name}`;
-  return it.name;
-}
+/** Mot de l'emplacement, pour les phrases (« roi », « échiquier », « sorts »). */
+export const slotWord = (k: ItemKind): string => SLOT_DEFS[k].word;
 
 /**
- * Ce que change l'équipement de ces objets, en une phrase sans majuscule ni point : le roi et les sorts se voient chez
- * l'adversaire, l'échiquier reste chez soi (« vos adversaires verront votre roi dès votre prochaine partie ; votre
+ * Ce que change l'équipement de ces objets, en une phrase sans majuscule ni point : ce que l'adversaire voit (le roi et
+ * les sorts), puis ce qui reste chez soi (« vos adversaires verront votre roi dès votre prochaine partie ; votre
  * échiquier vous suit dans toutes vos parties »).
  */
 export function equipNote(ids: readonly string[]): string {
   const kinds = new Set(ids.map(id => itemById(id)?.kind));
-  const seen = [kinds.has('king') && 'votre roi', kinds.has('skin') && 'vos sorts'].filter(Boolean).join(' et ');
+  const on = SLOTS.filter(k => kinds.has(k));
+  const seen = on.filter(k => SLOT_DEFS[k].seen).map(k => SLOT_DEFS[k].mine);
   const parts: string[] = [];
-  if (seen) parts.push(`vos adversaires verront ${seen} dès votre prochaine partie`);
-  if (kinds.has('board')) parts.push('votre échiquier vous suit dans toutes vos parties');
+  if (seen.length) parts.push(`vos adversaires verront ${liste(seen)} dès votre prochaine partie`);
+  for (const k of on) {
+    const d: { mine: string; seen: boolean; follows?: { verb: string } } = SLOT_DEFS[k];
+    // `follows` ne sert qu'à un emplacement que l'adversaire ne voit pas
+    if (!d.seen && d.follows) parts.push(`${d.mine} ${d.follows.verb}`);
+  }
   return parts.join(' ; ');
 }
+
+/** « 2 skins » : le nom des objets de la boutique, compté. */
+export const skins = (n: number): string => compte(n, 'skin');
 
 /** Libellé accessible d'une carte : « Roi de braise, roi, rareté rare, 2,99 €, en essai ». */
 export function cardLabel(it: Item, state: CardState, trying: boolean): string {
@@ -279,7 +303,7 @@ export function orderSummary(order: Order, owned: readonly string[]): OrderSumma
     lines = [
       {
         label: p.name,
-        note: partial ? `Compléter la collection : ${n} skin${n > 1 ? 's' : ''} manquant${n > 1 ? 's' : ''}` : p.description,
+        note: partial ? `Compléter la collection : ${skins(n)} ${pluriel(n, 'manquant')}` : p.description,
         items: missing,
         cents,
       },
@@ -289,7 +313,7 @@ export function orderSummary(order: Order, owned: readonly string[]): OrderSumma
     if (!q) return null;
     lines = q.lines.map(l => ({
       label: l.label,
-      note: l.productId.startsWith('col:') ? 'Au prix de la collection, sceau compris' : undefined,
+      note: isCollectionLine(l) ? 'Au prix de la collection, sceau compris' : undefined,
       items: l.items,
       cents: l.cents,
     }));
@@ -299,22 +323,8 @@ export function orderSummary(order: Order, owned: readonly string[]): OrderSumma
   return { lines, items, totalCents, savingCents: Math.max(0, sumUnit(items) - totalCents), have: packHave, of: packOf };
 }
 
-/** Produits « pack » en vente (Trésor du Bazar, Grimoire des sorts). */
-export const PACKS = PRODUCTS.filter(p => p.kind === 'pack');
-/** Collections premium, dans l'ordre du catalogue. */
-export const PREMIUM_COLLECTIONS = COLLECTIONS.filter(c => c.rarity !== 'offert');
-
-/** Nom du sceau d'une collection (son exclusivité) : « Sceau de la Forge ». */
-const SEAL_NAME: Record<string, string> = {
-  'col:jade': 'Sceau du Jardin de jade',
-  'col:neon': 'Sceau de Néon 2084',
-  'col:inferno': 'Sceau de la Forge',
-  'col:olympe': 'Sceau de l’Olympe',
-  'col:ecarlate': 'Sceau de la Cour écarlate',
-  'col:neant': 'Sceau du Néant',
-  'col:celeste': 'Sceau de la Voûte céleste',
-};
-export const sealName = (c: Collection) => SEAL_NAME[c.id] ?? `Sceau ${c.name}`;
+/** Ligne de panier facturée au prix d'une collection (complétée par l'essai). */
+export const isCollectionLine = (l: Pick<CartLine, 'productId'>): boolean => productById(l.productId)?.kind === 'collection';
 
 /** Collection d'un objet ou d'une collection, pour une teinte. */
 export function gemOf(id: string): string {

@@ -8,39 +8,38 @@
 // ?achat=<session> (retour de Stripe), ?annule=1 (paiement annulé, l'essai est gardé).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ITEMS, collectionById, formatPrice, itemById, unitPrice } from '../../shared/catalog';
+import {
+  ITEMS, PACKS, SHOP_COLLECTIONS, SHOP_FEATURED, SLOTS, SLOT_DEFS, alone, bySlot, collectionById, collectionItems, equippedMessage,
+  formatPrice, itemById, itemLabel, unitPrice,
+} from '../../shared/catalog';
 import type { Collection, ItemKind, Product } from '../../shared/catalog';
 import type { ConfirmResponse, MeUser } from '../../shared/protocol';
 import { api, errMsg } from '../api';
 import { isEquipped, owns } from '../skins';
-import { useApp } from '../store';
+import { useApp, useFeature } from '../store';
 import { PageHead, PlacePage, StarMark, useTitle } from './PageScene';
 import { Cabin } from './shop/Cabin';
 import type { CabinView } from './shop/Cabin';
 import { CheckoutModal, DELIVERY_KEY } from './shop/CheckoutModal';
 import type { Delivery } from './shop/CheckoutModal';
-import { CollectionCard, GrimoireCard, TresorBanner } from './shop/CollectionCard';
+import { CollectionCard, PackCard, TresorBanner } from './shop/CollectionCard';
 import { ItemCard } from './shop/ItemCard';
 import { PanoplieBar } from './shop/PanoplieBar';
 import { Rack } from './shop/Rack';
-import { RAYONS, RayonTabs } from './shop/RayonTabs';
+import { RAYONS, RayonTabs, kindOfRayon, rayonOf } from './shop/RayonTabs';
 import type { Rayon } from './shop/RayonTabs';
 import { ShopDock } from './shop/ShopDock';
 import { Seal, ShopPromise } from './shop/ShopPromise';
 import { TrialAction, actionTexts } from './shop/TrialAction';
 import {
-  PACKS, PREMIUM_COLLECTIONS, bestCollection, equipNote, formatEssai, itemPhrase, itemState, mainAction, parseEssai, quoteTrial, rackOrder, withCollection,
+  bestCollection, equipNote, formatEssai, isTrying, itemState, mainAction, parseEssai, quoteTrial, rackOrder, withCollection,
 } from './shop/trial';
 import type { CollectionHint, Order, TrialDelta } from './shop/trial';
 import { hasStoredTrial, storedTrial, useShopUrl, useTrial } from './shop/useTrial';
 import './shop/shop.css';
 
-const KIND_RAYON: Record<ItemKind, Rayon> = { king: 'rois', board: 'echiquiers', skin: 'sorts' };
-const RAYON_KIND: Record<Exclude<Rayon, 'collections'>, ItemKind> = { rois: 'king', echiquiers: 'board', sorts: 'skin' };
-/** Roi mis en essai à la première arrivée de la session, quand rien d'autre n'est demandé. */
-const FEATURED: TrialDelta = { king: 'king:braise' };
-const GRIMOIRE = PACKS.find(p => p.id === 'pack:skins');
-const TRESOR = PACKS.find(p => p.id === 'pack:tresor');
+/** Packs en bandeau, sous les collections (le Trésor du Bazar). Les autres packs ont leur carte en tête d'un rayon. */
+const BANNERS = PACKS.filter(p => p.display === 'banner');
 
 /** Arrivée : essai, rayon et vue d'après l'adresse (lue une fois). */
 function arrival() {
@@ -48,17 +47,25 @@ function arrival() {
   const objet = itemById(q.get('objet') ?? '');
   const fromUrl = parseEssai(q.get('essai'));
   let delta: TrialDelta;
+  /** Emplacement de l'objet mis en avant, s'il est mis en essai : la cabine et le rayon s'ouvrent sur lui. */
+  let featured: ItemKind | undefined;
   if (Object.keys(fromUrl).length) delta = fromUrl;
   else if (objet) delta = { [objet.kind]: objet.id };
   else {
     // Un essai déjà gardé dans la session, même vide (« Rétablir »), est repris tel quel
     const stored = storedTrial();
-    delta = Object.keys(stored).length ? stored : q.get('achat') || hasStoredTrial() ? {} : FEATURED;
+    if (Object.keys(stored).length) delta = stored;
+    else if (q.get('achat') || hasStoredTrial()) delta = {};
+    else {
+      // Objet mis en essai à la première arrivée de la session, quand rien d'autre n'est demandé (SHOP_FEATURED)
+      delta = { ...SHOP_FEATURED };
+      featured = SLOTS.find(k => SHOP_FEATURED[k]);
+    }
   }
+  const shown = objet?.kind ?? featured;
   const r = q.get('rayon') as Rayon | null;
-  const rayon: Rayon =
-    r && RAYONS.includes(r) ? r : window.location.hash === '#grimoires' ? 'collections' : objet ? KIND_RAYON[objet.kind] : 'rois';
-  const view: CabinView = objet && objet.kind !== 'king' ? 'partie' : 'roi';
+  const rayon: Rayon = r && RAYONS.includes(r) ? r : window.location.hash === '#grimoires' ? 'collections' : shown ? rayonOf(shown) : RAYONS[0];
+  const view: CabinView = shown ? SLOT_DEFS[shown].view : 'roi';
   return { delta, rayon, view, achat: q.get('achat'), annule: !!q.get('annule') };
 }
 
@@ -77,6 +84,25 @@ function useMedia(query: string): boolean {
 
 export default function Shop() {
   useTitle('Boutique');
+  return useFeature('shop') ? <Bazar /> : <ShopClosed />;
+}
+
+/** Boutique coupée (FEATURE_SHOP=0) : la page reste, sans rayons ni prix. */
+function ShopClosed() {
+  return (
+    <PlacePage place="bazar" className="bz">
+      <PageHead
+        num="V"
+        place="Le Bazar céleste"
+        aside="Boutique"
+        title={<>La boutique est fermée.</>}
+        lede="Elle rouvrira bientôt. Vos skins restent dans votre collection et s’équipent depuis votre compte."
+      />
+    </PlacePage>
+  );
+}
+
+function Bazar() {
   const { me, setMe, toast, payments, ready } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
@@ -123,24 +149,22 @@ export default function Shop() {
         }
       }
       setMe(u);
-      const known = items.filter(i => itemById(i));
-      // Un objet par emplacement : il entre dans la cabine (s'il est équipé, l'essai redevient la panoplie)
+      const sel = bySlot(items);
+      const known = sel.items.map(i => i.id);
+      // L'objet seul de son emplacement entre dans la cabine (s'il est équipé, l'essai redevient la panoplie)
       const delta: TrialDelta = {};
-      const many = new Set<ItemKind>();
-      for (const id of known) {
-        const k = itemById(id)!.kind;
-        if (delta[k]) many.add(k);
-        else delta[k] = id;
+      for (const k of SLOTS) {
+        const it = alone(sel, k);
+        if (it) delta[k] = it.id;
       }
-      for (const k of many) delete delta[k];
       t.set(delta);
-      setView(known.some(i => itemById(i)?.kind === 'king') ? 'roi' : 'partie');
+      setView(sel.items.some(i => SLOT_DEFS[i.kind].view === 'roi') ? 'roi' : 'partie');
       setUnbox(known);
       const worn = [...known, ...extra].filter(i => isEquipped(u, i));
       let msg: string;
       if (worn.length > 1) msg = `Panoplie équipée : ${equipNote(worn)}.`;
-      else if (worn.length === 1) msg = equippedMessage(worn[0]);
-      else if (known.length === 1) msg = `Merci ! ${itemPhrase(itemById(known[0])!)} est dans votre collection.`;
+      else if (worn.length === 1) msg = equipped(worn[0]);
+      else if (known.length === 1) msg = `Merci ! ${itemLabel(sel.items[0])} est dans votre collection.`;
       else msg = `Merci ! ${known.length} skins ajoutés à votre collection.`;
       if (worn.some(i => itemById(i)?.kind === 'king') && (await gameInProgress())) msg += ' Votre nouveau roi vous attend à la prochaine partie.';
       toast(msg, 'success');
@@ -198,8 +222,7 @@ export default function Shop() {
     const on = t.trial[it.kind] !== id || t.pano[it.kind] === id;
     t.tryItem(id);
     setLastTried(on ? id : null);
-    if (it.kind === 'king') setView('roi');
-    else setView('partie');
+    setView(SLOT_DEFS[it.kind].view);
     if (it.kind === 'skin' && on) setSpellKick(n => n + 1);
   };
 
@@ -220,14 +243,14 @@ export default function Shop() {
   };
 
   const openSlot = (k: ItemKind) => {
-    setRayon(KIND_RAYON[k]);
-    setView(k === 'king' ? 'roi' : 'partie');
+    setRayon(rayonOf(k));
+    setView(SLOT_DEFS[k].view);
   };
 
   /** Inscription, puis retour à la boutique avec cet essai et ce rayon. */
   const signup = (delta: TrialDelta = t.delta, to: Rayon = rayon) => {
     const q: string[] = [];
-    if (to !== 'rois') q.push(`rayon=${to}`);
+    if (to !== RAYONS[0]) q.push(`rayon=${to}`);
     const essai = formatEssai(delta);
     if (essai) q.push(`essai=${essai}`);
     navigate(`/inscription?retour=${encodeURIComponent(`/boutique${q.length ? `?${q.join('&')}` : ''}`)}`);
@@ -239,7 +262,7 @@ export default function Shop() {
     try {
       const r = await api<{ user: MeUser }>('/account/equip', { body: ids.length === 1 ? { itemId: ids[0] } : { itemIds: ids } });
       setMe(r.user);
-      let msg = ids.length > 1 ? `Panoplie équipée : ${equipNote(ids)}.` : equippedMessage(ids[0]);
+      let msg = ids.length > 1 ? `Panoplie équipée : ${equipNote(ids)}.` : equipped(ids[0]);
       if (ids.some(i => itemById(i)?.kind === 'king') && (await gameInProgress())) msg += ' Votre nouveau roi vous attend à la prochaine partie.';
       toast(msg, 'success');
     } catch (e) {
@@ -254,7 +277,8 @@ export default function Shop() {
     if (!me) {
       // Visiteur : on revient de l'inscription avec ce qu'il voulait acheter (la collection en essai, son rayon)
       if (c) return signup(withCollection(t.delta, t.pano, c), 'collections');
-      return signup(t.delta, p.id === 'pack:skins' ? 'sorts' : rayon);
+      // Pack en tête d'un rayon : on revient sur ce rayon
+      return signup(t.delta, p.display && p.display !== 'banner' ? rayonOf(p.display) : rayon);
     }
     // Collection complétée : les pièces déjà possédées sont équipées avec les nouvelles (à la livraison, case cochée)
     const equipOwned = c ? p.items.filter(i => owns(me, i) && !isEquipped(me, i)) : [];
@@ -274,9 +298,12 @@ export default function Shop() {
   // ---------------------------------------------------------------------------------------------
   // Affichage
 
-  const ownedCount = ITEMS.filter(i => owns(me, i.id)).length;
-  const counts = { rois: 0, echiquiers: 0, sorts: 0, collections: PREMIUM_COLLECTIONS.length } as Record<Rayon, number>;
-  for (const i of ITEMS) counts[KIND_RAYON[i.kind]]++;
+  // Objets montrés (et comptés dans « Ma collection : n sur m ») : ceux des rayons, plus un objet retiré que l'on possède
+  const shown = ITEMS.filter(i => !i.retired || owns(me, i.id));
+  const ownedCount = shown.filter(i => owns(me, i.id)).length;
+  const counts = Object.fromEntries(RAYONS.map(r => [r, 0])) as Record<Rayon, number>;
+  counts.collections = SHOP_COLLECTIONS.length;
+  for (const i of shown) counts[rayonOf(i.kind)]++;
   const live = liveText(lastTried, quote, action);
   const onCasting = useCallback((on: boolean) => setCasting(on), []);
 
@@ -303,7 +330,7 @@ export default function Shop() {
 
   const rack = () => {
     if (rayon === 'collections') {
-      const list = PREMIUM_COLLECTIONS.filter(c => !mine || [c.king, c.board, c.skin].some(i => t.owned.includes(i)));
+      const list = SHOP_COLLECTIONS.filter(c => !mine || collectionItems(c).some(i => t.owned.includes(i)));
       return (
         <Rack key="collections" rayon="collections" empty={list.length ? undefined : <EmptyMine />}>
           {list.map(c => (
@@ -314,7 +341,7 @@ export default function Shop() {
               loggedIn={loggedIn}
               sale={sale}
               ready={ready}
-              trying={t.trial.king === c.king && t.trial.board === c.board && t.trial.skin === c.skin}
+              trying={isTrying(t.trial, c)}
               onTry={tryCollection}
               onBuy={buy}
             />
@@ -322,12 +349,15 @@ export default function Shop() {
         </Rack>
       );
     }
-    const kind = RAYON_KIND[rayon];
-    const list = rackOrder(ITEMS.filter(i => i.kind === kind && (!mine || t.owned.includes(i.id))));
+    const kind = kindOfRayon(rayon)!;
+    const list = rackOrder(shown.filter(i => i.kind === kind && (!mine || t.owned.includes(i.id))));
     return (
       // Une clé par rayon : le portant repart du début (son défilement horizontal n'est pas celui du rayon d'avant)
       <Rack key={rayon} rayon={rayon} empty={list.length ? undefined : <EmptyMine />}>
-        {kind === 'skin' && GRIMOIRE && !mine && <GrimoireCard product={GRIMOIRE} owned={t.owned} loggedIn={loggedIn} sale={sale} ready={ready} onBuy={buy} />}
+        {!mine &&
+          PACKS.filter(p => p.display === kind).map(p => (
+            <PackCard key={p.id} product={p} owned={t.owned} loggedIn={loggedIn} sale={sale} ready={ready} onBuy={buy} />
+          ))}
         {list.map(i => {
           // Visiteur : la panoplie Arcane n'est « équipée » sur aucun compte ; ses objets sont offerts à tous
           const raw = itemState(i.id, t.pano, t.owned);
@@ -370,7 +400,7 @@ export default function Shop() {
         <div className="bz-band-side">
           {loggedIn && (
             <span className="bz-count">
-              <StarMark size={11} /> Ma collection : {ownedCount} sur {ITEMS.length}
+              <StarMark size={11} /> Ma collection : {ownedCount} sur {shown.length}
             </span>
           )}
           <Seal />
@@ -411,7 +441,7 @@ export default function Shop() {
           <PageHead
             as="h2"
             place="Les collections"
-            aside={`${PREMIUM_COLLECTIONS.length} panoplies`}
+            aside={`${SHOP_COLLECTIONS.length} panoplies`}
             title={
               <span id="bz-colls-t">
                 Tout assorti, <em>en un geste.</em>
@@ -420,7 +450,7 @@ export default function Shop() {
             lede="Un roi, un échiquier et des sorts qui vont ensemble, et le sceau de la collection à côté de votre pseudo : on ne le trouve nulle part ailleurs."
           />
           <div className="bz-colls-grid">
-            {PREMIUM_COLLECTIONS.map(c => (
+            {SHOP_COLLECTIONS.map(c => (
               <CollectionCard
                 key={c.id}
                 c={c}
@@ -429,7 +459,7 @@ export default function Shop() {
                 loggedIn={loggedIn}
                 sale={sale}
                 ready={ready}
-                trying={t.trial.king === c.king && t.trial.board === c.board && t.trial.skin === c.skin}
+                trying={isTrying(t.trial, c)}
                 onTry={c2 => {
                   tryCollection(c2);
                   backToCabin();
@@ -440,7 +470,9 @@ export default function Shop() {
           </div>
         </section>
       )}
-      {TRESOR && <TresorBanner product={TRESOR} owned={t.owned} loggedIn={loggedIn} sale={sale} ready={ready} onBuy={buy} />}
+      {BANNERS.map((p, i) => (
+        <TresorBanner key={p.id} product={p} titleId={i ? `tb-t-${i + 1}` : 'tb-t'} owned={t.owned} loggedIn={loggedIn} sale={sale} ready={ready} onBuy={buy} />
+      ))}
 
       <ShopPromise />
 
@@ -464,12 +496,9 @@ function EmptyMine() {
 }
 
 /** Message après équipement d'un objet. */
-function equippedMessage(id: string): string {
+function equipped(id: string): string {
   const it = itemById(id);
-  if (!it) return 'Équipé.';
-  if (it.kind === 'king') return `${it.name} équipé. Vos adversaires le verront dès votre prochaine partie.`;
-  if (it.kind === 'board') return `Échiquier ${it.name} équipé : il vous suit dans toutes vos parties.`;
-  return `Sorts ${it.name} équipés : vos adversaires les verront à chacun de vos sorts.`;
+  return it ? equippedMessage(it) : 'Équipé.';
 }
 
 /** Une partie est-elle en cours (le roi est pris à l'assise : le nouveau vaut pour la suivante) ? */
@@ -503,7 +532,7 @@ function clearDelivery() {
 function liveText(lastTried: string | null, q: ReturnType<typeof quoteTrial>, a: ReturnType<typeof mainAction>): string {
   const t = actionTexts(q, a);
   const it = lastTried ? itemById(lastTried) : undefined;
-  const first = it ? `${itemPhrase(it)} en essai${!it.free ? `, ${formatPrice(unitPrice(it.id))}` : ''}. ` : '';
+  const first = it ? `${itemLabel(it)} en essai${!it.free ? `, ${formatPrice(unitPrice(it.id))}` : ''}. ` : '';
   const total = q.cart ? `, ${formatPrice(q.cart.totalCents)}` : '';
   return `${first}${a.kind === 'none' ? 'Votre panoplie actuelle.' : `Essai : ${t.line}${total}.`}`;
 }

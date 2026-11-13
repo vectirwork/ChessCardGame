@@ -93,7 +93,7 @@ describe('limite d’erreur des pages (page blanche)', () => {
   };
   const tick = () => new Promise(r => setTimeout(r, 0));
 
-  it('chargement rejeté : React garde le rejet ; retry() recrée la page paresseuse, qui recharge son code', async () => {
+  it('chargement rejeté : React garde le rejet (d’où le rechargement de « Réessayer ») ; failed() le signale', async () => {
     let appels = 0;
     let echec = true;
     const Page = page<object>((): Promise<{ default: ComponentType<object> }> => {
@@ -101,24 +101,19 @@ describe('limite d’erreur des pages (page blanche)', () => {
       return echec ? Promise.reject(new TypeError('Failed to fetch dynamically imported module')) : Promise.resolve({ default: () => createElement('b', null, 'page chargée') });
     });
     const el = () => createElement(Suspense, { fallback: createElement('i', null, 'attente') }, createElement(Page));
+    expect(Page.failed()).toBe(false);
+    rendu(el());
+    await tick();
+    expect([appels, Page.failed()]).toEqual([1, true]);
+    // Le même composant paresseux, rejeté pour toujours, ne recharge rien (le navigateur garde aussi l'échec de l'import)
     rendu(el());
     await tick();
     expect(appels).toBe(1);
-    // Sans retry : le même composant paresseux, rejeté pour toujours, ne recharge rien
-    rendu(el());
-    await tick();
-    expect(appels).toBe(1);
-    // Réessayer : nouveau composant paresseux, nouveau chargement, puis la page s'affiche
+    // Un nouvel essai explicite (préchargement au survol d'un lien) : code chargé, la page remontée s'affiche
     echec = false;
-    Page.retry();
-    rendu(el());
-    await tick();
-    expect(appels).toBe(2);
-    expect(rendu(el())).toContain('page chargée');
-    // Code déjà là : retry() ne recrée rien, preload() ne recharge rien
-    Page.retry();
     await Page.preload();
-    expect(appels).toBe(2);
+    expect([appels, Page.failed()]).toEqual([2, false]);
+    expect(rendu(el())).toContain('page chargée');
   });
   it('erreur de chargement ou de rendu : écran « Réessayer » à la place de la page, le reste du site intact', () => {
     expect(PageBoundary.getDerivedStateFromError()).toEqual({ error: true });
@@ -129,9 +124,13 @@ describe('limite d’erreur des pages (page blanche)', () => {
     expect(html).toContain('role="alert"');
     expect(html).toContain('Impossible d’afficher cette page.');
     expect(html).toContain('>Réessayer</button>');
+    // Exception de rendu (aucun code de page en échec) : la page est redessinée, sans rechargement
+    const reload = vi.fn();
+    vi.stubGlobal('window', { location: { reload } });
     const setState = vi.spyOn(b, 'setState').mockImplementation(() => undefined);
     b.retry();
     expect(setState).toHaveBeenCalledWith({ error: false });
+    expect(reload).not.toHaveBeenCalled();
   });
 });
 

@@ -14,37 +14,33 @@ import type { PageModule } from '../shared/config/routes';
  * est fait au montage et ne change plus ensuite (aucun remontage en cours de vie).
  *
  * Code de la page introuvable (onglet resté ouvert après une mise en ligne, réseau coupé) : la page est rechargée,
- * au plus une fois par minute (reloadForNewVersion) ; sinon l'erreur va à PageBoundary. React garde pour toujours le
- * rejet d'un composant paresseux : `retry()` en recrée un, pour un nouvel essai.
+ * au plus une fois par minute (reloadForNewVersion) ; sinon l'erreur va à PageBoundary. `failed()` : le code de la
+ * page n'a pas pu être chargé (ni depuis).
  */
 type Page<P> = ComponentType<P> & {
   preload: () => Promise<unknown>;
-  retry: () => void;
+  failed: () => boolean;
 };
 export function page<P extends object>(load: () => Promise<{ default: ComponentType<P> }>): Page<P> {
   let ready: ComponentType<P> | undefined;
   let pending: Promise<ComponentType<P>> | undefined;
+  let failed = false;
   const preload = () =>
     (pending ??= load().then(
       m => (ready = m.default),
       e => {
         pending = undefined; // nouvel essai possible (réseau coupé, nouvelle version)
+        failed = true;
         if (reloadForNewVersion()) return new Promise<never>(() => undefined); // l'attente dure jusqu'au rechargement
         throw e;
       },
     ));
-  const lazyPage = () => lazy(() => preload().then(C => ({ default: C })));
-  let Lazy = lazyPage();
+  const Lazy = lazy(() => preload().then(C => ({ default: C })));
   function Paged(props: P) {
     const [Now] = useState(() => ready);
     return createElement((Now ?? Lazy) as ComponentType<P>, props);
   }
-  return Object.assign(Paged, {
-    preload,
-    retry: () => {
-      if (!ready) Lazy = lazyPage();
-    },
-  });
+  return Object.assign(Paged, { preload, failed: () => failed && !ready });
 }
 
 /**
@@ -79,8 +75,11 @@ export function preloadRoute(pathname: string): Promise<unknown> {
 
 /**
  * Limite d'erreur d'une page : code de la page introuvable, ou exception pendant son rendu. Sans elle, React démonte
- * tout le site (page blanche, sans en-tête pour repartir). « Réessayer » recrée les pages paresseuses en échec et
- * redessine. Une par page, de clé le module de la page : changer de page l'efface, et une page saine n'est jamais
+ * tout le site (page blanche, sans en-tête pour repartir). « Réessayer » :
+ * - code d'une page introuvable : recharge le site. Ni React (composant paresseux rejeté) ni le navigateur (import
+ *   en échec, vérifié dans Chromium) ne retentent le même module ; le rechargement prend aussi la version en ligne ;
+ * - exception de rendu : redessine la page.
+ * Une limite par page, de clé le module de la page : changer de page l'efface, et une page saine n'est jamais
  * remontée (même module, même instance, comme avant).
  */
 export class PageBoundary extends Component<{ children: ReactNode }, { error: boolean }> {
@@ -89,8 +88,8 @@ export class PageBoundary extends Component<{ children: ReactNode }, { error: bo
     return { error: true };
   }
   retry = () => {
-    for (const p of Object.values(PAGES)) p.retry();
-    this.setState({ error: false });
+    if (Object.values(PAGES).some(p => p.failed())) window.location.reload();
+    else this.setState({ error: false });
   };
   render() {
     if (!this.state.error) return this.props.children;

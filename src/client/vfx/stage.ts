@@ -1,16 +1,17 @@
 // Scène WebGL superposée à l'échiquier. La caméra reproduit exactement la perspective CSS du plateau,
 // ce qui permet d'incliner l'échiquier en 3D pendant un sort tout en gardant les effets alignés sur les cases.
-// Sobriété (D6) : la boucle d'images ne tourne que pendant un sort ; un objet persistant immobile (Mur de glace,
-// Faille) ne la garde pas allumée (elle se réveille au défilement, au redimensionnement, et vérifie la position de
-// l'échiquier deux fois par seconde) ; un objet qui scintille (Gel, Bouclier) est redessiné à ≈ 22 images/s sans
-// réveiller le fil principal entre deux. Densité de pixels bornée sur les appareils modestes.
+// Sobriété (D6) : la boucle d'images ne tourne que pendant un sort ou l'arrivée d'un Présage, puis le calque disparaît
+// (les effets durables, Mur de glace, Faille, givre, sont dessinés par l'échiquier lui-même). Densité de pixels bornée
+// sur les appareils modestes. Réglages : config.ts.
 import * as THREE from 'three';
 import type { Color, Position } from '../../shared/chess';
 import type { Effect } from '../../shared/game';
 import type { SkinStyle } from '../../shared/catalog';
 import { skinStyle } from '../../shared/catalog';
+import { reducedMotion } from '../motion';
+import { ARRIVAL_DELAY_MS, CALM, CINE, CSS_MARGIN_MS, DEFAULT_PERSPECTIVE, FLASH_MS, HALF, MAX_FRAME_S, N, PARTICLE_CAPACITY, RENDER, SHAKE } from './config';
 import { Particles } from './particles';
-import { particleTexture } from './textures';
+import { PARTICLE_TRAITS, particleTexture } from './textures';
 
 export interface Fx {
   /** Renvoie false quand l'effet est terminé. */
@@ -18,18 +19,6 @@ export interface Fx {
   dispose?(): void;
 }
 
-export interface Marker {
-  obj: THREE.Object3D;
-  square: number;
-  /** Signature des cases couvertes (Faille) : un changement reconstruit l'objet. */
-  sig?: string;
-  /** Renvoie true tant que l'objet s'anime (sinon la scène ne le redessine que si le plateau bouge). */
-  update(dt: number, t: number): boolean | void;
-  /** Animation de disparition (renvoie l'effet à jouer). */
-  despawn(): Fx | null;
-}
-
-export type MarkerFactory = (stage: VfxStage, e: Effect, skin: SkinStyle, square: number) => Marker | null;
 /** Arrivée d'un Présage (effet annoncé qui devient actif). */
 export type ArrivalFactory = (stage: VfxStage, e: Effect, skin: SkinStyle) => void;
 
@@ -40,18 +29,16 @@ export interface Cine {
   zoom: number;
 }
 
-/** Suite de la boucle d'images : arrêt, image suivante, image dans ≈ 45 ms (scintillement), veille (objets immobiles). */
+/** Suite de la boucle d'images : arrêt, ou image suivante. */
 const enum Next {
   Stop,
   Frame,
-  Slow,
-  Park,
 }
 
 /** Appareil modeste (peu de cœurs ou de mémoire) : on dessine moins de pixels. */
 function modestDevice() {
   const nav = navigator as Navigator & { deviceMemory?: number };
-  return (nav.hardwareConcurrency || 8) <= 4 || (nav.deviceMemory ?? 8) <= 4;
+  return (nav.hardwareConcurrency || 8) <= RENDER.modestCores || (nav.deviceMemory ?? 8) <= RENDER.modestMemoryGb;
 }
 
 /**
@@ -60,7 +47,7 @@ function modestDevice() {
  * à haute densité (vérifié sur les captures mobiles).
  */
 export function renderQuality(dpr = window.devicePixelRatio || 1, modest = modestDevice()) {
-  return { ratio: Math.min(dpr, modest ? 1.5 : 2), antialias: true };
+  return { ratio: Math.min(dpr, modest ? RENDER.modestRatio : RENDER.maxRatio), antialias: true };
 }
 
 /** Dernier défilement (horloge murale : le banc d'essai remplace performance.now). */
@@ -79,11 +66,11 @@ const SCROLL_EVENTS = ['scroll', 'wheel', 'touchmove'] as const;
 function calm(): Promise<void> {
   if (calmWaiters++ === 0) for (const e of SCROLL_EVENTS) window.addEventListener(e, onScrollMark, { capture: true, passive: true });
   const w = window as Window & { requestIdleCallback?: (cb: () => void) => number };
-  const idle = (cb: () => void) => (w.requestIdleCallback ? w.requestIdleCallback(cb) : window.setTimeout(cb, 60));
+  const idle = (cb: () => void) => (w.requestIdleCallback ? w.requestIdleCallback(cb) : window.setTimeout(cb, CALM.idleFallbackMs));
   return new Promise(resolve => {
     const check = () => {
-      if (Date.now() - lastScroll < 400) {
-        window.setTimeout(() => idle(check), 200);
+      if (Date.now() - lastScroll < CALM.scrollQuietMs) {
+        window.setTimeout(() => idle(check), CALM.retryMs);
         return;
       }
       if (--calmWaiters === 0) for (const e of SCROLL_EVENTS) window.removeEventListener(e, onScrollMark, { capture: true });
@@ -112,16 +99,15 @@ export class VfxStage {
   readonly board = new THREE.Group();
   readonly camera = new THREE.PerspectiveCamera(30, 1, 0.05, 2000);
   private renderer: THREE.WebGLRenderer | null = null;
-  private canvas: HTMLCanvasElement | null = null;
+  /**
+   * Calque WebGL (placé dans le document), null sans WebGL. Lecture seule hors de la scène : l'accueil lui ajoute ses
+   * classes et règle son opacité (StageBoard, useLiveGame).
+   */
+  readonly canvas: HTMLCanvasElement | null = null;
   private fx: Fx[] = [];
   private cines: Cine[] = [];
   private systems = new Map<string, Particles>();
-  private markers = new Map<number, Marker>();
   private raf = 0;
-  /** Minuterie de la boucle ralentie (scintillement) ou de la veille (objets immobiles). */
-  private timer = 0;
-  /** Images consécutives sans mouvement ni sort, avec des objets immobiles. */
-  private still = 0;
   private last = 0;
   time = 0;
   tilt = 0;
@@ -152,8 +138,13 @@ export class VfxStage {
     this.rect = this.wrap.getBoundingClientRect();
     this.rectAt = performance.now();
   };
-  private perspective = 1400;
-  private lastMarkerRender = 0;
+  /**
+   * Perspective du plateau (px), relue dans son style (attach) ; l'accueil la règle quand un calque réduit l'échiquier
+   * (StageBoard : 1400 × l'échelle de l'astre).
+   */
+  perspective = DEFAULT_PERSPECTIVE;
+  /** Dernière image dessinée (horloge des images). */
+  private lastRender = 0;
   private lastLayout = '';
   private applyTilt = '';
   private pendingIds = new Set<number>();
@@ -163,7 +154,6 @@ export class VfxStage {
   private warmedTextures = new Set<THREE.Texture>();
   /** Arrêt de la dernière boucle d'images (horloge murale). */
   private stoppedAt = 0;
-  reduced = false;
   /**
    * Famille de l'échiquier qui tient la scène quand elle est partagée (useVfx : vrai pour la partie de l'accueil, faux
    * pour la démonstration), null sinon. Ce qu'un sort a programmé pour plus tard (later) ne vise la scène que si sa
@@ -176,12 +166,15 @@ export class VfxStage {
    * exemple). Le banc d'essai, qui avance la scène image par image, les coupe.
    */
   guard = true;
-  markerFactory: MarkerFactory | null = null;
   arrivalFactory: ArrivalFactory | null = null;
+
+  /** Mouvement réduit demandé par le système, lu à chaque fois (motion.ts) : ni inclinaison, ni secousse, impact rapide. */
+  get reduced(): boolean {
+    return reducedMotion();
+  }
 
   constructor(wrap: HTMLElement, public orientation: Color) {
     this.wrap = wrap;
-    this.reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
     try {
       this.canvas = document.createElement('canvas');
       this.canvas.className = 'vfx-canvas';
@@ -195,7 +188,7 @@ export class VfxStage {
       // (300 × 150, anticrénelé) jusqu'au premier sort, que la scène attende ou non. Le calque est caché d'ici là.
       this.renderer.setSize(1, 1, false);
       this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-      document.body.appendChild(this.canvas);
+      document.body.appendChild(this.canvas!);
       this.ok = true;
     } catch {
       this.renderer = null;
@@ -213,16 +206,7 @@ export class VfxStage {
     const rim = new THREE.DirectionalLight(0xbfd7ff, 1.2);
     rim.position.set(3, 6, 3);
     this.scene.add(rim);
-    if (this.ok) {
-      // L'échiquier peut bouger sous des objets immobiles : on se réveille pour les recaler
-      window.addEventListener('scroll', this.onMove, { capture: true, passive: true });
-      window.addEventListener('resize', this.onMove);
-    }
   }
-
-  private onMove = () => {
-    if (this.markers.size && !this.raf) this.kick();
-  };
 
   /**
    * Rattache la scène à un autre échiquier (la démonstration de l'accueil change d'échiquier à chaque lieu) : le
@@ -234,10 +218,10 @@ export class VfxStage {
     this.rect = null;
     this.orientation = orientation;
     const p = parseFloat(getComputedStyle(wrap).perspective);
-    this.perspective = p > 0 ? p : 1400;
+    this.perspective = p > 0 ? p : DEFAULT_PERSPECTIVE;
   }
 
-  /** Vide la scène (effets, objets, particules) et la met en sommeil, sans libérer le contexte WebGL. */
+  /** Vide la scène (effets, particules) et la met en sommeil, sans libérer le contexte WebGL. */
   detach() {
     this.halt();
     for (const f of this.fx) {
@@ -250,8 +234,6 @@ export class VfxStage {
     this.fx = [];
     this.cines = [];
     this.shakeAmp = 0;
-    for (const m of this.markers.values()) disposeObject(m.obj);
-    this.markers.clear();
     this.pendingIds = new Set();
     const keep = new Set<THREE.Object3D>([...this.systems.values()].map(ps => ps.points));
     for (const c of [...this.board.children]) if (!keep.has(c)) disposeObject(c);
@@ -283,15 +265,13 @@ export class VfxStage {
     this.lastLayout = '';
   }
 
-  /** Arrête la boucle d'images et ses minuteries. */
+  /** Arrête la boucle d'images. */
   private halt() {
     // Daté seulement si une boucle tournait : attach() et detach() passent ici à chaque changement d'échiquier, et une
     // scène déjà au repos ne doit pas sembler venir de s'arrêter (useVfx attend qu'elle soit au repos pour la passer)
-    if (this.raf || this.timer) this.stoppedAt = Date.now();
+    if (this.raf) this.stoppedAt = Date.now();
     cancelAnimationFrame(this.raf);
     this.raf = 0;
-    window.clearTimeout(this.timer);
-    this.timer = 0;
     this.forgetRect();
   }
 
@@ -304,12 +284,12 @@ export class VfxStage {
 
   /** Depuis combien de temps (ms) la scène n'anime plus rien ; 0 tant que sa boucle tourne. */
   get idleMs() {
-    return this.raf || this.timer ? 0 : Date.now() - this.stoppedAt;
+    return this.raf ? 0 : Date.now() - this.stoppedAt;
   }
 
   /** La scène a animé quelque chose depuis `t` (horloge murale), ou anime encore. */
   ranSince(t: number) {
-    return !!(this.raf || this.timer) || this.stoppedAt > t;
+    return !!this.raf || this.stoppedAt > t;
   }
 
   /**
@@ -326,16 +306,17 @@ export class VfxStage {
 
   /** Centre d'une case dans le repère de l'échiquier. */
   local(sq: number, z = 0): THREE.Vector3 {
-    const f = sq & 7, r = sq >> 3;
-    return this.orientation === 'w' ? new THREE.Vector3(f - 3.5, r - 3.5, z) : new THREE.Vector3(3.5 - f, 3.5 - r, z);
+    const f = sq % N, r = Math.floor(sq / N);
+    return this.orientation === 'w' ? new THREE.Vector3(f - HALF, r - HALF, z) : new THREE.Vector3(HALF - f, HALF - r, z);
   }
 
+  /** Système de particules d'une forme (une texture et un mélange : PARTICLE_TRAITS), créé à la première demande. */
   particles(skin: SkinStyle, shape = skin.particle): Particles {
-    const blending = shape === 'void' || shape === 'petal' ? THREE.NormalBlending : THREE.AdditiveBlending;
+    const blending = PARTICLE_TRAITS[shape]?.blending === 'normal' ? THREE.NormalBlending : THREE.AdditiveBlending;
     const key = `${shape}:${blending}`;
     let ps = this.systems.get(key);
     if (!ps) {
-      ps = new Particles(2600, particleTexture(shape), blending);
+      ps = new Particles(PARTICLE_CAPACITY, particleTexture(shape), blending);
       this.systems.set(key, ps);
       this.board.add(ps.points);
     }
@@ -381,8 +362,8 @@ export class VfxStage {
     });
   }
 
-  /** Inclinaison cinématographique de l'échiquier (montée 0,55 s, maintien `hold`, retour à plat 0,7 s). */
-  cinematic(hold: number, tilt = 0.5, zoom = 1.04): Cine | null {
+  /** Inclinaison cinématographique de l'échiquier (montée 0,55 s, maintien `hold`, retour à plat 0,7 s : CINE). */
+  cinematic(hold: number, tilt: number = CINE.tilt, zoom: number = CINE.zoom): Cine | null {
     if (this.reduced) return null;
     const c = { start: this.time, hold, tilt, zoom };
     this.cines.push(c);
@@ -416,14 +397,14 @@ export class VfxStage {
     this.wrap.classList.toggle('is-tilting', tilt !== 0 || zoom !== 1);
   }
 
-  shake(amount: number, duration = 0.45) {
+  shake(amount: number, duration: number = SHAKE.durationS) {
     if (this.reduced || amount <= 0) return;
-    this.shakeAmp = Math.max(this.shakeAmp, amount * 9);
+    this.shakeAmp = Math.max(this.shakeAmp, amount * SHAKE.px);
     this.shakeDecay = this.shakeAmp / duration;
     this.kick();
   }
 
-  /** Flash plein écran (DOM) dans la couleur du skin. */
+  /** Flash plein écran (DOM) dans la couleur du skin : retiré à la fin de son animation (board.css, .vfx-flash). */
   flash(color: string, intensity: number) {
     if (intensity <= 0) return;
     const el = document.createElement('div');
@@ -431,17 +412,12 @@ export class VfxStage {
     el.style.background = `radial-gradient(circle at 50% 50%, ${color}, transparent 70%)`;
     el.style.setProperty('--fi', String(Math.min(1, intensity)));
     this.wrap.appendChild(el);
-    setTimeout(() => el.remove(), 900);
+    setTimeout(() => el.remove(), FLASH_MS + CSS_MARGIN_MS);
   }
 
-  /** Relance la boucle d'images (`poll` : simple vérification depuis la veille, sans compter comme un mouvement). */
-  private kick(poll = false) {
+  /** Relance la boucle d'images. */
+  private kick() {
     if (!this.ok) return;
-    if (!poll) this.still = 0;
-    if (this.timer) {
-      window.clearTimeout(this.timer);
-      this.timer = 0;
-    }
     if (this.raf) return;
     if (this.canvas) this.canvas.style.display = 'block';
     this.last = performance.now();
@@ -458,26 +434,10 @@ export class VfxStage {
       console.error('[vfx]', err);
       this.fx = [];
       this.cines = [];
-      next = this.markers.size > 0 ? Next.Frame : Next.Stop;
+      next = Next.Stop;
     }
     if (next === Next.Frame) {
       this.raf = requestAnimationFrame(this.frame);
-    } else if (next === Next.Slow) {
-      // Objets qui scintillent, rien d'autre : une image toutes les ≈ 45 ms (cadence de leur rendu), le fil
-      // principal reste libre entre deux. L'horloge continue (pas de remise à zéro de `last`).
-      this.timer = window.setTimeout(() => {
-        this.timer = 0;
-        this.raf = requestAnimationFrame(this.frame);
-      }, 30);
-    } else if (next === Next.Park) {
-      // Plus d'image avant 0,5 s : la boîte relevée sera périmée
-      this.forgetRect();
-      // Objets immobiles déjà dessinés : la scène reste affichée telle quelle ; deux vérifications par seconde au cas
-      // où l'échiquier aurait bougé sans défilement ni redimensionnement (mise en page de la page)
-      this.timer = window.setTimeout(() => {
-        this.timer = 0;
-        this.kick(true);
-      }, 500);
     } else {
       this.stoppedAt = Date.now();
       this.forgetRect();
@@ -522,7 +482,7 @@ export class VfxStage {
       for (;;) {
         await calm();
         if (this.disposed || this.idleMs) return;
-        await new Promise(res => window.setTimeout(res, 250));
+        await new Promise(res => window.setTimeout(res, CALM.busyRetryMs));
       }
     };
     try {
@@ -556,7 +516,7 @@ export class VfxStage {
   /** Une image. Renvoie la suite de la boucle. */
   private step(now: number): Next {
     // Plafond de 0,1 s : sur un appareil lent, l’animation saute des images au lieu de ralentir
-    const dt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
+    const dt = Math.min(MAX_FRAME_S, Math.max(0, (now - this.last) / 1000));
     this.last = now;
     this.time += dt;
 
@@ -565,7 +525,7 @@ export class VfxStage {
     let zoom = 1;
     this.cines = this.cines.filter(c => {
       const t = this.time - c.start;
-      const up = 0.55, down = 0.7;
+      const up = CINE.upS, down = CINE.downS;
       let k: number;
       if (t < up) k = ease.outCubic(t / up);
       else if (t < up + c.hold) k = 1;
@@ -615,14 +575,6 @@ export class VfxStage {
       }
       return alive;
     });
-    let animating = false;
-    for (const m of this.markers.values()) {
-      try {
-        if (m.update(dt, this.time)) animating = true;
-      } catch (err) {
-        console.error('[vfx]', err);
-      }
-    }
     let particlesAlive = 0;
     for (const ps of this.systems.values()) {
       ps.update(dt);
@@ -630,22 +582,15 @@ export class VfxStage {
     }
 
     const busy = this.fx.length > 0 || this.cines.length > 0 || particlesAlive > 0 || this.shakeAmp > 0;
-    // Objets persistants immobiles (Mur de glace permanent, Faille) : on ne redessine que si le plateau a bougé
+    // Dernière image (plus rien d'animé) : dessinée si le plateau a bougé ou si rien ne l'a été depuis une seconde
     const layout = `${Math.round(baseX)},${Math.round(baseY)},${Math.round(r.width)},${Math.round(r.height)},${window.innerWidth},${window.innerHeight}`;
     const moved = layout !== this.lastLayout;
     this.lastLayout = layout;
-    if (busy || moved || (animating && now - this.lastMarkerRender > 45) || now - this.lastMarkerRender > 1000) {
+    if (busy || moved || now - this.lastRender > 1000) {
       this.renderer!.render(this.scene, this.camera);
-      this.lastMarkerRender = now;
+      this.lastRender = now;
     }
-    if (busy || (moved && this.markers.size > 0)) {
-      this.still = 0;
-      return Next.Frame;
-    }
-    if (!this.markers.size) return Next.Stop;
-    if (animating) return Next.Slow;
-    // Quelques images de plus avant la veille : l'échiquier peut finir de se déplacer (défilement doux)
-    return ++this.still < 12 ? Next.Frame : Next.Park;
+    return busy ? Next.Frame : Next.Stop;
   }
 
   /**
@@ -705,7 +650,7 @@ export class VfxStage {
     cam.fov = (2 * Math.atan(fullH / 2 / P) * 180) / Math.PI;
     cam.aspect = fullW / fullH;
     cam.setViewOffset(fullW, fullH, fullW / 2 - cx, fullH / 2 - cy, W, H);
-    cam.position.set(0, 0, (P * 8) / w);
+    cam.position.set(0, 0, (P * N) / w);
     cam.updateProjectionMatrix();
     this.board.rotation.x = -this.tilt;
     this.board.scale.setScalar(this.zoom);
@@ -714,10 +659,10 @@ export class VfxStage {
   }
 
   /**
-   * Synchronise les objets persistants (Mur de glace, Faille, blocs et boucliers du Duel) avec les effets actifs,
-   * et joue l'arrivée d'un Présage (effet annoncé qui devient actif).
+   * Suit les effets de la partie et joue l'arrivée d'un Présage (effet annoncé qui devient actif). `_pos` n'est plus lu
+   * (reste de l'époque des objets persistants : les appelants le passent encore).
    */
-  syncMarkers(effects: Effect[], _pos: Position) {
+  syncMarkers(effects: Effect[], _pos?: Position) {
     if (!this.ok) return;
     // Seule l'arrivée d'un Présage s'anime en 3D. Les effets durables (Mur de glace, Faille, givre…) sont dessinés
     // par l'échiquier lui-même (cases givrées, gouffre) : une scène WebGL laissée affichée au-dessus de l'échiquier
@@ -740,42 +685,24 @@ export class VfxStage {
           } catch (err) {
             console.error('[vfx]', err);
           }
-        }, 80);
+        }, ARRIVAL_DELAY_MS);
       }
     }
     this.pendingIds = pending;
-    if (this.markers.size) {
-      for (const m of this.markers.values()) {
-        this.board.remove(m.obj);
-        disposeObject(m.obj);
-      }
-      this.markers.clear();
-    }
   }
 
-
-  setOrientation(o: Color, effects: Effect[], pos: Position) {
+  /** Échiquier retourné : les effets suivants se placent dans la nouvelle orientation (et une arrivée se joue). */
+  setOrientation(o: Color, effects: Effect[], pos?: Position) {
     if (o === this.orientation) return;
     this.orientation = o;
-    // Les objets à plusieurs cases (Faille) sont reconstruits ; les autres sont simplement replacés
-    for (const [id, m] of this.markers) {
-      if (m.sig) {
-        this.markers.delete(id);
-        disposeObject(m.obj);
-      } else m.obj.position.copy(this.local(m.square));
-    }
     this.syncMarkers(effects, pos);
   }
 
   dispose() {
     this.halt();
     this.disposed = true;
-    window.removeEventListener('scroll', this.onMove, { capture: true });
-    window.removeEventListener('resize', this.onMove);
     for (const f of this.fx) f.dispose?.();
     for (const ps of this.systems.values()) ps.dispose();
-    for (const m of this.markers.values()) disposeObject(m.obj);
-    this.markers.clear();
     for (const o of this.witnesses) disposeObject(o);
     this.witnesses = [];
     this.renderer?.dispose();

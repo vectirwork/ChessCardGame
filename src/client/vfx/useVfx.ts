@@ -70,7 +70,6 @@ const load = () => import('./index');
 
 function create(m: VfxModule, wrap: HTMLElement, orientation: Color): VfxStage {
   const stage = new m.VfxStage(wrap, orientation);
-  stage.markerFactory = m.createMarker;
   stage.arrivalFactory = m.playArrival;
   // Programmes des effets compilés au premier moment calme : le premier sort de chaque type ne bloque plus le fil
   // principal, et les suivants ne recompilent plus rien
@@ -293,14 +292,18 @@ function useVfxCore(
     };
     const h: Holder = { wrap, orientation, yields: yieldsRef.current, shares, grant: show };
     holderRef.current = h;
-    void load().then(m => {
-      if (dead) return;
-      setReady(true);
-      const own = poolKey ? request(poolKey, m, h) : create(m, wrap, orientation);
-      if (!own) return;
-      ownRef.current = own;
-      show({ stage: own, m });
-    });
+    void load()
+      .then(m => {
+        if (dead) return;
+        setReady(true);
+        const own = poolKey ? request(poolKey, m, h) : create(m, wrap, orientation);
+        if (!own) return;
+        ownRef.current = own;
+        show({ stage: own, m });
+      })
+      // Module des effets introuvable (réseau) : pas de scène pour cet échiquier, ses sorts se jouent sans (l'état est
+      // appliqué sans mise en scène), et aucun rejet n'est laissé sans traitement
+      .catch(() => undefined);
     return () => {
       show(null);
       dead = true;

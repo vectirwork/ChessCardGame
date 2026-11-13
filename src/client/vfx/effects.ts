@@ -1,13 +1,19 @@
-// Mise en scène de chaque carte. Toutes les couleurs, particules et ornements viennent du skin du lanceur.
+// Mise en scène de chaque carte. Toutes les couleurs, particules et ornements viennent du skin du lanceur ; ce qui
+// distingue une carte (scène, impact, inclinaison, secousse, éclair, ambiance, teinte) est dans sa fiche (cardFx.ts).
+// Ne jamais changer l'ordre des appels à Math.random ni des créations d'objets three.js (chacune en tire quatre pour
+// son identifiant) : test/sorts.mjs et test/cardfx.test.ts comparent les images et les relevés au hasard semé.
 import * as THREE from 'three';
 import type { CardInfo, Effect } from '../../shared/game';
 import type { SkinStyle } from '../../shared/catalog';
 import { skinStyle } from '../../shared/catalog';
 import { CARDS } from '../../shared/cards';
 import type { CardId } from '../../shared/cards';
+import { cardFx } from './cardFx';
+import type { CardFx, Mood, SceneKey } from './cardFx';
+import { CAST, HALF, N } from './config';
 import { Particles } from './particles';
-import { Cine, Fx, Marker, VfxStage, disposeObject, ease } from './stage';
-import { FLOURISH_SIZE, LAUREL_R, bandTexture, beamTexture, flourishTexture, particleTexture, softDiskTexture } from './textures';
+import { Cine, VfxStage, disposeObject, ease } from './stage';
+import { FLOURISH_SIZE, FLOURISH_TRAITS, LAUREL_R, PARTICLE_TRAITS, bandTexture, beamTexture, flourishTexture, particleTexture, softDiskTexture } from './textures';
 
 const C = (hex: string) => new THREE.Color(hex);
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
@@ -19,13 +25,17 @@ interface Palette {
 }
 const palette = (skin: SkinStyle): Palette => ({ p: C(skin.primary), s: C(skin.secondary), a: C(skin.accent) });
 const pick = (pal: Palette) => (Math.random() < 0.5 ? pal.p : Math.random() < 0.6 ? pal.s : pal.a);
-/** Couleur visible même pour les skins sombres (Néant). */
-const glowColor = (skin: SkinStyle) => (skin.particle === 'void' ? C(skin.accent) : C(skin.primary));
+/** Couleur visible même pour les skins sombres (Néant : PARTICLE_TRAITS, `glow`). */
+const glowColor = (skin: SkinStyle) => (PARTICLE_TRAITS[skin.particle]?.glow === 'accent' ? C(skin.accent) : C(skin.primary));
+/** Le motif prend la couleur secondaire du skin (FLOURISH_TRAITS, `color`). */
+const secondaryFlourish = (skin: SkinStyle) => FLOURISH_TRAITS[skin.flourish]?.color === 'secondary';
+/** Le motif est une couronne qui se referme, sans jamais tourner (FLOURISH_TRAITS, `motion`). */
+const closingFlourish = (skin: SkinStyle) => FLOURISH_TRAITS[skin.flourish]?.motion === 'close';
 /**
  * Teinte du motif d'ornement : celle des effets (glowColor), sauf le filigrane, un travail d'orfèvre, qui prend la
  * couleur secondaire du skin (l'or d'Écarlate : « des éclats de rubis […] sous un anneau de filigrane d'or »).
  */
-export const flourishColor = (skin: SkinStyle) => (skin.flourish === 'filigree' ? C(skin.secondary) : glowColor(skin));
+export const flourishColor = (skin: SkinStyle) => (secondaryFlourish(skin) ? C(skin.secondary) : glowColor(skin));
 
 function additive(color: THREE.Color, opts: Partial<THREE.MeshBasicMaterialParameters> = {}) {
   return new THREE.MeshBasicMaterial({
@@ -64,7 +74,7 @@ function spawn(stage: VfxStage, obj: THREE.Object3D, life: number, anim: (k: num
  * referme (laurelDisk).
  */
 export function flourishDisk(stage: VfxStage, skin: SkinStyle, at: THREE.Vector3, radius: number, life: number, delay = 0, spin = 0.8, peak = 0.95) {
-  if (skin.flourish === 'laurel') {
+  if (closingFlourish(skin)) {
     laurelDisk(stage, skin, at, radius, life, delay, peak);
     return;
   }
@@ -91,7 +101,7 @@ const LAUREL_OPEN = 0.5;
  * tourne jamais, ici comme dans la brûlure et la lune de sang.
  */
 function laurelDisk(stage: VfxStage, skin: SkinStyle, at: THREE.Vector3, radius: number, life: number, delay: number, peak: number) {
-  const mat = additive(flourishColor(skin), { map: flourishTexture('laurel'), opacity: 0 });
+  const mat = additive(flourishColor(skin), { map: flourishTexture(skin.flourish), opacity: 0 });
   // Nœud des rameaux (charnière), sous le centre : LAUREL_R pixels sur 256 de demi-texture
   const pivot = (LAUREL_R / (FLOURISH_SIZE / 2)) * radius;
   const group = new THREE.Group();
@@ -242,7 +252,7 @@ function scorch(stage: VfxStage, skin: SkinStyle, at: THREE.Vector3) {
   const ring = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), glow);
   ring.position.set(at.x, at.y, 0.02);
   // La couronne de laurier ne tourne pas (laurelDisk)
-  const spin = skin.flourish === 'laurel' ? 0 : -3;
+  const spin = closingFlourish(skin) ? 0 : -3;
   spawn(stage, ring, 1.2, (k, t) => {
     glow.opacity = 0.9 * (1 - k);
     ring.rotation.z = t * spin;
@@ -292,27 +302,6 @@ function crystalCluster(skin: SkinStyle, scale = 1) {
     const c = crystal(h * scale, r * scale, skin);
     c.group.position.set(x * scale, y * scale, 0);
     c.group.rotation.set(lean * Math.sign(y || 1) * 0.6, lean, 0);
-    g.add(c.group);
-    mats.push(c.mat);
-  }
-  return { group: g, mats };
-}
-
-/** Massif compact et droit (Mur de glace posé) : lisible vu de dessus comme plateau incliné, sans déborder. */
-function wallCluster(skin: SkinStyle) {
-  const g = new THREE.Group();
-  const mats: THREE.MeshStandardMaterial[] = [];
-  const specs: [number, number, number, number, number, number][] = [
-    [0, 0.02, 1.05, 0.2, 0, 0],
-    [0.2, 0.14, 0.7, 0.13, -0.18, 0.12],
-    [-0.21, 0.12, 0.66, 0.13, -0.15, -0.14],
-    [0.14, -0.2, 0.58, 0.12, 0.16, 0.12],
-    [-0.17, -0.18, 0.5, 0.11, 0.15, -0.12],
-  ];
-  for (const [x, y, h, r, rx, ry] of specs) {
-    const c = crystal(h, r, skin);
-    c.group.position.set(x, y, 0);
-    c.group.rotation.set(rx, ry, 0);
     g.add(c.group);
     mats.push(c.mat);
   }
@@ -407,24 +396,12 @@ export interface CastHooks {
   show?: (ids: number[]) => void;
   /** Le camp dont la pendule est visée est-il en bas de l'écran ? */
   victimAtBottom?: boolean;
+  /**
+   * Main de l'adversaire cachée (rulesOf(state).handsVisible faux) : l'annonce d'un Présage ne prend pas la couleur de la
+   * carte, qui la trahirait. Préparé : les mains sont toujours visibles aujourd'hui, personne ne le passe.
+   */
+  secret?: boolean;
 }
-
-/** Moment de l'impact (secondes) : l'état de la partie change à cet instant. */
-const IMPACT_AT: Partial<Record<CardId, number>> = {
-  time_warp: 1.15,
-  hourglass: 1.05,
-  blood_moon: 1.05,
-  blast: 1,
-  tide: 1,
-  ice_age: 0.95,
-  truce: 0.95,
-};
-/** Inclinaison du plateau pendant le sort (radians). */
-const TILT: Partial<Record<CardId, number>> = { time_warp: 0.62, gravity: 0.62, hourglass: 0.6, blast: 0.6, blood_moon: 0.58 };
-/** Secousse à l'impact (multiplie celle du skin). */
-const SHAKE: Partial<Record<CardId, number>> = { lightning: 1.4, ice_wall: 1.4, gravity: 1.4, blast: 1.8, rift: 1.5, tide: 0.9, truce: 0.25, hourglass: 0.5 };
-/** Flash à l'impact (multiplie celui du skin). */
-const FLASH: Partial<Record<CardId, number>> = { lightning: 1, blast: 1.1, blood_moon: 0.9, truce: 0.45, tide: 0.5 };
 
 /** Contexte d'une mise en scène. */
 interface Scene {
@@ -433,15 +410,46 @@ interface Scene {
   skin: SkinStyle;
   pal: Palette;
   hooks: CastHooks;
+  /** Fiche de la carte (cardFx.ts) : teinte, entre autres. */
+  fx: Readonly<CardFx>;
   impactAt: number;
   /** Première cible (ou centre du plateau). */
   t0: THREE.Vector3;
   center: THREE.Vector3;
   /** Exécute `fn` à l'impact, puis applique l'état (toujours, même si `fn` échoue). */
   onImpact: (fn: () => void) => void;
-  /** Classe temporaire sur le plateau (retirée en temps réel, quoi qu'il arrive). */
-  mood: (cls: string, ms: number) => void;
 }
+
+/** Poses en cours de chaque ambiance, par échiquier : la classe n'est retirée qu'à la fin de la dernière. */
+const moodCounts = new WeakMap<HTMLElement, Map<string, number>>();
+
+/**
+ * Ambiance de la carte (classe de board.css) sur l'échiquier `wrap`, capturé à la pose : retirée de cet échiquier-là au
+ * bout de `ms`, en temps réel et quoi qu'il arrive, même si la scène est passée à un autre échiquier entre-temps
+ * (partage des scènes, useVfx). Deux sorts qui posent la même ambiance la gardent jusqu'à la fin du dernier.
+ */
+function setMood(wrap: HTMLElement, cls: string, ms: number) {
+  let counts = moodCounts.get(wrap);
+  if (!counts) moodCounts.set(wrap, (counts = new Map()));
+  const live = counts;
+  live.set(cls, (live.get(cls) ?? 0) + 1);
+  wrap.classList.add(cls);
+  window.setTimeout(() => {
+    const left = (live.get(cls) ?? 1) - 1;
+    if (left > 0) {
+      live.set(cls, left);
+      return;
+    }
+    live.delete(cls);
+    wrap.classList.remove(cls);
+  }, ms);
+}
+
+/** Durée d'une ambiance (ms) pour un impact à `impactAt` secondes. */
+const moodMs = (m: Mood, impactAt: number) => ('ms' in m ? m.ms : (impactAt + m.afterImpactS) * 1000);
+
+/** Skin du lanceur teinté par la fiche de la carte (sans teinte : le skin tel quel). */
+const cardTinted = ({ skin, fx }: Scene) => (fx.tint ? tinted(skin, fx.tint.color, fx.tint.mix) : skin);
 
 /**
  * Joue la mise en scène d'une carte. Garanties, quelle que soit la carte (même inconnue) et même si la boucle
@@ -454,7 +462,7 @@ interface Scene {
 export function playCast(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks: CastHooks): Promise<void> {
   // Présage : à l'annonce, un sceau discret du côté du lanceur ; la vraie mise en scène se joue à son arrivée
   // (playArrival), quand le pouvoir devient actif. Jouer deux fois la grande animation déroutait (retour du 7 novembre).
-  if (CARDS[info.card]?.presage) return runScene(stage, info, skin, hooks, { scene: announceScene, impactAt: 0.45, tilt: false, light: true });
+  if (CARDS[info.card]?.presage) return runScene(stage, info, skin, hooks, { scene: announceScene, impactAt: CAST.announceImpactS, tilt: false, light: true });
   return runScene(stage, info, skin, hooks, {});
 }
 
@@ -470,7 +478,8 @@ interface RunOpts {
 
 function runScene(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks: CastHooks, opts: RunOpts): Promise<void> {
   const reduced = stage.reduced || !stage.ok;
-  const impactAt = reduced ? 0.15 : opts.impactAt ?? IMPACT_AT[info.card] ?? 0.85;
+  const fx = cardFx(info.card);
+  const impactAt = reduced ? CAST.reducedImpactS : opts.impactAt ?? fx.impactAt;
   // Famille de l'échiquier qui lance le sort (scène partagée de l'accueil, voir VfxStage.family)
   const family = stage.family;
   return new Promise(resolve => {
@@ -498,7 +507,7 @@ function runScene(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks: CastH
       for (const t of timers) clearTimeout(t);
       // L'inclinaison finit d'elle-même (≈ 2,5 s) ; ce garde-fou la retire si la boucle s'est arrêtée
       const c = cine;
-      if (c) stage.later(() => stage.release(c), 2600, family);
+      if (c) stage.later(() => stage.release(c), CAST.releaseMs, family);
       resolve();
     };
     const fire = () => {
@@ -509,22 +518,22 @@ function runScene(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks: CastH
       } catch (err) {
         console.error('[vfx] impact', err);
       }
-      later(end, reduced ? 50 : 450);
+      later(end, reduced ? CAST.reducedEndAfterImpactMs : CAST.endAfterImpactMs);
     };
     if (stage.guard || !stage.ok) {
-      later(fire, stage.ok ? (impactAt + 1.2) * 1000 : 150);
+      later(fire, stage.ok ? (impactAt + CAST.guardImpactS) * 1000 : CAST.noGlImpactMs);
       later(() => {
         fire();
         end();
-      }, (impactAt + 2.5) * 1000);
+      }, (impactAt + CAST.guardEndS) * 1000);
     }
     if (!stage.ok) return;
 
     try {
-      cine = opts.tilt === false ? null : stage.cinematic(1.25, TILT[info.card] ?? 0.52);
+      cine = opts.tilt === false ? null : stage.cinematic(CAST.holdS, fx.tilt);
       const t0 = info.targets[0] !== undefined ? stage.local(info.targets[0]) : new THREE.Vector3(0, 0, 0);
       const sc: Scene = {
-        stage, info, skin, pal: palette(skin), hooks: safeHooks, impactAt, t0, center: new THREE.Vector3(0, 0, 0),
+        stage, info, skin, pal: palette(skin), hooks: safeHooks, fx, impactAt, t0, center: new THREE.Vector3(0, 0, 0),
         onImpact: fn => {
           void stage.wait(impactAt).then(() => {
             try {
@@ -533,16 +542,14 @@ function runScene(stage: VfxStage, info: CardInfo, skin: SkinStyle, hooks: CastH
               console.error('[vfx]', err);
             }
             fire();
-            stage.flash(skin.primary, skin.flash * (FLASH[info.card] ?? 0.6) * (opts.light ? 0.3 : 1));
-            if (!opts.light) stage.shake(skin.shake * (SHAKE[info.card] ?? 0.7));
+            stage.flash(skin.primary, skin.flash * fx.flash * (opts.light ? CAST.lightFlash : 1));
+            if (!opts.light) stage.shake(skin.shake * fx.shake);
           });
         },
-        mood: (cls, ms) => {
-          stage.wrap.classList.add(cls);
-          window.setTimeout(() => stage.wrap.classList.remove(cls), ms);
-        },
       };
-      (opts.scene ?? SCENES[info.card] ?? genericScene)(sc);
+      // Ambiance de la carte, pendant sa propre mise en scène (pas pendant l'annonce d'un Présage)
+      if (!opts.scene && fx.mood) setMood(stage.wrap, fx.mood.cls, moodMs(fx.mood, impactAt));
+      (opts.scene ?? SCENES[fx.scene])(sc);
     } catch (err) {
       console.error('[vfx]', err);
       fire();
@@ -613,8 +620,7 @@ function duelScene(sc: Scene) {
         break;
       }
       case 'lightning': {
-        stage.wrap.classList.add('vfx-storm');
-        setTimeout(() => stage.wrap.classList.remove('vfx-storm'), 1700);
+        // Ambiance vfx-storm : fiche de la carte (cardFx.ts)
         flourishDisk(stage, skin, t0, 0.9, 1.9);
         converge(stage, skin, t0, 40, 1.2, impactAt);
         onImpact(() => {
@@ -655,8 +661,7 @@ function duelScene(sc: Scene) {
         break;
       }
       case 'rewind': {
-        stage.wrap.classList.add('vfx-rewind');
-        setTimeout(() => stage.wrap.classList.remove('vfx-rewind'), 1500);
+        // Ambiance vfx-rewind : fiche de la carte (cardFx.ts)
         const [from, to] = info.targets;
         const a = stage.local(to), b = stage.local(from);
         const { group, hour, minute } = clockFace(skin);
@@ -737,8 +742,8 @@ function duelScene(sc: Scene) {
           const sq = info.targets[0];
           const f = sq & 7, r = sq >> 3;
           for (const [df, dr] of [[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]]) {
-            if (f + df < 0 || f + df > 7 || r + dr < 0 || r + dr > 7) continue;
-            arcStream(stage, skin, t0, stage.local((r + dr) * 8 + f + df), 0.6, 1.1);
+            if (f + df < 0 || f + df > N - 1 || r + dr < 0 || r + dr > N - 1) continue;
+            arcStream(stage, skin, t0, stage.local((r + dr) * N + f + df), 0.6, 1.1);
           }
           burst(stage, skin, t0, 40, 1.8, 0.8, 0.12, { up: 1 });
         });
@@ -763,12 +768,10 @@ function duelScene(sc: Scene) {
     }
 }
 
-const SCENES: Partial<Record<CardId, SceneFn>> = {
-  // Duel
-  time_warp: duelScene, gravity: duelScene, freeze: duelScene, shield: duelScene, swap: duelScene,
-  rewind: duelScene, revive: duelScene, knight_leap: duelScene, lightning: duelScene, phase: duelScene,
-  // Pouvoirs
-  ice_wall: duelScene,
+/** Mises en scène (la fiche de chaque carte choisit la sienne, cardFx.ts). */
+const SCENES: Record<SceneKey, SceneFn> = {
+  generique: genericScene,
+  duel: duelScene,
   hourglass: hourglassScene,
   truce: truceScene,
   blood_moon: bloodMoonScene,
@@ -792,7 +795,7 @@ export const tinted = (skin: SkinStyle, color: string, mix = 0.55): SkinStyle =>
   ...skin,
   primary: '#' + C(skin.primary).lerp(C(color), mix).getHexString(),
   accent: '#' + C(skin.accent).lerp(C(color), mix * 0.5).getHexString(),
-  ...(skin.flourish === 'filigree' ? { secondary: '#' + C(skin.secondary).lerp(C(color), mix).getHexString() } : {}),
+  ...(secondaryFlourish(skin) ? { secondary: '#' + C(skin.secondary).lerp(C(color), mix).getHexString() } : {}),
 });
 
 /** Bande lumineuse qui traverse le plateau (y : de `y0` à `y1`). */
@@ -846,7 +849,7 @@ function pawnSquares(stage: VfxStage): number[] {
   stage.wrap.querySelectorAll<HTMLElement>('.piece.pawn[data-at]').forEach(el => {
     if (el.classList.contains('vanish')) return;
     const sq = Number(el.dataset.at);
-    if (sq >= 0 && sq < 64) out.push(sq);
+    if (sq >= 0 && sq < N * N) out.push(sq);
   });
   return out;
 }
@@ -881,10 +884,10 @@ function hourglassScene({ stage, skin, impactAt, center, onImpact }: Scene) {
 }
 
 /** Trêve : deux lignes de lumière avancent depuis chaque camp et se rejoignent au centre ; tout s'apaise. */
-function truceScene({ stage, skin, impactAt, center, onImpact, mood }: Scene) {
-  const calm = tinted(skin, '#f4f1dc', 0.45);
+function truceScene(sc: Scene) {
+  const { stage, impactAt, center, onImpact } = sc;
+  const calm = cardTinted(sc);
   const color = glowColor(calm);
-  mood('vfx-calm', (impactAt + 1.4) * 1000);
   flourishDisk(stage, calm, center, 3.2, impactAt + 1.3, 0, 0.35);
   sweep(stage, color, -4.4, 0, impactAt + 0.1, 0, 1.1);
   sweep(stage, color, 4.4, 0, impactAt + 0.1, 0, 1.1);
@@ -910,10 +913,11 @@ function truceScene({ stage, skin, impactAt, center, onImpact, mood }: Scene) {
 }
 
 /** Lune de sang : une éclipse se retire et révèle une lune rouge au-dessus du plateau. */
-function bloodMoonScene({ stage, skin, impactAt, center, onImpact, mood }: Scene) {
-  const red = '#ff2a3d';
-  const blood = tinted(skin, red, 0.7);
-  mood('vfx-blood', (impactAt + 1.5) * 1000);
+function bloodMoonScene(sc: Scene) {
+  const { stage, skin, impactAt, center, onImpact } = sc;
+  // Lune rouge : la teinte de la carte, pour le halo et l'onde aussi
+  const red = sc.fx.tint?.color ?? '#ff2a3d';
+  const blood = cardTinted(sc);
   const g = new THREE.Group();
   const halo = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 4.2), additive(C(red), { map: softDiskTexture(), opacity: 0 }));
   const moonMat = new THREE.MeshBasicMaterial({ color: C('#ff4a4f').lerp(C(skin.primary), 0.12), transparent: true, opacity: 0, depthTest: false, depthWrite: false });
@@ -931,7 +935,7 @@ function bloodMoonScene({ stage, skin, impactAt, center, onImpact, mood }: Scene
   g.add(halo, ring, moon, shade);
   const life = impactAt + 1.1;
   // La couronne de laurier ne tourne pas (laurelDisk)
-  const ringSpin = skin.flourish === 'laurel' ? 0 : 0.8;
+  const ringSpin = closingFlourish(skin) ? 0 : 0.8;
   spawn(stage, g, life, (k, t) => {
     faceCamera(stage, g);
     const ki = impactAt / life;
@@ -956,9 +960,9 @@ function bloodMoonScene({ stage, skin, impactAt, center, onImpact, mood }: Scene
 }
 
 /** Ère glaciaire : la neige tombe, le givre gagne le plateau, chaque pion se couvre un instant de cristaux. */
-function iceAgeScene({ stage, skin, impactAt, center, onImpact, mood }: Scene) {
-  const frost = tinted(skin, '#cfefff', 0.6);
-  mood('vfx-frost', (impactAt + 1.6) * 1000);
+function iceAgeScene(sc: Scene) {
+  const { stage, impactAt, center, onImpact } = sc;
+  const frost = cardTinted(sc);
   fall(stage, frost, 160, impactAt + 0.6, 0.11);
   flourishDisk(stage, frost, center, 3.6, impactAt + 1.2, 0, 0.5);
   onImpact(() => {
@@ -985,9 +989,9 @@ function iceAgeScene({ stage, skin, impactAt, center, onImpact, mood }: Scene) {
 }
 
 /** Déflagration : l'énergie se concentre au centre puis souffle tout le plateau. */
-function blastScene({ stage, skin, impactAt, center, onImpact, mood }: Scene) {
-  const fire = tinted(skin, '#ff8a2a', 0.5);
-  mood('vfx-blast', (impactAt + 1.2) * 1000);
+function blastScene(sc: Scene) {
+  const { stage, skin, impactAt, center, onImpact } = sc;
+  const fire = cardTinted(sc);
   flourishDisk(stage, fire, center, 2.6, impactAt + 0.4, 0, -2.5);
   converge(stage, fire, new THREE.Vector3(0, 0, 0.4), 120, 3.6, impactAt);
   const coreMat = additive(C('#ffd08a').lerp(C(skin.primary), 0.3), { map: softDiskTexture(), opacity: 0 });
@@ -1013,15 +1017,16 @@ function blastScene({ stage, skin, impactAt, center, onImpact, mood }: Scene) {
     scorch(stage, fire, center);
     // Quelques cases soufflées à travers le plateau
     for (let i = 0; i < 5; i++) {
-      const at = new THREE.Vector3(Math.floor(rnd(0, 8)) - 3.5, Math.floor(rnd(0, 8)) - 3.5, 0.1);
+      const at = new THREE.Vector3(Math.floor(rnd(0, N)) - HALF, Math.floor(rnd(0, N)) - HALF, 0.1);
       stage.later(() => burst(stage, fire, at, 24, 2.4, 0.6, 0.12, { up: 0.9 }), 120 + i * 90);
     }
   });
 }
 
 /** Faille : une fissure court le long de la rangée choisie, la poussière tombe dans le gouffre. */
-function riftScene({ stage, skin, info, impactAt, onImpact }: Scene) {
-  const abyss = tinted(skin, '#b46bff', 0.35);
+function riftScene(sc: Scene) {
+  const { stage, info, impactAt, onImpact } = sc;
+  const abyss = cardTinted(sc);
   const color = glowColor(abyss);
   const sq = info.targets[0] ?? 28;
   const y = stage.local(sq).y;
@@ -1058,8 +1063,8 @@ function riftScene({ stage, skin, info, impactAt, onImpact }: Scene) {
     },
   });
   onImpact(() => {
-    for (let f = 0; f < 8; f++) {
-      const at = new THREE.Vector3(f - 3.5, y, 0.2);
+    for (let f = 0; f < N; f++) {
+      const at = new THREE.Vector3(f - HALF, y, 0.2);
       burst(stage, abyss, at, 14, 1.4, 0.7, 0.11, { up: 0.6, gravity: -6 });
     }
     shockwave(stage, color, new THREE.Vector3(0, y, 0), 4.8, 0.7, 0, 0.05);
@@ -1067,10 +1072,10 @@ function riftScene({ stage, skin, info, impactAt, onImpact }: Scene) {
 }
 
 /** Grande Marée : deux vagues partent de chaque camp ; les pions avancent avec elles. */
-function tideScene({ stage, skin, info, impactAt, onImpact, mood }: Scene) {
-  const sea = tinted(skin, '#3fe0d0', 0.7);
+function tideScene(sc: Scene) {
+  const { stage, skin, info, impactAt, onImpact } = sc;
+  const sea = cardTinted(sc);
   const color = glowColor(sea);
-  mood('vfx-tide', (impactAt + 1.2) * 1000);
   // Les Blancs avancent vers le haut de leur écran, les Noirs vers le bas : une vague par camp
   const up = stage.orientation === 'w' ? 1 : -1;
   for (const dir of [1, -1]) {
@@ -1095,7 +1100,10 @@ function tideScene({ stage, skin, info, impactAt, onImpact, mood }: Scene) {
  */
 export function playArrival(stage: VfxStage, e: Effect, skin: SkinStyle) {
   if (!stage.ok) return;
-  const info: CardInfo = { card: e.card, caster: e.caster, targets: [], pieces: [], skin: e.skin };
+  // Cibles de l'effet (aucune pour les Climats d'aujourd'hui) : une carte ciblée qui deviendrait un Présage serait
+  // jouée sur ses cases, pas au centre
+  const targets = e.squares?.length ? [...e.squares] : e.square !== undefined ? [e.square] : [];
+  const info: CardInfo = { card: e.card, caster: e.caster, targets, pieces: e.pieceId !== undefined ? [e.pieceId] : [], skin: e.skin };
   void runScene(stage, info, skin, { impact: () => {} }, { tilt: false });
 }
 
@@ -1137,7 +1145,7 @@ export function playFinale(stage: VfxStage, square: number, skin: SkinStyle, ela
   // En deçà, plus rien ne se lirait : la gerbe aurait moins de 0,2 s
   const late = end - 0.2;
   const elapsed = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) / 1000 : 0;
-  if (!stage.ok || stage.reduced || !Number.isInteger(square) || square < 0 || square > 63 || elapsed >= late) return false;
+  if (!stage.ok || stage.reduced || !Number.isInteger(square) || square < 0 || square > N * N - 1 || elapsed >= late) return false;
   const at = stage.local(square);
   const topple = FALL_AT.topple * FINALE_S, impact = FALL_AT.impact * FINALE_S;
   const t0 = performance.now() / 1000 - elapsed;
@@ -1187,9 +1195,9 @@ export function playFinale(stage: VfxStage, square: number, skin: SkinStyle, ela
 }
 
 /** Annonce d'un Présage : un sceau s'allume du côté du lanceur, sans plus ; la carte agira à son prochain tour. */
-function announceScene({ stage, skin, info, impactAt, onImpact }: Scene) {
-  const col = cardColor(info.card, 0.66);
-  const s2 = tinted(skin, '#' + col.getHexString(), 0.6);
+function announceScene({ stage, skin, info, hooks, impactAt, onImpact }: Scene) {
+  // Main cachée (hooks.secret) : teinte neutre, celle du skin seul, pour ne pas trahir la carte annoncée
+  const s2 = hooks.secret ? skin : tinted(skin, '#' + cardColor(info.card, 0.66).getHexString(), 0.6);
   const at = new THREE.Vector3(0, (info.caster === stage.orientation ? -1 : 1) * 2.6, 0.2);
   flourishDisk(stage, s2, at, 1.3, impactAt + 1, 0, 0.8);
   converge(stage, s2, at, 36, 1.6, impactAt);
@@ -1237,164 +1245,6 @@ function orbit(stage: VfxStage, skin: SkinStyle, at: THREE.Vector3, radius: numb
       return t < duration;
     },
   });
-}
-
-// ---------------------------------------------------------------------------------------------
-// Objets persistants
-
-export function createMarker(stage: VfxStage, e: Effect, skin: SkinStyle, square: number): Marker | null {
-  const at = stage.local(square);
-  if (e.card === 'ice_wall') {
-    // Mur de glace (permanent dans les Pouvoirs) : massif de cristaux sur un socle de givre. Immobile une fois
-    // dressé, pour que la scène ne redessine rien tant que le plateau ne bouge pas.
-    const { group, mats } = wallCluster(skin);
-    const base = new THREE.Mesh(new THREE.CircleGeometry(0.47, 6), additive(C(skin.accent).lerp(C('#bfefff'), 0.5), { opacity: 0.32 }));
-    base.rotation.z = Math.PI / 6;
-    base.position.z = 0.01;
-    const rim = new THREE.Mesh(new THREE.RingGeometry(0.44, 0.49, 6), additive(glowColor(skin), { opacity: 0.85 }));
-    rim.rotation.z = Math.PI / 6;
-    rim.position.z = 0.012;
-    group.add(base, rim);
-    group.position.copy(at);
-    let k = 0;
-    for (const m of mats) m.emissiveIntensity = 0.5;
-    return {
-      obj: group,
-      square,
-      update(dt) {
-        if (k >= 1) return false;
-        k = Math.min(1, k + dt * 3);
-        group.scale.set(1, 1, Math.max(0.01, ease.outCubic(k)));
-        return true;
-      },
-      despawn: () => shatter(stage, skin, group, at),
-    };
-  }
-  if (e.card === 'rift') return riftMarker(stage, e, skin, square);
-  if (e.card === 'freeze') {
-    const { group, mat } = iceCube(skin);
-    group.position.copy(at);
-    let k = 0;
-    return {
-      obj: group,
-      square,
-      update(dt, t) {
-        k = Math.min(1, k + dt * 3);
-        group.scale.set(1, 1, Math.max(0.01, ease.outCubic(k)));
-        mat.emissiveIntensity = 0.22 + Math.sin(t * 1.8) * 0.08;
-        return true;
-      },
-      despawn: () => shatter(stage, skin, group, at),
-    };
-  }
-  if (e.card === 'shield') {
-    const { group, mat } = shieldDome(skin);
-    group.position.copy(at);
-    let k = 0;
-    return {
-      obj: group,
-      square,
-      update(dt, t) {
-        k = Math.min(1, k + dt * 3);
-        group.scale.setScalar(Math.max(0.01, ease.outCubic(k)));
-        mat.uniforms.uTime.value = t;
-        mat.uniforms.uAlpha.value = 0.65 + Math.sin(t * 2.5) * 0.15;
-        return true;
-      },
-      despawn: () => {
-        let t = 0;
-        return {
-          update(dt) {
-            t += dt;
-            const k2 = Math.min(1, t / 0.4);
-            group.scale.setScalar(1 + k2 * 0.4);
-            mat.uniforms.uAlpha.value = 0.7 * (1 - k2);
-            return k2 < 1;
-          },
-          dispose: () => disposeObject(group),
-        };
-      },
-    };
-  }
-  return null;
-}
-
-function shatter(stage: VfxStage, skin: SkinStyle, group: THREE.Object3D, at: THREE.Vector3): Fx {
-  burst(stage, skin, at.clone().setZ(0.4), 50, 2.6, 0.9, 0.12, { up: 0.7, gravity: -5 });
-  let t = 0;
-  return {
-    update(dt) {
-      t += dt;
-      const k = Math.min(1, t / 0.35);
-      group.scale.set(1 + k * 0.3, 1 + k * 0.3, Math.max(0.01, 1 - k));
-      return k < 1;
-    },
-    dispose: () => disposeObject(group),
-  };
-}
-
-/**
- * Faille : chaque case du gouffre devient un puits sombre bordé de lumière, traversé par une fissure. Les cases
- * peuvent être discontinues (pièces présentes au lancement) ; l'objet est reconstruit quand la Faille rétrécit.
- */
-function riftMarker(stage: VfxStage, e: Effect, skin: SkinStyle, square: number): Marker {
-  const squares = e.squares?.length ? e.squares : [square];
-  const g = new THREE.Group();
-  const color = glowColor(tinted(skin, '#b46bff', 0.35));
-  const pitMat = new THREE.MeshBasicMaterial({ color: C('#05010c'), transparent: true, opacity: 0.82, depthTest: false, depthWrite: false });
-  const glowMat = additive(color, { map: softDiskTexture(), opacity: 0.35 });
-  const edgePts: THREE.Vector3[] = [];
-  const pits: THREE.Object3D[] = [];
-  for (const q of squares) {
-    const c = stage.local(q);
-    const pit = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.86), pitMat);
-    pit.position.set(c.x, c.y, 0.01);
-    pit.renderOrder = 1;
-    const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.5), glowMat);
-    glow.position.set(c.x, c.y, 0.015);
-    glow.renderOrder = 2;
-    pits.push(pit, glow);
-    g.add(pit, glow);
-    for (const dy of [-0.43, 0.43]) edgePts.push(new THREE.Vector3(c.x - 0.5, c.y + dy, 0.02), new THREE.Vector3(c.x + 0.5, c.y + dy, 0.02));
-  }
-  const edges = new THREE.LineSegments(
-    new THREE.BufferGeometry().setFromPoints(edgePts),
-    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false }),
-  );
-  edges.renderOrder = 3;
-  g.add(edges);
-  const xs = squares.map(q => stage.local(q).x);
-  const y = stage.local(squares[0]).y;
-  const crack = boltMesh(lightningPath(new THREE.Vector3(Math.min(...xs) - 0.45, y, 0.03), new THREE.Vector3(Math.max(...xs) + 0.45, y, 0.03), 6 + squares.length * 3, 0.12), color, 0.018);
-  crack.renderOrder = 4;
-  g.add(crack);
-  let k = 0;
-  return {
-    obj: g,
-    square,
-    update(dt) {
-      if (k >= 1) return false;
-      k = Math.min(1, k + dt * 2.5);
-      const s = Math.max(0.01, ease.outCubic(k));
-      for (const p of pits) p.scale.set(1, s, 1);
-      return true;
-    },
-    despawn: () => {
-      let t = 0;
-      burst(stage, skin, new THREE.Vector3((Math.min(...xs) + Math.max(...xs)) / 2, y, 0.2), 30, 2.4, 0.7, 0.1, { up: 0.7 });
-      return {
-        update(dt) {
-          t += dt;
-          const q = Math.min(1, t / 0.5);
-          for (const p of pits) p.scale.set(1, Math.max(0.01, 1 - q), 1);
-          (edges.material as THREE.LineBasicMaterial).opacity = 0.95 * (1 - q);
-          crack.visible = q < 0.5;
-          return q < 1;
-        },
-        dispose: () => disposeObject(g),
-      };
-    },
-  };
 }
 
 // ---------------------------------------------------------------------------------------------

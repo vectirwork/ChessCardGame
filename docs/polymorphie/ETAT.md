@@ -43,8 +43,30 @@ Points ouverts :
 - Fondateur : prix « compléter » du Trésor (Q2), non fait ; formulation de l'annonce d'un Présage à délai 4.
 - Rien n'a été vérifié en partie réelle par un humain : les capacités nouvelles ne sont couvertes que par les tests.
 
-## Reste à faire (vagues 2 à 5)
-2. Lot 3 (serveur : règles par partie, concurrence, robustesse) ∥ lot 4 (effets, échiquier, sons).
+## Fait et fusionné (vague 2)
+- **Lot 3, serveur** : les parties naissent avec les règles de leur contexte (photographiées seulement si elles diffèrent
+  de `RULES_V1`) ; choix des cartes à N cartes (`draftView.count`, `reveal { auto, filled }`), revanche aux règles du
+  moment (Q3) avec la pendule d'origine, IA qui joue toutes ses cartes (`reply.cards`). Réglages nommés lus partout
+  (`settings.ts`), `elo()` pur, configuration validée par zod, interrupteurs appliqués côté serveur (code
+  `feature-off`), version du protocole au handshake (`server:outdated`). Des règles impossibles arrêtent le serveur au
+  démarrage (« Règles impossibles : arrêt. »), ce qui fait échouer un déploiement fautif au contrôle de `/api/health`.
+- **Lot 4, effets, échiquier et sons** : fiches d'effet des cartes (`vfx/cardFx.ts`, `vfx/boardMarks.ts`), sons en table,
+  traits des skins en données, code mort des effets retiré, `vfx/config.ts`, `motion.ts`, Saut du cavalier en cases de
+  N. Annonce neutre préparée pour des mains cachées (inactive). Captures des sorts reproductibles et reprises.
+
+Défauts corrigés dans cette vague : file d'attente et assise sous concurrence (deux joueurs au même moment), pool pg sans
+écouteur d'erreur ni délai de connexion, spectateurs de `/live` mal comptés, fil de l'IA mort jamais remplacé, fin de
+partie perdue si la base ne répond pas (nouvel essai, classement rattrapé au démarrage), échec de création d'une partie
+appariée qui faisait perdre sa place à celui qui attendait, `.env` lu trop tard pour les interrupteurs.
+
+Contrôles après fusion (3be9010) : `tsc` sans erreur, 930 tests verts, `npm run temoins` vert, build réussi,
+`npm run textes-pages` et `npm run identite` identiques à la référence ; `integration.mjs` vert au défaut, avec
+`{"cardsPerPlayer":5,"cardsPerTurn":2}` et avec `{"cardsPerPlayer":1}` ; `ranked.mjs` vert.
+
+Points ouverts ajoutés : poids de l'accueil, environ +0,6 ko gzip de plus (lot 4) ; contact légal par défaut gardé
+(`contact@example.com`, identité) en attendant les vraies mentions (Q1).
+
+## Reste à faire (vagues 3 à 5)
 3. Lot 5 (partie et coque) ∥ lot 6 (socle client, marque, routes).
 4. Lot 7 (accueil) ∥ lot 8 (pages et contenus).
 5. Lot 9 (intégration, mesure de performance, documentation), seul sur la machine.

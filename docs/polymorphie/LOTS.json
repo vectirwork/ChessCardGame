@@ -241,7 +241,9 @@
         {"motif": "test/choix-cartes.test.ts"},
         {"motif": "test/garde-fous/dette-5.txt", "note": "dette du garde-fou que le lot vide (décision de l’orchestrateur, vague 1)"}
       ],
-      "partage": []
+      "partage": [
+        {"motif": "test/durees-css.test.ts", "note": "describe « bandeau de sort » seulement, si le lot 5 change la forme du minuteur du bandeau (GamePage.tsx) ; cédé par le lot 4 (décision de l’orchestrateur, vague 2)"}
+      ]
     },
     {
       "id": "6",

@@ -10,7 +10,7 @@
 // rien de plus n'est écrit (aucune partie ne porte de règles).
 //
 // Rois d'une partie (skins) : chaque camp porte son roi, pris à l'assise (view.seats[c].king) et vu de tous. La
-// préférence locale « Rois adverses classiques » (CLASSIC_KINGS_PREF, réglée dans le compte) remplace à l'affichage
+// préférence locale « Rois adverses classiques » (KEYS.classicKings, réglée dans le compte) remplace à l'affichage
 // les rois des autres par le roi Arcane : shownKings, lu par la partie, l'accueil et l'analyse.
 // Ce module ne charge pas le catalogue (« Mes parties » s'en passe) : le serveur normalise déjà les rois des sièges
 // (seatView), et un identifiant inconnu est dessiné en roi Arcane par pieceUrl.
@@ -23,12 +23,6 @@ import type { Rules } from '../../shared/config/rules';
 import type { GameState, LogEntry, ResultReason } from '../../shared/game';
 import type { GameView, SeatView } from '../../shared/protocol';
 import { readJson, writeJson } from './storage';
-
-/**
- * Nom de la préférence locale « Rois adverses classiques » (les rois des adversaires s'affichent en roi Arcane ; défaut :
- * false). Sa clé de stockage est KEYS.classicKings (PREF_PREFIX + ce nom), lue par usePref de features/storage.ts.
- */
-export const CLASSIC_KINGS_PREF = 'rois-classiques';
 
 /** Roi Arcane (DEFAULT_KING du catalogue, vérifié par test/kings.test.ts). */
 const ARCANE_KING = 'king:arcane';

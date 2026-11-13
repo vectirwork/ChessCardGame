@@ -22,7 +22,7 @@ import { cardOptions, cardPlayable, catalogOf, legalMovesOf, playMove, resultTex
 import type { Ack, GameUpdate, GameView } from '../../shared/protocol';
 import { EMOTES } from '../../shared/protocol';
 import { castsLeft, rulesOf } from '../../shared/rulesCore';
-import { consigneTour, mainLabel } from '../../shared/text/regles';
+import { consigneAvantCoup, consigneTour, mainLabel } from '../../shared/text/regles';
 import { Board, BoardHandle, checkSquare } from '../components/Board';
 import { cardTexts } from '../components/SpellCard';
 import { MATE_FALL_MS, matedKing } from '../components/mate';
@@ -596,13 +596,7 @@ export default function GamePage() {
         : state.cardPlayed
           ? 'Sort lancé : jouez maintenant votre coup.'
           : hasCards && playable.some(Boolean)
-            ? rules.cardEndsTurn
-              ? layout.mobile
-                ? 'Une carte à la place du coup, ou jouez directement.'
-                : 'Lancez une carte à la place de votre coup, ou jouez directement.'
-              : layout.mobile
-                ? 'Une carte avant le coup, ou jouez directement.'
-                : 'Lancez une carte avant votre coup, ou jouez directement.'
+            ? consigneAvantCoup(rules, layout.mobile)
             : 'Jouez votre coup.';
     hint = (
       <>

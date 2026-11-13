@@ -154,9 +154,15 @@ const loadStageBoard = () => import('./StageBoard');
 /** Gestes qui font défiler la page (préchargement de la scène 3D au premier d'entre eux). */
 const GESTURES = ['touchmove', 'wheel', 'keydown'] as const;
 const StageBoard = lazy(() => loadStageBoard().then(m => ({ default: m.StageBoard })));
-/** Feuille « Défier un ami » (cadences, pseudo d'invité) : à part, préchargée au repos avec les démonstrations. */
-const loadFriendSheet = () => import('./FriendSheet');
-const FriendSheet = lazy(loadFriendSheet);
+/**
+ * Feuille « Défier un ami » (cadences, pseudo d'invité) : à part, préchargée au repos avec les démonstrations, et gardée
+ * ici dès son arrivée. Elle se rend alors directement, comme avant son découpage : à l'image qui suit le clic. Pas de
+ * lazy() ni de Suspense : une limite neuve qui se suspend (lazy rappelle import(), promesse encore en attente même pour
+ * un morceau en cache) montre son repli, et React retarde ensuite le contenu d'au moins 300 ms. Cliquée avant son
+ * arrivée, elle s'ouvre dès qu'elle est là ; un échec de chargement la ferme avec un message, sans toucher à l'accueil.
+ */
+let friendSheet: (typeof import('./FriendSheet'))['default'] | undefined;
+const loadFriendSheet = () => import('./FriendSheet').then(m => (friendSheet = m.default));
 
 /**
  * Limite d'erreur de l'échiquier de démonstration, décoratif : un échec de son chargement (morceau introuvable après une
@@ -558,6 +564,31 @@ export default function OdysseeHome() {
       for (const ev of GESTURES) window.removeEventListener(ev, onScroll, true);
     };
   }, []);
+
+  // « Défier un ami » ouverte avant l'arrivée de sa feuille (clic avant le préchargement, ou préchargement échoué) :
+  // chargée ici, rendue dès son arrivée. Un échec (réseau coupé, morceau retiré par une mise en ligne) referme la
+  // feuille avec un message ; l'accueil reste en place (sans cela, l'erreur remonterait à la limite de la page, qui
+  // recharge le site)
+  const [, setFriendReady] = useState(false);
+  useEffect(() => {
+    if (sheet !== 'friend' || friendSheet) return;
+    let live = true;
+    loadFriendSheet().then(
+      () => {
+        if (live) setFriendReady(true);
+      },
+      () => {
+        if (!live) return;
+        setSheet(null);
+        notify('Impossible d’ouvrir l’invitation : vérifiez la connexion, ou rechargez la page.', 'error');
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [sheet, notify]);
+  /** Feuille « Défier un ami », si elle est arrivée (préchargée au repos le plus souvent). */
+  const FriendSheet = friendSheet;
 
   // Repos (D6) : HOME.idleMs (30 s) sans aucun geste, les décors animés en boucle (anneaux, étoiles, lanternes, flottement…) se
   // figent là où ils en sont (attribut data-still, odyssee.css) ; le premier geste les relance. Une seule minuterie,
@@ -1852,10 +1883,8 @@ export default function OdysseeHome() {
         </div>
       )}
 
-      {sheet === 'friend' && (
-        <Suspense fallback={null}>
-          <FriendSheet onClose={() => setSheet(null)} catalog={catalog} signedIn={!!me} kicker={doorKicker(doorIndex('ami'))} />
-        </Suspense>
+      {sheet === 'friend' && FriendSheet && (
+        <FriendSheet onClose={() => setSheet(null)} catalog={catalog} signedIn={!!me} kicker={doorKicker(doorIndex('ami'))} />
       )}
       {sheet === 'ai' && (
         <Sheet

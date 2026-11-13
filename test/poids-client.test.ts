@@ -19,9 +19,30 @@ describe('accueil : feuille « Défier un ami » chargée à part', () => {
     const imports = runtimeImports('src/client/odyssee/OdysseeHome.tsx');
     expect(imports.filter(i => /shared\/protocol$|config\/limits$|\/FriendSheet$/.test(i))).toEqual([]);
     const home = src('src/client/odyssee/OdysseeHome.tsx');
-    expect(home).toContain("const loadFriendSheet = () => import('./FriendSheet');");
+    expect(home).toContain("const loadFriendSheet = () => import('./FriendSheet').then(m => (friendSheet = m.default));");
     // Préchargée avec le code des démonstrations (repos après le chargement, ou premier geste) : prête avant le Seuil
     expect(home).toMatch(/void loadStageBoard\(\)\.catch\(\(\) => undefined\);\n\s*void loadFriendSheet\(\)\.catch\(\(\) => undefined\);/);
+  });
+
+  it('feuille arrivée : rendue directement, sans lazy() ni Suspense (une limite neuve qui se suspend retarde le contenu de 300 ms)', () => {
+    const home = src('src/client/odyssee/OdysseeHome.tsx');
+    expect(home).not.toMatch(/lazy\(loadFriendSheet\)|lazy\(\(\) => loadFriendSheet/);
+    // Rendu : la feuille gardée dès son arrivée, à l'image qui suit le clic, comme avant son découpage
+    expect(home).toMatch(/const FriendSheet = friendSheet;/);
+    expect(home).toMatch(/\{sheet === 'friend' && FriendSheet && \(\n\s*<FriendSheet onClose=/);
+    expect(home).not.toMatch(/<Suspense[^>]*>\s*<FriendSheet/);
+  });
+
+  it('feuille demandée avant son arrivée : chargée puis ouverte ; un échec la referme avec un message, sans remonter à la page', () => {
+    const home = src('src/client/odyssee/OdysseeHome.tsx');
+    const debut = home.indexOf("if (sheet !== 'friend' || friendSheet) return;");
+    expect(debut).toBeGreaterThan(0);
+    const effet = home.slice(debut);
+    const corps = effet.slice(0, effet.indexOf('}, [sheet, notify]);'));
+    expect(corps).toContain('loadFriendSheet().then(');
+    expect(corps).toContain('setFriendReady(true)');
+    expect(corps).toContain('setSheet(null);');
+    expect(corps).toMatch(/notify\('[^']+', 'error'\)/);
   });
 
   it('cadences et pseudo identiques au défaut : 10 + 0 choisie, toutes les cadences d’invitation, pseudo de 20 caractères', () => {

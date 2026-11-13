@@ -69,7 +69,10 @@ export function sortsEnMain(r: Regles<'cardsPerPlayer'>, majuscule = false): str
  * `accueil` : règles de l'accueil (rulesFor('accueil')), qui tire toujours les mains. Si elles donnent un autre nombre
  * de cartes (RULES_BY_CONTEXT.accueil), la clause le dit : « … ; sur l’accueil, vos cinq cartes sont tirées au
  * hasard » (sans choix : « vos trois cartes sont tirées au hasard ; sur l’accueil, vos cinq cartes aussi »). Défaut :
- * `r` (même nombre de cartes : la phrase d'avant).
+ * `r` (même nombre de cartes : la phrase d'avant). ATTENTION : avec ce défaut, la clause tait un nombre de cartes propre
+ * à l'accueil ; un texte qui décrit le jeu du moment passe donc les mains de l'accueil (Rules.tsx : ACCUEIL ; data.ts :
+ * rulesFor('accueil')). Le défaut convient à l'aide d'une porte de Play.tsx (aux règles de la porte) ; lessons.ts
+ * l'emploie encore pour la leçon « Les cartes » (à reprendre : même expression que Rules.tsx).
  */
 export function constitutionMains(r: Regles<'cardsPerPlayer'>, d: Pick<DealSettings, 'draft'> = DEAL, accueil: Regles<'cardsPerPlayer'> = r): string {
   const n = r.cardsPerPlayer;
@@ -166,6 +169,16 @@ export function consigneTour(r: Regles<'cardsPerTurn' | 'cardEndsTurn'>): string
   const k = r.cardsPerTurn;
   if (k === 1) return r.cardEndsTurn ? 'Une seule carte par tour, à la place du coup.' : 'Une seule carte par tour, toujours avant le coup.';
   return `${cap(enLettres(k, 'f'))} cartes au plus par tour, ${momentCarte(r)}.`;
+}
+
+/**
+ * Consigne à votre tour, avant toute carte (coque de la partie et de l'accueil) : « Lancez une carte avant votre coup, ou
+ * jouez directement. » ; carte à la place du coup : « Lancez une carte à la place de votre coup, ou jouez directement. ».
+ * `court` (téléphone) : « Une carte avant le coup, ou jouez directement. », « Une carte à la place du coup, … ».
+ */
+export function consigneAvantCoup(r: Regles<'cardEndsTurn'>, court = false): string {
+  if (r.cardEndsTurn) return court ? 'Une carte à la place du coup, ou jouez directement.' : 'Lancez une carte à la place de votre coup, ou jouez directement.';
+  return court ? 'Une carte avant le coup, ou jouez directement.' : 'Lancez une carte avant votre coup, ou jouez directement.';
 }
 
 /** Refus quand le budget du tour est épuisé : « Une seule carte par tour. » ; 2 : « Deux cartes par tour au plus. » */

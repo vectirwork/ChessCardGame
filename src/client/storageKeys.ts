@@ -25,7 +25,8 @@ export const KEYS = /* @__PURE__ */ Object.freeze({
   homeGame: 'sm:odyssee:partie',
   /** Niveau de l'Oracle choisi sur l'accueil. */
   homeLevel: 'sm:odyssee:niveau',
-  /** Préférence « Rois adverses classiques » (usePref(KEYS.classicKings) : PREF_PREFIX + CLASSIC_KINGS_PREF). */
+  /** Préférence « Rois adverses classiques » (usePref(KEYS.classicKings), défaut false : les rois des adversaires
+   *  s'affichent en roi Arcane, features/history.ts, shownKings). Clé : PREF_PREFIX + 'rois-classiques'. */
   classicKings: 'sm:rois-classiques',
 
   // sessionStorage

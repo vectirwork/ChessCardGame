@@ -11,7 +11,7 @@ import { RULES_V1 } from '../src/shared/config/rules';
 import type { DealSettings, GameRulesSettings } from '../src/shared/config/rules';
 import { apostrophes, cap, enLettres } from '../src/shared/text/fr';
 import {
-  apresLancement, arriveePresage, cartesChacun, cartesDePouvoir, cartesDuCatalogue, cartesVisibles, consigneTour,
+  apresLancement, arriveePresage, cartesChacun, cartesDePouvoir, cartesDuCatalogue, cartesVisibles, consigneAvantCoup, consigneTour,
   constitutionMains, dejaLance, dureeChoix, dureeEffet, etendueRangees, limitesMain, mainLabel, momentCarte,
   coupsAvantArrivee, niveauxIA, nomsNiveaux, parTour, pouvoirs, premierApres, prochainTour, rangees, refusBudget, regle50, repetition,
   sortAuPlus, sortParTour, sortsEnMain, toursPresage, vitesse, vosCartes, vosSorts,
@@ -45,6 +45,8 @@ describe('phrases au réglage par défaut : identiques au site', () => {
     ['lessons.ts:435', parTour(R, true), 'une seule par tour'],
     ['lessons.ts:430', momentCarte(R), 'avant le coup'],
     ['GamePage.tsx:576', consigneTour(R), 'Une seule carte par tour, toujours avant le coup.'],
+    ['GamePage.tsx (ordinateur) ; data.ts (liveTexts().before)', consigneAvantCoup(R), 'Lancez une carte avant votre coup, ou jouez directement.'],
+    ['GamePage.tsx (téléphone)', consigneAvantCoup(R, true), 'Une carte avant le coup, ou jouez directement.'],
     ['game.ts:660 ; OdysseeHome.tsx:1644, 1649', refusBudget(R), 'Une seule carte par tour.'],
     ['shell/cards.ts:18', dejaLance(R), 'Un seul sort par tour : vous en avez déjà lancé un.'],
     ['shell/cards.ts:47', apresLancement(R, false), 'Sort lancé. Jouez maintenant votre coup.'],
@@ -194,6 +196,8 @@ describe('autres réglages', () => {
     const r = avec({ cardEndsTurn: true });
     expect(sortParTour(r)).toBe('un sort par tour, à la place du coup');
     expect(consigneTour(r)).toBe('Une seule carte par tour, à la place du coup.');
+    expect(consigneAvantCoup(r)).toBe('Lancez une carte à la place de votre coup, ou jouez directement.');
+    expect(consigneAvantCoup(r, true)).toBe('Une carte à la place du coup, ou jouez directement.');
     expect(momentCarte(r)).toBe('à la place du coup');
     expect(apresLancement(r, false)).toBe('Sort lancé.');
   });

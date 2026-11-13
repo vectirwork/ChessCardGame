@@ -11,7 +11,7 @@ import type { Color, PieceType } from '../src/shared/chess';
 import { BOT_LOOK, DEFAULT_KING, ITEMS, KING_ART, KING_BASE, ORACLE_LOOK, collectionOf, formatPrice, itemById, unitPrice } from '../src/shared/catalog';
 import type { SeatView } from '../src/shared/protocol';
 import { crestUrl, kingUrl, pieceSvg, pieceUrl } from '../src/client/components/pieces';
-import { CLASSIC_KINGS_PREF, seatKings, shownKings } from '../src/client/features/history';
+import { seatKings, shownKings } from '../src/client/features/history';
 import { PACKS, PLACES, priceOf } from '../src/client/odyssee/data';
 
 const COLORS: Color[] = ['w', 'b'];
@@ -331,7 +331,6 @@ describe('rois en partie : qui porte quel roi (features/history.ts, odyssee/data
     expect(shownKings(kings, null, true)).toEqual({ w: 'king:arcane', b: 'king:arcane' });
     expect(shownKings(undefined, 'w', false)).toEqual({ w: DEFAULT_KING, b: DEFAULT_KING });
     expect(shownKings({ b: 'king:rubis' }, 'b', true)).toEqual({ w: DEFAULT_KING, b: 'king:rubis' });
-    expect(CLASSIC_KINGS_PREF).toBe('rois-classiques');
   });
 
   it("l'Oracle et les IA de niveau 2 et 3 portent des rois dessinés", () => {

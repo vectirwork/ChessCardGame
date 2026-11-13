@@ -1,6 +1,8 @@
 // Phrases de la boutique, du compte et des e-mails sur les emplacements et les objets : « qui voit quoi », message après
 // l'équipement, objet avec son article, panier, sceaux d'un pack. À part du catalogue (catalog.ts), que l'accueil et
-// la partie chargent pour les prix et les apparences : ces phrases n'y pèsent rien.
+// la partie chargent pour les prix et les apparences. TRANSITOIRE : tant que catalog.ts réexporte whoSees et
+// selectionLabel pour le serveur (mail.ts, shop.ts), ce module est rangé dans le morceau du catalogue et pèse donc
+// encore dans le code de l'accueil et de la partie (≈ 0,6 ko compressé) ; il en sort quand la réexportation disparaît.
 //
 // Un emplacement de plus (SLOT_DEFS, slots.ts) demande aussi ses phrases ici (SLOT_TEXTS) : le compilateur le signale.
 import type { Collection, Item } from './types';
@@ -49,8 +51,8 @@ export const SLOT_TEXTS: Readonly<Record<ItemKind, SlotTexts>> = {
   },
 };
 
-// Rien n'est calculé au chargement de ce module (aucun effet de bord) : le catalogue le réexporte sans l'emporter dans
-// le code de l'accueil ni de la partie.
+// Rien n'est calculé au chargement de ce module (aucun effet de bord). Son morceau suit ceux qui l'importent : la
+// réexportation transitoire de catalog.ts le range avec le catalogue (voir en tête).
 const slots = () => Object.keys(SLOT_DEFS) as ItemKind[];
 
 /** Objet dans une phrase, avec son article : « le roi de braise », « l’échiquier Rubis », « les sorts Inferno ». */

@@ -1191,9 +1191,15 @@
   letter-spacing: 0;
 }
 /* Nom et pastille centrés dans la partie visible : décalés de la moitié du recouvrement, sauf sur la dernière carte,
-   que rien ne recouvre (position fixe, rien d'animé) */
-.gs .gs-fan[data-crowd] .gs-fan-slot:not(:last-child) :is(.sc-name, .sc-turn) {
+   que rien ne recouvre, sur la carte soulevée (survolée ou ouverte : au premier plan, entière) et sur celle qui la suit
+   (la carte soulevée en recouvre alors le bord gauche ; la suivante, le bord droit). Changement de position sans
+   transition : rien d'animé. */
+.gs .gs-fan[data-crowd] .gs-fan-slot:not(:last-child, :hover, :has(> .gs-fan-card.is-sel), .gs-fan-slot:is(:hover, :has(> .gs-fan-card.is-sel)) + *) :is(.sc-name, .sc-turn) {
   translate: calc(var(--ho) / 2) 0;
+}
+/* Dernière carte, la précédente soulevée : seule sa partie droite reste visible, nom et pastille y sont centrés */
+.gs .gs-fan[data-crowd] .gs-fan-slot:is(:hover, :has(> .gs-fan-card.is-sel)) + .gs-fan-slot:last-child :is(.sc-name, .sc-turn) {
+  translate: calc(var(--ho) / -2) 0;
 }
 /* Mobile : les cartes nombreuses sont plus petites que celles de la main de référence ; l'invite et le message après un
    lancement se posent au-dessus d'elles au lieu d'en chevaucher le haut (18 px y couvraient l'étiquette du moment et le

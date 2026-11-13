@@ -24,7 +24,7 @@ import { SLOT_DEFS } from '../../shared/skins/slots';
 import type { ItemKind } from '../../shared/skins/slots';
 import { apostrophes, cap, enLettres, ordinalLettres, pluriel, romain } from '../../shared/text/fr';
 import {
-  cartesDePouvoir, cartesVisibles, constitutionMains, niveauxIA, nomsNiveaux, prochainTour, refusBudget, sortParTour, sortsEnMain,
+  cartesDePouvoir, cartesVisibles, consigneAvantCoup, constitutionMains, niveauxIA, nomsNiveaux, prochainTour, refusBudget, sortParTour, sortsEnMain,
   toursPresage, vosSorts,
 } from '../../shared/text/regles';
 
@@ -252,7 +252,7 @@ export function liveTexts(r: TextRules) {
       return `${touch}, puis jouez votre coup.`;
     },
     /** Consigne de la coque, à votre tour, avant toute carte. */
-    before: r.cardEndsTurn ? 'Lancez une carte à la place de votre coup, ou jouez directement.' : 'Lancez une carte avant votre coup, ou jouez directement.',
+    before: consigneAvantCoup(r),
     /** Petite ligne de la consigne : refusBudget, puis « Revenez à la page… ». */
     budget: `${refusBudget(r)} Revenez à la page quand vous voulez : la partie vous attend.`,
   };

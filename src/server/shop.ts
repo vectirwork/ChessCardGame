@@ -7,8 +7,9 @@ import Stripe from 'stripe';
 import { z } from 'zod';
 import {
   ALL_PRODUCTS, CURRENCY, DEFAULT_ITEM, FREE_ITEMS, ITEMS, LOCALE, PRODUCTS, SHOP_ITEMS, SLOTS, alone, bySlot, duplicated, formatPrice,
-  productById, productPrice, quoteCart, selectionLabel,
+  productById, productPrice, quoteCart,
 } from '../shared/catalog';
+import { selectionLabel } from '../shared/skins/texts';
 import type { Item, ItemKind, Product } from '../shared/catalog';
 import { CART_PRODUCT_ID } from '../shared/protocol';
 import type { ConfirmResponse, DemoCompleteResponse, DemoPurchase, PurchaseStatus } from '../shared/protocol';

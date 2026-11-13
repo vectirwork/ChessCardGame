@@ -65,18 +65,7 @@ export type AckReply<K extends AckEvent> = Parameters<Parameters<ClientToServer[
  * charge et réponse sont ceux de ClientToServer : `emitAck('game:join', { id })` rend une JoinReply.
  */
 export function emitAck<K extends AckEvent>(event: K, payload: AckPayload<K>, timeout?: number): Promise<AckReply<K>>;
-/**
- * Forme historique : type de réponse donné à la main (`emitAck<Ack>('game:move', …)`), vérifié contre les réponses
- * possibles ; l'événement et la charge restent contrôlés.
- * @deprecated écrire `emitAck('game:move', …)` : la réponse est déduite de l'événement.
- */
-export function emitAck<R extends AckReply<AckEvent>>(event: AckEvent, payload: AckPayload<AckEvent>, timeout?: number): Promise<R>;
-/**
- * Événement calculé, typé `string` (GamePage.send).
- * @deprecated typer l'événement (`AckEvent`) : un nom mal écrit passerait ici sans erreur.
- */
-export function emitAck<R extends AckReply<AckEvent>>(event: string, payload: object, timeout?: number): Promise<R>;
-export function emitAck(event: string, payload: unknown, timeout = ACK_TIMEOUT_MS): Promise<unknown> {
+export function emitAck(event: AckEvent, payload: unknown, timeout = ACK_TIMEOUT_MS): Promise<unknown> {
   const s = getSocket() as unknown as {
     timeout(ms: number): { emit(ev: string, p: unknown, ack: (err: unknown, res: unknown) => void): void };
   };

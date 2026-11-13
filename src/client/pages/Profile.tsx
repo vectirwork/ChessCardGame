@@ -5,7 +5,8 @@ import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { LOCALE, SLOTS, itemById, kingStyle, normItem } from '../../shared/catalog';
-import { RESULT_TEXT, ResultReason } from '../../shared/game';
+import { RESULT_TEXT, ResultReason, resultText } from '../../shared/game';
+import { RULES_V1 } from '../../shared/config/rules';
 import type { GameSummary, ProfileResponse } from '../../shared/protocol';
 import { TIME_CONTROLS } from '../../shared/protocol';
 import { api, errMsg } from '../api';
@@ -204,7 +205,7 @@ export function GamesTable({ games, me }: { games: GameSummary[]; me: string }) 
                     {res === 'win' ? 'Victoire' : res === 'loss' ? 'Défaite' : 'Nulle'}
                   </span>{' '}
                   <span className="faint" style={{ fontSize: 12.5 }}>
-                    {RESULT_TEXT[g.reason as ResultReason] ?? ''}
+                    {g.reason && Object.hasOwn(RESULT_TEXT, g.reason) ? resultText(g.reason as ResultReason, g.rules ?? RULES_V1) : ''}
                   </span>
                 </td>
                 <td>

@@ -10,7 +10,7 @@
 // Les textes des Pouvoirs (description, durée, consignes) sont produits par des gabarits qui lisent l'équilibrage de
 // la carte (coups, rangées, vitesse) et le délai du Présage (cardText) : changer `coups` change aussi le texte.
 
-import { DEAL, GAME_RULES } from './config/rules';
+import { GAME_RULES } from './config/rules';
 import type { CardTuning, Rules } from './config/rules';
 import { compte } from './text/fr';
 import { arriveePresage, dureeEffet, etendueRangees, pouvoirs, premierApres, rangees, vitesse } from './text/regles';
@@ -593,12 +593,6 @@ export const RARITY_LABEL: Record<Rarity, string> = {
   épique: 'Épique',
   légendaire: 'Légendaire',
 };
-
-/**
- * Poids du tirage pondéré (catalogue Pouvoirs) : les cartes rares sortent moins souvent.
- * @deprecated Alias de DEAL.rarityWeight (config/rules.ts), le réglage que lit le tirage ; retiré au lot 9.
- */
-export const RARITY_WEIGHT: Readonly<Record<Rarity, number>> = DEAL.rarityWeight;
 
 export function isCardId(x: unknown): x is CardId {
   return typeof x === 'string' && Object.hasOwn(CARDS, x);

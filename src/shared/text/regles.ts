@@ -71,8 +71,8 @@ export function sortsEnMain(r: Regles<'cardsPerPlayer'>, majuscule = false): str
  * hasard » (sans choix : « vos trois cartes sont tirées au hasard ; sur l’accueil, vos cinq cartes aussi »). Défaut :
  * `r` (même nombre de cartes : la phrase d'avant). ATTENTION : avec ce défaut, la clause tait un nombre de cartes propre
  * à l'accueil ; un texte qui décrit le jeu du moment passe donc les mains de l'accueil (Rules.tsx : ACCUEIL ; data.ts :
- * rulesFor('accueil')). Le défaut convient à l'aide d'une porte de Play.tsx (aux règles de la porte) ; lessons.ts
- * l'emploie encore pour la leçon « Les cartes » (à reprendre : même expression que Rules.tsx).
+ * rulesFor('accueil') ; lessons.ts, leçon « Les cartes » : RULES_BY_CONTEXT.accueil). Le défaut convient à l'aide
+ * d'une porte de Play.tsx (aux règles de la porte).
  */
 export function constitutionMains(r: Regles<'cardsPerPlayer'>, d: Pick<DealSettings, 'draft'> = DEAL, accueil: Regles<'cardsPerPlayer'> = r): string {
   const n = r.cardsPerPlayer;

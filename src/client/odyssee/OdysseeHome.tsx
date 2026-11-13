@@ -898,15 +898,23 @@ export default function OdysseeHome() {
     return () => window.clearInterval(i);
   }, [away]);
   const claimIn = away !== null && g.duelInfo ? Math.max(0, Math.ceil((away + g.duelInfo.claimAfterMs - Date.now()) / 1000)) : 0;
-  // Partie en direct annulée avant le moindre coup (personne n'a joué) : retour à l'Oracle après
-  // HOME.duelAbortReturnMs, sans rien demander. Annulée plus tard (abortedEmpty, useLiveGame) : l'écran de fin reste.
+  // Partie en direct annulée avant le moindre coup (personne n'a joué), ou faute de premier coup à temps (cause
+  // 'first-move', relais coupé seulement) : retour à l'Oracle après HOME.duelAbortReturnMs, sans rien demander.
+  // Annulée autrement (abortedEmpty, useLiveGame) : l'écran de fin reste.
   const abortedNow = abortedEmpty(!!g.duel, g.state);
+  const abortNote =
+    g.state.ply === 0
+      ? 'Personne n’a joué : la partie en direct est annulée, l’Oracle reprend.'
+      : g.state.pos.turn === g.me
+        ? 'Vous n’avez pas joué votre premier coup à temps : la partie en direct est annulée, l’Oracle reprend.'
+        : 'Votre adversaire n’a pas joué son premier coup à temps : la partie en direct est annulée, l’Oracle reprend.';
   const newGameNow = g.newGame;
   useEffect(() => {
     if (!abortedNow) return;
+    const note = abortNote;
     const t = window.setTimeout(() => {
       newGameNow();
-      notify('Personne n’a joué : la partie en direct est annulée, l’Oracle reprend.');
+      notify(note);
     }, HOME.duelAbortReturnMs);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps

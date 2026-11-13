@@ -19,11 +19,8 @@ export { COLLECTIONS } from './skins/collections';
 export { KING_ART, KING_BASE } from './skins/kings';
 export { SLOT_DEFS } from './skins/slots';
 export type { SlotDef, SlotRayon } from './skins/slots';
-// Phrases de la boutique, du compte et des e-mails : skins/texts.ts, à importer de là. TRANSITOIRE : whoSees et
-// selectionLabel restent réexportés ici pour le serveur (mail.ts, shop.ts, qui les importent encore de catalog.ts).
-// Cette réexportation range texts.ts dans le morceau du catalogue, que chargent l'accueil et la partie (≈ 0,6 ko
-// compressé) : à retirer dès que mail.ts et shop.ts importent de skins/texts.ts.
-export { selectionLabel, whoSees } from './skins/texts';
+// Phrases de la boutique, du compte et des e-mails : skins/texts.ts, à importer de là (jamais réexportées ici, pour
+// qu'elles restent hors du morceau du catalogue que chargent l'accueil et la partie).
 export { LOCALE } from './text/fr';
 
 // ---------------------------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 // Envoi des e-mails. Sans SMTP configuré, les messages sont affichés dans la console (développement).
 import nodemailer from 'nodemailer';
-import { COLLECTIONS, SLOTS, SLOT_DEFS, collectionOf, itemById, itemLabel, whoSees } from '../shared/catalog';
+import { COLLECTIONS, SLOTS, SLOT_DEFS, collectionOf, itemById, itemLabel } from '../shared/catalog';
+import { whoSees } from '../shared/skins/texts';
 import type { Item } from '../shared/catalog';
 import { LOCALE, duree, liste } from '../shared/text/fr';
 import { config } from './config';

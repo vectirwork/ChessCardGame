@@ -9,14 +9,14 @@
 // règles des nouvelles parties (GAME_RULES) ; une leçon qui les contredirait est masquée (`requires`).
 // La marque est __SM__.marque (BRAND.name figé au build, comme dans les pages) : importer BRAND ajouterait un morceau au
 // site. Conséquence : CE MODULE NE SE CHARGE QUE SOUS VITE (site construit, serveur de développement, Vitest), qui
-// remplace __SM__.marque ; sous tsx, node ou l'esbuild du serveur, son chargement échoue (« __SM__ is not defined »).
-// Le serveur et les scripts ne l'importent donc pas (garde-fou dans test/lessons.test.ts). Pour l'en sortir un jour
-// (rendu serveur de /apprendre), définir __SM__.marque dans scripts/build-server.mjs, ou passer la marque en paramètre.
+// remplace __SM__.marque ; sous tsx ou node nu (npm run dev, scripts), son chargement échoue (« __SM__ is not
+// defined »). L'esbuild du serveur définit __SM__.marque (scripts/build-server.mjs), mais le serveur ne l'importe
+// toujours pas (garde-fou dans test/lessons.test.ts). Pour l'en sortir un jour, passer la marque en paramètre.
 
 import { Color, Move, PieceType, fileOf, inCheck, kingSquare, rankOf } from './chess';
 import { CARDS, FAMILY_LABEL, cardsOf } from './cards';
 import type { CardId, Catalog, Family } from './cards';
-import { GAME_RULES, RULES_V1 } from './config/rules';
+import { DEAL, GAME_RULES, RULES_BY_CONTEXT, RULES_V1 } from './config/rules';
 import { GameState, createGameFromFen, legalMovesOf, modsFromEffects, playMove } from './game';
 import { ContentRequires, ContentRules, EffectSpec, V1_TUNING, hand, meetsRequires, withEffects } from './puzzles';
 import { cap, compte, enLettres, liste, pluriel } from './text/fr';
@@ -468,7 +468,7 @@ export const ALL_LESSONS: Lesson[] = [
       {
         fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', goal: { kind: 'info' },
         hands: { w: hand(['ice_wall', 'truce', 'tide']), b: hand(['ice_age', 'rift', 'blood_moon']) },
-        text: `${__SM__.marque}, ce sont les échecs, plus ${cartesDePouvoir(R)} par joueur. Au début d’une partie, ${constitutionMains(R)}. Les deux mains sont visibles : vous voyez les cartes de l’adversaire, il voit les vôtres, et une carte jouée reste grisée à sa place. À votre tour, vous pouvez jouer une carte avant votre coup : ${parTour(R, true)}, et chaque carte ne sert qu’une fois.`,
+        text: `${__SM__.marque}, ce sont les échecs, plus ${cartesDePouvoir(R)} par joueur. Au début d’une partie, ${constitutionMains(R, DEAL, { cardsPerPlayer: RULES_BY_CONTEXT.accueil?.cardsPerPlayer ?? R.cardsPerPlayer })}. Les deux mains sont visibles : vous voyez les cartes de l’adversaire, il voit les vôtres, et une carte jouée reste grisée à sa place. À votre tour, vous pouvez jouer une carte avant votre coup : ${parTour(R, true)}, et chaque carte ne sert qu’une fois.`,
       },
       {
         fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', goal: { kind: 'line', line: ['@ice_wall:e5', '*'] },

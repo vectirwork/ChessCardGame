@@ -1,9 +1,9 @@
 // Durées d'animation écrites deux fois, en JS (minuterie qui retire un élément ou une classe, attente d'une fin) et en
 // CSS (durée de l'animation) : relues dans les feuilles de style et comparées, sans navigateur.
-// - Éclair plein écran (VfxStage.flash ; board.css, .vfx-flash) : l'élément est retiré 100 ms après la fin de son
-//   animation.
-// - Retour arrière (carte du Duel ; board.css, .vfx-rewind) : la classe est retirée 100 ms après la fin de ses deux
-//   animations, qui durent autant l'une que l'autre.
+// - Éclair plein écran (VfxStage.flash ; board.css, .vfx-flash ; vfx/config.ts, FLASH_MS) : l'élément est retiré
+//   CSS_MARGIN_MS (100 ms) après la fin de son animation.
+// - Retour arrière (carte du Duel ; board.css, .vfx-rewind ; config.ts, REWIND_MS ; fiche de la carte, cardFx.ts) : la
+//   classe est retirée 100 ms après la fin de ses deux animations, qui durent autant l'une que l'autre.
 // - Chute du roi maté (mate.ts, MATE_FALL_MS ; board.css, pi-fall-*) et coup de grâce (effects.ts, FINALE_S).
 // - Bandeau de sort (game.css, .gp-cast ; GamePage) : retiré à la fin de son animation.
 import { readFileSync } from 'node:fs';
@@ -11,6 +11,8 @@ import * as THREE from 'three';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { skinStyle } from '../src/shared/catalog';
 import { MATE_FALL_MS } from '../src/client/components/mate';
+import { CARD_FX } from '../src/client/vfx/cardFx';
+import { CSS_MARGIN_MS, FLASH_MS, REWIND_MS } from '../src/client/vfx/config';
 import type { VfxStage } from '../src/client/vfx/stage';
 
 const css = (f: string) => readFileSync(new URL(`../src/client/styles/${f}`, import.meta.url), 'utf8');
@@ -43,9 +45,11 @@ function fakeEl() {
 }
 
 describe('éclair plein écran (board.css, .vfx-flash)', () => {
-  it('retiré 100 ms après la fin de son animation', async () => {
+  it('FLASH_MS est la durée de son animation ; retiré 100 ms après', async () => {
     const [ms] = animationMs(BOARD_CSS, 'vfx-flash');
     expect(ms).toBe(800);
+    expect(FLASH_MS).toBe(ms);
+    expect(CSS_MARGIN_MS).toBe(100);
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], now: 0 });
     const made: ReturnType<typeof fakeEl>[] = [];
     vi.stubGlobal('document', {
@@ -88,6 +92,8 @@ describe('Retour arrière (board.css, .vfx-rewind)', () => {
     const fade = animationMs(BOARD_CSS, 'fade-out');
     expect(glitch).toEqual([1400]);
     expect(fade).toEqual([1400]);
+    expect(REWIND_MS).toBe(glitch[0]);
+    expect(CARD_FX.rewind.mood).toEqual({ cls: 'vfx-rewind', ms: REWIND_MS + CSS_MARGIN_MS });
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], now: 0 });
     vi.stubGlobal('window', { setTimeout: (f: () => void, t: number) => setTimeout(f, t), clearTimeout: (id: number) => clearTimeout(id) });
     vi.stubGlobal('document', { createElement: () => ({ width: 0, height: 0, getContext: () => new Proxy({}, { get: () => () => ({ addColorStop: () => undefined }) }) }) });

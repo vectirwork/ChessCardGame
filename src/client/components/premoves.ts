@@ -4,7 +4,7 @@
 // droite jusqu'au bord, le cavalier en L…), sans tenir compte des pièces sur le chemin : la position aura changé
 // quand il sera joué. Les pré-coups s'enchaînent sur une position « virtuelle » où les précédents sont déjà joués.
 // Au tour du joueur, le premier est joué s'il est légal ; sinon tous sont annulés. Les cartes ne se pré-jouent pas.
-import type { Color, Piece, Position } from '../../shared/chess';
+import type { Piece, Position } from '../../shared/chess';
 
 export interface Premove {
   /** Identifiant de la pièce qui joue (elle doit encore être sur `from` au moment de jouer). */
@@ -85,13 +85,6 @@ export function premoveDests(b: readonly (Piece | null)[], from: number, castlin
     }
   }
   return out;
-}
-
-/** Cases d'où le joueur peut préparer un pré-coup (ses pièces sur la position virtuelle). */
-export function premoveSources(b: readonly (Piece | null)[], color: Color): Set<number> {
-  const s = new Set<number>();
-  b.forEach((p, sq) => p?.c === color && s.add(sq));
-  return s;
 }
 
 /** Position réelle → clé d'identité d'une partie : si le numéro de coup recule, c'est une autre partie (ou un retour). */

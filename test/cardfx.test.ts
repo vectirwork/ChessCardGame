@@ -463,3 +463,124 @@ describe('sons des cartes : identiques au code d’avant (empreintes)', () => {
     vi.stubGlobal('document', { createElement: () => ({ width: 0, height: 0, getContext: nullContext }) });
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// Emblèmes
+
+/** Empreintes du balisage de chaque emblème (CardEmblem) du code d'avant le lot 4 (switch de CardArt.tsx). */
+const EXPECTED_EMBLEMS: Record<string, string> = {
+  hourglass: '4df95d119c977d64',
+  truce: 'c47ba80cecd12345',
+  blood_moon: '4e31c705d5fe41cf',
+  ice_age: '6f4696c421e96a06',
+  blast: 'e3d182bb1888bebe',
+  ice_wall: '32884e402b626466',
+  rift: 'aa22ab2e497bfd69',
+  tide: 'fb69e3aeac95ea0f',
+  time_warp: '063d2cad68118534',
+  gravity: '641c1b6a5e143322',
+  freeze: '90ddd67f86d75ab5',
+  shield: '089f7e624677a415',
+  swap: 'f5e47d8f8e5e53c1',
+  rewind: '2ea92a270563759d',
+  revive: '313f99fb1d8bc500',
+  knight_leap: '0e762822c1755650',
+  lightning: '3f93c13596caa01f',
+  phase: '5ed6875d089cfeeb',
+  inconnue: 'c4b227ef4cd03747',
+};
+
+describe('emblèmes des cartes : identiques au code d’avant (empreintes)', () => {
+  it('chaque carte, et une carte inconnue (cercle)', async () => {
+    const { createElement } = await import('react');
+    const { renderToStaticMarkup } = await import('react-dom/server');
+    const { CardEmblem } = await import('../src/client/components/CardArt');
+    const got: Record<string, string> = {};
+    for (const id of [...CARD_IDS, 'inconnue']) got[id] = sha(renderToStaticMarkup(createElement(CardEmblem, { id: id as CardId, className: 'em' })));
+    if (process.env.CARDFX_RELEVE) console.log(`RELEVE_EMBLEMES ${JSON.stringify(got)}`);
+    expect(got).toEqual(EXPECTED_EMBLEMS);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Registres exhaustifs
+
+describe('registres par carte : exhaustifs', () => {
+  it('chaque Pouvoir (et chaque carte connue) a sa fiche d’effet, sa marque d’échiquier, son son, son emblème ; chaque Pouvoir a sa scène explicative', async () => {
+    const { CARD_FX, GENERIC_FX } = await import('../src/client/vfx/cardFx');
+    const { BOARD_MARKS } = await import('../src/client/vfx/boardMarks');
+    const { CARD_SOUND } = await import('../src/client/sound');
+    const { CARD_ART } = await import('../src/client/components/CardArt');
+    const { CARD_SCENES } = await import('../src/client/components/cardScenes');
+    const { cardsOf } = await import('../src/shared/cards');
+    const powers = cardsOf('climats');
+    expect(powers.length).toBeGreaterThan(0);
+    for (const id of powers) {
+      expect(CARD_FX[id], id).toBeDefined();
+      expect(id in BOARD_MARKS, id).toBe(true);
+      expect(typeof CARD_SOUND[id], id).toBe('function');
+      expect(typeof CARD_ART[id], id).toBe('function');
+      expect(CARD_SCENES[id], id).toBeDefined();
+    }
+    // Toutes les cartes du moteur (Duel compris, pour relire les anciennes parties), et rien d'autre
+    for (const reg of [CARD_FX, BOARD_MARKS, CARD_SOUND, CARD_ART]) expect(Object.keys(reg).sort()).toEqual([...CARD_IDS].sort());
+    // Scènes connues de effects.ts (SCENES) ; carte inconnue : la scène générique
+    const scenes = ['generique', 'duel', 'hourglass', 'truce', 'blood_moon', 'ice_age', 'blast', 'rift', 'tide'];
+    for (const id of CARD_IDS) expect(scenes, id).toContain(CARD_FX[id].scene);
+    expect(GENERIC_FX).toEqual({ scene: 'generique', impactAt: 0.85, tilt: 0.52, shake: 0.7, flash: 0.6 });
+  });
+
+  it('fiches d’effet : les valeurs d’avant le registre (tables IMPACT_AT, TILT, SHAKE, FLASH, ambiances et teintes des scènes)', async () => {
+    const { CARD_FX } = await import('../src/client/vfx/cardFx');
+    const IMPACT_AT: Partial<Record<CardId, number>> = { time_warp: 1.15, hourglass: 1.05, blood_moon: 1.05, blast: 1, tide: 1, ice_age: 0.95, truce: 0.95 };
+    const TILT: Partial<Record<CardId, number>> = { time_warp: 0.62, gravity: 0.62, hourglass: 0.6, blast: 0.6, blood_moon: 0.58 };
+    const SHAKE: Partial<Record<CardId, number>> = { lightning: 1.4, ice_wall: 1.4, gravity: 1.4, blast: 1.8, rift: 1.5, tide: 0.9, truce: 0.25, hourglass: 0.5 };
+    const FLASH: Partial<Record<CardId, number>> = { lightning: 1, blast: 1.1, blood_moon: 0.9, truce: 0.45, tide: 0.5 };
+    for (const id of CARD_IDS) {
+      const f = CARD_FX[id];
+      expect([f.impactAt, f.tilt, f.shake, f.flash], id).toEqual([IMPACT_AT[id] ?? 0.85, TILT[id] ?? 0.52, SHAKE[id] ?? 0.7, FLASH[id] ?? 0.6]);
+    }
+    const moods = Object.fromEntries(CARD_IDS.filter(id => CARD_FX[id].mood).map(id => [id, CARD_FX[id].mood]));
+    expect(moods).toEqual({
+      truce: { cls: 'vfx-calm', afterImpactS: 1.4 },
+      blood_moon: { cls: 'vfx-blood', afterImpactS: 1.5 },
+      ice_age: { cls: 'vfx-frost', afterImpactS: 1.6 },
+      blast: { cls: 'vfx-blast', afterImpactS: 1.2 },
+      tide: { cls: 'vfx-tide', afterImpactS: 1.2 },
+      rewind: { cls: 'vfx-rewind', ms: 1500 },
+      lightning: { cls: 'vfx-storm', ms: 1700 },
+    });
+    const tints = Object.fromEntries(CARD_IDS.filter(id => CARD_FX[id].tint).map(id => [id, CARD_FX[id].tint]));
+    expect(tints).toEqual({
+      truce: { color: '#f4f1dc', mix: 0.45 },
+      blood_moon: { color: '#ff2a3d', mix: 0.7 },
+      ice_age: { color: '#cfefff', mix: 0.6 },
+      blast: { color: '#ff8a2a', mix: 0.5 },
+      rift: { color: '#b46bff', mix: 0.35 },
+      tide: { color: '#3fe0d0', mix: 0.7 },
+    });
+  });
+
+  it('marques d’échiquier : celles d’avant le registre (Board.tsx comparait les identifiants)', async () => {
+    const { BOARD_MARKS } = await import('../src/client/vfx/boardMarks');
+    const marked = Object.fromEntries(CARD_IDS.filter(id => BOARD_MARKS[id]).map(id => [id, BOARD_MARKS[id]]));
+    expect(marked).toEqual({
+      ice_wall: { on: 'square', cls: 'iced' },
+      rift: { on: 'squares', cls: 'rift' },
+      gravity: { on: 'sliders', cls: 'weighted' },
+      freeze: { on: 'piece', cls: 'frozen' },
+      shield: { on: 'piece', cls: 'shielded' },
+      knight_leap: { on: 'piece', cls: 'leaping' },
+      phase: { on: 'piece', cls: 'phasing' },
+    });
+  });
+
+  it('traits des skins : ceux qu’on lisait dans leurs noms (void, petal, filigree, laurel)', async () => {
+    const { FLOURISH_TRAITS, PARTICLE_TRAITS } = await import('../src/client/vfx/textures');
+    const pick = <T extends object>(t: Record<string, T>, k: keyof T, v: unknown) => Object.keys(t).filter(n => t[n][k] === v).sort();
+    expect(pick(PARTICLE_TRAITS, 'blending', 'normal')).toEqual(['petal', 'void']);
+    expect(pick(PARTICLE_TRAITS, 'glow', 'accent')).toEqual(['void']);
+    expect(pick(FLOURISH_TRAITS, 'motion', 'close')).toEqual(['laurel']);
+    expect(pick(FLOURISH_TRAITS, 'color', 'secondary')).toEqual(['filigree']);
+  });
+});

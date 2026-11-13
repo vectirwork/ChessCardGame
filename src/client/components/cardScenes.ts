@@ -6,7 +6,7 @@
 //   Animée (survol, bulle d'une carte) : l'image de droite rejoue l'action, celle de gauche reste le point de départ.
 // - une seule image avec des flèches (Trêve, Lune de sang) : un coup interdit (flèche barrée) ou forcé.
 // Coordonnées propres à la scène : colonnes a, b, c…, rangées 1 (en bas) à `rows`.
-import type { CardId } from '../../shared/cards';
+import type { CardId, PowerCardId } from '../../shared/cards';
 import type { Color, PieceType } from '../../shared/chess';
 
 export interface ScenePiece {
@@ -76,7 +76,8 @@ export interface CardSceneDef {
   pair?: { labels: [string, string]; before: PanelDecor; after: PanelDecor; afterAt?: number };
 }
 
-export const CARD_SCENES: Partial<Record<CardId, CardSceneDef>> = {
+/** ← Scène de chaque Pouvoir (table exhaustive : un Pouvoir ajouté ne compile pas sans la sienne). */
+const SCENES: Readonly<Record<PowerCardId, CardSceneDef>> = {
   blood_moon: {
     cols: 4,
     rows: 4,
@@ -220,6 +221,9 @@ export const CARD_SCENES: Partial<Record<CardId, CardSceneDef>> = {
     caption: 'Sablier fou : les deux pendules s’écoulent deux fois plus vite, et les coups ne rapportent plus d’incrément.',
   },
 };
+
+/** Scène d'une carte, par identifiant (les cartes du Duel n'en ont pas). */
+export const CARD_SCENES: Partial<Record<CardId, CardSceneDef>> = SCENES;
 
 /** Colonne et rangée (0 en bas) d'une case de scène (« b3 »). */
 export function sceneXY(at: string): { x: number; y: number } {

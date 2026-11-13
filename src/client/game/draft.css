@@ -811,3 +811,30 @@
     gap: 10px;
   }
 }
+
+/* ---------- Réserve d'une autre taille (CardDraft : data-cols, --cols) ----------
+   La grille met 4 colonnes, ce qu'il faut pour 7 ou 8 cartes. Pour une autre réserve, CardDraft pose la moitié de la
+   réserve, de 2 à 5 colonnes (9 cartes : 5 colonnes, sans défiler en 1280 × 720). Grand écran seulement : les écrans
+   moyens gardent 2 colonnes, le mobile 1. */
+@media (min-width: 1180px) {
+  .cd-grid[data-cols] > li {
+    flex-basis: calc((100% - (var(--cols) - 1) * 14px) / var(--cols));
+  }
+}
+@media (min-width: 1180px) and (max-height: 960px) {
+  .cd-grid[data-cols] > li {
+    flex-basis: calc((100% - (var(--cols) - 1) * 12px) / var(--cols));
+  }
+}
+
+/* ---------- Mains révélées au-delà de la main de référence (CardDraft : data-crowd, --n) ----------
+   Les deux mains, côte à côte, tiennent dans la largeur de la révélation (980 px au plus) ; sur mobile, l'une sous
+   l'autre, chacune dans la largeur de l'écran. */
+.cd.cd-reveal .cd-hands[data-crowd] .cd-sc {
+  --w: min(clamp(96px, 10vw, 128px), calc(((min(980px, 100vw - 32px) - 72px) / 2 - 12px * (var(--n) - 1)) / var(--n)));
+}
+@media (max-width: 720px) {
+  .cd.cd-reveal .cd-hands[data-crowd] .cd-sc {
+    --w: min(92px, calc((100vw - 32px - 12px * (var(--n) - 1)) / var(--n)));
+  }
+}

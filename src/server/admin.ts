@@ -12,7 +12,9 @@ export const adminRouter = Router();
 adminRouter.use(requireUser, requireAdmin);
 
 adminRouter.get('/overview', async (_req, res) => {
-  const counts = await one(`
+  // Chiffre d'affaires récent et série quotidienne : sur les LIMITS.adminDays derniers jours (30)
+  const counts = await one(
+    `
     SELECT
       (SELECT count(*) FROM users)::int AS users,
       (SELECT count(*) FROM users WHERE created_at > now() - interval '7 days')::int AS users_7d,
@@ -20,10 +22,12 @@ adminRouter.get('/overview', async (_req, res) => {
       (SELECT count(*) FROM games WHERE status = 'ended' AND reason <> 'aborted')::int AS games,
       (SELECT count(*) FROM games WHERE created_at > now() - interval '1 day')::int AS games_24h,
       (SELECT coalesce(sum(amount_cents), 0) FROM purchases WHERE status = 'paid')::int AS revenue,
-      (SELECT coalesce(sum(amount_cents), 0) FROM purchases WHERE status = 'paid' AND paid_at > now() - interval '30 days')::int AS revenue_30d,
+      (SELECT coalesce(sum(amount_cents), 0) FROM purchases WHERE status = 'paid' AND paid_at > now() - $1::int * interval '1 day')::int AS revenue_30d,
       (SELECT count(*) FROM purchases WHERE status = 'paid')::int AS sales,
       (SELECT count(DISTINCT user_id) FROM purchases WHERE status = 'paid')::int AS buyers
-  `);
+  `,
+    [LIMITS.adminDays],
+  );
   const daily = await q(`
     SELECT to_char(d, 'YYYY-MM-DD') AS day,
       (SELECT coalesce(sum(amount_cents), 0) FROM purchases WHERE status = 'paid' AND paid_at::date = d)::int AS revenue,

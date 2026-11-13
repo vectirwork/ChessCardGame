@@ -2,7 +2,7 @@
 import nodemailer from 'nodemailer';
 import { COLLECTIONS, SLOTS, SLOT_DEFS, collectionOf, itemById, itemLabel, whoSees } from '../shared/catalog';
 import type { Item } from '../shared/catalog';
-import { duree, liste } from '../shared/text/fr';
+import { LOCALE, duree, liste } from '../shared/text/fr';
 import { config } from './config';
 import { ACCOUNT } from './settings';
 
@@ -17,8 +17,11 @@ const transport = config.smtp.host
 
 const escape = (s: string) => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 
+/** Langue des e-mails, tirée de LOCALE (« fr-FR » → « fr »). */
+const LANG = LOCALE.split('-')[0];
+
 function layout(title: string, body: string, cta?: { label: string; url: string }): string {
-  return `<!doctype html><html lang="fr"><body style="margin:0;background:#0b0c1a;font-family:Segoe UI,Helvetica,Arial,sans-serif;color:#e8e6f5">
+  return `<!doctype html><html lang="${LANG}"><body style="margin:0;background:#0b0c1a;font-family:Segoe UI,Helvetica,Arial,sans-serif;color:#e8e6f5">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0b0c1a;padding:32px 12px"><tr><td align="center">
   <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;background:#15162b;border:1px solid #2a2a4a;border-radius:16px;padding:36px">
   <tr><td style="font-family:Georgia,serif;font-size:26px;letter-spacing:2px;color:#f3c969;padding-bottom:18px">✦ ${escape(config.appName)}</td></tr>

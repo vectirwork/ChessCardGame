@@ -185,11 +185,18 @@ async function shot(page, name, { t = 4000, css = '', ...o } = {}) {
     window.__fige = null;
   });
 }
-async function fullShot(page, name) {
+async function fullShot(page, name, css = '') {
   await page.addStyleTag({ content: SHOW_ALL });
   await page.waitForTimeout(200);
-  await shot(page, name, { fullPage: true });
+  await shot(page, name, { fullPage: true, css });
 }
+/**
+ * Sceau tournant « Zéro pay-to-win » (en tête de la boutique, ordinateur) pour une capture de la page entière : à
+ * l'arrêt, sans animation. Figée à 4 s comme les autres, sa rotation se rastérisait d'une passe à l'autre avec un écart
+ * allant jusqu'à 60 sur un canal (relecture du lot 2) ; les captures de l'écran seul (invite-1440.png…) restent figées
+ * à 4 s.
+ */
+const SCEAU_FIXE = '.bz-seal-text { animation: none !important; }';
 
 /** Appel d'API depuis la page (les cookies de session sont ceux du navigateur). */
 const api = (page, p, body) =>
@@ -343,7 +350,7 @@ if (BANC) {
   await page.waitForTimeout(300);
   assert.equal(await page.locator('.pb .slot.is-trying').count(), 0);
   await page.evaluate(() => window.scrollTo(0, 0));
-  await fullShot(page, 'invite-1440-page.png');
+  await fullShot(page, 'invite-1440-page.png', SCEAU_FIXE);
   await ctx.close();
 }
 

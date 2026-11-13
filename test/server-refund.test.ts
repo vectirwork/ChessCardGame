@@ -150,8 +150,20 @@ describe('retrait d’objets (administration, remboursement partiel)', () => {
         body: JSON.stringify({ userId: u, itemId: 'king:braise', revoke: true }),
       });
       expect(r.status).toBe(200);
-      // Tableau de bord (listes lues dans LIMITS) : 30 jours de statistiques, les joueurs cherchés
-      const o = (await (await fetch(`http://127.0.0.1:${port}/api/admin/overview`)).json()) as { daily: { day: string }[]; recent: unknown[] };
+      // Tableau de bord (listes lues dans LIMITS) : 30 jours de statistiques (série et chiffre d'affaires récent), les
+      // joueurs cherchés. Un achat payé il y a 40 jours compte dans le total, pas dans les 30 derniers jours.
+      await q(
+        `INSERT INTO purchases (user_id, product_id, items, provider, amount_cents, currency, status, paid_at)
+         VALUES ($1, 'skin:void', '{skin:void}', 'demo', 7777, 'eur', 'paid', now() - interval '40 days')`,
+        [other],
+      );
+      const o = (await (await fetch(`http://127.0.0.1:${port}/api/admin/overview`)).json()) as {
+        daily: { day: string }[];
+        recent: unknown[];
+        counts: { revenue: number; revenue_30d: number };
+      };
+      expect(o.counts.revenue - o.counts.revenue_30d).toBeGreaterThanOrEqual(7777);
+      expect(o.counts.revenue_30d).toBeGreaterThanOrEqual(200);
       expect(o.daily).toHaveLength(30);
       expect(o.daily[29].day).toBe((await one<{ d: string }>(`SELECT to_char(current_date, 'YYYY-MM-DD') AS d`))!.d);
       expect(o.recent.length).toBeLessThanOrEqual(15);

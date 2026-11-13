@@ -1,21 +1,26 @@
 // Page de paiement simulée (mode démo uniquement, sans Stripe) : la caisse du Bazar céleste.
 // Elle montre ce que contient l'achat (un produit, une collection complétée, ou le panier d'un essai) au montant que le
 // serveur facture, puis revient à la boutique avec les objets livrés : la cabine les déballe.
+// Boutique coupée (FEATURE_SHOP=0) : retour à la boutique, qui dit qu'elle est fermée (le serveur refuse le paiement).
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { PAYMENT_PROVIDER, formatPrice, itemById, itemLabel, productById, quoteCart, selectionLabel } from '../../shared/catalog';
 import { CART_PRODUCT_ID } from '../../shared/protocol';
 import type { DemoCompleteResponse, DemoPurchase } from '../../shared/protocol';
 import { api, errMsg } from '../api';
 import { PageLoader, Spinner } from '../components/Layout';
 import { ownedIds } from '../skins';
-import { useApp } from '../store';
+import { useApp, useFeature } from '../store';
 import { PageHead, PlacePage, useTitle } from './PageScene';
 import { LockIcon } from './shop/CheckoutModal';
 import { ItemThumb } from './shop/ItemThumb';
 import { isCollectionLine } from './shop/trial';
 
 export default function DemoCheckout() {
+  return useFeature('shop') ? <DemoPay /> : <Navigate to="/boutique" replace />;
+}
+
+function DemoPay() {
   useTitle('Paiement simulé');
   const { id = '' } = useParams();
   const { me, setMe, toast } = useApp();

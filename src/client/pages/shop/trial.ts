@@ -35,6 +35,21 @@ export function normalize(delta: TrialDelta, pano: Trial): TrialDelta {
   return out;
 }
 
+/**
+ * Essai sans les objets payants retirés de la vente que l'on ne possède pas (ni achetables, ni équipables : ils peuvent
+ * venir d'un lien `?essai=`, d'un essai gardé dans la session, d'une collection ou de SHOP_FEATURED). Qui possède un
+ * objet retiré l'essaie encore.
+ */
+export function available(delta: TrialDelta, owned: readonly string[]): TrialDelta {
+  const out: TrialDelta = {};
+  for (const k of SLOTS) {
+    const id = delta[k];
+    const it = id ? itemById(id) : undefined;
+    if (id && !(it?.retired && !it.free && !owned.includes(id))) out[k] = id;
+  }
+  return out;
+}
+
 /** Emplacements essayés (qui diffèrent de la panoplie), dans l'ordre d'affichage. */
 export function changedSlots(trial: Trial, pano: Trial): ItemKind[] {
   return SLOTS.filter(k => trial[k] !== pano[k]);
@@ -189,8 +204,9 @@ export function equipNote(ids: readonly string[]): string {
   const parts: string[] = [];
   if (seen.length) parts.push(`vos adversaires verront ${liste(seen)} dès votre prochaine partie`);
   for (const k of on) {
-    const d: { mine: string; follows?: { verb: string } } = SLOT_DEFS[k];
-    if (d.follows) parts.push(`${d.mine} ${d.follows.verb}`);
+    const d: { mine: string; seen: boolean; follows?: { verb: string } } = SLOT_DEFS[k];
+    // `follows` ne sert qu'à un emplacement que l'adversaire ne voit pas
+    if (!d.seen && d.follows) parts.push(`${d.mine} ${d.follows.verb}`);
   }
   return parts.join(' ; ');
 }

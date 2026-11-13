@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import type { CSSProperties, FormEvent } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import {
-  ITEMS, PAYMENT_PROVIDER, PREMIUM_COLLECTIONS, SLOTS, SLOT_DEFS, collectionById, collectionItems, formatPrice, itemById, itemLabel, productById,
+  ITEMS, LOCALE, PAYMENT_PROVIDER, PREMIUM_COLLECTIONS, SLOTS, SLOT_DEFS, collectionById, collectionItems, formatPrice, itemById, itemLabel, productById,
   sealOf, selectionLabel, unitPrice, whoSees,
 } from '../../shared/catalog';
 import { CART_PRODUCT_ID } from '../../shared/protocol';
@@ -459,7 +459,7 @@ function PurchasesTab() {
         <tbody>
           {rows.map(r => (
             <tr key={r.id}>
-              <td>{new Date(r.created_at).toLocaleDateString('fr-FR')}</td>
+              <td>{new Date(r.created_at).toLocaleDateString(LOCALE)}</td>
               <td>
                 <span className="acc-buy">
                   <span className="acc-buy-ths" aria-hidden="true">

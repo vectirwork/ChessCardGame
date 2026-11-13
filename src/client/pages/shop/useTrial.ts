@@ -6,7 +6,7 @@ import type { Collection, ItemKind } from '../../../shared/catalog';
 import type { MeUser } from '../../../shared/protocol';
 import { ownedIds, panoplieOf } from '../../skins';
 import { RAYONS } from './RayonTabs';
-import { formatEssai, normalize, parseEssai, revertSlot, surprise as draw, toggleItem, trialOf, withCollection } from './trial';
+import { available, formatEssai, normalize, parseEssai, revertSlot, surprise as draw, toggleItem, trialOf, withCollection } from './trial';
 import type { Trial, TrialDelta } from './trial';
 
 const STORE_KEY = 'sm:essai';
@@ -59,8 +59,9 @@ export function useTrial(me: MeUser | null, initial: () => TrialDelta): TrialApi
   const pano = useMemo(() => panoplieOf(me), [me]);
   const owned = useMemo(() => ownedIds(me), [me]);
   const [raw, setRaw] = useState<TrialDelta>(initial);
-  // Écart minimal recalculé quand la panoplie change (compte chargé après la page, objet équipé)
-  const delta = useMemo(() => normalize(raw, pano), [raw, pano]);
+  // Écart minimal recalculé quand la panoplie change (compte chargé après la page, objet équipé), sans objet retiré de
+  // la vente que l'on ne possède pas
+  const delta = useMemo(() => normalize(available(raw, owned), pano), [raw, owned, pano]);
   const trial = useMemo(() => trialOf(pano, delta), [pano, delta]);
 
   useEffect(() => storeTrial(delta), [delta]);

@@ -4,7 +4,7 @@
 import { createElement } from 'react';
 import type { ComponentProps, ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { COLLECTIONS, DEFAULT_ITEM, FREE_ITEMS, ITEMS, SLOTS, collectionById, itemLabel, productById, productPrice, sealName } from '../src/shared/catalog';
 import { PackCard, TresorBanner } from '../src/client/pages/shop/CollectionCard';
 import { RAYON_NOTE } from '../src/client/pages/shop/Rack';
@@ -342,7 +342,7 @@ describe('carte de pack générique et bandeau du Trésor', () => {
   it('un pack fictif (trois rois, ou des objets mêlés) est rendu par la même carte', () => {
     const rois: Product = {
       id: 'pack:rois', kind: 'pack', name: 'Cour des rois', description: 'Trois rois.', priceCents: 699,
-      items: ['king:braise', 'king:synthe', 'king:laure'], compareAtCents: 897, badge: '-22 %', display: 'king', shortName: 'Coffret',
+      items: ['king:braise', 'king:synthe', 'king:laure'], compareAtCents: 897, badge: '-22 %', display: 'king', shortName: 'le Coffret',
     };
     const out = html(packcard(rois, [...FREE_ITEMS, 'king:braise']));
     expect(out).toContain('Pack · 3 rois');
@@ -369,10 +369,78 @@ describe('carte de pack générique et bandeau du Trésor', () => {
     ]);
   });
 
+  it('bandeau du Trésor au défaut : « Tout le Bazar », titre tb-t, bouton « Acheter le Trésor »', () => {
+    const out = html(tresorbanner(productById('pack:tresor')!, [...FREE_ITEMS]));
+    expect(out).toContain('Tout le Bazar');
+    expect(out).toContain('aria-labelledby="tb-t"');
+    expect(out).toContain('<h3 id="tb-t" class="tb-name">');
+    expect(out).toContain('>Acheter le Trésor<');
+  });
+
+  it('un pack fictif en bandeau : ses sceaux seulement, son libellé, son titre, son article', () => {
+    const cour: Product = {
+      id: 'pack:cour', kind: 'pack', name: 'Cour des rois', description: 'Trois rois.', priceCents: 699,
+      items: ['king:braise', 'king:synthe', 'king:laure'], compareAtCents: 897, display: 'banner', shortName: 'la Cour',
+    };
+    const el = (p: Product, owned: string[]) =>
+      createElement(TresorBanner, { ...props(p, owned), titleId: 'tb-t-2' } as ComponentProps<typeof TresorBanner>);
+    const out = html(el(cour, [...FREE_ITEMS, 'king:braise']));
+    expect(out).toContain('Pack · 3 rois');
+    expect(out).not.toContain('Tout le Bazar');
+    expect(out).not.toContain('sceau');
+    expect(out).not.toContain('class="tb-seal"');
+    expect(out).toContain('aria-labelledby="tb-t-2"');
+    expect(out).toContain('id="tb-t-2"');
+    expect(out).toContain('>Acheter la Cour<');
+    expect(out).toContain('le prix de la Cour ne change pas.');
+    // Un pack qui complète une collection : son seul sceau
+    const forge: Product = { ...cour, id: 'pack:forge', items: ['king:braise', 'board:obsidian', 'skin:inferno', 'king:synthe'], shortName: 'l’Écrin' };
+    const out2 = html(el(forge, [...FREE_ITEMS]));
+    expect(out2).toContain('Trois rois. Le sceau de collection compris.');
+    expect(out2.match(/class="tb-seal"/g)).toHaveLength(1);
+    expect(out2).toContain('Sceau de la collection Forge d’Inferno');
+    expect(out2).toContain('Pack · 4 skins');
+    expect(out2).toContain('>Acheter l’Écrin<');
+  });
+
   it('isTrying, skins', () => {
     const forge = collectionById('col:inferno')!;
     expect(isTrying({ king: 'king:braise', board: 'board:obsidian', skin: 'skin:inferno' }, forge)).toBe(true);
     expect(isTrying({ ...ARCANE, king: 'king:braise' }, forge)).toBe(false);
     expect([skins(0), skins(1), skins(2)]).toEqual(['0 skin', '1 skin', '2 skins']);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Objet retiré de la vente : hors de l'essai, sauf pour qui le possède
+
+describe('objet retiré de la vente dans l’essai', () => {
+  it('available : un objet retiré que l’on ne possède pas sort de l’essai ; possédé, il reste ; le reste ne bouge pas', async () => {
+    vi.resetModules();
+    vi.doMock('../src/shared/skins/spells', async orig => {
+      const m = await orig<typeof import('../src/shared/skins/spells')>();
+      return { ...m, SPELL_ITEMS: m.SPELL_ITEMS.map(i => (i.id === 'skin:neon' ? { ...i, retired: true } : i)) };
+    });
+    try {
+      const t = await import('../src/client/pages/shop/trial');
+      const essai = { king: 'king:synthe', board: 'board:grille', skin: 'skin:neon' };
+      expect(t.available(essai, FREE_ITEMS)).toEqual({ king: 'king:synthe', board: 'board:grille' });
+      expect(t.available(essai, [...FREE_ITEMS, 'skin:neon'])).toEqual(essai);
+      expect(t.available(t.parseEssai('skin:neon'), [])).toEqual({});
+      // Panoplie Néon essayée par un visiteur : seuls le roi et l'échiquier sont à acheter, à l'unité
+      const delta = t.normalize(t.available(t.withCollection({}, ARCANE, collectionById('col:neon')!), FREE_ITEMS), ARCANE);
+      const q = t.quoteTrial(t.trialOf(ARCANE, delta), ARCANE, FREE_ITEMS);
+      expect(q.buy).toEqual(['king:synthe', 'board:grille']);
+      expect(q.cart?.lines.map(l => l.productId)).toEqual(['king:synthe', 'board:grille']);
+      expect(t.bestCollection(t.trialOf(ARCANE, delta), ARCANE, FREE_ITEMS)).toBeNull();
+    } finally {
+      vi.doUnmock('../src/shared/skins/spells');
+      vi.resetModules();
+    }
+  });
+
+  it('au défaut, rien n’est retiré : available ne change aucun essai', async () => {
+    const { available } = await import('../src/client/pages/shop/trial');
+    for (const it of ITEMS) expect(available({ [it.kind]: it.id }, [])).toEqual({ [it.kind]: it.id });
   });
 });

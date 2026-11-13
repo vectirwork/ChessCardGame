@@ -13,10 +13,10 @@ import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import {
   ALL_PRODUCTS, BOT_LOOK, COLLECTIONS, CURRENCY, DEFAULT_BOARD, DEFAULT_ITEM, DEFAULT_KING, DEFAULT_SKIN, FREE_ITEMS, ITEMS,
-  ORACLE_LOOK, PACKS, PAYMENT_PROVIDER, PREMIUM_COLLECTIONS, PREMIUM_ITEMS, PRICE, PRODUCTS, RARITY, SHOP_FEATURED, SHOP_ITEMS, SLOTS,
-  SLOT_DEFS, SLOT_LABEL, alone, boardStyle, bySlot, collectionItems, collectionOf, duplicated, equippedMessage, formatPrice, itemById,
-  itemLabel, itemWithArticle, kingStyle, normItem, normKing, productById, productPrice, quoteCart, sealName, sealOf, selectionLabel,
-  skinStyle, tresorSeals, unitPrice, whoSees,
+  ORACLE_LOOK, PACKS, PAYMENT_PROVIDER, PREMIUM_COLLECTIONS, PREMIUM_ITEMS, PRICE, PRODUCTS, RARITY, SHOP_COLLECTIONS, SHOP_FEATURED,
+  SHOP_ITEMS, SLOTS, SLOT_DEFS, SLOT_LABEL, TRESOR, alone, boardStyle, bySlot, collectionItems, collectionOf, duplicated, equippedMessage,
+  formatPrice, itemById, itemLabel, itemWithArticle, kingStyle, normItem, normKing, productById, productPrice, quoteCart, sealName,
+  sealOf, sealsIn, selectionLabel, skinStyle, tresorPack, tresorSeals, unitPrice, whoSees,
 } from '../src/shared/catalog';
 import type { ItemKind } from '../src/shared/catalog';
 import { TRESOR_RING } from '../src/shared/skins/collections';
@@ -245,7 +245,8 @@ describe('invariants : emplacements (SLOT_DEFS, source unique)', () => {
       expect(DEFAULT_ITEM[k]).toBe(SLOT_DEFS[k].default);
       expect(itemById(DEFAULT_ITEM[k])).toMatchObject({ kind: k, free: true });
       expect(SLOT_DEFS[k].column).toBe(`equipped_${k}`);
-      expect(SLOT_DEFS[k].seen || !!(SLOT_DEFS[k] as { follows?: unknown }).follows, k).toBe(true);
+      // `follows` dit ce que devient un objet que l'adversaire ne voit pas : présent si et seulement si `seen` est faux
+      expect(!!(SLOT_DEFS[k] as { follows?: unknown }).follows, k).toBe(!SLOT_DEFS[k].seen);
     }
     expect(new Set(SLOTS.map(k => SLOT_DEFS[k].rayon)).size).toBe(SLOTS.length);
     expect(SLOTS.map(k => SLOT_DEFS[k].rayon)).not.toContain('collections');
@@ -273,12 +274,56 @@ describe('invariants : emplacements (SLOT_DEFS, source unique)', () => {
     expect(duplicated(bySlot(['king:braise', 'board:jade', 'skin:void']))).toBe(false);
   });
 
-  it('objets et collections premium : les payants en vente, les collections non offertes ; Trésor = tous les objets premium', () => {
+  it('objets et collections premium : les payants en vente, les collections non offertes ; Trésor selon son réglage', () => {
     expect(PREMIUM_ITEMS).toEqual(ITEMS.filter(i => !i.free && !i.retired));
     expect(SHOP_ITEMS).toEqual(ITEMS.filter(i => !i.retired));
-    expect(productById('pack:tresor')!.items).toEqual(PREMIUM_ITEMS.map(i => i.id));
+    expect(SHOP_COLLECTIONS).toEqual(PREMIUM_COLLECTIONS.filter(c => PRODUCTS.some(p => p.id === c.id)));
+    const tresor = productById('pack:tresor')!;
+    if (TRESOR.items === 'premium') expect(tresor.items).toEqual(PREMIUM_ITEMS.map(i => i.id));
+    else {
+      expect(TRESOR.items.length).toBeGreaterThan(0);
+      for (const id of TRESOR.items) expect(itemById(id), id).toMatchObject({ free: false });
+      expect(tresor.items).toEqual(TRESOR.items.filter(id => !itemById(id)!.retired));
+    }
+    expect(tresor.future ?? []).toEqual([...TRESOR.future]);
+    for (const p of PACKS) for (const id of p.items) expect([itemById(id)?.free, !!itemById(id)?.retired], `${p.id} : ${id}`).toEqual([false, false]);
     expect(PACKS).toEqual(PRODUCTS.filter(p => p.kind === 'pack'));
     for (const c of COLLECTIONS) expect(sealName(c)).toBe(c.sealName ?? `Sceau ${c.name}`);
+  });
+
+  it('un pack ne promet que les sceaux qu’il apporte : sealsIn = les collections premium qu’il complète', () => {
+    for (const p of PACKS) {
+      const seals = sealsIn(p.items);
+      expect(seals.map(c => c.id).sort()).toEqual(PREMIUM_COLLECTIONS.filter(c => collectionItems(c).every(i => p.items.includes(i))).map(c => c.id).sort());
+      expect(seals).toEqual(tresorSeals().filter(c => seals.includes(c)));
+    }
+    expect(sealsIn([])).toEqual([]);
+  });
+
+  it('objet mis en avant (SHOP_FEATURED) : existant, de son emplacement, en vente', () => {
+    for (const k of SLOTS) {
+      const id = SHOP_FEATURED[k];
+      if (id) expect([itemById(id)?.kind, !!itemById(id)?.retired], id).toEqual([k, false]);
+    }
+  });
+
+  it('Trésor sous d’autres réglages : liste figée (sans les offerts, inconnus ni retirés), promesse des prochains', () => {
+    const figé = tresorPack({ items: ['king:braise', 'board:obsidian', 'skin:inferno', 'board:wood', 'king:inconnu'], future: [] });
+    expect(figé.items).toEqual(['king:braise', 'board:obsidian', 'skin:inferno']);
+    expect(figé.description).toBe('Les 3 objets d’une collection premium : rois, échiquiers et sorts.');
+    expect(figé.compareAtCents).toBe(299 + 199 + 299);
+    expect(sealsIn(figé.items).map(c => c.id)).toEqual(['col:inferno']);
+    expect(figé.future).toBeUndefined();
+    const rois = tresorPack({ items: ['king:braise', 'king:synthe'], future: [] });
+    expect(rois.description).toBe('Les 2 objets des 2 collections premium : rois.');
+    expect(sealsIn(rois.items)).toEqual([]);
+    const promis = tresorPack({ items: 'premium', future: ['king', 'board', 'skin'] });
+    expect(promis.items).toEqual(productById('pack:tresor')!.items);
+    expect(promis.future).toEqual(['king', 'board', 'skin']);
+    expect(promis.description).toBe('Les 21 objets des 7 collections premium : rois, échiquiers et sorts, et les prochains offerts.');
+    // Au défaut : le Trésor d'aujourd'hui (mêmes clés, même ordre)
+    expect(tresorPack(TRESOR)).toEqual(productById('pack:tresor'));
+    expect(JSON.stringify(tresorPack(TRESOR))).toBe(JSON.stringify(productById('pack:tresor')));
   });
 
   it('bandeau du Trésor : toutes les collections premium, celles de TRESOR_RING d’abord dans son ordre', () => {
@@ -308,6 +353,62 @@ describe('invariants : emplacements (SLOT_DEFS, source unique)', () => {
       expect(c.PRODUCTS.map(p => [p.id, p.priceCents, p.items.length])).toEqual(PRODUCTS.map(p => [p.id, p.priceCents, p.items.length]));
     } finally {
       vi.doUnmock('../src/shared/skins/spells');
+      vi.resetModules();
+    }
+  });
+
+  it('un objet retiré dans une collection : ni le panier ni la collection ne le vendent, le Trésor ne promet que ses sceaux', async () => {
+    vi.resetModules();
+    vi.doMock('../src/shared/skins/spells', async orig => {
+      const m = await orig<typeof import('../src/shared/skins/spells')>();
+      return { ...m, SPELL_ITEMS: m.SPELL_ITEMS.map(i => (i.id === 'skin:neon' ? { ...i, retired: true } : i)) };
+    });
+    try {
+      const c = await import('../src/shared/catalog');
+      // Le panier ne vend pas l'objet retiré ; qui le possède paie les autres pièces à l'unité (collection plus en vente)
+      expect(c.quoteCart(['skin:neon'], FREE_ITEMS)).toBeNull();
+      expect(c.quoteCart(['king:synthe', 'board:grille', 'skin:neon'], FREE_ITEMS)).toBeNull();
+      expect(c.quoteCart(['king:synthe', 'board:grille'], [...FREE_ITEMS, 'skin:neon'])).toMatchObject({
+        totalCents: 299 + 199,
+        lines: [{ productId: 'king:synthe' }, { productId: 'board:grille' }],
+      });
+      expect(c.quoteCart(['skin:neon'], [...FREE_ITEMS, 'skin:neon'])).toBeNull();
+      // La collection ne se vend plus, mais reste résolue ; son sceau reste à qui l'a complétée
+      expect(c.productById('col:neon')).toMatchObject({ retired: true, items: ['king:synthe', 'board:grille', 'skin:neon'] });
+      expect(c.PRODUCTS.some(p => p.id === 'col:neon')).toBe(false);
+      expect(c.SHOP_COLLECTIONS.map(x => x.id)).not.toContain('col:neon');
+      expect(c.PREMIUM_COLLECTIONS.map(x => x.id)).toContain('col:neon');
+      expect(c.sealOf(['king:synthe', 'board:grille', 'skin:neon'])).toBe('col:neon');
+      // Le Trésor : sans l'objet retiré, et seulement les sceaux qu'il complète
+      const t = c.productById('pack:tresor')!;
+      expect(t.items).toHaveLength(20);
+      expect(t.items).not.toContain('skin:neon');
+      expect(t.description).toBe('Les 20 objets des 7 collections premium : rois, échiquiers et sorts.');
+      expect(c.sealsIn(t.items).map(x => x.id)).toEqual(['col:celeste', 'col:neant', 'col:ecarlate', 'col:inferno', 'col:jade', 'col:olympe']);
+      expect(c.sealOf(t.items)).not.toBeNull();
+      for (const p of c.PACKS) expect(p.items, p.id).not.toContain('skin:neon');
+      // Le reste de l'offre ne bouge pas
+      const autres = (ps: { id: string; priceCents: number }[]) => ps.filter(p => !['skin:neon', 'col:neon', 'pack:tresor', 'pack:skins'].includes(p.id)).map(p => [p.id, p.priceCents]);
+      expect(autres(c.PRODUCTS)).toEqual(autres(PRODUCTS));
+    } finally {
+      vi.doUnmock('../src/shared/skins/spells');
+      vi.resetModules();
+    }
+  });
+
+  it('un emplacement vu par l’adversaire n’a pas de phrase « il vous suit » (seen l’emporte sur follows)', async () => {
+    vi.resetModules();
+    vi.doMock('../src/shared/skins/slots', async orig => {
+      const m = await orig<typeof import('../src/shared/skins/slots')>();
+      return { ...m, SLOT_DEFS: { ...m.SLOT_DEFS, board: { ...m.SLOT_DEFS.board, seen: true } } };
+    });
+    try {
+      const c = await import('../src/shared/catalog');
+      const t = await import('../src/client/pages/shop/trial');
+      expect(c.whoSees()).toBe('Votre roi, votre échiquier et vos sorts : vos adversaires les voient.');
+      expect(t.equipNote(['board:ruby'])).toBe('vos adversaires verront votre échiquier dès votre prochaine partie');
+    } finally {
+      vi.doUnmock('../src/shared/skins/slots');
       vi.resetModules();
     }
   });
@@ -574,7 +675,10 @@ describe('photographie : textes des emplacements et réglages de la vente au dé
   it('vente : euro, Stripe, roi de braise mis en avant ; packs : Grimoire en tête du rayon Sorts, Trésor en bandeau', () => {
     expect([CURRENCY, PAYMENT_PROVIDER]).toEqual(['eur', 'Stripe']);
     expect(SHOP_FEATURED).toEqual({ king: 'king:braise' });
-    expect(PACKS.map(p => [p.id, p.display, p.shortName])).toEqual([['pack:skins', 'skin', 'Grimoire'], ['pack:tresor', 'banner', 'Trésor']]);
+    expect(PACKS.map(p => [p.id, p.display, p.shortName])).toEqual([['pack:skins', 'skin', 'le Grimoire'], ['pack:tresor', 'banner', 'le Trésor']]);
+    expect(TRESOR).toEqual({ items: 'premium', future: [] });
+    expect(SHOP_COLLECTIONS).toEqual(PREMIUM_COLLECTIONS);
+    expect(sealsIn(productById('pack:tresor')!.items)).toEqual(tresorSeals());
     expect(tresorSeals().map(c => c.id)).toEqual(['col:celeste', 'col:neant', 'col:ecarlate', 'col:inferno', 'col:jade', 'col:neon', 'col:olympe']);
     expect(ITEMS.filter(i => i.badge).map(i => [i.id, i.badge])).toEqual([['skin:inferno', 'Populaire']]);
     expect(ITEMS.filter(i => i.retired)).toEqual([]);

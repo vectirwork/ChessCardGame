@@ -133,8 +133,11 @@ export interface Item {
   /** Badge de mise en avant (« Populaire ») : l'emporte sur « Nouveau ». */
   badge?: string;
   /**
-   * Retiré de la vente : hors des rayons, du Trésor et des packs, son produit n'est plus en vente ; toujours résolu
-   * (possédé, équipé, historique des achats, remboursement). Ne jamais supprimer ni recycler son identifiant.
+   * Retiré de la vente : hors des rayons, du Trésor et des packs ; ni son produit, ni un panier, ni les collections qui
+   * le contiennent ne le vendent plus (leurs produits sont retirés ; leur sceau reste à qui les a complétées, et le
+   * bandeau du Trésor ne montre que les sceaux qu'il apporte). Qui le possède le voit, l'essaie et l'équipe encore.
+   * Toujours résolu (possédé, équipé, historique des achats, remboursement). Ne jamais supprimer ni recycler son
+   * identifiant.
    */
   retired?: boolean;
   skin?: SkinStyle;
@@ -178,6 +181,9 @@ export interface Product {
    * collections. Sans `display`, il n'est montré qu'à l'accueil.
    */
   display?: ItemKind | 'banner';
-  /** Nom court dans les phrases (« le prix du Grimoire ne change pas », « Acheter le Trésor »). */
+  /**
+   * Nom court avec son article, dans les phrases : « le Trésor » (« Acheter le Trésor », « le prix du Trésor ne change
+   * pas »). Article : le, la, l’ ou les.
+   */
   shortName?: string;
 }

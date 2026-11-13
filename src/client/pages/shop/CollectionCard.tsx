@@ -5,7 +5,9 @@
 // Paiements fermés : « Bientôt en vente », désactivé, pour tous (un visiteur ne part pas s'inscrire pour rien).
 // Aussi : le bandeau d'un pack (Trésor du Bazar) et la carte de pack en tête d'un rayon (Grimoire des sorts).
 import type { CSSProperties } from 'react';
-import { SLOT_DEFS, collectionItems, formatPrice, itemById, itemLabel, productById, productPrice, sealName, tresorSeals } from '../../../shared/catalog';
+import {
+  PREMIUM_ITEMS, SLOT_DEFS, collectionItems, formatPrice, itemById, itemLabel, productById, productPrice, sealName, sealsIn,
+} from '../../../shared/catalog';
 import type { Collection, Product } from '../../../shared/catalog';
 import { enLettres } from '../../../shared/text/fr';
 import { CollectionSeal } from '../../components/CollectionSeal';
@@ -88,32 +90,37 @@ export function CollectionCard({ c, owned, loggedIn, sale, ready, large, trying,
   );
 }
 
-/** Sceaux des collections premium autour d'un sceau central (tresorSeals) : l'anneau se partage en n − 1 parts. */
-const SEALS = tresorSeals();
-
-/** Bandeau d'un pack (le Trésor du Bazar) : les sceaux de toutes les collections premium. */
-export function TresorBanner({ product, owned, loggedIn, sale, ready, onBuy }: { product: Product; owned: string[]; loggedIn: boolean; sale: boolean; ready: boolean; onBuy: (p: Product) => void }) {
+/**
+ * Bandeau d'un pack (`display: 'banner'`, le Trésor du Bazar) : les sceaux des collections qu'il complète (sealsIn),
+ * le premier au centre, les autres en anneau (n − 1 parts). « Tout le Bazar » s'il contient tous les objets payants en
+ * vente. `titleId` : identifiant du titre, un par bandeau.
+ */
+export function TresorBanner({
+  product, titleId = 'tb-t', owned, loggedIn, sale, ready, onBuy,
+}: { product: Product; titleId?: string; owned: string[]; loggedIn: boolean; sale: boolean; ready: boolean; onBuy: (p: Product) => void }) {
   const price = productPrice(product, owned);
   const have = product.items.filter(i => owned.includes(i)).length;
-  const n = SEALS.length;
+  const seals = sealsIn(product.items);
+  const n = seals.length;
+  const all = PREMIUM_ITEMS.every(i => product.items.includes(i.id));
   return (
-    <section className="tb" aria-labelledby="tb-t">
+    <section className="tb" aria-labelledby={titleId}>
       <div className="tb-art" aria-hidden="true" style={{ '--n': n } as CSSProperties}>
-        {SEALS.map((c, i) => (
+        {seals.map((c, i) => (
           <span key={c.id} className="tb-seal" style={{ '--i': i } as CSSProperties}>
             <CollectionSeal id={c.id} size={i === 0 ? 46 : 34} />
           </span>
         ))}
       </div>
       <div className="tb-txt">
-        <RarityGem rarity="legendaire" label="Tout le Bazar" />
-        <h3 id="tb-t" className="tb-name">
+        <RarityGem rarity="legendaire" label={all ? 'Tout le Bazar' : `Pack · ${packCount(product, product.items.length)}`} />
+        <h3 id={titleId} className="tb-name">
           {product.name}
           {product.badge && <span className="badge gold">{product.badge}</span>}
         </h3>
         <p>
           {product.description}
-          {` ${n > 1 ? `Les ${enLettres(n)} sceaux` : 'Le sceau'} de collection compris.`}
+          {n > 0 && ` ${n > 1 ? `Les ${enLettres(n)} sceaux` : 'Le sceau'} de collection compris.`}
         </p>
         {loggedIn && have > 0 && price !== null && (
           <small className="tb-have">
@@ -131,7 +138,7 @@ export function TresorBanner({ product, owned, loggedIn, sale, ready, onBuy }: {
           <span className="cc-done">Déjà dans votre collection</span>
         ) : (
           <button type="button" className="btn-gold sm" disabled={!sale || !ready} onClick={() => onBuy(product)}>
-            {buyLabel(sale, ready, product.shortName ? `Acheter le ${product.shortName}` : 'Acheter')}
+            {buyLabel(sale, ready, product.shortName ? `Acheter ${product.shortName}` : 'Acheter')}
           </button>
         )}
       </div>
@@ -142,8 +149,10 @@ export function TresorBanner({ product, owned, loggedIn, sale, ready, onBuy }: {
 /** Libellé d'un bouton d'achat : « Bientôt en vente » quand les paiements sont fermés (une fois l'état connu). */
 const buyLabel = (sale: boolean, ready: boolean, label: string) => (!sale && ready ? 'Bientôt en vente' : label);
 
+/** « de » devant un nom et son article : « le Grimoire » → « du Grimoire », « la Malle » → « de la Malle ». */
+const deNom = (nom: string) => (nom.startsWith('le ') ? `du ${nom.slice(3)}` : nom.startsWith('les ') ? `des ${nom.slice(4)}` : `de ${nom}`);
 /** « le prix du Grimoire ne change pas. » */
-const priceKept = (p: Product) => `le prix du ${p.shortName ?? 'pack'} ne change pas.`;
+const priceKept = (p: Product) => `le prix ${deNom(p.shortName ?? 'le pack')} ne change pas.`;
 
 /**
  * Unité des objets d'un pack : celle de leur emplacement s'ils en ont un seul (« sort », « s » : « 7 sorts »), sinon

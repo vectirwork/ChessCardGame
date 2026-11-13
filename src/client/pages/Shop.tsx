@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  ITEMS, PACKS, PREMIUM_COLLECTIONS, SHOP_FEATURED, SLOTS, SLOT_DEFS, alone, bySlot, collectionById, collectionItems, equippedMessage,
+  ITEMS, PACKS, SHOP_COLLECTIONS, SHOP_FEATURED, SLOTS, SLOT_DEFS, alone, bySlot, collectionById, collectionItems, equippedMessage,
   formatPrice, itemById, itemLabel, unitPrice,
 } from '../../shared/catalog';
 import type { Collection, ItemKind, Product } from '../../shared/catalog';
@@ -47,17 +47,25 @@ function arrival() {
   const objet = itemById(q.get('objet') ?? '');
   const fromUrl = parseEssai(q.get('essai'));
   let delta: TrialDelta;
+  /** Emplacement de l'objet mis en avant, s'il est mis en essai : la cabine et le rayon s'ouvrent sur lui. */
+  let featured: ItemKind | undefined;
   if (Object.keys(fromUrl).length) delta = fromUrl;
   else if (objet) delta = { [objet.kind]: objet.id };
   else {
     // Un essai déjà gardé dans la session, même vide (« Rétablir »), est repris tel quel
     const stored = storedTrial();
-    // Objet mis en essai à la première arrivée de la session, quand rien d'autre n'est demandé (SHOP_FEATURED)
-    delta = Object.keys(stored).length ? stored : q.get('achat') || hasStoredTrial() ? {} : { ...SHOP_FEATURED };
+    if (Object.keys(stored).length) delta = stored;
+    else if (q.get('achat') || hasStoredTrial()) delta = {};
+    else {
+      // Objet mis en essai à la première arrivée de la session, quand rien d'autre n'est demandé (SHOP_FEATURED)
+      delta = { ...SHOP_FEATURED };
+      featured = SLOTS.find(k => SHOP_FEATURED[k]);
+    }
   }
+  const shown = objet?.kind ?? featured;
   const r = q.get('rayon') as Rayon | null;
-  const rayon: Rayon = r && RAYONS.includes(r) ? r : window.location.hash === '#grimoires' ? 'collections' : objet ? rayonOf(objet.kind) : RAYONS[0];
-  const view: CabinView = objet ? SLOT_DEFS[objet.kind].view : 'roi';
+  const rayon: Rayon = r && RAYONS.includes(r) ? r : window.location.hash === '#grimoires' ? 'collections' : shown ? rayonOf(shown) : RAYONS[0];
+  const view: CabinView = shown ? SLOT_DEFS[shown].view : 'roi';
   return { delta, rayon, view, achat: q.get('achat'), annule: !!q.get('annule') };
 }
 
@@ -290,11 +298,11 @@ function Bazar() {
   // ---------------------------------------------------------------------------------------------
   // Affichage
 
-  // Objets montrés : ceux des rayons, plus un objet retiré que l'on possède
+  // Objets montrés (et comptés dans « Ma collection : n sur m ») : ceux des rayons, plus un objet retiré que l'on possède
   const shown = ITEMS.filter(i => !i.retired || owns(me, i.id));
   const ownedCount = shown.filter(i => owns(me, i.id)).length;
   const counts = Object.fromEntries(RAYONS.map(r => [r, 0])) as Record<Rayon, number>;
-  counts.collections = PREMIUM_COLLECTIONS.length;
+  counts.collections = SHOP_COLLECTIONS.length;
   for (const i of shown) counts[rayonOf(i.kind)]++;
   const live = liveText(lastTried, quote, action);
   const onCasting = useCallback((on: boolean) => setCasting(on), []);
@@ -322,7 +330,7 @@ function Bazar() {
 
   const rack = () => {
     if (rayon === 'collections') {
-      const list = PREMIUM_COLLECTIONS.filter(c => !mine || collectionItems(c).some(i => t.owned.includes(i)));
+      const list = SHOP_COLLECTIONS.filter(c => !mine || collectionItems(c).some(i => t.owned.includes(i)));
       return (
         <Rack key="collections" rayon="collections" empty={list.length ? undefined : <EmptyMine />}>
           {list.map(c => (
@@ -392,7 +400,7 @@ function Bazar() {
         <div className="bz-band-side">
           {loggedIn && (
             <span className="bz-count">
-              <StarMark size={11} /> Ma collection : {ownedCount} sur {ITEMS.length}
+              <StarMark size={11} /> Ma collection : {ownedCount} sur {shown.length}
             </span>
           )}
           <Seal />
@@ -433,7 +441,7 @@ function Bazar() {
           <PageHead
             as="h2"
             place="Les collections"
-            aside={`${PREMIUM_COLLECTIONS.length} panoplies`}
+            aside={`${SHOP_COLLECTIONS.length} panoplies`}
             title={
               <span id="bz-colls-t">
                 Tout assorti, <em>en un geste.</em>
@@ -442,7 +450,7 @@ function Bazar() {
             lede="Un roi, un échiquier et des sorts qui vont ensemble, et le sceau de la collection à côté de votre pseudo : on ne le trouve nulle part ailleurs."
           />
           <div className="bz-colls-grid">
-            {PREMIUM_COLLECTIONS.map(c => (
+            {SHOP_COLLECTIONS.map(c => (
               <CollectionCard
                 key={c.id}
                 c={c}
@@ -462,8 +470,8 @@ function Bazar() {
           </div>
         </section>
       )}
-      {BANNERS.map(p => (
-        <TresorBanner key={p.id} product={p} owned={t.owned} loggedIn={loggedIn} sale={sale} ready={ready} onBuy={buy} />
+      {BANNERS.map((p, i) => (
+        <TresorBanner key={p.id} product={p} titleId={i ? `tb-t-${i + 1}` : 'tb-t'} owned={t.owned} loggedIn={loggedIn} sale={sale} ready={ready} onBuy={buy} />
       ))}
 
       <ShopPromise />

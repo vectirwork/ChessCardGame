@@ -3,6 +3,7 @@
 // tests les importent. Les durées couplées au client sont dans src/shared/config/timings.ts, les règles du jeu dans
 // src/shared/config/rules.ts, la configuration lue dans l'environnement dans config.ts.
 
+import { existsSync } from 'node:fs';
 import type { BotLevel } from '../shared/bot';
 import { FEATURES as FEATURE_DEFAULTS, FEATURE_KEYS, featureEnvName } from '../shared/config/features';
 import type { Features } from '../shared/config/features';
@@ -67,7 +68,7 @@ export const MATCHMAKING = Object.freeze({
   /** Période du balayage des entrées oubliées. */
   sweepMs: 30_000,
   /** Files séparées par catalogue (Pouvoirs, Sans cartes). */
-  splitByCatalog: true,
+  splitByCatalog: true as boolean,
   /** Pseudo d'un invité anonyme dans la file amicale : « Anonyme-1000 » à « Anonyme-9999 ». */
   anonymousPrefix: 'Anonyme-',
   anonymousMin: 1000,
@@ -202,6 +203,11 @@ export function readFeatures(env: Record<string, string | undefined>): { feature
   }
   return { features: Object.freeze(features), errors };
 }
+
+// Fichier .env (lancement hors Docker : npm start, npm run dev ; en production Docker, env_file donne de vraies variables
+// d'environnement). Chargé ici, et non dans config.ts : config.ts importe ce module, qui est donc évalué avant lui, et
+// les FEATURE_* sont lues juste en dessous. Une variable déjà définie dans l'environnement garde sa valeur.
+if (existsSync('.env')) process.loadEnvFile('.env');
 
 const fromEnv = readFeatures(process.env);
 

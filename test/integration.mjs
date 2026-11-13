@@ -19,7 +19,7 @@ import { Client as BaseClient, baseUrl, sleep, sq } from './lib/client.mjs';
 
 const BASE = baseUrl(process.argv[2]);
 const { CARDS, cardsOf } = await tsImport('../src/shared/cards.ts', import.meta.url);
-const { DEAL } = await tsImport('../src/shared/config/rules.ts', import.meta.url);
+const { DEAL, RULES_V1 } = await tsImport('../src/shared/config/rules.ts', import.meta.url);
 const { poolOf, rulesOf, validHand: r9 } = await tsImport('../src/shared/rulesCore.ts', import.meta.url);
 const { BOT_RUNTIME, RATING, RELAY, TIMINGS } = await tsImport('../src/server/settings.ts', import.meta.url);
 
@@ -154,7 +154,10 @@ if (DRAFTING) {
   a = await spectator.emit('game:draft', { id: gameId, cards: first(count) });
   assert.equal(a.ok, false, 'un spectateur ne choisit pas');
   assert.ok((await alice.emit('game:draft', { id: gameId, cards: ['truce'], confirm: false })).ok, 'sélection provisoire');
-  const ALICE = prefer(['ice_wall', 'blood_moon', 'tide'], POUVOIRS, count);
+  // Délai du Présage changé (SPELLMATE_TEST_RULES) : Alice met un Présage en tête, pour que son délai soit vérifié à
+  // l'étape 4 (au défaut, le Mur de glace d'abord, comme avant).
+  const presageFirst = rulesOf(j.view.state).presageDelay !== RULES_V1.presageDelay;
+  const ALICE = prefer(presageFirst ? ['blood_moon', 'ice_wall', 'tide'] : ['ice_wall', 'blood_moon', 'tide'], POUVOIRS, count);
   const BOB = prefer(['rift', 'truce', 'blast'], POUVOIRS, count);
   assert.ok(!sameSet(ALICE, BOB));
   assert.ok((await alice.emit('game:draft', { id: gameId, cards: ALICE })).ok);
@@ -235,9 +238,17 @@ for (let i = 0; i < hand.length && !played; i++) {
   const rules = rulesOf(v);
   if (PRESAGE.includes(card)) {
     assert.ok(v.effects.some(e => e.card === card && e.pending && e.delay === rules.presageDelay), 'le Présage est public, avec son délai');
+  } else if (DRAFTING && rules.presageDelay !== RULES_V1.presageDelay) {
+    assert.fail(`délai du Présage changé, mais la carte jouée (${card}) n’est pas un Présage : délai non vérifié`);
   }
   if (card === 'ice_wall') assert.ok(v.effects.some(e => e.card === 'ice_wall' && e.permanent && e.square === sq('e3')), 'Mur permanent');
-  if (card === 'tide') assert.equal(v.pos.turn, 'b', 'le Rituel tient lieu de coup');
+  // Rituel (Grande Marée), ou toute carte si elle remplace le coup (cardEndsTurn) : le trait et la pendule passent.
+  if (rules.cardEndsTurn || CARDS[card].ritual) {
+    assert.equal(v.pos.turn, 'b', 'la carte tient lieu de coup');
+    assert.equal(u.view.clock.running, 'b', 'la pendule des Noirs tourne');
+  } else {
+    assert.equal(v.pos.turn, 'w', 'la carte s’ajoute au coup : les Blancs gardent le trait');
+  }
   // 1,5 s écoulée, cinématique créditée (R10) : la pendule est sous son départ, sans excès.
   const initial = u.view.clock.initial * 1000;
   assert.ok(u.view.clock.w < initial && u.view.clock.w > initial - 10_000, `la pendule tient compte du temps écoulé (${u.view.clock.w})`);

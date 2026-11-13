@@ -2,8 +2,9 @@
 // - Caractérisation : les écarts de classement d'une partie classée terminée (endGame), tels que le serveur les
 //   calculait avant que la formule ne sorte de games.ts (valeurs écrites à la main, K 40 puis 20, échelle 400).
 // - elo() pur, et tolérance de l'appariement (250 points, plus 25 par seconde d'attente).
-// - Enregistrement de la fin d'une partie classée : nouvel essai si la base ne répond pas (PERSIST), rattrapage au
-//   démarrage des parties terminées dont le classement n'a pas été appliqué ; jamais deux fois (ratings_applied).
+// - Enregistrement de la fin d'une partie classée : nouvel essai si la base ne répond pas (PERSIST), enregistrement à
+//   l'arrêt du serveur pendant l'attente d'un nouvel essai (flushRooms), rattrapage au démarrage des parties terminées
+//   dont le classement n'a pas été appliqué ; jamais deux fois (ratings_applied).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/server/db', () => ({
@@ -17,7 +18,7 @@ vi.mock('../src/server/bot-pool', () => ({
 
 import { sqIndex as sq } from '../src/shared/chess';
 import { q, tx } from '../src/server/db';
-import { abortRoom, applyMove, applyPendingRatings, newRoom, persistResult, resignRoom } from '../src/server/games';
+import { abortRoom, applyMove, applyPendingRatings, flushRooms, newRoom, persistResult, resignRoom } from '../src/server/games';
 import { MATCHMAKING, PERSIST, RATING } from '../src/server/settings';
 import { elo, matchTolerance, ratingDiffs } from '../src/server/rating';
 import type { SeatArg } from './helpers/sieges';
@@ -168,6 +169,34 @@ describe('enregistrement de la fin d’une partie classée', () => {
       await expect(done).resolves.toBe(false);
       expect(tx).toHaveBeenCalledTimes(PERSIST.attempts);
       expect(log).toHaveBeenLastCalledWith(expect.stringMatching(new RegExp(`non enregistrée après ${PERSIST.attempts} essais`)), expect.any(Error));
+    } finally {
+      log.mockRestore();
+      vi.mocked(tx).mockReset();
+      vi.mocked(tx).mockImplementation(async fn => fn({ query: async () => ({ rows: [], rowCount: 0 }) } as never));
+    }
+  });
+
+  it('arrêt du serveur pendant l’attente d’un nouvel essai : fin de partie et classement enregistrés (flushRooms)', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      vi.mocked(tx).mockReset();
+      vi.mocked(tx).mockRejectedValueOnce(new Error('connexion refusée'));
+      // endGame lance persistResult : premier essai en échec, nouvel essai dans PERSIST.retryMs.
+      const room = ratedGame(account('p', 1500, 10), account('r', 1500, 10), 'b');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(room.resultPending).toBe(true);
+      expect(room.saveTimer).toBeNull();
+      // La base répond de nouveau ; le serveur s'arrête avant le nouvel essai.
+      const client = fakeClient();
+      vi.mocked(tx).mockImplementation(async fn => fn(client as never));
+      await flushRooms();
+      const saved = client.queries.filter(x => /^INSERT INTO games/.test(x.sql) && x.params[0] === room.d.id);
+      expect(saved).toHaveLength(1);
+      expect(saved[0].params[3]).toBe('ended');
+      // (Les fins de partie des tests précédents restées sans enregistrement sont enregistrées aussi : on ne regarde
+      // que celle-ci.)
+      expect(userUpdates(client).filter(([, id]) => id === 'p' || id === 'r')).toEqual([[20, 'p'], [-20, 'r']]);
+      expect(room.resultPending).toBe(false);
     } finally {
       log.mockRestore();
       vi.mocked(tx).mockReset();

@@ -2,20 +2,23 @@
 // une valeur illisible (PORT=abc, PAYMENTS_MODE=live, PUBLIC_URL sans http…) arrête le serveur avec un message en
 // français, au lieu de casser plus tard une page ou un paiement. En production, une valeur encore à l'état de modèle
 // (mentions légales entre crochets, contact @example.com) ou un webhook Stripe absent est signalé au démarrage
-// (configWarnings, affichés par index.ts) sans arrêter le serveur.
+// (configWarnings, affichés par index.ts) sans arrêter le serveur (décision Q1, pour les mentions légales). Les règles
+// des nouvelles parties sont vérifiées au démarrage (rulesReport, appelé par index.ts) : impossibles, le serveur
+// s'arrête, comme pour une configuration invalide. Le fichier .env est chargé par settings.ts (importé ci-dessous).
 //
 // SPELLMATE_TEST_RULES (tests de bout en bout, serveur jetable ; refusée en production) : objet JSON de réglages des
 // nouvelles parties. Les règles (cardsPerPlayer, cardsPerTurn, cardEndsTurn…) passent à setRulesOverride ; la mise en
 // place (draft, draftMs, limitsInDraft) à setDealOverride. Exemples : {"cardsPerPlayer":5}, {"cardsPerTurn":2},
 // {"draft":false} (tirage partout).
-import { existsSync } from 'node:fs';
 import { z } from 'zod';
 import { BRAND } from '../shared/config/brand';
+import { DEAL, RULES_CONTEXTS } from '../shared/config/rules';
 import type { DealSettings, GameRulesSettings } from '../shared/config/rules';
 import { PAYMENTS_MODES } from '../shared/protocol';
 import type { PaymentsMode } from '../shared/protocol';
-import { SETTING_KEYS, setRulesOverride } from '../shared/rules';
-import { DATABASE, setDealOverride } from './settings';
+import { SETTING_KEYS, checkRules, rulesFor, rulesSummary, sameRules, setRulesOverride } from '../shared/rules';
+import type { Rules } from '../shared/rules';
+import { DATABASE, dealSettings, setDealOverride } from './settings';
 
 /** Réglages de la mise en place que SPELLMATE_TEST_RULES peut changer (le reste de DEAL reste celui du code). */
 export const TEST_DEAL_KEYS = ['draft', 'draftMs', 'limitsInDraft'] as const;
@@ -218,8 +221,7 @@ export function parseEnv(env: Record<string, string | undefined>): ParsedEnv {
   return { config, errors, warnings };
 }
 
-if (existsSync('.env')) process.loadEnvFile('.env');
-
+// .env : déjà chargé par settings.ts (importé plus haut, donc évalué avant ce module).
 const parsed = parseEnv(process.env);
 
 export const config: Config = parsed.config;
@@ -235,3 +237,37 @@ if (parsed.errors.length) {
 // Surcharges de test (serveur jetable des tests de bout en bout) : règles et mise en place des nouvelles parties.
 if (config.testRules) setRulesOverride(config.testRules);
 if (config.testDeal) setDealOverride(config.testDeal);
+
+// ---------------------------------------------------------------------------------------------
+// Règles des nouvelles parties sur ce serveur (journal et vérification du démarrage)
+
+/** Mise en place dans le résumé d'une ligne : « choix des cartes en 45 s » ou « choix des cartes remplacé par le tirage ». */
+const dealSummary = (d: Readonly<DealSettings>) => `choix des cartes ${d.draft ? `en ${d.draftMs / 1000} s` : 'remplacé par le tirage'}`;
+
+/**
+ * Résumé d'une ligne des règles d'un contexte, avec la mise en place de CE serveur (dealSettings : surcharge de test
+ * comprise). rulesSummary (src/shared/rules.ts) décrit la mise en place d'après DEAL seulement : sa fin est remplacée.
+ */
+function summaryLine(r: Rules, deal: Readonly<DealSettings>): string {
+  const s = rulesSummary(r);
+  const fromDeal = dealSummary(DEAL);
+  return s.endsWith(fromDeal) ? `${s.slice(0, -fromDeal.length)}${dealSummary(deal)}` : s;
+}
+
+/**
+ * Règles des nouvelles parties sur ce serveur, vérifiées au démarrage (index.ts) : `lines`, le journal (une ligne pour
+ * les règles communes, plus une par contexte qui diffère) ; `errors`, les erreurs de checkRules avec la mise en place
+ * de ce serveur et la surcharge de test. Des erreurs arrêtent le serveur (designDoc §2.5) : une règle impossible ne
+ * doit jamais passer (le refus au build viendra en plus). Vide au défaut. Exportée pour les tests.
+ */
+export function rulesReport(): { lines: string[]; errors: string[] } {
+  const deal = dealSettings();
+  const base = rulesFor('classee');
+  const test = config.testRules || config.testDeal ? ` (surcharge de test : ${JSON.stringify({ ...config.testRules, ...config.testDeal })})` : '';
+  const lines = [`Règles des nouvelles parties : ${summaryLine(base, deal)}${test}.`];
+  for (const ctx of RULES_CONTEXTS) {
+    const r = rulesFor(ctx);
+    if (!sameRules(r, base)) lines.push(`Règles des nouvelles parties (${ctx}) : ${summaryLine(r, deal)}.`);
+  }
+  return { lines, errors: checkRules({ deal }) };
+}

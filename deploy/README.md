@@ -28,9 +28,11 @@ Le serveur (Hetzner Cloud, Ubuntu 24.04) est créé et piloté par API, sans SSH
 
 - Une valeur illisible (`PORT`, `PUBLIC_URL`, `PAYMENTS_MODE`, `TRUST_PROXY`, `SMTP_PORT`, `DATABASE_POOL_MAX`) arrête
   le serveur avec un message en français dans `app.log` ; `SPELLMATE_TEST_RULES` (tests) est refusée en production.
+- Des règles de jeu impossibles (`checkRules` : par exemple 6 cartes par joueur avec au plus 2 Climats) arrêtent aussi
+  le serveur, avec le message (« Règles impossibles : arrêt. ») et le réglage à changer ; `update.sh` échoue alors à
+  la vérification de `/api/health`. Le journal résume les règles des nouvelles parties.
 - Avertissements sans arrêt : mentions légales (`LEGAL_*`) encore à l'état de modèle, `PAYMENTS_MODE=stripe` sans
-  `STRIPE_WEBHOOK_SECRET`, interrupteur `FEATURE_*` inconnu ou illisible, règles de jeu impossibles (`checkRules`).
-  Le journal résume aussi les règles des nouvelles parties.
+  `STRIPE_WEBHOOK_SECRET`, interrupteur `FEATURE_*` inconnu ou illisible.
 - Interrupteurs (`FEATURE_*`, voir `.env.example`) : dans `deploy/production.env` (ou `/opt/spellmate/local.env`),
   pris en compte au déploiement suivant (`update.sh` assemble `.env`), sans reconstruire le site. Maintenance avant
   une mise à jour délicate : `FEATURE_NEW_GAMES=0` (plus de nouvelle partie, celles en cours continuent).

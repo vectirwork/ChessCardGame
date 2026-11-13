@@ -4,6 +4,8 @@
 // 2. file vide ; B et C arrivent ensemble : ils sont appariés entre eux (aucune entrée perdue) ;
 // 3. A attend ; B arrive ; A part pendant que B attend son classement : B n'est pas apparié avec A.
 // Avant le correctif : 1 → deux parties pour A ; 2 → les deux attendent, l'une des entrées est perdue ; 3 → partie avec A.
+// Création de la partie en échec après l'appariement : celui qui attendait reprend sa place (sauf s'il est parti).
+// Files : une par cadence, classée ou amicale, et catalogue (MATCHMAKING.splitByCatalog), voir queuePool.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/server/db', () => ({
@@ -17,7 +19,8 @@ vi.mock('../src/server/bot-pool', () => ({
 
 import type { Identity, UserRow } from '../src/server/auth';
 import { one } from '../src/server/db';
-import { activeRoomCount, joinQueue, queueKeys, quitQueue } from '../src/server/games';
+import { setRulesOverride } from '../src/shared/rules';
+import { activeRoomCount, joinQueue, queueKeys, queuePool, quitQueue } from '../src/server/games';
 import { MATCHMAKING } from '../src/server/settings';
 
 const POOL = '5+0|classee|climats';
@@ -65,6 +68,7 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  setRulesOverride(null);
   for (const k of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) quitQueue(`u:${k}`);
   vi.clearAllTimers();
   vi.useRealTimers();
@@ -159,5 +163,47 @@ describe('file d’attente : courses', () => {
     await join(c);
     expect(activeRoomCount().active - before).toBe(1);
     expect(queueKeys()[POOL]).toEqual(['u:a']);
+  });
+});
+
+describe('file d’attente : création de la partie en échec', () => {
+  // Création impossible (ici : règles de test à 9 cartes, la réserve n'en a que 8 ; en vrai, une base qui ne répond pas
+  // pendant la lecture des sièges). L'erreur remonte au demandeur.
+  it('celui qui attendait reprend sa place en tête de file', async () => {
+    const a = sock('a');
+    await join(a);
+    const before = activeRoomCount().active;
+    setRulesOverride({ cardsPerPlayer: 9 });
+    await expect(join(sock('b'))).rejects.toThrow(/Choix des cartes impossible/);
+    expect(activeRoomCount().active - before).toBe(0);
+    expect(queueKeys()[POOL]).toEqual(['u:a']);
+    // Création de nouveau possible : A est apparié avec le suivant.
+    setRulesOverride(null);
+    await join(sock('c'));
+    expect(activeRoomCount().active - before).toBe(1);
+    expect(queueKeys()[POOL] ?? []).toEqual([]);
+  });
+
+  it('… sauf s’il a quitté la file pendant la lecture des sièges', async () => {
+    const a = sock('d');
+    await join(a);
+    hold('d'); // lecture du siège de D (après l'appariement) retenue
+    const pb = join(sock('e'));
+    await flush();
+    expect(queueKeys()[POOL] ?? []).toEqual([]);
+    quitQueue('u:d');
+    setRulesOverride({ cardsPerPlayer: 9 });
+    release('d');
+    await expect(pb).rejects.toThrow(/Choix des cartes impossible/);
+    expect(queueKeys()[POOL] ?? []).toEqual([]);
+  });
+});
+
+describe('files séparées par catalogue (MATCHMAKING.splitByCatalog)', () => {
+  it('clé de file : cadence, classée ou amicale, catalogue ; une seule file (*) si les catalogues sont mêlés', () => {
+    expect(MATCHMAKING.splitByCatalog).toBe(true);
+    expect(queuePool('5+0', true, 'climats')).toBe(POOL);
+    expect(queuePool('3+2', false, 'aucune')).toBe('3+2|amicale|aucune');
+    expect(queuePool('3+2', false, 'aucune', false)).toBe('3+2|amicale|*');
   });
 });

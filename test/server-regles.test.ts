@@ -9,7 +9,9 @@
 // - IA : cartes de la décision jouées une à une (pause entre elles), échecs répétés puis coup légal au hasard, niveau
 //   inconnu ; fil de calcul mort (bot-pool) ;
 // - carte à la place du coup (cardEndsTurn) : incrément et début de partie comme un coup ;
-// - règles enregistrées illisibles à la reprise : partie annulée.
+// - règles enregistrées illisibles à la reprise : partie annulée ;
+// - mise en place lue à la création : contraintes du choix (DEAL.limitsInDraft) gardées dans la partie, tirage plus
+//   court que les règles refusé ; échéance de la revanche (TIMINGS.rematchTtlMs).
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -34,7 +36,7 @@ import { botPool } from '../src/server/bot-pool';
 import type { BotThread } from '../src/server/bot-pool';
 import {
   CINEMATIC_MS, Room, RoomData, applyDraft, closeDraft, commitCard, contextOf, createRematch, draftView, newDraft, newRoom,
-  resumeRoom, setupOf, submitDraft, takeSeat,
+  rematchExpired, resignRoom, resumeRoom, setupOf, submitDraft, takeSeat,
 } from '../src/server/games';
 import { BOT_RUNTIME, BOT_THREADS, setDealOverride } from '../src/server/settings';
 import { bot, human } from './helpers/sieges';
@@ -93,6 +95,18 @@ describe('règles des nouvelles parties', () => {
     expect(newDraft('climats', false, true, 7)?.pool).toHaveLength(7);
     expect(() => newDraft('climats', false, true, 8)).toThrow(/la réserve n'a que 7 cartes pour 8 cartes par joueur/);
   });
+
+  it('tirage plus court que les règles (R9 intenable) : refus explicite, jamais une main plus courte', () => {
+    // 6 cartes avec au plus 2 Climats : la réserve n'a que 3 autres cartes (main valide maximale : 5).
+    const six: Rules = { ...rulesFor('accueil'), cardsPerPlayer: 6 };
+    const home = (rules?: Rules) =>
+      newRoom({ mode: 'quick', rated: false, tc: 'none', catalog: 'climats', creator: 'g:1', seats: { w: human(1), b: human(2) }, deal: true, relay: true, rules });
+    expect(() => home(six)).toThrow(/Tirage impossible : mains de 5 et 5 cartes pour 6 cartes par joueur/);
+    expect(home({ ...six, cardsPerPlayer: 5 }).d.state.hands.w).toHaveLength(5);
+    // Sans cartes : mains vides, rien à vérifier.
+    const none = newRoom({ mode: 'invite', rated: false, tc: '5+0', catalog: 'aucune', creator: 'g:1', seats: { w: human(1), b: human(2) }, deal: true });
+    expect(none.d.state.hands).toEqual({ w: [], b: [] });
+  });
 });
 
 describe('choix des cartes à N cartes', () => {
@@ -148,6 +162,23 @@ describe('choix des cartes à N cartes', () => {
     expect(draftView(room.d, 'w')).toMatchObject({ totalMs: 20_000, msLeft: 20_000 });
     vi.advanceTimersByTime(20_000);
     expect(room.d.draft).toBeNull();
+  });
+
+  it('contraintes du choix (DEAL.limitsInDraft) lues à la création et gardées : un déploiement ne les change pas en route', () => {
+    const climats: CardId[] = ['hourglass', 'truce', 'blood_moon'];
+    // Au défaut : aucune contrainte, rien d'écrit dans le choix (le choix enregistré est le même qu'avant).
+    const free = invite();
+    expect('limits' in free.d.draft!).toBe(false);
+    setDealOverride({ limitsInDraft: true });
+    const bound = invite();
+    expect(bound.d.draft!.limits).toEqual(DEAL.handLimits);
+    // Le serveur redémarre avec DEAL.limitsInDraft faux : la partie créée avec R9 la garde, l'autre reste libre.
+    setDealOverride(null);
+    expect(submitDraft(bound.d, 'w', climats, true)).toEqual({ ok: false, error: 'Au plus deux Climats par main.' });
+    expect(submitDraft(free.d, 'w', climats, true).ok).toBe(true);
+    // Et l'inverse : R9 activée après la création d'une partie libre ne la contraint pas.
+    setDealOverride({ limitsInDraft: true });
+    expect(submitDraft(free.d, 'b', climats, true).ok).toBe(true);
   });
 
   it('l’IA choisit autant de cartes que la partie en demande', () => {
@@ -227,6 +258,20 @@ describe('revanche', () => {
     expect(rulesOf(next.d.state).cardsPerPlayer).toBe(5);
     expect(draftView(next.d, 'w')?.count).toBe(5);
     expect(rulesOf(room.d.state)).toBe(RULES_V1);
+  });
+
+  it('échéance (TIMINGS.rematchTtlMs) : aucune au défaut ; sinon, comptée depuis la fin de la partie', () => {
+    const room = invite();
+    expect(rematchExpired(room, 60_000)).toBe(false); // partie en cours
+    resignRoom(room, 'w');
+    vi.advanceTimersByTime(60_000);
+    expect(rematchExpired(room, 60_000)).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(rematchExpired(room, 60_000)).toBe(true);
+    // Défaut (null) : jamais, même des jours plus tard.
+    vi.advanceTimersByTime(3 * 24 * 3600_000);
+    expect(rematchExpired(room)).toBe(false);
+    expect(rematchExpired(room, null)).toBe(false);
   });
 
   it('partie de l’accueil (relais) : mains tirées et relais repris ; sans pendule reste sans pendule', async () => {

@@ -2,13 +2,20 @@
 // - une configuration invalide est refusée (arrêt, message en français) ; une configuration suspecte en production
 //   est signalée (mentions légales encore en modèle, webhook Stripe absent) ;
 // - SPELLMATE_TEST_RULES : refusée en production, séparée en règles et mise en place, noms inconnus refusés ;
+// - règles des nouvelles parties au démarrage (rulesReport) : une ligne de journal (avec la mise en place de ce
+//   serveur) ; règles impossibles (checkRules) : le serveur s'arrête avec le message, avant d'ouvrir la base ;
 // - TRUST_PROXY en nombre de mandataires ;
 // - le pool PostgreSQL survit à la perte d'une connexion inactive (écouteur 'error') ;
 // - verifyPassword lit le coût N du hachage stocké (un N relevé n'invalide aucun mot de passe).
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { BRAND } from '../src/shared/config/brand';
 import { DEAL } from '../src/shared/config/rules';
-import { isLegalTemplate, parseEnv } from '../src/server/config';
+import { setRulesOverride } from '../src/shared/rules';
+import { isLegalTemplate, parseEnv, rulesReport } from '../src/server/config';
 import { postgresDriver } from '../src/server/db';
 import { hashPassword, needsRehash, verifyPassword } from '../src/server/security';
 import { DATABASE, dealSettings, setDealOverride } from '../src/server/settings';
@@ -136,6 +143,64 @@ describe('SPELLMATE_TEST_RULES (serveur jetable)', () => {
       vi.unstubAllEnvs();
     }
   });
+});
+
+describe('règles des nouvelles parties au démarrage', () => {
+  it('au défaut : une ligne de journal, aucune erreur', () => {
+    expect(rulesReport()).toEqual({
+      lines: [
+        'Règles des nouvelles parties : 3 cartes par joueur, 1 par tour, avant le coup, mains visibles, Présage en 2 demi-coups, '
+          + 'nulle après 50 coups sans prise ni coup de pion, répétition ×3, position standard, choix des cartes en 45 s.',
+      ],
+      errors: [],
+    });
+  });
+
+  it('la ligne suit la mise en place de ce serveur (surcharge de test), pas seulement DEAL', () => {
+    setDealOverride({ draft: false });
+    try {
+      expect(rulesReport().lines[0]).toMatch(/, choix des cartes remplacé par le tirage\.$/);
+    } finally {
+      setDealOverride(null);
+    }
+  });
+
+  it('règles impossibles ou illisibles : erreurs (le serveur s’arrête)', () => {
+    try {
+      setRulesOverride({ cardsPerPlayer: 6 });
+      expect(rulesReport().errors).toEqual([
+        "6 cartes par joueur à l'accueil : impossible avec au plus 2 Climats, la réserve n'a que 3 cartes qui ne sont pas des Climats "
+          + '(main valide maximale : 5). Relevez DEAL.handLimits.maxPerFamily.climat.',
+      ]);
+      // Valeur d'un autre type (SPELLMATE_TEST_RULES est du JSON libre) : refusée ici aussi.
+      setRulesOverride({ cardsPerPlayer: 'cinq' as unknown as number });
+      expect(rulesReport().errors).toContain('SPELLMATE_TEST_RULES.cardsPerPlayer vaut "cinq" : un nombre entier est attendu (de 1 à 6, BOUNDS).');
+    } finally {
+      setRulesOverride(null);
+    }
+  });
+
+  it('démarrage du serveur avec des règles impossibles : arrêt (code 1) avec le message, avant la base', () => {
+    const root = path.resolve(__dirname, '..');
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'spellmate-regles-'));
+    try {
+      const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('FEATURE_') && k !== 'NODE_ENV'));
+      // Port peu courant : si le serveur démarrait quand même (régression), il n'occuperait pas celui d'un autre.
+      const port = String(40_000 + Math.floor(Math.random() * 20_000));
+      const r = spawnSync(
+        process.execPath, ['--import', path.join(root, 'node_modules/tsx/dist/esm/index.mjs'), path.join(root, 'src/server/index.ts')],
+        { cwd: dir, encoding: 'utf8', timeout: 30_000, env: { ...env, PORT: port, SPELLMATE_TEST_RULES: '{"cardsPerPlayer":6}', DATA_DIR: path.join(dir, 'base') } },
+      );
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("Règles impossibles : arrêt.\n- 6 cartes par joueur à l'accueil : impossible avec au plus 2 Climats");
+      expect(r.stdout).toContain('(surcharge de test : {"cardsPerPlayer":6})');
+      expect(r.stdout).not.toMatch(/prêt sur/);
+      // Arrêté avant d'ouvrir la base : rien n'a été créé.
+      expect(readdirSync(dir)).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
 });
 
 describe('PostgreSQL : perte d’une connexion inactive', () => {

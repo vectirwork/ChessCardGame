@@ -5,9 +5,17 @@
 //   maintenance (newGames) ;
 // - version : un client qui annonce une autre version (auth.v) reçoit server:outdated et ses actions sont refusées
 //   (code 'outdated') ; un client qui n'annonce rien (d'avant la version du protocole) est accepté.
+// - FEATURE_* écrites dans le fichier .env (lancement hors Docker) : prises en compte ;
+// - réglages du serveur (settings.ts) lus par games.ts : échéance de la revanche (TIMINGS.rematchTtlMs), files par
+//   catalogue (MATCHMAKING.splitByCatalog) ; catalogues de POST /games (CATALOG_IDS, DEFAULT_CATALOG).
 // Les interrupteurs sont lus dans l'environnement au chargement de settings.ts : chaque cas recharge les modules du
-// serveur (vi.resetModules) avec ses variables (vi.stubEnv). Les sockets sont des doublures (FakeIO, FakeSocket).
+// serveur (vi.resetModules) avec ses variables (vi.stubEnv), et au besoin des réglages changés (vi.doMock). Les
+// sockets sont des doublures (FakeIO, FakeSocket).
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
+import os from 'node:os';
+import path from 'node:path';
 import express from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -27,11 +35,21 @@ import type { Identity, UserRow } from '../src/server/auth';
 type Games = typeof import('../src/server/games');
 type Settings = typeof import('../src/server/settings');
 
-/** Modules du serveur rechargés avec ces variables d'environnement. */
-async function load(env: Record<string, string> = {}): Promise<{ games: Games; settings: Settings }> {
+/**
+ * Modules du serveur rechargés avec ces variables d'environnement, et des réglages de settings.ts changés (`patch` :
+ * TIMINGS, MATCHMAKING… remplacés en entier).
+ */
+async function load(env: Record<string, string> = {}, patch?: (s: Settings) => Partial<Settings>): Promise<{ games: Games; settings: Settings }> {
   vi.resetModules();
   vi.unstubAllEnvs();
+  vi.doUnmock('../src/server/settings');
   for (const [k, v] of Object.entries(env)) vi.stubEnv(k, v);
+  if (patch) {
+    vi.doMock('../src/server/settings', async importOriginal => {
+      const s = await importOriginal<Settings>();
+      return { ...s, ...patch(s) };
+    });
+  }
   const settings = await import('../src/server/settings');
   const games = await import('../src/server/games');
   return { games, settings };
@@ -111,6 +129,8 @@ class FakeSocket {
 class FakeIO {
   mw: ((s: unknown, next: (e?: Error) => void) => void | Promise<void>)[] = [];
   connection: ((s: unknown) => void) | null = null;
+  /** Événements envoyés à des salons (io.to(…).emit). */
+  sent: [string, unknown][] = [];
   use(f: (s: unknown, next: (e?: Error) => void) => void) {
     this.mw.push(f);
   }
@@ -120,7 +140,8 @@ class FakeIO {
   to() {
     return this;
   }
-  emit() {
+  emit(ev: string, p: unknown) {
+    this.sent.push([ev, p]);
     return true;
   }
   in() {
@@ -219,6 +240,28 @@ describe('lecture des FEATURE_*', () => {
     // Chaque interrupteur a sa variable.
     expect(FEATURE_KEYS.map(featureEnvName)).toContain('FEATURE_NEW_GAMES');
   });
+
+  it('fichier .env (npm start, npm run dev) : ses FEATURE_* sont prises en compte, comme le reste de la configuration', () => {
+    // Processus à part, lancé dans un dossier qui contient un .env : comme le serveur, il importe config.ts (qui importe
+    // settings.ts) puis lit FEATURES.
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'spellmate-env-'));
+    try {
+      writeFileSync(path.join(dir, '.env'), 'FEATURE_LIVE=0\nFEATURE_SHOP=off\nPORT=3999\n');
+      const root = path.resolve(__dirname, '..');
+      const tsx = path.join(root, 'node_modules/tsx/dist/esm/index.mjs');
+      const script = [
+        `const { config } = await import(${JSON.stringify(path.join(root, 'src/server/config.ts'))});`,
+        `const { FEATURES } = await import(${JSON.stringify(path.join(root, 'src/server/settings.ts'))});`,
+        'console.log(JSON.stringify({ port: config.port, live: FEATURES.live, shop: FEATURES.shop, ranked: FEATURES.ranked }));',
+      ].join('\n');
+      const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('FEATURE_') && k !== 'PORT' && k !== 'NODE_ENV'));
+      const r = spawnSync(process.execPath, ['--import', tsx, '--input-type=module', '-e', script], { cwd: dir, env, encoding: 'utf8' });
+      expect(r.stderr).toBe('');
+      expect(JSON.parse(r.stdout.trim().split('\n').at(-1)!)).toEqual({ port: 3999, live: false, shop: false, ranked: true });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
 
 describe('interrupteurs coupés : refus du serveur', () => {
@@ -314,18 +357,24 @@ describe('interrupteurs coupés : refus du serveur', () => {
     expect(c.emitted.filter(([e]) => e === 'home:paired')).toHaveLength(1);
   });
 
-  it('relais coupé : l’IA ne joue plus pour un visiteur de l’accueil qui ne joue pas', async () => {
+  it('relais coupé : l’IA ne joue plus pour un visiteur de l’accueil qui ne joue pas ; délais ordinaires', async () => {
     const { games, settings } = await load({ FEATURE_HOME_RELAY: '0' });
     const room = games.newRoom({ mode: 'quick', rated: false, tc: 'none', catalog: 'climats', creator: 'g:p1', seats: { w: seat('g:p1'), b: seat('g:p2') }, deal: true, relay: true });
     games.armRelay(room);
     expect(room.relayTimer).toBeNull();
     await vi.advanceTimersByTimeAsync(settings.RELAY.firstMoveMs + 1);
     expect(room.d.standIn).toEqual({ w: false, b: false });
-    // Ouvert (défaut) : le relais est armé.
+    // Délai du premier coup ordinaire : personne n'a joué, la partie est annulée (elle ne reste pas ouverte des jours).
+    expect(room.d.firstMoveDeadline).toBe(Date.now() - settings.RELAY.firstMoveMs - 1 + settings.TIMINGS.firstMoveMs);
+    await vi.advanceTimersByTimeAsync(settings.TIMINGS.firstMoveMs);
+    expect(room.d.status).toBe('ended');
+    expect(room.d.state.result).toEqual({ winner: null, reason: 'aborted' });
+    // Ouvert (défaut) : le relais est armé, pas de délai du premier coup (l'IA joue pour celui qui ne joue pas).
     const { games: g2 } = await load();
     const open = g2.newRoom({ mode: 'quick', rated: false, tc: 'none', catalog: 'climats', creator: 'g:p1', seats: { w: seat('g:p1'), b: seat('g:p2') }, deal: true, relay: true });
     g2.armRelay(open);
     expect(open.relayTimer).not.toBeNull();
+    expect(open.d.firstMoveDeadline).toBeNull();
   });
 
   it('maintenance (newGames coupé) : file, POST /games, accueil et revanche refusés ; les parties en cours continuent', async () => {
@@ -345,6 +394,78 @@ describe('interrupteurs coupés : refus du serveur', () => {
     expect(await a.ask('game:resign', { id: room.d.id })).toEqual({ ok: true });
     expect(await a.ask('game:rematch', { id: room.d.id })).toEqual({ ok: false, error: maintenance, code: 'feature-off' });
     expect(room.d.rematch).toEqual({ w: false, b: false, next: null });
+  });
+});
+
+describe('réglages du serveur lus par games.ts', () => {
+  /** Partie Sans cartes entre un compte et un invité, connectés, terminée par abandon. */
+  async function endedGame(games: Games) {
+    const io = await sockets(games);
+    const a = io.connect(new FakeSocket(account('a1')));
+    const room = games.newRoom({ mode: 'invite', rated: false, tc: 'none', catalog: 'aucune', creator: 'u:a1', seats: { w: seat('u:a1', 'a1'), b: seat('g:p2') } });
+    expect(await a.ask('game:join', { id: room.d.id })).toMatchObject({ ok: true });
+    expect(await a.ask('game:resign', { id: room.d.id })).toEqual({ ok: true });
+    return { a, room };
+  }
+
+  it('revanche : aucune échéance au défaut (TIMINGS.rematchTtlMs null)', async () => {
+    const { games, settings } = await load();
+    expect(settings.TIMINGS.rematchTtlMs).toBeNull();
+    const { a, room } = await endedGame(games);
+    await vi.advanceTimersByTimeAsync(2 * 24 * 3600_000);
+    expect(await a.ask('game:rematch', { id: room.d.id })).toEqual({ ok: true });
+    expect(room.d.rematch.w).toBe(true);
+  });
+
+  it('revanche : refusée au-delà de TIMINGS.rematchTtlMs', async () => {
+    const { games } = await load({}, s => ({ TIMINGS: Object.freeze({ ...s.TIMINGS, rematchTtlMs: 60_000 }) }));
+    const { a, room } = await endedGame(games);
+    await vi.advanceTimersByTimeAsync(60_001);
+    expect(await a.ask('game:rematch', { id: room.d.id })).toEqual({ ok: false, error: 'La revanche n’est plus possible.' });
+    expect(room.d.rematch).toEqual({ w: false, b: false, next: null });
+    // Dans le délai : acceptée.
+    const second = await endedGame(games);
+    await vi.advanceTimersByTimeAsync(59_000);
+    expect(await second.a.ask('game:rematch', { id: second.room.d.id })).toEqual({ ok: true });
+  });
+
+  it('files par catalogue (défaut) : Sans cartes et Pouvoirs ne sont pas appariés', async () => {
+    const { games } = await load();
+    const io = await sockets(games);
+    const a = io.connect(new FakeSocket(guest('q1')));
+    const b = io.connect(new FakeSocket(guest('q2')));
+    expect(await a.ask('queue:join', { tc: '5+0', rated: false, name: 'Aurore', catalog: 'aucune' })).toEqual({ ok: true });
+    expect(await b.ask('queue:join', { tc: '5+0', rated: false, name: 'Basile', catalog: 'climats' })).toEqual({ ok: true });
+    expect(games.queueKeys()).toEqual({ '5+0|amicale|aucune': ['g:q1'], '5+0|amicale|climats': ['g:q2'] });
+    expect(io.sent.filter(([e]) => e === 'queue:matched')).toEqual([]);
+  });
+
+  it('une seule file (MATCHMAKING.splitByCatalog faux) : appariés, avec le catalogue de celui qui attendait', async () => {
+    const { games } = await load({}, s => ({ MATCHMAKING: Object.freeze({ ...s.MATCHMAKING, splitByCatalog: false }) }));
+    const io = await sockets(games);
+    const a = io.connect(new FakeSocket(guest('q1')));
+    const b = io.connect(new FakeSocket(guest('q2')));
+    expect(await a.ask('queue:join', { tc: '5+0', rated: false, name: 'Aurore', catalog: 'aucune' })).toEqual({ ok: true });
+    expect(games.queueKeys()).toEqual({ '5+0|amicale|*': ['g:q1'] });
+    expect(await b.ask('queue:join', { tc: '5+0', rated: false, name: 'Basile', catalog: 'climats' })).toEqual({ ok: true });
+    expect(games.queueKeys()).toEqual({});
+    const matched = io.sent.find(([e]) => e === 'queue:matched')?.[1] as { gameId: string };
+    const j = await b.ask<{ ok: boolean; view: { state: { catalog: string } } }>('game:join', { id: matched.gameId });
+    expect(j.view.state.catalog).toBe('aucune');
+  });
+
+  it('POST /games : catalogues de CATALOG_IDS (Pouvoirs par défaut, Duel ramené aux Pouvoirs, inconnu refusé)', async () => {
+    const { games } = await load();
+    expect(await http(games, account('c1'), 'POST', '/api/games', { mode: 'invite', tc: '5+0', catalog: 'inconnu' })).toEqual({
+      status: 400, body: { error: 'Catalogue de cartes inconnu.' },
+    });
+    for (const [catalog, expected] of [[undefined, 'climats'], ['duel', 'climats'], ['aucune', 'aucune']] as const) {
+      const created = await http(games, account('c1'), 'POST', '/api/games', { mode: 'invite', tc: '5+0', catalog });
+      expect(created.status).toBe(200);
+      const mine = await http(games, account('c1'), 'GET', '/api/games/mine');
+      const game = (mine.body.games as { id: string; catalog: string }[]).find(g => g.id === created.body.id);
+      expect(game?.catalog).toBe(expected);
+    }
   });
 });
 

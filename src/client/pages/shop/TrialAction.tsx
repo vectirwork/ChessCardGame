@@ -1,6 +1,7 @@
 // Ligne d'action de la cabine : l'écart entre l'essai et la panoplie portée, et un seul bouton principal (équiper,
 // acheter et équiper, créer un compte, bientôt en vente). Réutilisée en plus court par la barre fixe du téléphone.
-import { formatPrice, itemById, itemLabel, itemWithArticle } from '../../../shared/catalog';
+import { formatPrice, itemById, itemLabel } from '../../../shared/catalog';
+import { itemWithArticle } from '../../../shared/skins/texts';
 import { pluriel } from '../../../shared/text/fr';
 import { Spinner } from '../../components/Layout';
 import { isCollectionLine, skins } from './trial';

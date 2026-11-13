@@ -7,6 +7,7 @@ import {
   unitPrice,
 } from '../../../shared/catalog';
 import type { CartLine, Collection, Item, ItemKind, Product } from '../../../shared/catalog';
+import { SLOT_TEXTS } from '../../../shared/skins/texts';
 import { compte, liste, pluriel } from '../../../shared/text/fr';
 
 /** Un objet par emplacement. */
@@ -200,13 +201,13 @@ export const slotWord = (k: ItemKind): string => SLOT_DEFS[k].word;
 export function equipNote(ids: readonly string[]): string {
   const kinds = new Set(ids.map(id => itemById(id)?.kind));
   const on = SLOTS.filter(k => kinds.has(k));
-  const seen = on.filter(k => SLOT_DEFS[k].seen).map(k => SLOT_DEFS[k].mine);
+  const seen = on.filter(k => SLOT_DEFS[k].seen).map(k => SLOT_TEXTS[k].mine);
   const parts: string[] = [];
   if (seen.length) parts.push(`vos adversaires verront ${liste(seen)} dès votre prochaine partie`);
   for (const k of on) {
-    const d: { mine: string; seen: boolean; follows?: { verb: string } } = SLOT_DEFS[k];
+    const t = SLOT_TEXTS[k];
     // `follows` ne sert qu'à un emplacement que l'adversaire ne voit pas
-    if (!d.seen && d.follows) parts.push(`${d.mine} ${d.follows.verb}`);
+    if (!SLOT_DEFS[k].seen && t.follows) parts.push(`${t.mine} ${t.follows.verb}`);
   }
   return parts.join(' ; ');
 }

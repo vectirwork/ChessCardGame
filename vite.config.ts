@@ -73,6 +73,7 @@ interface Settings {
   fr: typeof import('./src/shared/text/fr');
   regles: typeof import('./src/shared/text/regles');
   bot: typeof import('./src/shared/bot');
+  limits: typeof import('./src/shared/config/limits');
 }
 let settings: Promise<Settings> | undefined;
 export function loadSettings(): Promise<Settings> {
@@ -80,8 +81,8 @@ export function loadSettings(): Promise<Settings> {
   return (settings ??= Promise.all(
     ['./src/client/storageKeys.ts', './src/shared/config/brand.ts', './src/shared/config/rules.ts', './src/shared/config/routes.ts',
       './src/shared/protocol.ts', './src/shared/rules.ts', './src/shared/text/fr.ts', './src/shared/text/regles.ts',
-      './src/shared/bot.ts'].map(load),
-  ).then(([keys, brand, rules, routes, protocol, check, fr, regles, bot]) => ({ keys, brand, rules, routes, protocol, check, fr, regles, bot })));
+      './src/shared/bot.ts', './src/shared/config/limits.ts'].map(load),
+  ).then(([keys, brand, rules, routes, protocol, check, fr, regles, bot, limits]) => ({ keys, brand, rules, routes, protocol, check, fr, regles, bot, limits })));
 }
 
 /**
@@ -89,9 +90,12 @@ export function loadSettings(): Promise<Settings> {
  * au build depuis les réglages. Le code du paquet principal les lit en `__SM__.<nom>` (remplacé par la valeur à la
  * construction, en développement et sous Vitest) : il n'importe ainsi ni BRAND, ni KEYS, ni protocol.ts, ni les
  * phrases de règles, qui l'alourdiraient (BRAND : +0,1 ko compressé ; KEYS : +0,2 ko ; protocol.ts : un morceau de
- * plus à télécharger avant le premier rendu ; bot.ts : tout le moteur). Ailleurs, importer directement BRAND, KEYS,
+ * plus à télécharger avant le premier rendu ; bot.ts : tout le moteur). Une page s'en sert aussi quand un import
+ * ferait un morceau de plus ou chargerait du code pour une valeur fixe (bornes des pseudos : Jouer, Connexion, « Défier
+ * un ami » ; durée du choix : Règles, Jouer ; marque du partage : partie). Ailleurs, importer directement BRAND, KEYS,
  * PROTOCOL_VERSION.
- * Ne s'écrit qu'avec une propriété : `__SM__.marque`, jamais `__SM__` seul (non défini à l'exécution).
+ * Ne s'écrit qu'avec une propriété : `__SM__.marque`, jamais `__SM__` seul (non défini à l'exécution). Le banc de la
+ * coque (test/identite.mjs, assemblé par esbuild sans ces constantes) ne doit en lire aucune au chargement d'un module.
  */
 export interface BuildConstants {
   /** BRAND.name : « Spellmate ». */
@@ -112,6 +116,21 @@ export interface BuildConstants {
   cleRechargement: string;
   /** PROTOCOL_VERSION, annoncée à la connexion du socket. */
   protocole: number;
+  /**
+   * Pseudo d'invité (GUEST_NAME, config/limits.ts) : longueur maximale, forme complète (source et drapeaux de
+   * l'expression `full`) et refus. Lu par Jouer et la feuille « Défier un ami » de l'accueil : un import de limits.ts
+   * en ferait un morceau de plus, partagé avec la page de partie (une requête de plus pour ces pages).
+   */
+  pseudoInvite: { max: number; motif: string; drapeaux: string; invalide: string; invalideDetail: string };
+  /** Pseudo d'un compte (USERNAME) : bornes, attribut `pattern` du champ (tiré de USERNAME.chars) et aide (Connexion). */
+  pseudoCompte: { min: number; max: number; pattern: string; aide: string };
+  /** Mot de passe (PASSWORD) : longueur minimale et aide (Connexion). */
+  motDePasse: { min: number; aide: string };
+  /**
+   * dureeChoix() : durée du choix des cartes, « 45 secondes » (Règles, Jouer). Figée ici, elle laisse duree() de
+   * text/fr.ts hors du code du client (le morceau fr, que charge l'accueil).
+   */
+  dureeChoix: string;
 }
 
 declare global {
@@ -119,7 +138,17 @@ declare global {
   const __SM__: Readonly<BuildConstants>;
 }
 
-export function buildConstants({ brand, rules, regles, keys, protocol, bot }: Settings): BuildConstants {
+/**
+ * Attribut `pattern` d'un champ, tiré d'une expression ancrée (USERNAME.chars) : sans ses ancres, que le navigateur
+ * ajoute, et avec le tiret final d'une classe échappé (le navigateur compile `pattern` avec le drapeau v, qui refuse
+ * un « - » nu en fin de classe).
+ */
+export function inputPattern(re: RegExp): string {
+  return re.source.replace(/^\^|\$$/g, '').replace(/-\]/g, '\\-]');
+}
+
+export function buildConstants({ brand, rules, regles, keys, protocol, bot, limits }: Settings): BuildConstants {
+  const { GUEST_NAME, USERNAME, PASSWORD } = limits;
   return {
     marque: brand.BRAND.name,
     marqueCapitales: brand.BRAND.nameCaps,
@@ -130,6 +159,16 @@ export function buildConstants({ brand, rules, regles, keys, protocol, bot }: Se
     niveauxIA: regles.nomsNiveaux(bot.BOT_LEVELS.map(l => bot.BOT_PROFILES[l].name), ','),
     cleRechargement: keys.KEYS.reload,
     protocole: protocol.PROTOCOL_VERSION,
+    pseudoInvite: {
+      max: GUEST_NAME.max,
+      motif: GUEST_NAME.full.source,
+      drapeaux: GUEST_NAME.full.flags,
+      invalide: GUEST_NAME.invalid,
+      invalideDetail: GUEST_NAME.invalidDetail,
+    },
+    pseudoCompte: { min: USERNAME.min, max: USERNAME.max, pattern: inputPattern(USERNAME.chars), aide: USERNAME.hint },
+    motDePasse: { min: PASSWORD.min, aide: PASSWORD.hint },
+    dureeChoix: regles.dureeChoix(rules.DEAL),
   };
 }
 

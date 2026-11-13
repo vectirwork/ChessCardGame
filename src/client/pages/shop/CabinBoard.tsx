@@ -14,6 +14,7 @@ import type { CardId, Catalog } from '../../../shared/cards';
 import { fileOf, kingSquare, rankOf } from '../../../shared/chess';
 import type { Color } from '../../../shared/chess';
 import { DEFAULT_KING, skinStyle } from '../../../shared/catalog';
+import { RULES_V1 } from '../../../shared/config/rules';
 import { cardOptions, cardPlayable, createGameFromFen, playCard } from '../../../shared/game';
 import type { GameState } from '../../../shared/game';
 import { Board } from '../../components/Board';
@@ -37,9 +38,13 @@ export const PREVIEW_ORDER: CardId[] = [
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-function freshGame(side: Color): GameState {
+/**
+ * Partie de démonstration de la cabine : règles historiques (RULES_V1), comme les leçons et les problèmes : ses sorts
+ * et ses cibles ont été choisis pour elles, et rien n'est écrit dans la partie (aucun champ `rules`).
+ */
+export function freshGame(side: Color): GameState {
   const fen = MID_FEN.replace(' w ', ` ${side} `);
-  return createGameFromFen(fen, { w: [...POWERS], b: [...POWERS] }, true, PREVIEW_CATALOG);
+  return createGameFromFen(fen, { w: [...POWERS], b: [...POWERS] }, true, PREVIEW_CATALOG, { rules: RULES_V1 });
 }
 
 /** Cibles lisibles : près du centre, un peu de hasard. */

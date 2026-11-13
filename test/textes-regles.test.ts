@@ -11,10 +11,10 @@ import { RULES_V1 } from '../src/shared/config/rules';
 import type { DealSettings, GameRulesSettings } from '../src/shared/config/rules';
 import { apostrophes, cap, enLettres } from '../src/shared/text/fr';
 import {
-  apresLancement, arriveePresage, cartesChacun, cartesDePouvoir, cartesDuCatalogue, cartesVisibles, consigneTour,
+  apresLancement, arriveePresage, cartesChacun, cartesDePouvoir, cartesDuCatalogue, cartesVisibles, consigneAvantCoup, consigneTour,
   constitutionMains, dejaLance, dureeChoix, dureeEffet, etendueRangees, limitesMain, mainLabel, momentCarte,
-  niveauxIA, nomsNiveaux, parTour, pouvoirs, premierApres, prochainTour, rangees, refusBudget, regle50, repetition,
-  sortAuPlus, sortParTour, sortsEnMain, vitesse, vosCartes, vosSorts,
+  coupsAvantArrivee, niveauxIA, nomsNiveaux, parTour, pouvoirs, premierApres, prochainTour, rangees, refusBudget, regle50, repetition,
+  sortAuPlus, sortParTour, sortsEnMain, toursPresage, vitesse, vosCartes, vosSorts,
 } from '../src/shared/text/regles';
 
 const R = RULES_V1;
@@ -45,6 +45,8 @@ describe('phrases au réglage par défaut : identiques au site', () => {
     ['lessons.ts:435', parTour(R, true), 'une seule par tour'],
     ['lessons.ts:430', momentCarte(R), 'avant le coup'],
     ['GamePage.tsx:576', consigneTour(R), 'Une seule carte par tour, toujours avant le coup.'],
+    ['GamePage.tsx (ordinateur) ; data.ts (liveTexts().before)', consigneAvantCoup(R), 'Lancez une carte avant votre coup, ou jouez directement.'],
+    ['GamePage.tsx (téléphone)', consigneAvantCoup(R, true), 'Une carte avant le coup, ou jouez directement.'],
     ['game.ts:660 ; OdysseeHome.tsx:1644, 1649', refusBudget(R), 'Une seule carte par tour.'],
     ['shell/cards.ts:18', dejaLance(R), 'Un seul sort par tour : vous en avez déjà lancé un.'],
     ['shell/cards.ts:47', apresLancement(R, false), 'Sort lancé. Jouez maintenant votre coup.'],
@@ -194,6 +196,8 @@ describe('autres réglages', () => {
     const r = avec({ cardEndsTurn: true });
     expect(sortParTour(r)).toBe('un sort par tour, à la place du coup');
     expect(consigneTour(r)).toBe('Une seule carte par tour, à la place du coup.');
+    expect(consigneAvantCoup(r)).toBe('Lancez une carte à la place de votre coup, ou jouez directement.');
+    expect(consigneAvantCoup(r, true)).toBe('Une carte à la place du coup, ou jouez directement.');
     expect(momentCarte(r)).toBe('à la place du coup');
     expect(apresLancement(r, false)).toBe('Sort lancé.');
   });
@@ -234,5 +238,33 @@ describe('autres réglages', () => {
     expect(dureeEffet(1)).toBe('1 coup (le vôtre)');
     expect(dureeEffet(2)).toBe('2 coups (1 chacun)');
     expect(cap(arriveePresage(2, 'm'))).toBe('Annoncé, il arrive au début de votre prochain tour');
+  });
+});
+
+describe('lot 9a : comptes nommés et clause « sur l’accueil »', () => {
+  it('toursPresage : tours d’avance d’un Présage (max(1, round(délai / 2)), le compte de prochainTour)', () => {
+    expect([2, 4, 6, 1, 3, 0].map(toursPresage)).toEqual([1, 2, 3, 1, 2, 1]);
+    expect([2, 4, 6].map(prochainTour)).toEqual(['votre prochain tour', 'votre deuxième tour à venir', 'votre troisième tour à venir']);
+  });
+  it('coupsAvantArrivee : coups de l’adversaire avant l’arrivée d’un Présage annoncé (ceil(restants / 2))', () => {
+    expect([1, 2, 3, 4, 5].map(coupsAvantArrivee)).toEqual([1, 1, 2, 2, 3]);
+  });
+  it('constitutionMains : sans règles de l’accueil, ou les mêmes, la phrase d’avant', () => {
+    expect(constitutionMains(R, DEAL_V1)).toBe('vous choisissez vos trois cartes ; sur l’accueil, elles sont tirées au hasard');
+    expect(constitutionMains(R, DEAL_V1, R)).toBe(constitutionMains(R, DEAL_V1));
+    expect(constitutionMains(R, { draft: false }, avec({ cardsPerPlayer: 3 }))).toBe('vos trois cartes sont tirées au hasard');
+    expect(constitutionMains(avec({ cardsPerPlayer: 1 }), DEAL_V1, avec({ cardsPerPlayer: 1 }))).toBe(
+      'vous choisissez votre carte ; sur l’accueil, elle est tirée au hasard',
+    );
+  });
+  it('constitutionMains : l’accueil à un autre nombre de cartes (RULES_BY_CONTEXT.accueil) est dit dans la clause', () => {
+    expect(constitutionMains(R, DEAL_V1, avec({ cardsPerPlayer: 5 }))).toBe(
+      'vous choisissez vos trois cartes ; sur l’accueil, vos cinq cartes sont tirées au hasard',
+    );
+    expect(constitutionMains(R, DEAL_V1, avec({ cardsPerPlayer: 1 }))).toBe('vous choisissez vos trois cartes ; sur l’accueil, votre carte est tirée au hasard');
+    expect(constitutionMains(avec({ cardsPerPlayer: 1 }), DEAL_V1, R)).toBe('vous choisissez votre carte ; sur l’accueil, vos trois cartes sont tirées au hasard');
+    expect(constitutionMains(R, { draft: false }, avec({ cardsPerPlayer: 5 }))).toBe(
+      'vos trois cartes sont tirées au hasard ; sur l’accueil, vos cinq cartes aussi',
+    );
   });
 });

@@ -4,7 +4,8 @@
 // Boutique coupée (FEATURE_SHOP=0) : retour à la boutique, qui dit qu'elle est fermée (le serveur refuse le paiement).
 import { useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
-import { PAYMENT_PROVIDER, formatPrice, itemById, itemLabel, productById, quoteCart, selectionLabel } from '../../shared/catalog';
+import { PAYMENT_PROVIDER, formatPrice, itemById, itemLabel, productById, quoteCart } from '../../shared/catalog';
+import { selectionLabel } from '../../shared/skins/texts';
 import { CART_PRODUCT_ID } from '../../shared/protocol';
 import type { DemoCompleteResponse, DemoPurchase } from '../../shared/protocol';
 import { api, errMsg } from '../api';

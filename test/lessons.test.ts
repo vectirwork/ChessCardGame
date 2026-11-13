@@ -23,8 +23,7 @@ import Rules from '../src/client/pages/Rules';
 import Play from '../src/client/pages/Play';
 import Learn from '../src/client/pages/Learn';
 import Puzzles from '../src/client/pages/Puzzles';
-import Auth, { PASSWORD as AUTH_PASSWORD, USERNAME as AUTH_USERNAME } from '../src/client/pages/Auth';
-import { GUEST_NAME as PLAY_GUEST_NAME } from '../src/client/pages/Play';
+import Auth from '../src/client/pages/Auth';
 import { GUEST_NAME, PASSWORD, USERNAME } from '../src/shared/config/limits';
 import MyGames from '../src/client/pages/MyGames';
 import { HISTORY_KEY, localGame, rememberLocalGame } from '../src/client/features/history';
@@ -518,17 +517,20 @@ describe('pages au réglage par défaut : textes chiffrés et libellés', () => 
     expect(t).toContain('Règle des 50 coups · 4 coups\nEn ligne · Duel (ancienne formule) · 10+0');
   });
 
-  it('Jouer et Connexion : copies des bornes égales à config/limits.ts, caractères compris', () => {
-    // Copies (un import ferait de limits.ts un morceau de plus, voir Play.tsx) : tout changement de limits.ts doit y être
-    // reporté, ce test le rappelle.
-    expect(PLAY_GUEST_NAME.full.source).toBe(GUEST_NAME.full.source);
-    expect(PLAY_GUEST_NAME.full.flags).toBe(GUEST_NAME.full.flags);
-    expect(PLAY_GUEST_NAME.max).toBe(GUEST_NAME.max);
-    expect(PLAY_GUEST_NAME.invalidDetail).toBe(GUEST_NAME.invalidDetail);
-    expect({ ...AUTH_USERNAME, chars: AUTH_USERNAME.chars.source + AUTH_USERNAME.chars.flags }).toEqual({
-      min: USERNAME.min, max: USERNAME.max, hint: USERNAME.hint, chars: USERNAME.chars.source + USERNAME.chars.flags,
+  it('Jouer, Connexion et « Défier un ami » : bornes figées au build (__SM__) tirées de config/limits.ts, plus de copie', () => {
+    // vite.config.ts (buildConstants) les lit dans limits.ts : changer une borne change aussi ces pages.
+    expect(__SM__.pseudoInvite).toEqual({
+      max: GUEST_NAME.max, motif: GUEST_NAME.full.source, drapeaux: GUEST_NAME.full.flags, invalide: GUEST_NAME.invalid, invalideDetail: GUEST_NAME.invalidDetail,
     });
-    expect(AUTH_PASSWORD).toEqual({ min: PASSWORD.min, hint: PASSWORD.hint });
+    const full = new RegExp(__SM__.pseudoInvite.motif, __SM__.pseudoInvite.drapeaux);
+    for (const x of ['Ab', 'Fou du roi', 'é_ü.9-x', 'a', 'x'.repeat(21), 'a/b', '  ']) expect(full.test(x), x).toBe(GUEST_NAME.full.test(x));
+    expect(__SM__.pseudoCompte).toEqual({ min: USERNAME.min, max: USERNAME.max, pattern: '[A-Za-z0-9_\\-]+', aide: USERNAME.hint });
+    expect(__SM__.motDePasse).toEqual({ min: PASSWORD.min, aide: PASSWORD.hint });
+    // Les pages n'en gardent aucune copie écrite à la main
+    for (const f of ['src/client/pages/Play.tsx', 'src/client/pages/Auth.tsx', 'src/client/odyssee/FriendSheet.tsx']) {
+      const src = readFileSync(f, 'utf8');
+      expect(src, f).not.toMatch(/\{2,20\}|min: 3, max: 20|8 caractères minimum/);
+    }
   });
 
   it('Jouer et Connexion : attributs des champs du pseudo identiques au défaut, `pattern` fidèle à USERNAME.chars', () => {

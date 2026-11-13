@@ -4,6 +4,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import * as L from '../src/client/odyssee/shell/layout';
+import { CARDS } from '../src/shared/cards';
 
 interface Taille {
   vw: number;
@@ -140,5 +141,33 @@ describe('éventails de 1 à 6 cartes : la main tient dans son enveloppe', () =>
         if ((side - 8) / L.oppFanSpan(n) >= (n <= 3 ? 44 : 36)) expect(w * L.oppFanSpan(n) + 8).toBeLessThanOrEqual(side + 0.5);
       }
     }
+  });
+});
+
+// Noms et pastilles des petites cartes (shell.css, .gs-fan[data-crowd]) : leur taille de texte est calée sur les
+// textes d'aujourd'hui, mesurés en Cinzel 800 sans espacement des lettres (lots/9a/relecture/mesure-noms.cjs) :
+// « Résurrection » 7,68 fois la taille du texte, « Déflagration » 7,62, puis « Permutation » 7,13. Le rapport 7,8 de
+// shell.css (nom) et 6,4 (pastille « + En plus ») n'ont qu'une petite marge : un texte plus long déborderait de
+// nouveau sous la carte suivante dès 4 cartes, sans que rien d'autre ne le signale.
+describe('petites cartes : textes tenus par les rapports de shell.css', () => {
+  const css = readFileSync(new URL('../src/client/odyssee/shell/shell.css', import.meta.url), 'utf8');
+  it('aucun mot d’un nom de carte ne dépasse les 12 lettres de « Déflagration » (rapport 7,8 de shell.css)', () => {
+    expect(css).toContain('calc((var(--w) + var(--ho) - 6px) / 7.8)');
+    for (const c of Object.values(CARDS)) {
+      if (c.retired) continue;
+      for (const mot of c.name.split(/[\s-]+/)) {
+        expect(
+          [...mot].length,
+          `« ${mot} » (${c.name}) : plus long que « Déflagration ». Mesurez-le (Cinzel 800) et, s'il dépasse 7,8 fois la taille du texte, revoyez le rapport 7,8 de shell.css (.gs-fan[data-crowd] .sc-hand .sc-name)`,
+        ).toBeLessThanOrEqual(12);
+      }
+    }
+  });
+  it('pastilles courtes : « + En plus » et « Remplace » (rapport 6,4 de shell.css)', () => {
+    expect(css).toContain('calc((var(--w) + var(--ho) - 4px) / 6.4)');
+    const spell = readFileSync(new URL('../src/client/components/SpellCard.tsx', import.meta.url), 'utf8');
+    const pastille = spell.slice(spell.indexOf('export function TurnPill'), spell.indexOf('export function TurnPill') + 900);
+    expect(pastille).toContain('<i className="sc-turn-sign">+</i> En plus');
+    expect(pastille).toContain("'Remplace'");
   });
 });

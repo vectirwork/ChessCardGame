@@ -1,5 +1,7 @@
 // Stockage local tolérant : navigation privée, quota plein ou stockage bloqué ne cassent jamais une page.
+// Les clés sont celles de KEYS (storageKeys.ts), rangé dans le même morceau que ce module (il en lit STORED_EVENT).
 import { useCallback, useEffect, useState } from 'react';
+import { STORED_EVENT } from '../storageKeys';
 
 export function readJson<T>(key: string, fallback: T): T {
   try {
@@ -20,7 +22,7 @@ export function writeJson(key: string, value: unknown) {
   }
   // Prévient les autres composants de la page (l'événement « storage » ne concerne que les autres onglets).
   try {
-    window.dispatchEvent(new CustomEvent('sm:stored', { detail: key }));
+    window.dispatchEvent(new CustomEvent(STORED_EVENT, { detail: key }));
   } catch {
     // ignoré
   }
@@ -35,10 +37,10 @@ export function useStored<T>(key: string, initial: T): [T, (v: T | ((prev: T) =>
       if (k === key) setV(readJson(key, initial));
     };
     window.addEventListener('storage', sync);
-    window.addEventListener('sm:stored', sync);
+    window.addEventListener(STORED_EVENT, sync);
     return () => {
       window.removeEventListener('storage', sync);
-      window.removeEventListener('sm:stored', sync);
+      window.removeEventListener(STORED_EVENT, sync);
     };
     // `initial` est une valeur par défaut : seule la clé compte.
   }, [key]);
@@ -53,8 +55,7 @@ export function useStored<T>(key: string, initial: T): [T, (v: T | ((prev: T) =>
 /**
  * Préférence locale (rois classiques, moteur d'analyse…) : useStored sur une clé de KEYS (src/client/storageKeys.ts,
  * valeurs inchangées), partagée entre les composants et les onglets. Exemple : usePref(KEYS.classicKings, false).
- * Remplace usePref de store.tsx (nom sans préfixe, sans synchronisation), gardé tant que ses appelants n'importent pas
- * celui-ci (le garder dans le paquet principal coûte des octets à chaque page).
+ * (Remplace l'ancien usePref de store.tsx, retiré du paquet principal : même valeur stockée, sous la même clé.)
  */
 export function usePref<T>(key: string, initial: T): [T, (v: T) => void] {
   return useStored<T>(key, initial);

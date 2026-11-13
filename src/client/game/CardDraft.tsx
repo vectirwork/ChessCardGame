@@ -24,7 +24,7 @@ import { CARDS, cardsOf } from '../../shared/cards';
 import type { CardId } from '../../shared/cards';
 import { DEAL } from '../../shared/config/rules';
 import { catalogOf } from '../../shared/game';
-import type { Ack, DraftView, GameView, SeatView } from '../../shared/protocol';
+import type { DraftView, GameView, SeatView } from '../../shared/protocol';
 import { rulesOf } from '../../shared/rulesCore';
 import { colorName } from '../../shared/text/libelles';
 import { CardEmblem } from '../components/CardArt';
@@ -188,7 +188,7 @@ function DraftScreen({ view, draft, receivedAt, onAbort, onSubmitted }: {
   const sendProvisional = useCallback(
     (cards: CardId[]) => {
       sent.current = cards.join();
-      void emitAck<Ack>('game:draft', { id: view.id, cards, confirm: false }).catch(() => undefined);
+      void emitAck('game:draft', { id: view.id, cards, confirm: false }).catch(() => undefined);
     },
     [view.id],
   );
@@ -250,7 +250,7 @@ function DraftScreen({ view, draft, receivedAt, onAbort, onSubmitted }: {
     // marqué validé avant l'envoi, puis démarqué en cas de refus.
     onSubmitted(true);
     try {
-      const r = await emitAck<Ack>('game:draft', { id: view.id, cards: sel, confirm: true });
+      const r = await emitAck('game:draft', { id: view.id, cards: sel, confirm: true });
       if (r.ok) {
         sent.current = sel.join();
         setSubmitted(true);

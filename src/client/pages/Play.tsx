@@ -19,7 +19,7 @@ import type { GameMode } from '../../shared/protocol';
 import { rulesFor } from '../../shared/rulesCore';
 import { cap, mmss, pluriel, romain } from '../../shared/text/fr';
 import { catalogLabel, modeLabel } from '../../shared/text/libelles';
-import { cartesDePouvoir, constitutionMains, dureeChoix, niveauxIA, nomsNiveaux, vosCartes } from '../../shared/text/regles';
+import { cartesDePouvoir, constitutionMains, niveauxIA, nomsNiveaux, vosCartes } from '../../shared/text/regles';
 import { api, errMsg } from '../api';
 import { Spinner } from '../components/Layout';
 import { emitAck, getSocket } from '../socket';
@@ -71,16 +71,12 @@ const LEVEL_TEXT: Record<BotLevel, string> = {
 };
 
 /**
- * Pseudo d'invité : copie de GUEST_NAME (src/shared/config/limits.ts), vérifiée égale par test/lessons.test.ts. L'importer
- * ferait de config/limits.ts un morceau de plus, partagé avec la partie et la connexion : une requête de plus pour ces
- * trois pages et +37 o (+9 o compressés, mesurés) dans la table de préchargement du paquet principal, qui ne doit plus
- * grossir. Le lot 9 remplacera la copie par l'import en rangeant limits.ts dans un morceau existant (vite.config.ts).
+ * Pseudo d'invité : GUEST_NAME (src/shared/config/limits.ts), figé au build (__SM__.pseudoInvite : vite.config.ts).
+ * L'importer ferait de config/limits.ts un morceau de plus, partagé avec la partie et la connexion : une requête de plus
+ * pour ces pages.
  */
-export const GUEST_NAME = {
-  full: /^[\p{L}\p{N} _.-]{2,20}$/u,
-  max: 20,
-  invalidDetail: 'Choisissez un pseudo de 2 à 20 caractères (lettres, chiffres, espaces, . _ -).',
-} as const;
+const GUEST = __SM__.pseudoInvite;
+const GUEST_NAME = { full: new RegExp(GUEST.motif, GUEST.drapeaux), max: GUEST.max, invalidDetail: GUEST.invalideDetail };
 
 /** Colonnes de la grille des niveaux (.pl-levels), posées seulement si elles diffèrent de celles de game.css (3). */
 const LEVELS_STYLE = BOT_LEVELS.length === 3 ? undefined : ({ '--n': BOT_LEVELS.length } as CSSProperties);
@@ -94,7 +90,7 @@ const LEDE = `Les échecs, plus ${cartesDePouvoir(GAME_RULES)} chacun, ${
 function handHelp(mode: Mode): string {
   const r = rulesFor(DOOR_CONTEXT[mode]);
   if (!DEAL.draft) return `${cap(constitutionMains(r))} au début de la partie.`;
-  return `Vous choisirez ${vosCartes(r)} au début de la partie, en ${dureeChoix()} : votre choix reste secret jusqu’à ce que votre adversaire ait choisi aussi.`;
+  return `Vous choisirez ${vosCartes(r)} au début de la partie, en ${__SM__.dureeChoix} : votre choix reste secret jusqu’à ce que votre adversaire ait choisi aussi.`;
 }
 
 function parseMode(v: string | null): Mode {

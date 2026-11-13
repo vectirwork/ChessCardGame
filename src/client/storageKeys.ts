@@ -2,9 +2,10 @@
 //
 // Ce sont des identifiants techniques : NE JAMAIS LES RENOMMER (même pour une nouvelle marque). Une clé renommée
 // efface en silence la préférence, la progression ou la partie en cours de chaque visiteur.
+// Tables figées avec /* @__PURE__ */ : un morceau qui ne lit pas KEY_STORE (le client ne le lit pas) ne l'emporte pas.
 
 /** ← Clés actuelles, inchangées. */
-export const KEYS = Object.freeze({
+export const KEYS = /* @__PURE__ */ Object.freeze({
   // localStorage
   /** Son activé (« false » : coupé). */
   sound: 'sm:sound',
@@ -24,7 +25,8 @@ export const KEYS = Object.freeze({
   homeGame: 'sm:odyssee:partie',
   /** Niveau de l'Oracle choisi sur l'accueil. */
   homeLevel: 'sm:odyssee:niveau',
-  /** Préférence « Rois adverses classiques » (usePref('rois-classiques') : préfixe PREF_PREFIX). */
+  /** Préférence « Rois adverses classiques » (usePref(KEYS.classicKings), défaut false : les rois des adversaires
+   *  s'affichent en roi Arcane, features/history.ts, shownKings). Clé : PREF_PREFIX + 'rois-classiques'. */
   classicKings: 'sm:rois-classiques',
 
   // sessionStorage
@@ -41,7 +43,7 @@ export const KEYS = Object.freeze({
 export type StorageKey = keyof typeof KEYS;
 
 /** Stockage de chaque clé : local (permanent) ou session (le temps de l'onglet). */
-export const KEY_STORE: Readonly<Record<StorageKey, 'local' | 'session'>> = Object.freeze({
+export const KEY_STORE: Readonly<Record<StorageKey, 'local' | 'session'>> = /* @__PURE__ */ Object.freeze({
   sound: 'local',
   guestName: 'local',
   history: 'local',
@@ -58,7 +60,7 @@ export const KEY_STORE: Readonly<Record<StorageKey, 'local' | 'session'>> = Obje
   delivery: 'session',
 });
 
-/** Préfixe ajouté par usePref (store.tsx) au nom de la préférence : usePref('rois-classiques') → 'sm:rois-classiques'. */
+/** Préfixe des préférences locales (l'ancien usePref de store.tsx l'ajoutait au nom : 'rois-classiques' → 'sm:rois-classiques'). */
 export const PREF_PREFIX = 'sm:';
 
 /** Événement de la page qui prévient les autres composants d'une écriture (storage.ts). */

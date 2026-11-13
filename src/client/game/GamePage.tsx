@@ -19,21 +19,24 @@ import type { Catalog } from '../../shared/cards';
 import { skinStyle } from '../../shared/catalog';
 import type { CardInfo, GameState, HandCard } from '../../shared/game';
 import { cardOptions, cardPlayable, catalogOf, legalMovesOf, playMove, resultText, sideInCheck } from '../../shared/game';
-import type { Ack, GameUpdate, GameView, JoinReply } from '../../shared/protocol';
+import type { Ack, GameUpdate, GameView } from '../../shared/protocol';
 import { EMOTES } from '../../shared/protocol';
 import { castsLeft, rulesOf } from '../../shared/rulesCore';
-import { consigneTour, mainLabel } from '../../shared/text/regles';
+import { consigneAvantCoup, consigneTour, mainLabel } from '../../shared/text/regles';
 import { Board, BoardHandle, checkSquare } from '../components/Board';
 import { cardTexts } from '../components/SpellCard';
 import { MATE_FALL_MS, matedKing } from '../components/mate';
 import { Modal, Spinner } from '../components/Layout';
-import { CLASSIC_KINGS_PREF, rememberView, seatKings, shownKings } from '../features/history';
+import { rememberView, seatKings, shownKings } from '../features/history';
+import { usePref } from '../features/storage';
 import { castSafely } from '../odyssee/castSafely';
 import { GameShell, PowersPanel, PremoveNote, castMessage, castsThisTurn, handNotes, railTop as railTopOf, useGameLayout } from '../odyssee/shell';
 import type { ShellAction, ShellPrompt } from '../odyssee/shell';
 import { emitAck, getSocket } from '../socket';
+import type { AckEvent, AckPayload } from '../socket';
 import { playCardSound, playSound, setSoundEnabled, soundEnabled } from '../sound';
-import { getGuestName, setGuestName, useApp, usePref } from '../store';
+import { KEYS } from '../storageKeys';
+import { getGuestName, setGuestName, useApp } from '../store';
 import { useVfx } from '../vfx/useVfx';
 import { AwayNotice, CastBanner, DrawOffer, EndCard, FirstMoveCountdown, JoinSheet, WaitingCard, rematchLabel, resultTitle } from './overlays';
 import { CardDraft } from './CardDraft';
@@ -89,7 +92,7 @@ export default function GamePage() {
   const [emoteOpen, setEmoteOpen] = useState(false);
   const [announce, setAnnounce] = useState<{ text: string; key: number } | null>(null);
   const [warm, setWarm] = useState(false);
-  const [classicKings] = usePref<boolean>(CLASSIC_KINGS_PREF, false);
+  const [classicKings] = usePref<boolean>(KEYS.classicKings, false);
   // Géométrie du mode immersif, la même que celle de la coque (un seul écouteur de redimensionnement pour les deux)
   const layout = useGameLayout();
   const boardRef = useRef<BoardHandle>(null);
@@ -193,6 +196,8 @@ export default function GamePage() {
           hide: ids => setHidden(new Set(ids)),
           show: () => setHidden(new Set()),
           victimAtBottom: bottom,
+          // Mains cachées (règles de la partie) : l'annonce d'un Présage ne trahit pas la carte ; au défaut, faux
+          secret: !rulesOf(u.view.state).handsVisible,
         });
       } else {
         await new Promise(r => setTimeout(r, 650));
@@ -253,7 +258,7 @@ export default function GamePage() {
   const join = useCallback(
     async (name?: string) => {
       try {
-        const r = await emitAck<JoinReply>('game:join', { id, name: name ?? (getGuestName() || undefined) });
+        const r = await emitAck('game:join', { id, name: name ?? (getGuestName() || undefined) });
         if (!r.ok) {
           setError(r.error ?? 'Partie introuvable.');
           return;
@@ -412,9 +417,10 @@ export default function GamePage() {
   }, [endedId, me]);
 
   // ----- Actions -----
-  const send = async (event: string, payload: Record<string, unknown>) => {
+  /** Action de la partie (`id` ajouté) : événement et charge vérifiés contre le contrat du protocole (ClientToServer). */
+  const send = async <K extends AckEvent>(event: K, payload: Omit<AckPayload<K>, 'id'>) => {
     try {
-      const r = await emitAck<Ack>(event, { id, ...payload });
+      const r: Ack = await emitAck(event, { id, ...payload } as AckPayload<K>);
       if (!r.ok) {
         toast(r.error ?? 'Action refusée.', 'error');
         playSound('error');
@@ -590,13 +596,7 @@ export default function GamePage() {
         : state.cardPlayed
           ? 'Sort lancé : jouez maintenant votre coup.'
           : hasCards && playable.some(Boolean)
-            ? rules.cardEndsTurn
-              ? layout.mobile
-                ? 'Une carte à la place du coup, ou jouez directement.'
-                : 'Lancez une carte à la place de votre coup, ou jouez directement.'
-              : layout.mobile
-                ? 'Une carte avant le coup, ou jouez directement.'
-                : 'Lancez une carte avant votre coup, ou jouez directement.'
+            ? consigneAvantCoup(rules, layout.mobile)
             : 'Jouez votre coup.';
     hint = (
       <>

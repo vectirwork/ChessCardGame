@@ -7,7 +7,8 @@
 // équipés au retour, une fois l'achat livré, et seulement si la case est cochée (Shop.tsx, deliver).
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { PAYMENT_PROVIDER, bySlot, duplicated, formatPrice, itemById, itemLabel, selectionLabel } from '../../../shared/catalog';
+import { PAYMENT_PROVIDER, bySlot, duplicated, formatPrice, itemById, itemLabel } from '../../../shared/catalog';
+import { selectionLabel } from '../../../shared/skins/texts';
 import type { CheckoutRequest } from '../../../shared/protocol';
 import { api, errMsg } from '../../api';
 import { Modal } from '../../components/Layout';

@@ -14,11 +14,12 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   ALL_PRODUCTS, BOT_LOOK, COLLECTIONS, CURRENCY, DEFAULT_BOARD, DEFAULT_ITEM, DEFAULT_KING, DEFAULT_SKIN, FREE_ITEMS, ITEMS,
   ORACLE_LOOK, PACKS, PAYMENT_PROVIDER, PREMIUM_COLLECTIONS, PREMIUM_ITEMS, PRICE, PRODUCTS, RARITY, SHOP_COLLECTIONS, SHOP_FEATURED,
-  SHOP_ITEMS, SLOTS, SLOT_DEFS, SLOT_LABEL, TRESOR, alone, boardStyle, bySlot, collectionItems, collectionOf, duplicated, equippedMessage,
-  formatPrice, itemById, itemLabel, itemWithArticle, kingStyle, normItem, normKing, productById, productPrice, quoteCart, sealName,
-  sealOf, sealsIn, selectionLabel, skinStyle, tresorPack, tresorSeals, unitPrice, whoSees,
+  SHOP_ITEMS, SLOTS, SLOT_DEFS, SLOT_LABEL, TRESOR, alone, boardStyle, bySlot, collectionItems, collectionOf, duplicated, formatPrice,
+  itemById, itemLabel, kingStyle, normItem, normKing, productById, productPrice, quoteCart, sealName, sealOf, skinStyle, tresorPack,
+  tresorSeals, unitPrice,
 } from '../src/shared/catalog';
 import type { ItemKind } from '../src/shared/catalog';
+import { SLOT_TEXTS, equippedMessage, itemWithArticle, sealsIn, selectionLabel, whoSees } from '../src/shared/skins/texts';
 import { TRESOR_RING } from '../src/shared/skins/collections';
 
 /** Les 13 objets vendus avant les skins, avec leur emplacement et leur prix à l'unité d'alors (centimes). */
@@ -245,8 +246,9 @@ describe('invariants : emplacements (SLOT_DEFS, source unique)', () => {
       expect(DEFAULT_ITEM[k]).toBe(SLOT_DEFS[k].default);
       expect(itemById(DEFAULT_ITEM[k])).toMatchObject({ kind: k, free: true });
       expect(SLOT_DEFS[k].column).toBe(`equipped_${k}`);
-      // `follows` dit ce que devient un objet que l'adversaire ne voit pas : présent si et seulement si `seen` est faux
-      expect(!!(SLOT_DEFS[k] as { follows?: unknown }).follows, k).toBe(!SLOT_DEFS[k].seen);
+      // `follows` (SLOT_TEXTS) dit ce que devient un objet que l'adversaire ne voit pas : présent si et seulement si
+      // `seen` est faux
+      expect(!!SLOT_TEXTS[k].follows, k).toBe(!SLOT_DEFS[k].seen);
     }
     expect(new Set(SLOTS.map(k => SLOT_DEFS[k].rayon)).size).toBe(SLOTS.length);
     expect(SLOTS.map(k => SLOT_DEFS[k].rayon)).not.toContain('collections');
@@ -384,7 +386,7 @@ describe('invariants : emplacements (SLOT_DEFS, source unique)', () => {
       expect(t.items).toHaveLength(20);
       expect(t.items).not.toContain('skin:neon');
       expect(t.description).toBe('Les 20 objets des 7 collections premium : rois, échiquiers et sorts.');
-      expect(c.sealsIn(t.items).map(x => x.id)).toEqual(['col:celeste', 'col:neant', 'col:ecarlate', 'col:inferno', 'col:jade', 'col:olympe']);
+      expect((await import('../src/shared/skins/texts')).sealsIn(t.items).map(x => x.id)).toEqual(['col:celeste', 'col:neant', 'col:ecarlate', 'col:inferno', 'col:jade', 'col:olympe']);
       expect(c.sealOf(t.items)).not.toBeNull();
       for (const p of c.PACKS) expect(p.items, p.id).not.toContain('skin:neon');
       // Le reste de l'offre ne bouge pas
@@ -403,7 +405,7 @@ describe('invariants : emplacements (SLOT_DEFS, source unique)', () => {
       return { ...m, SLOT_DEFS: { ...m.SLOT_DEFS, board: { ...m.SLOT_DEFS.board, seen: true } } };
     });
     try {
-      const c = await import('../src/shared/catalog');
+      const c = await import('../src/shared/skins/texts');
       const t = await import('../src/client/pages/shop/trial');
       expect(c.whoSees()).toBe('Votre roi, votre échiquier et vos sorts : vos adversaires les voient.');
       expect(t.equipNote(['board:ruby'])).toBe('vos adversaires verront votre échiquier dès votre prochaine partie');
@@ -420,7 +422,7 @@ describe('invariants : un emplacement fictif ne compile pas tant qu’il n’est
     const SLOTS_FILE = path.join(ROOT, 'src/shared/skins/slots.ts');
     const config = ts.readConfigFile(path.join(ROOT, 'tsconfig.json'), ts.sys.readFile);
     const { options } = ts.parseJsonConfigFileContent(config.config, ts.sys, ROOT);
-    const roots = ['src/shared/catalog.ts', 'src/client/skins.ts', 'src/client/pages/shop/ItemThumb.tsx', 'src/server/auth.ts'].map(f => path.join(ROOT, f));
+    const roots = ['src/shared/catalog.ts', 'src/shared/skins/texts.ts', 'src/client/skins.ts', 'src/client/pages/shop/ItemThumb.tsx', 'src/server/auth.ts'].map(f => path.join(ROOT, f));
     const errorsWith = (slots: string) => {
       const host = ts.createCompilerHost({ ...options, noEmit: true });
       const read = host.readFile.bind(host);
@@ -439,8 +441,7 @@ describe('invariants : un emplacement fictif ne compile pas tant qu’il n’est
       '} as const satisfies Record<string, SlotDef>;',
       `  cardback: {
     label: 'Dos', plural: 'Dos', word: 'dos', words: 'dos', pl: false, unit: ['dos', 'dos'], named: false, article: 'le ',
-    mine: 'votre dos de carte', equipped: 'équipé', equippedTail: '.', rayon: 'dos', view: 'partie', note: '', seen: true,
-    default: 'cardback:arcane', column: 'equipped_cardback', meField: 'equippedCardback',
+    rayon: 'dos', view: 'partie', seen: true, default: 'cardback:arcane', column: 'equipped_cardback', meField: 'equippedCardback',
   },
 } as const satisfies Record<string, SlotDef>;`,
     );
@@ -452,6 +453,7 @@ describe('invariants : un emplacement fictif ne compile pas tant qu’il n’est
       'src/server/auth.ts',
       'src/shared/catalog.ts',
       'src/shared/skins/collections.ts',
+      'src/shared/skins/texts.ts',
     ]);
   }, 120_000);
 });

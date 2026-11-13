@@ -19,7 +19,7 @@ import { CARDS, CardDef, CardId, FAMILY_LABEL, cardText } from '../../shared/car
 import { GAME_RULES } from '../../shared/config/rules';
 import type { Rules } from '../../shared/config/rules';
 import { enLettres, ordinalLettres } from '../../shared/text/fr';
-import { prochainTour } from '../../shared/text/regles';
+import { prochainTour, toursPresage } from '../../shared/text/regles';
 import { CardEmblem } from './CardArt';
 import { CardScene } from './CardScene';
 import { CARD_SCENES } from './cardScenes';
@@ -72,7 +72,7 @@ export function turnEffect(def: CardDef, owner: 'self' | 'opponent' = 'self', r:
  */
 export function cardWhen(def: CardDef, r: Pick<Rules, 'presageDelay'> = GAME_RULES): { kind: 'now' | 'next'; label: string } {
   if (!def.presage) return { kind: 'now', label: 'Immédiat' };
-  const k = Math.max(1, Math.round(r.presageDelay / 2));
+  const k = toursPresage(r.presageDelay);
   return { kind: 'next', label: k === 1 ? 'Au prochain tour' : `Dans ${enLettres(k)} tours` };
 }
 
@@ -102,7 +102,7 @@ export function cardTiming(def: CardDef, owner: 'self' | 'opponent' = 'self', r:
   const replaces = !def.ritual && endsTurn(def, r);
   if (def.presage) {
     if (!self) {
-      const k = Math.max(1, Math.round(r.presageDelay / 2));
+      const k = toursPresage(r.presageDelay);
       const when = k === 1 ? 'du tour suivant de votre adversaire' : `de son ${ordinalLettres(k)} tour à venir`;
       return `Présage : annoncée, elle arrive au début ${when}.${replaces ? ' L’annonce remplace son coup.' : ''}`;
     }

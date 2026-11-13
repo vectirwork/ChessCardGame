@@ -285,7 +285,8 @@
   line-height: 1.08;
   text-wrap: balance;
   /* Un nom ne se coupe qu'entre deux mots (jamais « DÉFLAGRATI / ON ») : la taille du texte est prévue pour que
-     « Déflagration », le mot le plus long (5,7 fois la taille du texte), tienne dans la carte. */
+     « Déflagration », le mot le plus long (≈ 7,9 fois la taille du texte en Cinzel 800 avec l'espacement des lettres
+     de .sc-name, 7,6 sans), tienne dans la carte. Petites cartes d'une main nombreuse : shell.css, rapport 7,8. */
   overflow-wrap: normal;
   word-break: keep-all;
 }

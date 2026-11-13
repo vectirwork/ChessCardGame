@@ -9,16 +9,15 @@ import { createPortal, flushSync } from 'react-dom';
 import { prewarmVfx, releaseVfx } from '../vfx/useVfx';
 import { Link, useNavigate } from 'react-router-dom';
 import gsap from 'gsap';
-import { CARDS, CATALOGS, offeredCatalog } from '../../shared/cards';
-import type { Catalog, CardId } from '../../shared/cards';
+import { CARDS } from '../../shared/cards';
+import type { CardId } from '../../shared/cards';
 import { DEFAULT_KING, formatPrice, itemById, kingStyle, normKing } from '../../shared/catalog';
 import type { FeatureKey } from '../../shared/config/features';
 import { HOME } from '../../shared/config/home';
 import { GAME_RULES } from '../../shared/config/rules';
 import { resultText } from '../../shared/game';
 import type { MeUser } from '../../shared/protocol';
-import { DEFAULT_QUICK, TIME_CONTROLS } from '../../shared/protocol';
-import { cardEndsTurn, castsLeft, rulesOf } from '../../shared/rulesCore';
+import { cardEndsTurn, castsLeft, rulesFor, rulesOf } from '../../shared/rulesCore';
 import { SLOT_DEFS } from '../../shared/skins/slots';
 import { api, errMsg } from '../api';
 import { Board } from '../components/Board';
@@ -29,7 +28,7 @@ import { SpellCard } from '../components/SpellCard';
 import { readJson } from '../features/storage';
 import { equippedId, isEquipped, owns } from '../skins';
 import { KEYS } from '../storageKeys';
-import { getGuestName, setGuestName, useApp, useFeature } from '../store';
+import { useApp, useFeature } from '../store';
 import { BOT_PROFILES } from '../ai';
 import type { BotLevel } from '../ai';
 import {
@@ -43,7 +42,6 @@ import { SceneStack } from './scenery';
 import { GameShell, MOBILE_MAX, OracleEye, PowersPanel, PremoveNote, cardName, castMessage, castsThisTurn, handNotes } from './shell';
 import type { ShellAction } from './shell';
 import { REF_HAND } from './shell/layout';
-import { GUEST_NAME } from '../../shared/config/limits';
 import type { Act } from './StageBoard';
 import { useHomeLobby } from './useHomeLobby';
 import type { HomeLobby } from './useHomeLobby';
@@ -156,6 +154,15 @@ const loadStageBoard = () => import('./StageBoard');
 /** Gestes qui font défiler la page (préchargement de la scène 3D au premier d'entre eux). */
 const GESTURES = ['touchmove', 'wheel', 'keydown'] as const;
 const StageBoard = lazy(() => loadStageBoard().then(m => ({ default: m.StageBoard })));
+/**
+ * Feuille « Défier un ami » (cadences, pseudo d'invité) : à part, préchargée au repos avec les démonstrations, et gardée
+ * ici dès son arrivée. Elle se rend alors directement, comme avant son découpage : à l'image qui suit le clic. Pas de
+ * lazy() ni de Suspense : une limite neuve qui se suspend (lazy rappelle import(), promesse encore en attente même pour
+ * un morceau en cache) montre son repli, et React retarde ensuite le contenu d'au moins 300 ms. Cliquée avant son
+ * arrivée, elle s'ouvre dès qu'elle est là ; un échec de chargement la ferme avec un message, sans toucher à l'accueil.
+ */
+let friendSheet: (typeof import('./FriendSheet'))['default'] | undefined;
+const loadFriendSheet = () => import('./FriendSheet').then(m => (friendSheet = m.default));
 
 /**
  * Limite d'erreur de l'échiquier de démonstration, décoratif : un échec de son chargement (morceau introuvable après une
@@ -176,8 +183,11 @@ type Mode = 'page' | 'entering' | 'game' | 'leaving';
 type SheetKind = 'friend' | 'ai' | null;
 
 const levelName = (l: BotLevel) => BOT_PROFILES[l].name;
-/** Les trois principes (Forêt de givre) : le jeu en général, règles des nouvelles parties (calculés une fois). */
-const PRINCIPLE = principle(GAME_RULES);
+/**
+ * Les trois principes (Forêt de givre) : le jeu en général, règles des nouvelles parties ; la clause « sur l'accueil »
+ * aux règles de l'accueil (calculés une fois).
+ */
+const PRINCIPLE = principle(GAME_RULES, rulesFor('accueil'));
 
 /**
  * Halo sous la pièce jouable survolée (échiquier du héros, souris). Son propre état : passer d'une case à l'autre ne
@@ -455,7 +465,8 @@ export default function OdysseeHome() {
     };
   }, []);
 
-  // Code des démonstrations des lieux II à V : préchargé au repos après le chargement, ou au premier défilement.
+  // Code des démonstrations des lieux II à V et de la feuille « Défier un ami » : préchargé au repos après le chargement,
+  // ou au premier défilement.
   // Au premier défilement, aussi la scène 3D des sorts (three.js) : elle est analysée pendant la lecture du premier
   // écran, pas à l'entrée de la Forêt, quand le lieu doit apparaître (un lecteur qui ne défile pas ne la charge pas)
   useEffect(() => {
@@ -466,6 +477,7 @@ export default function OdysseeHome() {
       if (done) return;
       done = true;
       void loadStageBoard().catch(() => undefined);
+      void loadFriendSheet().catch(() => undefined);
       // Face des grands mots du décor (italique 300) : demandée au repos, pas en pleine traversée de la Forêt
       void (document as Document & { fonts?: FontFaceSet }).fonts?.load('italic 300 1em "Cormorant Garamond"').catch(() => undefined);
     };
@@ -552,6 +564,31 @@ export default function OdysseeHome() {
       for (const ev of GESTURES) window.removeEventListener(ev, onScroll, true);
     };
   }, []);
+
+  // « Défier un ami » ouverte avant l'arrivée de sa feuille (clic avant le préchargement, ou préchargement échoué) :
+  // chargée ici, rendue dès son arrivée. Un échec (réseau coupé, morceau retiré par une mise en ligne) referme la
+  // feuille avec un message ; l'accueil reste en place (sans cela, l'erreur remonterait à la limite de la page, qui
+  // recharge le site)
+  const [, setFriendReady] = useState(false);
+  useEffect(() => {
+    if (sheet !== 'friend' || friendSheet) return;
+    let live = true;
+    loadFriendSheet().then(
+      () => {
+        if (live) setFriendReady(true);
+      },
+      () => {
+        if (!live) return;
+        setSheet(null);
+        notify('Impossible d’ouvrir l’invitation : vérifiez la connexion, ou rechargez la page.', 'error');
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [sheet, notify]);
+  /** Feuille « Défier un ami », si elle est arrivée (préchargée au repos le plus souvent). */
+  const FriendSheet = friendSheet;
 
   // Repos (D6) : HOME.idleMs (30 s) sans aucun geste, les décors animés en boucle (anneaux, étoiles, lanternes, flottement…) se
   // figent là où ils en sont (attribut data-still, odyssee.css) ; le premier geste les relance. Une seule minuterie,
@@ -1846,7 +1883,9 @@ export default function OdysseeHome() {
         </div>
       )}
 
-      {sheet === 'friend' && <FriendSheet onClose={() => setSheet(null)} catalog={catalog} signedIn={!!me} kicker={doorKicker(doorIndex('ami'))} />}
+      {sheet === 'friend' && FriendSheet && (
+        <FriendSheet onClose={() => setSheet(null)} catalog={catalog} signedIn={!!me} kicker={doorKicker(doorIndex('ami'))} />
+      )}
       {sheet === 'ai' && (
         <Sheet
           kicker={doorKicker(doorIndex('ia'))}
@@ -1879,93 +1918,5 @@ export default function OdysseeHome() {
         </Sheet>
       )}
     </div>
-  );
-}
-
-/** Cadences proposées par « Défier un ami » (TIME_CONTROLS.invite), et celle choisie à l'ouverture : DEFAULT_QUICK si
- *  elle en fait partie, sinon la première (une cadence que le visiteur ne voit pas ne part jamais). */
-const INVITE_TCS = TIME_CONTROLS.filter(t => t.invite && !t.archived);
-const INVITE_TC0 = INVITE_TCS.some(t => t.id === DEFAULT_QUICK) ? DEFAULT_QUICK : INVITE_TCS[0]?.id ?? DEFAULT_QUICK;
-
-/**
- * Porte « Défier un ami » : créer une invitation (vraie partie sur le serveur) et partir vers /partie/:id. Cadences
- * proposées : INVITE_TCS, INVITE_TC0 à l'ouverture ; pseudo d'invité : GUEST_NAME.
- */
-function FriendSheet({ onClose, catalog: initial, signedIn, kicker }: { onClose: () => void; catalog: string; signedIn: boolean; kicker: string }) {
-  const navigate = useNavigate();
-  const [name, setName] = useState(getGuestName());
-  const [tc, setTc] = useState(INVITE_TC0);
-  // Jeu proposé : « Pouvoirs » (par défaut) ou « Sans cartes » ; le Duel n'est plus proposé.
-  const [catalog, setCatalog] = useState<Catalog>(() => offeredCatalog(initial));
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const valid = signedIn || GUEST_NAME.full.test(name.trim());
-  const create = async () => {
-    setError(null);
-    if (!valid) {
-      setError(GUEST_NAME.invalid);
-      return;
-    }
-    setBusy(true);
-    try {
-      if (!signedIn) setGuestName(name.trim());
-      const r = await api<{ id: string }>('/games', { body: { mode: 'invite', tc, color: 'random', catalog, name: signedIn ? undefined : name.trim() } });
-      navigate(`/partie/${r.id}`);
-    } catch (e) {
-      setError(errMsg(e));
-      setBusy(false);
-    }
-  };
-  return (
-    <Sheet
-      kicker={kicker}
-      title="Défier un ami"
-      onClose={onClose}
-      actions={
-        <button type="button" className="btn-gold sm" onClick={() => void create()} disabled={busy}>
-          {busy ? 'Création…' : "Créer l'invitation"}
-        </button>
-      }
-    >
-      <p>Créez la partie, puis envoyez le lien. Votre ami la rejoint en un clic, sans compte, sur mobile comme sur ordinateur.</p>
-      <form
-        className="o-form"
-        onSubmit={e => {
-          e.preventDefault();
-          void create();
-        }}
-      >
-        {!signedIn && (
-          <label className="field">
-            <span className="label">Votre pseudo</span>
-            <input className="input" maxLength={GUEST_NAME.max} value={name} onChange={e => setName(e.target.value)} placeholder="Ex. : Fou du roi" autoComplete="nickname" />
-          </label>
-        )}
-        <div className="field">
-          <span className="label">Jeu</span>
-          <div className="segmented">
-            {CATALOGS.map(c => (
-              <button key={c.id} type="button" className={catalog === c.id ? 'on' : ''} aria-pressed={catalog === c.id} title={c.description} onClick={() => setCatalog(c.id)}>
-                {c.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="field">
-          <span className="label">Cadence</span>
-          <div className="segmented">
-            {INVITE_TCS.map(({ id, short: label }) => (
-              <button key={id} type="button" className={tc === id ? 'on' : ''} onClick={() => setTc(id)}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-        {error && <div className="form-error">{error}</div>}
-      </form>
-      <p className="o-sheet-note">
-        Plus d'options (couleur, cadence) : <Link to="/jouer?mode=invite">page Jouer</Link>.
-      </p>
-    </Sheet>
   );
 }

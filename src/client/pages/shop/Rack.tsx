@@ -2,13 +2,14 @@
 // téléphone. Même composant : la mise en page vient du CSS (shop.css). Le rayon Collections s'empile en colonne.
 import type { ReactNode } from 'react';
 import { SLOTS, SLOT_DEFS } from '../../../shared/catalog';
+import { SLOT_TEXTS } from '../../../shared/skins/texts';
 import { cap, enLettres } from '../../../shared/text/fr';
 import { StarMark } from '../PageScene';
 import type { Rayon } from './RayonTabs';
 
-/** Note sous chaque rayon : celle de l'emplacement (SLOT_DEFS), et celle des collections (un objet par emplacement). */
+/** Note sous chaque rayon : celle de l'emplacement (SLOT_TEXTS), et celle des collections (un objet par emplacement). */
 export const RAYON_NOTE = Object.fromEntries([
-  ...SLOTS.map(k => [SLOT_DEFS[k].rayon, SLOT_DEFS[k].note]),
+  ...SLOTS.map(k => [SLOT_DEFS[k].rayon, SLOT_TEXTS[k].note]),
   ['collections', `${cap(enLettres(SLOTS.length))} skins assortis et une exclusivité qu’on ne trouve nulle part ailleurs : le sceau, à côté de votre pseudo.`],
 ]) as Record<Rayon, string>;
 

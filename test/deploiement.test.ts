@@ -11,6 +11,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseEnv } from '../src/server/config';
+import { dealSettings } from '../src/server/settings';
+import { checkRules } from '../src/shared/rules';
+import { DEAL_V1, REGLAGES_V1, configDuJourV1 } from './helpers/v1';
 
 const ROOT = path.resolve(__dirname, '..');
 const read = (f: string) => readFileSync(path.join(ROOT, f), 'utf8');
@@ -114,12 +117,33 @@ describe('--check-config', () => {
   }
   const PROD = { NODE_ENV: 'production', SECRET_KEY: 'x'.repeat(64), PUBLIC_URL: 'https://chess-powers.com', PAYMENTS_MODE: 'off' };
 
-  it('configuration valable : code 0, sans ouvrir la base ni écouter de port', () => {
+  it('configuration valable : code 0 (règles du code jouables), sans ouvrir la base ni écouter de port', () => {
+    // Règles du code impossibles (essai d'un réglage refusé par checkRules) : le même refus que le démarrage (code 1).
+    const impossibles = checkRules({ deal: dealSettings() }).length > 0;
     const r = run(PROD, ['--check-config']);
-    expect(r.status, r.stderr).toBe(0);
     expect(r.stdout).toContain('Règles des nouvelles parties : ');
-    expect(r.stdout).toContain('Configuration vérifiée (--check-config)');
+    if (impossibles) {
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain('Règles impossibles : arrêt.');
+      expect(r.stdout).not.toContain('Configuration vérifiée');
+    } else {
+      expect(r.status, r.stderr).toBe(0);
+      expect(r.stdout).toContain('Configuration vérifiée (--check-config)');
+    }
     expect(r.stdout).not.toMatch(/prêt sur/);
+    expect(r.created).toEqual([]);
+  }, 60_000);
+
+  it('règles impossibles : code 1 avec le message (comme au démarrage)', () => {
+    // Hors production (SPELLMATE_TEST_RULES y est refusée) : 6 cartes, au défaut ; sinon toutes les règles et la mise
+    // en place de V1 que SPELLMATE_TEST_RULES accepte, plus 6 cartes (comme test/server-config.test.ts).
+    const surcharge = configDuJourV1()
+      ? { cardsPerPlayer: 6 }
+      : { ...REGLAGES_V1, cardsPerPlayer: 6, draft: DEAL_V1.draft, draftMs: DEAL_V1.draftMs, limitsInDraft: DEAL_V1.limitsInDraft };
+    const r = run({ SPELLMATE_TEST_RULES: JSON.stringify(surcharge) }, ['--check-config']);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("Règles impossibles : arrêt.\n- 6 cartes par joueur à l'accueil : impossible avec au plus 2 Climats");
+    expect(r.stdout).not.toContain('Configuration vérifiée');
     expect(r.created).toEqual([]);
   }, 60_000);
 

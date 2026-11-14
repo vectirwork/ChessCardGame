@@ -155,7 +155,8 @@ En bref :
   avec le moteur). Ils se jouent avec les règles d'origine ; ceux que les règles du jour contrediraient sont masqués.
 - **Textes de l'accueil** : `src/client/odyssee/data.ts`.
 - **Nom du site** : `BRAND` dans `src/shared/config/brand.ts` (reconstruire), et `APP_NAME` et `MAIL_FROM` pour le
-  serveur. Le logo et les icônes sont des images de `public/`.
+  serveur. Le logo est le dessin `LogoMark` de `src/client/components/Layout.tsx` ; l'icône, les images d'application
+  et l'image de partage sont dans `public/`.
 
 ## Développement
 
@@ -187,8 +188,9 @@ node test/stripe-webhook.mjs http://localhost:3100 whsec_test   # serveur lancé
 ```
 
 Bancs d'identité (site construit, comparaison à une référence) : `npm run identite` (captures, boîtes et DOM ;
-référence hors du dépôt, `/home/user/spellmate-ref`) et `npm run textes-pages` (texte des pages). Ils ne réécrivent
-jamais leur référence sans `--ecrire`, à ne lancer que sur décision. `npm run verifier-lot -- <lot>` contrôle les
+référence hors du dépôt, `/home/user/spellmate-ref`, présente sur la machine de la passe seulement) et
+`npm run textes-pages` (texte des pages). Ils ne réécrivent jamais leur référence sans `--ecrire`, à ne lancer que sur
+décision. Pour prendre votre propre référence avant un changement : docs/REGLAGES.md, section 2. `npm run verifier-lot -- <lot>` contrôle les
 fichiers touchés par un lot de la passe « polymorphe » (`docs/polymorphie/LOTS.json`).
 
 En développement, `http://localhost:3000/test/vfx.html?card=rift&targets=a5` est un banc d'essai des effets

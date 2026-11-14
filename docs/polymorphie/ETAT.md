@@ -175,8 +175,8 @@ deux fois avant sa fusion.
   en bout sur serveur jetable.
 - **Documentation** (lot 9c) : `docs/REGLAGES.md` (ce qu'on change demain, table des réglages, contextes, garde-fous,
   limites), README (section « Réglages », offre, commandes), tableau des modules de `plan/CONCEPTION.md`, et
-  `test/reglages-doc.test.ts`, qui compare la documentation au code (chemins, noms, valeurs par défaut, contenus
-  masqués, messages de `checkRules`).
+  `test/reglages-doc.test.ts`, qui compare la documentation au code (chemins, noms, valeurs par défaut et bornes des
+  tables, contenus masqués, messages de `checkRules`).
 
 ### Défauts corrigés
 
@@ -217,9 +217,12 @@ Autres changements visibles seulement dans des cas précis : numérotation des c
 PGN refusés avant, relus maintenant. Le lot 9c n'a rien changé au site : le site construit est identique octet pour
 octet avant et après lui (empreintes de `dist/`).
 
-Contrôles du lot 9c (commit de départ 2a28d09) : `tsc` sans erreur ; 1 233 tests verts (54 fichiers, dont les 18 de
-`test/reglages-doc.test.ts`) ; `npm run temoins` vert ; build réussi, `dist/` identique (275 fichiers, mêmes
-empreintes SHA-256) ; `node scripts/verifier-lot.mjs 9c` accepté. Aucune mesure de performance dans ce lot.
+Contrôles du lot 9c après sa relecture (commit de départ 2a28d09) : `tsc` sans erreur ; 1 236 tests verts
+(54 fichiers, dont les 21 de `test/reglages-doc.test.ts`) ; `npm run temoins` vert ; build réussi, `dist/` identique
+(275 fichiers, mêmes empreintes SHA-256), avec et sans le commentaire ajouté à `src/shared/config/index.ts` (ce module
+n'est importé que par `test/socle.test.ts`). `node scripts/verifier-lot.mjs 9c` accepte la documentation et le test,
+et refuse `src/shared/config/index.ts` à cause du défaut de l'outil décrit plus bas. Aucune mesure de performance dans
+ce lot.
 
 ### Mesures de performance
 
@@ -273,13 +276,21 @@ pas d'intégration continue.
 
 ### Points ouverts relevés par le lot 9c
 
-- Changer une valeur par défaut fait échouer, en plus des deux gardes (`defauts`, `protocole`), de 8 à 97 tests qui
-  photographient le jeu d'aujourd'hui (essai sur une copie jetable, `docs/REGLAGES.md`, section 2). Le commentaire de
+- Changer une valeur par défaut fait échouer de 9 à 101 tests sur 1 108 (essai sur une copie jetable,
+  `docs/REGLAGES.md`, section 2). Ce compte comprend les deux gardes (`defauts`, `protocole`) et 1 à 4 tests de
+  `test/reglages-doc.test.ts` ; les autres photographient le jeu d'aujourd'hui. Le commentaire de
   `test/garde-fous/defauts.test.ts` dit le contraire (« les autres tests […] continuent de passer quand un réglage
   change »). Piste : passer `RULES_V1` explicitement aux parties scriptées des tests du moteur, et conditionner les
   photographies du défaut à `sameRules(rulesFor(ctx), RULES_V1)`.
 - `BOT_TIMEOUT_MS` (`src/shared/config/timings.ts`) n'est lu que par le serveur ; le navigateur garde sa propre copie
   (`WORKER_TIMEOUT` de `src/client/ai/index.ts`), contrairement à ce que dit le commentaire du réglage.
+- `scripts/verifier-lot.mjs` compare la fin d'un gel par égalité (`lotId !== gele.jusqua`) : `src/shared/config/**` et
+  `src/shared/protocol.ts`, gelés « jusqu'au lot 9b », restent refusés aux lots 9c et 9, qui viennent après 9b dans
+  `vagues` (de même pour `text/regles.ts`, gelé jusqu'au lot 9a). La conception (`plan/CONCEPTION.md`, §7.1)
+  renvoie pourtant au lot 9 les besoins sur ces fichiers. Correctif : comparer les rangs des lots dans `vagues`
+  (refus seulement si rang(apres) < rang(lot) < rang(jusqua)). Tant qu'il n'est pas fait,
+  `node scripts/verifier-lot.mjs 9c` refuse le renvoi vers `docs/REGLAGES.md` ajouté en commentaire dans
+  `src/shared/config/index.ts` (fichier possédé par 9c, « commentaires seulement »).
 - `BRAND.pgnVariant` et `BRAND.storagePrefix` ne sont lus nulle part : la variante PGN et le préfixe des clés sont
   écrits en dur (`src/shared/pgn.ts`, `src/client/storageKeys.ts`). Sans effet au défaut ; à relier ou à présenter
   comme de simples rappels.

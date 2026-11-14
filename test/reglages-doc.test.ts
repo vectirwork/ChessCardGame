@@ -5,10 +5,13 @@
 // - Commandes `npm run <script>` : le script existe dans package.json.
 // - Noms cités entre accents graves (constantes, fonctions, champs, variables d'environnement) : chacun de leurs
 //   segments figure dans le code, les scripts, la configuration ou l'outillage des tests (une faute de frappe se
-//   voit).
+//   voit) ; un nom pointé qui commence par un réglage connu (`DEAL.draftMs`, `HOME.timed`) existe en entier ; les
+//   cartes d'un exemple `SUSPENDED_CARDS = [...]` sont des cartes du jeu.
 // - Tables de réglages (colonnes « Réglage » et « Défaut ») : chaque réglage existe ; une valeur écrite en code dans
 //   « Défaut » est celle du code ; « `defauts` » figure dans « Vérifié par » si et seulement si
-//   test/garde-fous/defauts.json photographie ce réglage.
+//   test/garde-fous/defauts.json photographie ce réglage (les autres marques de cette colonne ne sont pas vérifiées).
+// - Bornes de cardsPerPlayer, cardsPerTurn et presageDelay (table 4.1, sections 3.2, 3.5, 3.7) : celles de BOUNDS.
+// Ne sont pas vérifiés : la colonne « Lu par », les autres bornes, les valeurs écrites en toutes lettres (« 60 s »).
 // - Leçons et problèmes « masqués » par un réglage (sections 3.5 à 3.8) : exactement ceux que masque `requires`.
 // - Messages de checkRules cités : identiques à ceux du code.
 // Les chemins et les commandes de README.md sont vérifiés de la même façon.
@@ -177,6 +180,19 @@ function masquesCites(texte: string): string[] {
   return [...plat(m![0]).matchAll(/«\s*([^»]+?)\s*»/g)].map(x => x[1]);
 }
 
+const NOM = /^[A-Za-z_$][\w$]*(\.[\p{L}\w$]+)*(\([\w, ]*\))?$/u;
+/**
+ * Noms d'un code : le code entier s'il est un nom ; les clés d'un objet (`{ amicale: { cardsPerPlayer: 5 } }`) ; pour
+ * une affectation (`DEAL.draft = false`), le nom affecté et les clés de l'objet affecté.
+ */
+function noms(c: string): string[] {
+  if (NOM.test(c)) return [c];
+  const cles = (o: string) => [...o.matchAll(/([A-Za-z_$][\w$]*)\s*:/g)].map(x => x[1]);
+  if (c.startsWith('{')) return cles(c);
+  const m = /^([\w$.]+)\s*=\s*(.*)$/u.exec(c);
+  return m ? [m[1], ...cles(m[2])] : [];
+}
+
 const titresMasques = (r: ContentRules) => [
   ...ALL_LESSONS.filter(l => !lessonsFor(r).includes(l)).map(l => l.title),
   ...ALL_PUZZLES.filter(p => !puzzlesFor(r).includes(p)).map(p => p.title),
@@ -206,18 +222,6 @@ describe('docs/REGLAGES.md et README.md : ce qui est cité existe', () => {
   });
 
   it('noms de constantes, de fonctions, de champs et de variables', () => {
-    const NOM = /^[A-Za-z_$][\w$]*(\.[\p{L}\w$]+)*(\([\w, ]*\))?$/u;
-    /**
-     * Noms d'un code : le code entier s'il est un nom ; les clés d'un objet (`{ amicale: { cardsPerPlayer: 5 } }`) ; pour
-     * une affectation (`DEAL.draft = false`), le nom affecté et les clés de l'objet affecté.
-     */
-    const noms = (c: string): string[] => {
-      if (NOM.test(c)) return [c];
-      const cles = (o: string) => [...o.matchAll(/([A-Za-z_$][\w$]*)\s*:/g)].map(x => x[1]);
-      if (c.startsWith('{')) return cles(c);
-      const m = /^([\w$.]+)\s*=\s*(.*)$/u.exec(c);
-      return m ? [m[1], ...cles(m[2])] : [];
-    };
     const absents = new Set<string>();
     for (const c of codes(DOC)) {
       for (const nom of noms(c)) {
@@ -230,6 +234,35 @@ describe('docs/REGLAGES.md et README.md : ce qui est cité existe', () => {
     }
     expect([...absents]).toEqual([]);
   });
+
+  it('noms pointés qui commencent par un réglage : le chemin entier existe', () => {
+    const faux: string[] = [];
+    let vus = 0;
+    for (const c of codes(DOC)) {
+      for (const nom of noms(c)) {
+        const [tete, ...reste] = nom.replace(/\(.*\)$/, '').split('.');
+        if (!reste.length || !(tete in REGISTRE)) continue;
+        vus++;
+        // RULES_BY_CONTEXT est vide au défaut : un contexte cité doit seulement exister.
+        const ok = tete === 'RULES_BY_CONTEXT'
+          ? reste.length === 1 && (config.RULES_CONTEXTS as readonly string[]).includes(reste[0])
+          : valeur([tete, ...reste].join('.')) !== undefined;
+        if (!ok) faux.push(c);
+      }
+    }
+    expect(vus).toBeGreaterThan(100);
+    expect(faux).toEqual([]);
+  });
+
+  it('cartes d’un exemple SUSPENDED_CARDS = [...] : des cartes du jeu', () => {
+    const exemples = codes(DOC).filter(c => /^SUSPENDED_CARDS\s*=\s*\[/.test(c));
+    expect(exemples.length).toBeGreaterThan(0);
+    for (const c of exemples) {
+      const ids = [...c.matchAll(/['"]([^'"]+)['"]/g)].map(m => m[1]);
+      expect(ids.length, c).toBeGreaterThan(0);
+      expect(ids.filter(id => !cards.isCardId(id)), c).toEqual([]);
+    }
+  });
 });
 
 describe('docs/REGLAGES.md : tables des réglages', () => {
@@ -237,9 +270,15 @@ describe('docs/REGLAGES.md : tables des réglages', () => {
     const nom = t.entetes.indexOf('Réglage');
     const defaut = t.entetes.indexOf('Défaut');
     const verifie = t.entetes.indexOf('Vérifié par');
+    const bornes = t.entetes.indexOf('Bornes');
     if (nom < 0 || defaut < 0) return [];
     return t.lignes
-      .map(l => ({ cle: /`([^`]+)`/.exec(l[nom])?.[1] ?? '', defaut: l[defaut], verifie: verifie < 0 ? null : l[verifie] }))
+      .map(l => ({
+        cle: /`([^`]+)`/.exec(l[nom])?.[1] ?? '',
+        defaut: l[defaut],
+        verifie: verifie < 0 ? null : l[verifie],
+        bornes: bornes < 0 ? null : l[bornes],
+      }))
       .filter(l => l.cle && !l.cle.includes('*'));
   });
 
@@ -274,6 +313,16 @@ describe('docs/REGLAGES.md : tables des réglages', () => {
   it('réglages du serveur (4.11) : DATABASE, BOT_THREADS et PERSIST seuls hors de defauts.json', () => {
     const serveur = ['TIMINGS', 'RATING', 'MATCHMAKING', 'RELAY', 'BOT_RUNTIME', 'DATABASE', 'BOT_THREADS', 'PERSIST', 'LIMITS', 'ACCOUNT'];
     expect(serveur.filter(n => !PHOTOGRAPHIES.has(n))).toEqual(['DATABASE', 'BOT_THREADS', 'PERSIST']);
+  });
+
+  it('bornes de cardsPerPlayer, cardsPerTurn et presageDelay : celles de BOUNDS', () => {
+    const sections = { cardsPerPlayer: '### 3.2', cardsPerTurn: '### 3.5', presageDelay: '### 3.7' } as const;
+    for (const k of ['cardsPerPlayer', 'cardsPerTurn', 'presageDelay'] as const) {
+      const [a, b] = config.BOUNDS[k];
+      const ligne = lignes.find(l => l.cle === `GAME_RULES.${k}`);
+      expect(ligne?.bornes?.startsWith(`${a} à ${b}`), `table 4.1, GAME_RULES.${k} : ${ligne?.bornes}`).toBe(true);
+      expect(plat(section(sections[k])), `${sections[k]} : bornes`).toContain(`Bornes : ${a} à ${b}`);
+    }
   });
 
   it('comptes cités : 28 chemins, 6 lieux', () => {

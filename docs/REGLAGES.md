@@ -44,38 +44,56 @@ Ce qu'il faut retenir sur les règles de partie :
 1. Changez la valeur dans le fichier indiqué.
 2. Lancez `npx tsc --noEmit -p .`. Un nom de réglage mal écrit est refusé (les littéraux sont écrits avec
    `satisfies`). Une table par carte ou par niveau incomplète l'est aussi.
-3. Lancez `npm test`. Trois familles de tests échouent alors exprès :
+3. Lancez `npm test`. Quatre familles de tests échouent alors exprès :
    - `test/garde-fous/defauts.test.ts` : il photographie toutes les valeurs par défaut. Reportez la nouvelle valeur
      dans `test/garde-fous/defauts.json`.
    - `test/garde-fous/protocole.test.ts` : il suit les cartes, les catalogues, les cadences, les niveaux de l'IA,
      `GAME_RULES` et `DEAL.draftMs`. Montez `PROTOCOL_VERSION` dans `src/shared/protocol.ts`, puis mettez à jour
      `test/fixtures/protocole.json`. Un onglet resté ouvert sur l'ancienne version recevra `server:outdated` et
      rechargera la page.
+   - `test/reglages-doc.test.ts` : il compare ce document au code. Reportez la nouvelle valeur dans la colonne
+     « Défaut » de la section 4. Si `GAME_RULES` change, relisez aussi les listes « Masqués » des sections 3.5 à 3.8 :
+     le test les recalcule à partir des règles du jour, donc ce que la nouvelle valeur masque déjà s'y ajoute.
    - Les tests « au défaut ». Beaucoup de tests photographient le jeu d'aujourd'hui : textes à trois cartes, tirages
      à graine fixe, parties scriptées avec `createGame` sans règles explicites. Ils échouent aussi. Voir le tableau
      ci-dessous. Relisez chaque échec : ce sont en principe des photographies à mettre à jour, pas des défauts du jeu.
      Ceux de l'essai ci-dessous n'ont pas tous été relus un par un.
+
+   À part de `npm test`, `npm run temoins` compare le moteur aux témoins pris au défaut avant la passe (textes des
+   cartes, parties, tirages, salles). Attendez-vous à des écarts après un changement de valeur par défaut (non compté
+   dans l'essai ci-dessous). Un écart voulu se déclare dans `ECARTS_VOULUS` de `test/fixtures/v1/generer.ts`.
 4. Lancez `npm run build`. Des règles impossibles arrêtent la construction (`checkRules`), avec une phrase qui dit
    quel réglage changer. Le déploiement (`deploy/update.sh`) s'arrête alors avant de remplacer la version en ligne.
 5. Regardez le résultat :
-   - `npm run identite` et `npm run textes-pages` montrent ce qui change à l'écran et dans les textes ;
+   - `npm run identite` et `npm run textes-pages` montrent ce qui change à l'écran et dans les textes. Leurs
+     références ont été prises sur le code d'avant la passe : `npm run textes-pages` compare au dépôt
+     (`test/fixtures/v1/textes`), `npm run identite` à un dossier hors du dépôt qui n'existe que sur la machine de la
+     passe (`/home/user/spellmate-ref`). Ils montrent donc aussi les écarts déjà acceptés (« Partie sans cartes »
+     retiré, « 1 étape » : rapport final de `docs/polymorphie/ETAT.md`) ;
+   - pour ne voir que l'effet d'un réglage, ou sur une autre machine, prenez d'abord votre propre référence, sur le
+     site construit au défaut : `npm run build && node test/identite.mjs --ecrire --sortie=<dossier>` (et
+     `node test/textes-pages.mjs --ecrire --sortie=<dossier2>`). Après le changement :
+     `npm run build && node test/identite.mjs --comparer=<dossier>` (et `node test/textes-pages.mjs --comparer=<dossier2>`).
+     Prenez un dossier neuf : sans `--ecraser`, `--ecrire` refuse d'écrire sur des relevés existants ;
    - `node test/identite.mjs --seulement=bancs --n=5 --sortie=<dossier>` donne des captures de la coque de partie
      pour un autre nombre de cartes ;
    - `node scripts/serveur-jetable.mjs -- node test/integration.mjs {base}` joue une partie complète sur un serveur
      neuf.
 
-Échecs relevés par `npx vitest run --project rapide` sur une copie jetable du lot 9c, un réglage à la fois
-(1 087 tests ; `tsc` reste sans erreur dans tous les cas) :
+Échecs relevés par `npx vitest run --project rapide` sur une copie jetable du lot 9c (avec ce document et
+`test/reglages-doc.test.ts`), un réglage à la fois (1 108 tests, tous verts au défaut ; `tsc` reste sans erreur dans
+tous les cas). Les comptes comprennent les gardes et le test de ce document ; `reglages-doc` : nombre de ses tests en
+échec.
 
 | Changement essayé | Tests en échec | Gardes concernés |
 |---|---|---|
-| `GAME_RULES.cardsPerPlayer` 3 → 5 | 39 (14 fichiers) | `defauts`, `protocole` |
-| `GAME_RULES.cardsPerTurn` 1 → 2 | 28 (12 fichiers) | `defauts`, `protocole` |
-| `GAME_RULES.cardEndsTurn` false → true | 97 (16 fichiers) | `defauts`, `protocole` |
-| `GAME_RULES.presageDelay` 2 → 4 | 52 (15 fichiers) | `defauts`, `protocole` |
-| `DEAL.draftMs` 45 000 → 30 000 | 8 (6 fichiers) | `defauts`, `protocole` |
-| rangées du Mur de glace `[2, 3, 4, 5]` → `[2, 3, 4]` | 33 (10 fichiers) | `defauts` seulement |
-| `GAME_RULES.cardsPerPlayer` 3 → 6 | 42 (17 fichiers) | `defauts`, `protocole`, `checkRules` : la construction s'arrête (section 3.4) |
+| `GAME_RULES.cardsPerPlayer` 3 → 5 | 40 (15 fichiers) | `defauts`, `protocole`, `reglages-doc` (1) |
+| `GAME_RULES.cardsPerTurn` 1 → 2 | 32 (13 fichiers) | `defauts`, `protocole`, `reglages-doc` (4 : défaut, 3.6, 3.7, 3.8) |
+| `GAME_RULES.cardEndsTurn` false → true | 101 (17 fichiers) | `defauts`, `protocole`, `reglages-doc` (4 : défaut, 3.5, 3.7, 3.8) |
+| `GAME_RULES.presageDelay` 2 → 4 | 55 (16 fichiers) | `defauts`, `protocole`, `reglages-doc` (3 : défaut, 3.5, 3.8) |
+| `DEAL.draftMs` 45 000 → 30 000 | 9 (7 fichiers) | `defauts`, `protocole`, `reglages-doc` (1) |
+| rangées du Mur de glace `[2, 3, 4, 5]` → `[2, 3, 4]` | 34 (11 fichiers) | `defauts`, `reglages-doc` (1) ; pas `protocole` |
+| `GAME_RULES.cardsPerPlayer` 3 → 6 | 45 (18 fichiers) | `defauts`, `protocole`, `reglages-doc` (3 : défaut, 6.1, configuration jouable) ; `checkRules` : la construction s'arrête (section 3.4) |
 
 Essayer un réglage sans toucher au code, côté serveur seulement :
 `SPELLMATE_TEST_RULES='{"cardsPerPlayer":5}' node scripts/serveur-jetable.mjs`. Le serveur reste ouvert jusqu'à
@@ -88,36 +106,41 @@ ils sont lus dans le code construit, pas sur le serveur.
 
 ### 3.1 Résumé
 
-| Besoin | Où changer | Ce qui suit tout seul | À faire en plus |
-|---|---|---|---|
-| 5 cartes par joueur | `GAME_RULES.cardsPerPlayer` | tirage, choix, IA, textes, éventails, mini-main de l'accueil | gardes, tests au défaut, captures (Q11) |
-| 5 cartes dans un seul contexte | `RULES_BY_CONTEXT.amicale = { cardsPerPlayer: 5 }` | les parties amicales, l'aide de la porte correspondante de Jouer | `defauts.json` |
-| 6 cartes | `GAME_RULES.cardsPerPlayer` et une contrainte du tirage | comme pour 5 | refusé tant que l'accueil tire 6 cartes avec au plus 2 Climats |
-| 2 cartes par tour | `GAME_RULES.cardsPerTurn` | moteur, IA, pause du serveur entre deux cartes, consignes | trois problèmes masqués |
-| Une carte remplace le coup | `GAME_RULES.cardEndsTurn` | trait, incrément de pendule, règle des 50 coups, pastilles | impose 1 carte par tour ; leçons et problèmes masqués |
-| Présage en 4 demi-coups | `GAME_RULES.presageDelay` | arrivée des Présages, textes des cartes, IA | formulation à valider ; leçon et problème masqués |
-| Rééquilibrer une carte | `coups`, `ranks` ou `clockRate` de la carte dans `DEFS` (`src/shared/cards.ts`) | moteur, textes de la carte | leçons et problèmes masqués ; `defauts.json` |
-| Choix des cartes en 30 s | `DEAL.draftMs` | échéance, barre du choix, « 30 secondes » | gardes |
-| Plus de choix des cartes | `DEAL.draft = false` | tirage partout, textes | `defauts.json` |
-| Contraintes du tirage (R9) | `DEAL.handLimits`, `DEAL.limitsInDraft`, `DEAL.rarityWeight` | tirage, choix, IA, texte des Règles | une main valide doit exister |
-| Suspendre une carte | `SUSPENDED_CARDS` | réserves des nouvelles parties | `defauts.json` |
-| Retirer une carte pour de bon | `retired: true` dans `DEFS` | réserves, nombre de pouvoirs dans les textes | ne jamais supprimer l'identifiant |
-| Ajouter une carte | `DEFS` et le type `CardId` (`src/shared/cards.ts`) | textes qui comptent les cartes, grille du choix, accueil | registres par carte, moteur, `PROTOCOL_VERSION` |
-| Nouvelle cadence | une ligne de `TIME_CONTROLS` (`src/shared/protocol.ts`) | libellés, files, invitation | `PROTOCOL_VERSION` |
-| Retirer une cadence | `archived: true` | refus à la création, relectures | ne jamais recycler l'identifiant |
-| Niveau d'IA | `BOT_LEVELS`, `BOT_PROFILES` (`src/shared/bot.ts`) | menu, Jouer, accueil | `DRAFT_NOISE`, `BOT_LOOK`, `PROTOCOL_VERSION` |
-| Délais, classement, file | `src/server/settings.ts` | serveur | `defauts.json`, nouvelle version du serveur |
-| Couper la boutique | variable `FEATURE_SHOP=0` | page fermée, liens cachés, paiements refusés | redémarrage, sans reconstruire |
-| Fermer les paiements seulement | variable `PAYMENTS_MODE=off` | paiements refusés | redémarrage |
-| Mode maintenance | variable `FEATURE_NEW_GAMES=0` | plus de nouvelle partie ; les parties en cours continuent | redémarrage |
-| Changer le nom du site | `BRAND` (`src/shared/config/brand.ts`), `APP_NAME`, `MAIL_FROM` | `index.html`, manifeste, titres, en-tête, pied de page, partage, e-mails | images, mots réservés |
-| Ajouter un emplacement de skin | `SLOT_DEFS` (`src/shared/skins/slots.ts`) | rayons, libellés, objet par défaut, colonne SQL | migration, phrases, vignette |
-| Modifier l'offre | `src/shared/catalog.ts`, `src/shared/skins/*` | rayons, packs, Trésor, e-mails | jamais de prix qui monte |
-| Ajouter une page | `ROUTES` (`src/shared/config/routes.ts`) | routeur, serveur, préchargement, 404 | chargeur dans `src/client/App.tsx` |
-| Accueil | `HOME` (`src/shared/config/home.ts`), `RULES_BY_CONTEXT.accueil` | partie contre l'Oracle, appariement | les sauvegardes d'un autre réglage repartent de zéro |
-| Position de départ | `GAME_RULES.startFen` | création, relecture, PGN | roque standard seulement |
-| Bornes des pseudos | `src/shared/config/limits.ts` | serveur, formulaires, messages | `defauts.json`, reconstruire |
-| Mentions légales | variables `LEGAL_*` | `/api/legal`, pages légales | décision Q1 |
+« Tests ciblés » : les tests à lancer d'abord (`npx vitest run <fichier>`, ou la commande indiquée). Finissez toujours
+par `npm test` et `npm run build` (section 2).
+
+| Besoin | Où changer | Ce qui suit tout seul | À faire en plus | Tests ciblés |
+|---|---|---|---|---|
+| 5 cartes par joueur | `GAME_RULES.cardsPerPlayer` | tirage, choix, IA, textes, éventails, mini-main de l'accueil | gardes, tests au défaut, captures (Q11) | `test/config.test.ts`, `test/regles-matrice.test.ts`, `test/choix-cartes.test.ts`, `test/coque-layout.test.ts` |
+| 5 cartes dans un seul contexte | `RULES_BY_CONTEXT.amicale = { cardsPerPlayer: 5 }` | les parties amicales, l'aide de la porte correspondante de Jouer | `defauts.json` | `test/config.test.ts`, `test/server-regles.test.ts` |
+| 6 cartes | `GAME_RULES.cardsPerPlayer` et une contrainte du tirage | comme pour 5 | refusé tant que l'accueil tire 6 cartes avec au plus 2 Climats | `test/config.test.ts` |
+| 2 cartes par tour | `GAME_RULES.cardsPerTurn` | moteur, IA, pause du serveur entre deux cartes, consignes | trois problèmes masqués | `test/regles-matrice.test.ts`, `test/textes-regles.test.ts` |
+| Une carte remplace le coup | `GAME_RULES.cardEndsTurn` | trait, incrément de pendule, règle des 50 coups, pastilles | impose 1 carte par tour ; leçons et problèmes masqués | `test/regles-matrice.test.ts` |
+| Présage en 4 demi-coups | `GAME_RULES.presageDelay` | arrivée des Présages, textes des cartes, IA | formulation à valider ; leçon et problème masqués | `test/climats.test.ts`, `test/textes-regles.test.ts` |
+| Rééquilibrer une carte | `coups`, `ranks` ou `clockRate` de la carte dans `DEFS` (`src/shared/cards.ts`) | moteur, textes de la carte | leçons et problèmes masqués ; `defauts.json` | `test/climats.test.ts`, `npm run temoins` |
+| Choix des cartes en 30 s | `DEAL.draftMs` | échéance, barre du choix, « 30 secondes » | gardes | `test/server-draft.test.ts`, `test/server-regles.test.ts` |
+| Plus de choix des cartes | `DEAL.draft = false` | tirage partout, textes | `defauts.json` | `test/server-regles.test.ts`, `test/regles-matrice.test.ts` |
+| Contraintes du tirage (R9) | `DEAL.handLimits`, `DEAL.limitsInDraft`, `DEAL.rarityWeight` | tirage, choix, IA, texte des Règles | une main valide doit exister | `test/config.test.ts`, `test/frequences.test.ts`, `test/server-regles.test.ts` |
+| Suspendre une carte | `SUSPENDED_CARDS` | réserves des nouvelles parties | `defauts.json` | `test/config.test.ts` |
+| Retirer une carte pour de bon | `retired: true` dans `DEFS` | réserves, nombre de pouvoirs dans les textes | ne jamais supprimer l'identifiant | `npm run temoins` (anciennes parties) |
+| Ajouter une carte | `DEFS` et le type `CardId` (`src/shared/cards.ts`) | textes qui comptent les cartes, grille du choix, accueil | registres par carte, moteur, `PROTOCOL_VERSION` | `test/coherence.test.ts` |
+| Nouvelle cadence | une ligne de `TIME_CONTROLS` (`src/shared/protocol.ts`) | libellés, files, invitation | `PROTOCOL_VERSION` | `test/coherence.test.ts`, `test/socle.test.ts` |
+| Retirer une cadence | `archived: true` | refus à la création, relectures | ne jamais recycler l'identifiant | `test/coherence.test.ts`, `test/socle.test.ts` |
+| Niveau d'IA | `BOT_LEVELS`, `BOT_PROFILES` (`src/shared/bot.ts`) | menu, Jouer, accueil | `DRAFT_NOISE`, `BOT_LOOK`, `PROTOCOL_VERSION` | `test/coherence.test.ts`, `test/bot.test.ts` |
+| Délais, classement, file | `src/server/settings.ts` | serveur | `defauts.json`, nouvelle version du serveur | `test/rating.test.ts`, `test/server-file.test.ts` |
+| Couper la boutique | variable `FEATURE_SHOP=0` | page fermée, liens cachés, paiements refusés | redémarrage, sans reconstruire | `test/server-features.test.ts` ; `test/fonctions.mjs` sur un serveur jetable (section 6.3) |
+| Fermer les paiements seulement | variable `PAYMENTS_MODE=off` | paiements refusés | redémarrage | `test/server-config.test.ts` |
+| Mode maintenance | variable `FEATURE_NEW_GAMES=0` | plus de nouvelle partie ; les parties en cours continuent | redémarrage | `test/server-features.test.ts` |
+| Changer le nom du site | `BRAND` (`src/shared/config/brand.ts`), `APP_NAME`, `MAIL_FROM` | `index.html`, manifeste, titres, en-tête, pied de page, partage, e-mails | images, mots réservés | `test/marque.test.ts`, `test/socle-client.test.ts` |
+| Ajouter un emplacement de skin | `SLOT_DEFS` (`src/shared/skins/slots.ts`) | rayons, libellés, objet par défaut, colonne SQL | migration, phrases, vignette | `test/catalog.test.ts`, `test/server-kings.test.ts` |
+| Modifier l'offre | `src/shared/catalog.ts`, `src/shared/skins/*` | rayons, packs, Trésor, e-mails | jamais de prix qui monte | `test/catalog.test.ts`, `test/server-shop.test.ts` |
+| Ajouter une page | `ROUTES` (`src/shared/config/routes.ts`) | routeur, serveur, préchargement, 404 | chargeur dans `src/client/App.tsx` | `test/routes.test.ts` |
+| Accueil | `HOME` (`src/shared/config/home.ts`), `RULES_BY_CONTEXT.accueil` | partie contre l'Oracle, appariement | les sauvegardes d'un autre réglage repartent de zéro | `test/accueil.test.ts` |
+| Position de départ | `GAME_RULES.startFen` | création, relecture, PGN | roque standard seulement | `test/config.test.ts` |
+| Bornes des pseudos | `src/shared/config/limits.ts` | serveur, formulaires, messages | `defauts.json`, reconstruire | `test/socle.test.ts` |
+| Nouveau catalogue, ou reproposer le Duel | `CATALOG_IDS`, `CATALOG_RULES`, `CATALOGS`, `catalogs` des cartes (`src/shared/cards.ts`) | création, file d'attente, libellés, PGN, `checkRules` | `PROTOCOL_VERSION` ; pages écrites pour les Pouvoirs (section 3.19) | `test/climats.test.ts`, `test/garde-fous/protocole.test.ts` |
+| Changer un texte | `src/shared/text/`, `TEMPLATES`, `SLOT_TEXTS`, pages (section 3.20) | — | références des textes, sur décision | `test/garde-fous/textes-chiffres.test.ts`, `npm run textes-pages` |
+| Mentions légales | variables `LEGAL_*` | `/api/legal`, pages légales | décision Q1 | `test/server-config.test.ts` |
 
 ### 3.2 Passer à 5 cartes par joueur
 
@@ -304,6 +327,8 @@ ils sont lus dans le code construit, pas sur le serveur.
 - Ce qui suit : `index.html`, manifeste, titres des pages, en-tête, pied de page, partage d'une partie, en-têtes des
   PGN exportés (`Event`, `Site`), nom du fichier d'export des données du compte.
 - Ce qui ne suit pas :
+  - le logo de l'en-tête et du pied de page : le dessin `LogoMark` (SVG écrit dans `src/client/components/Layout.tsx`) ;
+    seul le nom en capitales qui l'accompagne suit `BRAND.nameCaps` ;
   - les images : `public/favicon.svg`, `public/icon-192.png`, `public/icon-512.png`, `public/og.jpg` ;
   - le mot réservé `spellmate` de `USERNAME` (`src/shared/config/limits.ts`) : ajoutez le nouveau nom ;
   - les mentions légales (raison sociale, contact…), qui viennent des variables `LEGAL_*`.
@@ -358,15 +383,63 @@ canonique et le 404 d'une page coupée. Un lien de menu porte son propre interru
 
 ### 3.18 Accueil
 
-- `HOME` (`src/shared/config/home.ts`) : catalogue, pendule, partie contre l'IA, couleur du visiteur, niveau de
-  l'Oracle, fenêtre d'appariement, seuil d'appariement en demi-coups, nom des visiteurs, durée de la sauvegarde,
-  rythme de l'Oracle, mise au repos.
+- `HOME` (`src/shared/config/home.ts`) : catalogue, partie contre l'IA, couleur du visiteur, niveau de l'Oracle,
+  fenêtre d'appariement, seuil d'appariement en demi-coups, nom des visiteurs, durée de la sauvegarde, rythme de
+  l'Oracle, mise au repos.
+- `HOME.timed` reste `false` : l'accueil n'a pas de pendule. À `true`, la partie contre l'Oracle serait marquée « avec
+  pendule » (état de la partie, texte de l'accueil) sans qu'aucune pendule n'existe, et le relais du serveur crée de
+  toute façon ses parties sans pendule (`src/server/games.ts`).
 - Règles de l'accueil : `RULES_BY_CONTEXT.accueil`. L'accueil tire toujours ses mains.
 - Une sauvegarde locale d'un autre catalogue, d'autres règles ou d'un autre nombre de cartes repart de zéro.
 - Lieux de la descente : `PLACES` (`src/client/odyssee/data.ts`). Un lieu de plus demande sa pose (`poseFor`), sa
   scène et son ciel : c'est un travail de dessin.
 - Ne pas toucher à la logique de `src/client/odyssee/engine.ts` ni de `src/client/odyssee/scenery.tsx` : elle porte
   la performance de l'accueil.
+
+### 3.19 Catalogues de cartes
+
+- Fichier : `src/shared/cards.ts`. Aujourd'hui : `climats` (« Pouvoirs ») et `aucune` (« Sans cartes »), proposés ;
+  `duel` (l'ancien Duel), plus proposé, gardé pour relire et reprendre les parties créées avant.
+- `CATALOG_IDS` : tous les catalogues connus du moteur. Ne jamais retirer ni recycler un identifiant : des parties le
+  portent (champ `catalog`, en-tête PGN `Catalog`).
+- `CATALOG_RULES` : ce qui distingue un catalogue (proposé ou non, « la magie cède », effets des deux camps, tirage
+  uniforme ou pondéré, Mur sur toute case, instantanés, aide des Terrains au mat, temps crédité aux cinématiques). Le
+  moteur lit ces données, jamais l'identifiant. Le compilateur exige une entrée par catalogue.
+- `CATALOGS` : les catalogues proposés, dans l'ordre, avec leur libellé et leur description (Règles, Jouer, Apprendre,
+  libellés des parties). Il doit lister exactement les catalogues `offered` de `CATALOG_RULES`
+  (`test/climats.test.ts`).
+- Les cartes d'un catalogue : le champ `catalogs` de chaque carte dans `DEFS`.
+- Ce qui suit tout seul : la création d'une partie (le serveur ramène un catalogue non proposé au catalogue par
+  défaut : `offeredCatalog`), les files d'attente (séparées par catalogue : `MATCHMAKING.splitByCatalog`), les
+  libellés (`catalogLabel`), le PGN, `checkRules` (réserves de chaque catalogue proposé qui a des cartes).
+- À faire en plus : `PROTOCOL_VERSION` (le garde de protocole suit `CATALOG_IDS` et les catalogues proposés). Les
+  pages Règles, Apprendre et Problèmes, les leçons et la cabine de la boutique sont écrites pour les Pouvoirs
+  (l'identifiant `climats` y est écrit en dur) : un nouveau catalogue n'y apparaît pas sans travail. L'accueil suit
+  `HOME.catalog`.
+- Reproposer le Duel : `offered: true` dans `CATALOG_RULES.duel` et une entrée dans `CATALOGS`. Aucun test ne le couvre
+  aujourd'hui.
+
+### 3.20 Changer un texte
+
+- Où vivent les phrases :
+  - phrases de règles qui dépendent des réglages (« trois cartes », « un sort par tour », « 45 secondes »…) :
+    `src/shared/text/regles.ts` ; grammaire (nombres en lettres, pluriels, accords), dates, nombres et prix :
+    `src/shared/text/fr.ts` ; libellés uniques (couleur, catalogue, nature d'une partie, nom de carte) :
+    `src/shared/text/libelles.ts` ;
+  - textes des Pouvoirs : gabarits `TEMPLATES` de `src/shared/cards.ts` (section 4.3) ;
+  - phrases des emplacements de la boutique : `SLOT_TEXTS` (`src/shared/skins/texts.ts`) ;
+  - accueil : surtout `src/client/odyssee/data.ts`, le reste dans `src/client/odyssee/OdysseeHome.tsx` ; autres
+    pages : leur module dans `src/client/pages/` ;
+  - nom du site et accroches : `BRAND` (section 3.14) ; `index.html` et le manifeste en dérivent à la construction.
+- N'écrivez pas en dur un nombre de règle ni le nom du site : `test/garde-fous/textes-chiffres.test.ts` le refuse dans
+  `src`, `index.html` et le manifeste. Passez par une phrase de `src/shared/text/regles.ts` ou par `BRAND`. Une
+  exception permanente (identifiant technique, commentaire) s'inscrit dans `test/garde-fous/exceptions.txt`, avec sa
+  raison.
+- Un texte changé exprès fait échouer ses photographies : `npm run textes-pages` (référence `test/fixtures/v1/textes`),
+  `test/marque.test.ts` pour `index.html` et le manifeste, les tests qui citent la phrase (`test/textes-regles.test.ts`,
+  `test/choix-cartes.test.ts`…), et `npm run temoins` pour les textes des cartes. Ces références ne se réécrivent que
+  sur décision (section 6.3).
+- Textes en attente d'une décision : Q5 (section 7).
 
 ---
 
@@ -381,8 +454,11 @@ Légende :
   du client). Un réglage lu à la construction demande de reconstruire le site.
 - **Vérifié par.** `checkRules` (construction, démarrage, tests) ; compilateur ; zod (démarrage du serveur) ; tests
   nommés. `defauts` : la valeur par défaut est photographiée par `test/garde-fous/defauts.test.ts`
-  (`test/garde-fous/defauts.json`). Les cellules de la colonne « Vérifié par » et les valeurs écrites en code de la
-  colonne « Défaut » sont comparées au code par `test/reglages-doc.test.ts`.
+  (`test/garde-fous/defauts.json`).
+- **Ce que `test/reglages-doc.test.ts` compare au code** : l'existence de chaque réglage, les valeurs écrites en code
+  de la colonne « Défaut », la marque `defauts` de la colonne « Vérifié par » et les bornes de `cardsPerPlayer`,
+  `cardsPerTurn` et `presageDelay`. Les autres marques de « Vérifié par », les autres bornes, la colonne « Lu par »
+  et les valeurs écrites en toutes lettres ont été relues à la main, sans test.
 
 ### 4.1 Règles des nouvelles parties : `src/shared/config/rules.ts`
 
@@ -468,11 +544,11 @@ textes d'avant au caractère près.
 | Réglage | Défaut | Bornes | Portée | Lu par | Vérifié par |
 |---|---|---|---|---|---|
 | `HOME.catalog` | `"climats"` | un catalogue de cartes | Création | serveur, client | `checkRules` (réserve de l'accueil), `defauts` |
-| `HOME.timed` | `false` | booléen | Création | serveur, client | `checkRules`, `defauts` |
+| `HOME.timed` | `false` | ne pas changer : pas de pendule sur l'accueil (section 3.18) | Création | client ; serveur : `checkRules` seulement (le relais l'ignore) | `checkRules`, `defauts` |
 | `HOME.vsBot` | `true` | booléen | Création | serveur (`checkRules`), client | `checkRules`, `defauts` |
 | `HOME.playerColor` | `"w"` | `"w"` ou `"b"` | Création | client | compilateur, `defauts` |
 | `HOME.botLevel` | `2` | un niveau de `BOT_LEVELS` | Création | client | `test/coherence.test.ts`, `defauts` |
-| `HOME.pairWindowMs` | `30_000` | ms | Plateforme | serveur, client | `defauts` |
+| `HOME.pairWindowMs` | `30_000` | ms | Plateforme | serveur | `defauts` |
 | `HOME.readyMaxPly` | `4` | demi-coups | Plateforme | client | `defauts` |
 | `HOME.guestName` | `"Visiteur"` | — | Plateforme | serveur | `defauts` |
 | `HOME.saveVersion` | `1` | format de la sauvegarde locale ; ne pas changer | Plateforme | client | compilateur (type `1`), `defauts` |
@@ -725,6 +801,7 @@ Cas particuliers :
 | `test/socle.test.ts` | modules de configuration sans import à l'exécution, identifiants jamais recyclés, réglages couplés | si un module de configuration importe du code |
 | `test/marque.test.ts` | `index.html`, manifeste et `robots.txt` identiques au défaut ; construction arrêtée par des règles impossibles | à chaque changement de marque ou de texte dérivé |
 | `test/regles-matrice.test.ts` | parties au hasard menées au bout pour chaque combinaison de règles jouable | si une variante casse le moteur |
+| `test/reglages-doc.test.ts` | ce document et `README.md` : chemins, commandes, noms, valeurs par défaut et bornes des tables, contenus masqués, messages de `checkRules` | à chaque valeur par défaut changée (colonne « Défaut ») ; si `GAME_RULES` change, aussi pour les listes « Masqués » des sections 3.5 à 3.8 |
 
 Le garde-fou des textes chiffrés ne repère que ses motifs. Une tournure nouvelle peut lui échapper : relisez les
 textes après un changement de règle. Ses dettes par lot (`test/garde-fous/dette-<lot>.txt`) sont toutes vides.
@@ -734,8 +811,8 @@ textes après un changement de règle. Ses dettes par lot (`test/garde-fous/dett
 | Commande | Ce qu'elle fait | À ne jamais faire sans décision |
 |---|---|---|
 | `npm run temoins` | rejoue les témoins v1 (`test/fixtures/v1`) : textes des cartes, 40 parties, tirages, salles, sauvegarde de l'accueil, PGN | `TEMOINS_MODE=ecrire` ; un écart voulu se déclare dans `ECARTS_VOULUS` de `test/fixtures/v1/generer.ts` |
-| `npm run identite` | captures, boîtes, DOM et textes comparés à la référence hors du dépôt (`/home/user/spellmate-ref`) | `--ecrire` |
-| `npm run textes-pages` | texte des pages et d'une partie comparé à `test/fixtures/v1/textes` | `--ecrire` |
+| `npm run identite` | captures, boîtes, DOM et textes comparés à la référence hors du dépôt (`/home/user/spellmate-ref`, sur la machine de la passe seulement ; votre propre référence : section 2, étape 5) | `--ecrire` sans `--sortie` (il vise la référence de la passe) |
+| `npm run textes-pages` | texte des pages et d'une partie comparé à `test/fixtures/v1/textes` | `--ecrire` sans `--sortie` (il vise la référence du dépôt) |
 | `SPELLMATE_MATRICE=1,2,3,4,5 npm run test:matrice` | matrice complète des règles (défaut : 1, 3 et 5 cartes) | — |
 | `node scripts/serveur-jetable.mjs -- node test/integration.mjs {base}` | parcours complet sur un serveur neuf (comptes, choix, parties, IA, boutique) | — |
 | `node scripts/serveur-jetable.mjs -- node test/ranked.mjs {base}` | file classée et Elo | — |
@@ -770,7 +847,8 @@ Q10 : pas d'intégration continue.
 - La position de départ n'accepte que le roque standard : pas de Chess960.
 - L'accueil tire toujours ses mains : il n'a pas d'écran de choix des cartes.
 - Le seuil de conservation des cartes de l'IA est calibré pour 3 cartes.
-- Changer une valeur par défaut fait échouer de nombreux tests « au défaut » (section 2), en plus des deux gardes.
+- Changer une valeur par défaut fait échouer de nombreux tests « au défaut » (section 2), en plus des deux gardes et
+  du test de ce document.
 - Le garde de protocole ne suit ni `RULES_BY_CONTEXT`, ni l'équilibrage des cartes, ni `DEAL.draft`.
 - `SPELLMATE_TEST_RULES` ne change que le serveur.
 - Aucun de ces réglages n'a été essayé en production, sur un vrai téléphone, ni dans des parties jouées par des

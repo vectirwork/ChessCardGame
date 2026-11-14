@@ -56,7 +56,7 @@
    - **Règles de partie** (elles touchent la légalité) : photographiées dans `GameState.rules`. Si le champ est absent, ce sont les règles historiques `RULES_V1`, gelées pour toujours.
    - **Mise en place** (choix ou tirage, durée, R9, poids, cadence, Elo) : lue à la création. Son résultat est déjà stocké.
    - **Plate-forme et contenu** (délais, file, fonctions, marque, registres) : globaux.
-2. **La photographie n'est écrite que si elle diffère de `RULES_V1`.** Au défaut, aucune partie, aucune vue, aucune sauvegarde ne change d'un octet.
+2. **La photographie n'est écrite que si elle diffère de `RULES_V1`.** Au défaut, aucune partie, aucune vue, aucune sauvegarde ne change d'un octet. (Réalisé : aucune règle n'est écrite, parties et sauvegardes identiques à l'octet ; les vues et `/api/me` gagnent des champs facultatifs, `DraftView.totalMs`, `reveal.filled`, `features`, `version` : voir `ETAT.md`.)
 3. **Relectures, reprises et sauvegardes** rejouent avec `state.rules ?? RULES_V1`, jamais avec les règles du jour.
 4. **`cardPlayed` signifie « plus de carte possible ce tour ».** `cardsThisTurn` n'est écrit que si la partie permet plus d'une carte par tour.
 5. **Un tableau de bord sans import à l'exécution** (`src/shared/config/*`). Le pied de page du paquet principal le lit sans tirer `game.ts`.
@@ -241,9 +241,11 @@ export const DEFAULT_CATALOG = 'climats'; export const LEGACY_CATALOG = 'duel'; 
    - `initialStateOf(final)` passe `rulesOf(final)`. L'Analyse des parties locales fait de même : `history.ts` garde `rules`.
    - L'export PGN ajoute `[SpellmateRules "…"]` seulement si les règles diffèrent. L'import relit cette balise.
 7. **Revanche.**
-   - Nouvelle partie, donc règles **du moment** (voir la décision Q3).
+   - Nouvelle partie, donc règles **du moment** de son contexte (voir la décision Q3).
    - Pendule reprise de `d.clock` (initial et incrément).
-   - Réglages de mise en place repris de `RoomData.setup = { deal, relay }`.
+   - Mise en place ordinaire, comme avant la passe : la revanche d'une partie relayée de l'accueil est une partie
+     amicale avec le choix des cartes, sans relais (lot 9f ; reprendre les mains tirées et le relais changeait le site
+     au défaut).
 8. **Sauvegarde de l'accueil.** Format v1 inchangé. `validState` rejette une sauvegarde si son catalogue diffère de `HOME.catalog`, si `sameRules(rulesOf(s), rulesFor('accueil'))` est faux, ou si les mains n'ont pas la bonne taille. La partie repart alors de zéro.
 9. **Onglet resté ouvert.** Le client envoie `PROTOCOL_VERSION` à la connexion. En cas d'écart, le serveur répond `server:outdated` et le client recharge, avec la garde d'une minute de `main.tsx`. Un test fige `{ version, ids des cartes, catalogues, cadences, GAME_RULES, DEAL.draftMs }` : si l'un change sans montée de version, il échoue.
 

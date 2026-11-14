@@ -4,7 +4,10 @@
 //   amicale, POST /games (invitation, IA), invités, /live et spectateurs, accueil (home:*), relais, revanche,
 //   maintenance (newGames) ;
 // - version : un client qui annonce une autre version (auth.v) reçoit server:outdated et ses actions sont refusées
-//   (code 'outdated') ; un client qui n'annonce rien (d'avant la version du protocole) est accepté.
+//   (code 'outdated') ; un client qui n'annonce rien (d'avant la version du protocole) compte pour la version 1 :
+//   accepté tant que PROTOCOL_VERSION vaut 1, refusé ensuite ;
+// - maintenance et invitations coupées : une invitation déjà en attente ne s'ouvre plus à un second joueur ; revanche
+//   refusée selon la sorte de partie qu'elle crée ;
 // - FEATURE_* écrites dans le fichier .env (lancement hors Docker) : prises en compte ;
 // - réglages du serveur (settings.ts) lus par games.ts : échéance de la revanche (TIMINGS.rematchTtlMs), files par
 //   catalogue (MATCHMAKING.splitByCatalog) ; catalogues de POST /games (CATALOG_IDS, DEFAULT_CATALOG).
@@ -204,8 +207,9 @@ describe('au défaut : tout est ouvert', () => {
       expect(games.creationRefusal(o, guest('g1'))).toBeNull();
       expect(games.creationRefusal(o, account('a1'))).toBeNull();
     }
-    expect(games.protocolMismatch(undefined)).toBe(false);
-    expect(games.protocolMismatch({})).toBe(false);
+    // Client sans version (onglet d'avant la version du protocole) : version 1 (refusé dès que PROTOCOL_VERSION monte).
+    expect(games.protocolMismatch(undefined)).toBe(PROTOCOL_VERSION !== 1);
+    expect(games.protocolMismatch({})).toBe(PROTOCOL_VERSION !== 1);
     expect(games.protocolMismatch({ v: PROTOCOL_VERSION })).toBe(false);
     expect(games.protocolMismatch({ v: PROTOCOL_VERSION + 1 })).toBe(true);
     expect(games.protocolMismatch({ v: String(PROTOCOL_VERSION) })).toBe(true);
@@ -426,6 +430,59 @@ describe('interrupteurs coupés : refus du serveur', () => {
     expect(await a.ask('game:rematch', { id: room.d.id })).toEqual({ ok: false, error: maintenance, code: 'feature-off' });
     expect(room.d.rematch).toEqual({ w: false, b: false, next: null });
   });
+
+  it('invitation en attente créée avant la coupure (maintenance, invitations fermées) : personne ne s’y assoit ; son créateur la rouvre', async () => {
+    const maintenance = 'Le site est en maintenance : aucune nouvelle partie pour le moment. Les parties en cours continuent.';
+    for (const [env, error] of [
+      [{ FEATURE_NEW_GAMES: '0' }, maintenance],
+      [{ FEATURE_INVITES: '0' }, 'Les invitations sont fermées pour le moment.'],
+    ] as const) {
+      const { games } = await load(env);
+      vi.useFakeTimers();
+      const io = await sockets(games);
+      // Invitation reprise au démarrage (restoreRooms) ou créée juste avant la coupure : en attente, un siège libre.
+      const room = games.newRoom({ mode: 'invite', rated: false, tc: '5+0', catalog: 'climats', creator: 'u:a1', seats: { w: seat('u:a1', 'a1'), b: null } });
+      const b = io.connect(new FakeSocket(account('b2')));
+      expect(await b.ask('game:join', { id: room.d.id }), JSON.stringify(env)).toEqual({ ok: false, error, code: 'feature-off' });
+      expect(room.d.status).toBe('waiting');
+      expect(room.d.seats.b).toBeNull();
+      expect(room.sockets.size).toBe(0);
+      expect(await games.takeSeat(room, account('b2'), {})).toBe('off');
+      // Le créateur, déjà assis, la rouvre.
+      const a = io.connect(new FakeSocket(account('a1')));
+      expect(await a.ask('game:join', { id: room.d.id })).toMatchObject({ ok: true, view: { you: 'w' } });
+    }
+    // Jeu sans compte coupé aussi : un invité reçoit d'abord ce refus-là (guestOff), comme avant.
+    const { games } = await load({ FEATURE_NEW_GAMES: '0', FEATURE_GUEST_PLAY: '0' });
+    const room = games.newRoom({ mode: 'invite', rated: false, tc: '5+0', catalog: 'climats', creator: 'u:a1', seats: { w: seat('u:a1', 'a1'), b: null } });
+    expect(await games.takeSeat(room, guest('g1'), { name: 'Aurore' })).toBe('guestOff');
+  });
+
+  it('revanche d’une partie de l’accueil : refusée selon la sorte de partie qu’elle crée (amicale), pas selon l’accueil', async () => {
+    /** Partie de l'accueil entre deux invités, terminée par abandon ; les deux demandent la revanche. */
+    async function rematch(env: Record<string, string>) {
+      const { games } = await load(env);
+      vi.useFakeTimers();
+      const io = await sockets(games);
+      const room = games.newRoom({ mode: 'quick', rated: false, tc: 'none', catalog: 'climats', creator: 'g:h1', seats: { w: seat('g:h1'), b: seat('g:h2') }, deal: true, relay: true });
+      const w = io.connect(new FakeSocket(guest('h1')));
+      const b = io.connect(new FakeSocket(guest('h2')));
+      expect(await w.ask('game:join', { id: room.d.id })).toMatchObject({ ok: true });
+      expect(await b.ask('game:join', { id: room.d.id })).toMatchObject({ ok: true });
+      expect(await w.ask('game:resign', { id: room.d.id })).toEqual({ ok: true });
+      const replies = [await w.ask('game:rematch', { id: room.d.id }), await b.ask('game:rematch', { id: room.d.id })];
+      return { room, replies };
+    }
+    // Accueil coupé : la revanche, partie amicale, reste permise (et n'est pas relayée).
+    const home = await rematch({ FEATURE_HOME_DUEL: '0' });
+    expect(home.replies).toEqual([{ ok: true }, { ok: true }]);
+    expect(home.room.d.rematch.next).not.toBeNull();
+    // Parties amicales coupées : refusée, avec ce message-là.
+    const friendly = await rematch({ FEATURE_FRIENDLY_QUEUE: '0' });
+    const refus = { ok: false, error: 'La recherche de partie amicale est fermée pour le moment.', code: 'feature-off' };
+    expect(friendly.replies).toEqual([refus, refus]);
+    expect(friendly.room.d.rematch).toEqual({ w: false, b: false, next: null });
+  });
 });
 
 describe('réglages du serveur lus par games.ts', () => {
@@ -513,6 +570,24 @@ describe('version du protocole', () => {
     // Messages sans accusé de réception : ignorés.
     await old.fire('home:hello', { tz: 'Europe/Paris', ready: true });
     expect(old.emitted).toHaveLength(1);
+  });
+
+  it('client sans version (onglet ouvert avant la version du protocole) : traité comme la version 1', async () => {
+    // Version montée à 2 dans ce graphe de modules : un client qui n'annonce rien est prévenu et refusé, comme v1.
+    vi.doMock('../src/shared/protocol', async importOriginal => ({
+      ...(await importOriginal<typeof import('../src/shared/protocol')>()), PROTOCOL_VERSION: 2,
+    }));
+    try {
+      const { games } = await load();
+      for (const auth of [undefined, null, {}, { v: null }, { v: 1 }]) expect(games.protocolMismatch(auth), JSON.stringify(auth)).toBe(true);
+      expect(games.protocolMismatch({ v: 2 })).toBe(false);
+      const io = await sockets(games);
+      const old = io.connect(new FakeSocket(account('a1')));
+      expect(old.emitted).toEqual([['server:outdated', { version: 2 }]]);
+      expect(await old.ask('queue:join', { tc: '5+0', rated: true })).toMatchObject({ ok: false, code: 'outdated' });
+    } finally {
+      vi.doUnmock('../src/shared/protocol');
+    }
   });
 
   it('client de la même version : rien de particulier', async () => {

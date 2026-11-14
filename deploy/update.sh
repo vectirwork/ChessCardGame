@@ -23,6 +23,11 @@ mkdir -p "$D/backups" "$D/status"
 COMPOSE="docker compose -p spellmate -f docker-compose.yml -f deploy/compose.prod.yml"
 echo "== $(date -u +%FT%TZ) construction de $(git rev-parse --short HEAD)"
 $COMPOSE build --pull app
+# Configuration vérifiée dans la nouvelle image, avec le même .env et le même environnement que le service, AVANT de
+# remplacer la version en ligne : une valeur refusée (config.ts) ou des règles impossibles arrêtent le déploiement
+# ici (set -e), et la version en ligne continue de tourner. Rien d'autre n'est lancé (ni la base, ni le serveur).
+echo "== configuration"
+$COMPOSE run --rm --no-deps -T app node dist/server/index.js --check-config
 echo "== lancement"
 $COMPOSE up -d --remove-orphans
 echo "== santé"

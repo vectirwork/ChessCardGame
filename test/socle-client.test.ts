@@ -1,5 +1,6 @@
 // Socle du client (lot 6) : appels à l'API et repli réseau en français, limite d'erreur des pages (page blanche),
-// rechargement après une nouvelle version, interrupteurs (useFeature, menus), typage de emitAck.
+// rechargement après une nouvelle version (page, et échiquier des lieux de l'accueil), interrupteurs (useFeature,
+// menus), typage de emitAck, déconnexion (l'interface ne passe en invité qu'avec l'accord du serveur).
 // Sans DOM (Vitest en environnement node) : les composants sont rendus par react-dom/server, `fetch`, `document`,
 // `sessionStorage` et `window` sont des doublures.
 import { Suspense, createElement } from 'react';
@@ -8,11 +9,12 @@ import { renderToStaticMarkup, renderToString } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { ApiError, NETWORK_ERROR, api, errMsg } from '../src/client/api';
-import { PageBoundary, importFailed, page } from '../src/client/App';
+import { PageBoundary, page } from '../src/client/App';
+import { importFailed } from '../src/client/importFailed';
 import { Footer, Header } from '../src/client/components/Layout';
 import { emitAck, reloadForNewVersion } from '../src/client/socket';
 import type { AckEvent, AckPayload, AckReply } from '../src/client/socket';
-import { AppProvider, useFeature } from '../src/client/store';
+import { AppProvider, logoutWith, useFeature } from '../src/client/store';
 import { FEATURES } from '../src/shared/config/features';
 import type { FeatureKey } from '../src/shared/config/features';
 import { GAME_RULES, RULES_V1 } from '../src/shared/config/rules';
@@ -183,6 +185,59 @@ describe('limite d’erreur des pages (page blanche)', () => {
     expect(PageBoundary.getDerivedStateFromProps({ children: null, at: '/apprendre' }, s)).toEqual({ failure: null, at: '/apprendre' });
     // Premier rendu : le chemin est retenu, aucune erreur
     expect(PageBoundary.getDerivedStateFromProps({ children: null, at: '/' }, { failure: null })).toEqual({ failure: null, at: '/' });
+  });
+});
+
+describe('échiquier des lieux de l’accueil (DecorBoundary, OdysseeHome.tsx)', () => {
+  // Relecture finale (lot 9f) : avant la passe, tout import dynamique en échec rechargeait le site (vite:preloadError,
+  // main.tsx) ; la limite de l'échiquier, ajoutée au lot 7, le retirait sans recharger. Elle recharge de nouveau.
+  it('code introuvable : l’échiquier disparaît et le site est rechargé (au plus une fois par minute) ; autre erreur : il disparaît seulement', async () => {
+    const { DecorBoundary } = await import('../src/client/odyssee/OdysseeHome');
+    const store = new Map<string, string>();
+    const reload = vi.fn();
+    vi.stubGlobal('sessionStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v) });
+    vi.stubGlobal('window', { location: { reload } });
+    const manquant = new TypeError('Failed to fetch dynamically imported module: https://x/assets/StageBoard-a1.js');
+    expect(DecorBoundary.getDerivedStateFromError()).toEqual({ failed: true });
+    const b = new DecorBoundary({ children: createElement('b', null, 'échiquier') });
+    expect(renderToStaticMarkup(b.render() as ReactElement)).toBe('<b>échiquier</b>');
+    b.state = { failed: true };
+    expect(b.render()).toBeNull();
+    // Exception de rendu : retiré, sans rechargement.
+    b.componentDidCatch(new TypeError("Cannot read properties of undefined (reading 'step')"));
+    expect(reload).not.toHaveBeenCalled();
+    // Code introuvable : rechargement, une seule fois dans la minute.
+    b.componentDidCatch(manquant);
+    b.componentDidCatch(manquant);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect([...store.keys()]).toEqual(['spellmate:reload']);
+  });
+});
+
+describe('déconnexion (store.tsx, logout)', () => {
+  it('accord du serveur : l’interface passe en invité, puis « À bientôt ! »', async () => {
+    const f = vi.fn(async (_url: string, _init?: RequestInit) => reponse(200, { ok: true }));
+    vi.stubGlobal('fetch', f);
+    const setMe = vi.fn();
+    const toast = vi.fn();
+    await logoutWith(setMe, toast);
+    expect(f.mock.calls[0][0]).toBe('/api/auth/logout');
+    expect(setMe).toHaveBeenCalledWith(null);
+    expect(toast).toHaveBeenCalledWith('À bientôt !');
+  });
+  it('échec (réseau coupé, erreur du serveur) : toujours connecté (le serveur l’est encore), message d’erreur, et l’erreur remonte (le menu ne ramène pas à l’accueil, comme avant la passe)', async () => {
+    for (const [fetchImpl, message] of [
+      [async () => { throw new TypeError('Failed to fetch'); }, NETWORK_ERROR],
+      [async () => reponse(500, { error: 'Erreur interne, réessayez.' }), 'Erreur interne, réessayez.'],
+    ] as const) {
+      vi.stubGlobal('fetch', vi.fn(fetchImpl));
+      const setMe = vi.fn();
+      const toast = vi.fn();
+      await expect(logoutWith(setMe, toast)).rejects.toThrow(message);
+      expect(setMe).not.toHaveBeenCalled();
+      expect(toast).toHaveBeenCalledWith(message, 'error');
+      expect(toast).toHaveBeenCalledTimes(1);
+    }
   });
 });
 

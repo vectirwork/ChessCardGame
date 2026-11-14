@@ -5,6 +5,8 @@
 // 3. A attend ; B arrive ; A part pendant que B attend son classement : B n'est pas apparié avec A.
 // Avant le correctif : 1 → deux parties pour A ; 2 → les deux attendent, l'une des entrées est perdue ; 3 → partie avec A.
 // Création de la partie en échec après l'appariement : celui qui attendait reprend sa place (sauf s'il est parti).
+// Départ de l'un des deux pendant la lecture des sièges (après l'appariement) : pas de partie ; l'autre est apparié avec
+// un joueur arrivé (ou revenu) entre-temps dans la même file, sinon il y reprend sa place.
 // Files : une par cadence, classée ou amicale, et catalogue (MATCHMAKING.splitByCatalog), voir queuePool.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -28,14 +30,22 @@ import { MATCHMAKING } from '../src/server/settings';
 
 const POOL = '5+0|classee|climats';
 
-/** Lectures du classement retenues jusqu'à `release(id)`. */
-const gates = new Map<string, { promise: Promise<void>; open: () => void }>();
+/**
+ * Lectures en base d'un compte (classement à l'étape 1, siège à l'étape 3 : userById) retenues jusqu'à `release(id)`,
+ * ou jusqu'à `fail(id)`, qui les fait échouer (base qui ne répond pas).
+ */
+const gates = new Map<string, { promise: Promise<void>; open: () => void; fail: () => void }>();
 function hold(id: string) {
   let open!: () => void;
-  const promise = new Promise<void>(r => (open = r));
-  gates.set(id, { promise, open });
+  let fail!: () => void;
+  const promise = new Promise<void>((r, j) => {
+    open = r;
+    fail = () => j(new Error('connexion refusée'));
+  });
+  gates.set(id, { promise, open, fail });
 }
 const release = (id: string) => gates.get(id)?.open();
+const fail = (id: string) => gates.get(id)?.fail();
 
 function user(id: string, rating = 1500): UserRow {
   return {
@@ -189,7 +199,7 @@ describe('file d’attente : création de la partie en échec', () => {
     expect(queueKeys()[POOL] ?? []).toEqual([]);
   });
 
-  it('… sauf s’il a quitté la file pendant la lecture des sièges', async () => {
+  it('… sauf s’il a quitté la file pendant la lecture des sièges (lecture en échec)', async () => {
     const a = sock('d');
     await join(a);
     hold('d'); // lecture du siège de D (après l'appariement) retenue
@@ -197,9 +207,173 @@ describe('file d’attente : création de la partie en échec', () => {
     await flush();
     expect(queueKeys()[POOL] ?? []).toEqual([]);
     quitQueue('u:d');
-    setRulesOverride({ cardsPerPlayer: 9 });
+    fail('d');
+    await expect(pb).rejects.toThrow(/connexion refusée/);
+    expect(queueKeys()[POOL] ?? []).toEqual([]);
+  });
+});
+
+describe('file d’attente : départ pendant la lecture des sièges (étape 3, après l’appariement)', () => {
+  // Relecture finale (lot 9f) : avant, seul l'échec de la création regardait si un joueur était parti ; une partie
+  // était créée pour un joueur qui venait de quitter la file (queue:leave), et le client l'y conduisait.
+  it('celui qui attendait part : pas de partie ; le demandeur prend sa place en file (queue:status)', async () => {
+    const before = activeRoomCount().active;
+    await join(sock('a'));
+    const b = sock('b');
+    hold('a'); // lecture du siège de A retenue (le classement de B, lui, passe)
+    const pb = join(b);
+    await flush();
+    expect(queueKeys()[POOL] ?? []).toEqual([]);
+    quitQueue('u:a');
+    release('a');
+    expect(await pb).toEqual({ ok: true });
+    expect(activeRoomCount().active - before).toBe(0);
+    expect(queueKeys()[POOL]).toEqual(['u:b']);
+    expect(b.emit).toHaveBeenCalledWith('queue:status', expect.objectContaining({ waiting: true, tc: '5+0' }));
+  });
+
+  it('le demandeur part : pas de partie ; celui qui attendait reprend sa place en tête de file', async () => {
+    const before = activeRoomCount().active;
+    await join(sock('c'));
+    await join(sock('h', 2400)); // trop loin en classement : reste en file, derrière C
+    expect(queueKeys()[POOL]).toEqual(['u:c', 'u:h']);
+    const d = sock('d');
+    hold('c');
+    const pd = join(d);
+    await flush();
+    expect(queueKeys()[POOL]).toEqual(['u:h']);
+    quitQueue('u:d');
+    release('c');
+    expect(await pd).toEqual({ ok: true });
+    expect(activeRoomCount().active - before).toBe(0);
+    expect(queueKeys()[POOL]).toEqual(['u:c', 'u:h']);
+    expect(d.emit).not.toHaveBeenCalled();
+  });
+
+  it('les deux partent : pas de partie, file vide', async () => {
+    const before = activeRoomCount().active;
+    await join(sock('e'));
+    hold('e');
+    const pf = join(sock('f'));
+    await flush();
+    quitQueue('u:e');
+    quitQueue('u:f');
+    release('e');
+    expect(await pf).toEqual({ ok: true });
+    expect(activeRoomCount().active - before).toBe(0);
+    expect(queueKeys()[POOL] ?? []).toEqual([]);
+  });
+
+  // Relecture du lot 9f : celui qui reste n'était que remis en file, sans nouvel essai d'appariement ; avec un joueur
+  // arrivé (ou revenu) entre-temps dans la même file, les deux attendaient côte à côte sans être appariés.
+  it('celui qui attendait part ; un troisième arrive pendant la lecture : le demandeur est apparié avec lui', async () => {
+    const before = activeRoomCount().active;
+    await join(sock('a'));
+    hold('a');
+    const b = sock('b');
+    const pb = join(b);
+    await flush();
+    const c = sock('c');
+    await join(c); // la file est vide (A est en cours d'appariement) : C attend
+    expect(queueKeys()[POOL]).toEqual(['u:c']);
+    quitQueue('u:a');
+    release('a');
+    expect(await pb).toEqual({ ok: true });
+    await flush();
+    expect(activeRoomCount().active - before).toBe(1);
+    expect(queueKeys()[POOL] ?? []).toEqual([]);
+    expect(b.emit).not.toHaveBeenCalled();
+  });
+
+  it('le demandeur part ; un troisième arrive pendant la lecture : celui qui attendait est apparié avec lui', async () => {
+    const before = activeRoomCount().active;
+    await join(sock('a'));
+    hold('a');
+    const pb = join(sock('b'));
+    await flush();
+    await join(sock('c'));
+    expect(queueKeys()[POOL]).toEqual(['u:c']);
+    quitQueue('u:b');
+    release('a');
+    expect(await pb).toEqual({ ok: true });
+    await flush();
+    expect(activeRoomCount().active - before).toBe(1);
+    expect(queueKeys()[POOL] ?? []).toEqual([]);
+  });
+
+  it('… et si cette partie ne peut être créée : les deux reprennent leur place, l’erreur va au journal', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const before = activeRoomCount().active;
+      await join(sock('a'));
+      hold('a');
+      const pb = join(sock('b'));
+      await flush();
+      await join(sock('c'));
+      quitQueue('u:b');
+      setRulesOverride({ cardsPerPlayer: 9 }); // la réserve n'a que 8 cartes : création impossible
+      release('a');
+      expect(await pb).toEqual({ ok: true });
+      await flush();
+      expect(activeRoomCount().active - before).toBe(0);
+      expect(queueKeys()[POOL]).toEqual(['u:a', 'u:c']);
+      expect(log).toHaveBeenCalledWith(expect.stringMatching(/^File : partie impossible à créer/), expect.any(Error));
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('le demandeur part puis revient dans la même file pendant la lecture : la partie est créée quand même', async () => {
+    const before = activeRoomCount().active;
+    await join(sock('a'));
+    hold('a');
+    const pb = join(sock('b'));
+    await flush();
+    quitQueue('u:b');
+    await join(sock('b'));
+    expect(queueKeys()[POOL]).toEqual(['u:b']);
+    release('a');
+    expect(await pb).toEqual({ ok: true });
+    await flush();
+    expect(activeRoomCount().active - before).toBe(1);
+    expect(queueKeys()[POOL] ?? []).toEqual([]);
+  });
+
+  it('le demandeur part puis redemande, apparié ailleurs pendant la lecture : pas de seconde partie pour lui', async () => {
+    // B quitte, redemande et est apparié avec D (lecture du siège de D retenue elle aussi) : la première demande de B
+    // ne doit pas le croire encore là (sa seconde demande l'a de nouveau compté parmi les joueurs appariés).
+    const before = activeRoomCount().active;
+    await join(sock('a'));
+    hold('a');
+    const pb1 = join(sock('b'));
+    await flush();
+    quitQueue('u:b');
+    await join(sock('d'));
+    hold('d');
+    const pb2 = join(sock('b'));
+    await flush();
+    expect(queueKeys()[POOL] ?? []).toEqual([]);
+    release('a');
+    expect(await pb1).toEqual({ ok: true });
+    await flush();
+    expect(activeRoomCount().active - before).toBe(0);
+    expect(queueKeys()[POOL]).toEqual(['u:a']);
     release('d');
-    await expect(pb).rejects.toThrow(/Choix des cartes impossible/);
+    expect(await pb2).toEqual({ ok: true });
+    await flush();
+    expect(activeRoomCount().active - before).toBe(1);
+    expect(queueKeys()[POOL]).toEqual(['u:a']);
+  });
+
+  it('personne ne part : la partie est créée comme avant', async () => {
+    const before = activeRoomCount().active;
+    await join(sock('g'));
+    hold('g');
+    const ph = join(sock('h'));
+    await flush();
+    release('g');
+    expect(await ph).toEqual({ ok: true });
+    expect(activeRoomCount().active - before).toBe(1);
     expect(queueKeys()[POOL] ?? []).toEqual([]);
   });
 });

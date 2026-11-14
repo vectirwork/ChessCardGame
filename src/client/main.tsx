@@ -25,12 +25,15 @@ import { App, preloadRoute } from './App';
 import { AppProvider } from './store';
 
 // Code introuvable après une mise en ligne (onglet resté ouvert) ou réseau coupé : aucun écouteur de
-// vite:preloadError, Vite transmet l'erreur à l'appelant.
-// - Code d'une page, ou d'un composant paresseux affiché par une page (échiquier des lieux de l'accueil) : l'erreur va
-//   à la limite de la page (PageBoundary, App.tsx), qui recharge le site au plus une fois par minute
-//   (reloadForNewVersion), puis propose « Réessayer ».
-// - Préchargement qui rattrape son échec (survol d'un lien, StageBoard ou GameRoute au repos, effets, Lenis) : rien
-//   n'est rechargé ; le module sera redemandé à l'affichage.
+// vite:preloadError (avant la passe « polymorphe », il rechargeait le site pour tout import dynamique en échec), Vite
+// transmet l'erreur à l'appelant.
+// - Code d'une page : l'erreur va à la limite de la page (PageBoundary, App.tsx), qui recharge le site au plus une fois
+//   par minute (reloadForNewVersion), puis propose « Réessayer ».
+// - Échiquier des lieux de l'accueil (StageBoard, composant paresseux décoratif) : sa limite (DecorBoundary,
+//   odyssee/OdysseeHome.tsx) le retire, sans toucher au reste de l'accueil, et recharge le site de la même façon.
+// - Préchargement qui rattrape son échec (survol d'un lien, StageBoard ou GameRoute au repos), effets, Lenis, feuille
+//   « Défier un ami » : rien n'est rechargé ; le module sera redemandé à l'affichage (la feuille se ferme avec un
+//   message).
 // Erreur hors d'une page (en-tête, pied de page) : React démonte tout ; elle est notée avec sa pile de composants.
 const root = createRoot(document.getElementById('root')!, {
   onUncaughtError: (error, info) => console.error(error, info.componentStack),

@@ -49,7 +49,9 @@ Points ouverts :
   moment (Q3) avec la pendule d'origine, IA qui joue toutes ses cartes (`reply.cards`). Réglages nommés lus partout
   (`settings.ts`), `elo()` pur, configuration validée par zod, interrupteurs appliqués côté serveur (code
   `feature-off`), version du protocole au handshake (`server:outdated`). Des règles impossibles arrêtent le serveur au
-  démarrage (« Règles impossibles : arrêt. »), ce qui fait échouer un déploiement fautif au contrôle de `/api/health`.
+  démarrage (« Règles impossibles : arrêt. »), ce qui fait échouer un déploiement fautif au contrôle de `/api/health`
+  (depuis le lot 6, la construction les refuse d'abord : le déploiement s'arrête avant de remplacer la version en
+  ligne ; depuis le lot 9f, une configuration refusée aussi, par `--check-config`).
 - **Lot 4, effets, échiquier et sons** : fiches d'effet des cartes (`vfx/cardFx.ts`, `vfx/boardMarks.ts`), sons en table,
   traits des skins en données, code mort des effets retiré, `vfx/config.ts`, `motion.ts`, Saut du cavalier en cases de
   N. Annonce neutre préparée pour des mains cachées (inactive). Captures des sorts reproductibles et reprises.
@@ -74,7 +76,8 @@ Points ouverts ajoutés : poids de l'accueil, environ +0,6 ko gzip de plus (lot 
 - **Lot 6, socle client, marque, routes et SEO** : table des routes partagée (`src/shared/config/routes.ts`), marque
   pliée au build (`index.html` tiré de `BRAND`), greffon Vite qui refuse des règles impossibles, limite d'erreur par
   page avec rechargement quand le code d'une page manque, réseau avec délai maximal, interrupteurs sans flash, liens
-  de la boutique cachés quand elle est fermée. HTML construit identique au défaut.
+  de la boutique cachés quand elle est fermée. `index.html` construit identique au défaut ; HTML servi enrichi (titre,
+  canonical, statut 404… : « Écarts voulus au défaut » du rapport final).
 
 Défauts corrigés dans cette vague : « Partie sans cartes » affiché à tort dans l'attente et le choix des cartes (seul
 écart, voulu, avec la référence des bancs) ; minuterie d'émote commune aux deux camps ; note de révélation du choix
@@ -163,8 +166,10 @@ deux fois avant sa fusion.
   ligne de commentaire par réglage dans `src/shared/config/index.ts`.
 - **Règles par partie** : nombre de cartes, cartes par tour, carte à la place du coup, délai du Présage, règles des
   50 coups et de la répétition, position de départ, équilibrage des cartes. Elles sont photographiées dans la partie
-  si elles diffèrent des règles d'avant (`RULES_V1`) : au défaut, aucune partie, vue ou sauvegarde ne change d'un
-  octet. Variantes par contexte (`RULES_BY_CONTEXT`).
+  si elles diffèrent des règles d'avant (`RULES_V1`) : au défaut, aucune règle n'est écrite, parties et sauvegardes
+  sont identiques à l'octet ; les vues et `/api/me` gagnent des champs facultatifs (`DraftView.totalMs`,
+  `reveal.filled`, `features`, `version`) et le serveur écrit au démarrage une ligne des règles. Variantes par
+  contexte (`RULES_BY_CONTEXT`).
 - **Textes dérivés des réglages** (`src/shared/text/`) : identiques au caractère près au défaut ; « une carte »,
   « cinq cartes », « deux sorts par tour »… ailleurs.
 - **Mises en page de 1 à 6 cartes** sans rien changer à 3 cartes (aucun attribut, variable, classe ni nœud nouveau).
@@ -182,12 +187,12 @@ deux fois avant sa fusion.
 
 | Défaut | Lot |
 |---|---|
-| File d'attente sous concurrence : double appariement, entrée perdue, joueur parti apparié | 3 |
+| File d'attente sous concurrence : double appariement, entrée perdue, joueur parti apparié (aussi pendant la lecture des sièges, après l'appariement : 9f) | 3, 9f |
 | Assise d'une invitation écrasée par un second joueur | 3 |
 | Pool PostgreSQL sans écouteur d'erreur ni délai de connexion (un redémarrage de la base faisait tomber le serveur) | 3 |
 | Spectateurs de `/live` mal comptés | 3 |
 | Fil de calcul de l'IA mort gardé dans la rotation | 3 |
-| Fin de partie perdue si la base ne répond pas (nouveaux essais, classement rattrapé au démarrage) | 3 |
+| Fin de partie perdue si la base ne répond pas : nouveaux essais, classement rattrapé au démarrage (3) ; au-delà des essais, la salle terminée n'est plus évincée (relue en base, elle y était encore en cours, et le perdant pouvait réclamer la victoire) et le ménage relance l'enregistrement jusqu'au retour de la base (9f) | 3, 9f |
 | Échec de création d'une partie appariée qui faisait perdre sa place à celui qui attendait | 3 |
 | Fichier `.env` lu trop tard pour les interrupteurs | 3 |
 | Cadence inconnue transformée en partie sans pendule ; relance sans fin de l'IA | 3 |
@@ -198,6 +203,13 @@ deux fois avant sa fusion.
 | Minuterie d'émote commune aux deux camps | 5 |
 | Numérotation des coups après une Grande Marée des Noirs | 5 |
 | Page blanche quand le code d'une page manque ; « Failed to fetch » en anglais | 6 |
+| Rechargement de tout le site quand un module secondaire manque après une mise en ligne (effets, Lenis, survol d'un lien, y compris en pleine partie) : seuls le code d'une page (PageBoundary) et l'échiquier des lieux de l'accueil (DecorBoundary, 9f) rechargent, au plus une fois par minute | 6, 9f |
+| Échec de `/api/me` pris pour une déconnexion (nouveaux essais après 1, 3, 9 s puis toutes les 10 s) ; requêtes sans délai maximal (20 s) ; Mentions légales en attente sans fin (message et « Réessayer ») ; « Défier un ami » qui ne se charge pas (message) | 6, 9a |
+| Incrément suspendu par le Sablier fou jamais signalé : « +2 » barré sur les pendules | 5 |
+| Relais de l'IA invisible sur la page de partie : « L’IA joue pour X. » | 5 |
+| Choix des cartes : « vos cartes manquantes » quand il n'en manque qu'une (singulier au défaut à 3 cartes ; la note de révélation reste au pluriel) | 5 |
+| Choix de promotion lu « q », « r », « b », « n » au lecteur d'écran (« dame », « tour »…) | 4 |
+| Invitation déjà en attente ouverte par un second joueur malgré la maintenance (`FEATURE_NEW_GAMES=0`) ou les invitations coupées | 9f |
 | Accueil aux Noirs : halo et curseur sur la pièce adverse ; position d'une partie précédente montrée en attendant l'adversaire ; socket ouvert avant `/api/me` | 7 |
 | « 1 étapes », « 1 leçon terminées », « 1 coups » | 8 |
 
@@ -214,8 +226,27 @@ référence d'avant la passe :
   « 1 coup »).
 
 Autres changements visibles seulement dans des cas précis : numérotation des coups après une Grande Marée des Noirs ;
-PGN refusés avant, relus maintenant. Le lot 9c n'a rien changé au site : le site construit est identique octet pour
-octet avant et après lui (empreintes de `dist/`).
+PGN refusés avant, relus maintenant ; et les corrections du tableau ci-dessus (pendule sous le Sablier fou, « L’IA
+joue pour X. », message du choix pour une carte, rechargements, échecs réseau, libellés de promotion).
+
+HTML servi (lot 6, prévu au plan) : statut 404 pour un chemin inconnu (200 avant) ; titre de chaque page dès le HTML
+(« Boutique · Spellmate »…, au lieu du titre de l'accueil jusqu'à l'exécution du script) ; `<link rel="canonical">` et
+`og:url` ; `og:image` en adresse absolue tirée de `PUBLIC_URL` (`https://chess-powers.com/og.jpg` en production) ;
+cookie d'invité `sm_guest` posé dès le HTML ; `/api/health` ne pose plus de cookie. Le fichier `dist/client/index.html`
+est inchangé : ces écarts n'apparaissent qu'au service. Aucune sonde du déploiement ne lit le HTML (elles
+n'interrogent que `/api/health`) ; effet sur les robots d'aperçu non vérifié.
+
+Réponses JSON et journal : au défaut, les vues et `/api/me` gagnent des champs facultatifs (`DraftView.totalMs`,
+`reveal.filled`, `features` et `version` de `/api/me`), et le serveur écrit au démarrage une ligne des règles des
+nouvelles parties. Aucun effet visible (le client lit `totalMs` = 45 000, comme l'ancienne constante).
+
+Revenu au comportement d'avant la passe (lot 9f) : la revanche d'une partie en direct de l'accueil, demandée depuis
+la page de partie, est une partie amicale avec le choix des cartes, sans relais (la passe lui donnait des mains tirées
+et le relais de l'IA) ; la déconnexion ne fait passer l'interface en invité qu'avec l'accord du serveur (la passe le
+faisait aussi en cas d'échec, alors que le serveur voyait toujours le compte, et le menu ramenait à l'accueil :
+maintenant, comme avant la passe, l'utilisateur reste connecté sur sa page, avec en plus un message d'erreur). Le
+lot 9c n'a rien changé au site : le site construit est identique octet pour octet avant et après lui (empreintes de
+`dist/`).
 
 Contrôles du lot 9c après sa relecture (commit de départ 2a28d09) : `tsc` sans erreur ; 1 236 tests verts
 (54 fichiers, dont les 21 de `test/reglages-doc.test.ts`) ; `npm run temoins` vert ; build réussi, `dist/` identique
@@ -309,3 +340,82 @@ défaut (1 236 avant, 9 tests des outils ajoutés).
 - `BRAND.pgnVariant` et `BRAND.storagePrefix` ne sont lus nulle part : la variante PGN et le préfixe des clés sont
   écrits en dur (`src/shared/pgn.ts`, `src/client/storageKeys.ts`). Sans effet au défaut ; à relier ou à présenter
   comme de simples rappels.
+
+### Relecture finale transversale (lot 9f)
+
+Quatre relecteurs (déploiement, sécurité, compatibilité, identité) ont relu toute la passe ; chaque constat a été
+vérifié par un sceptique. 20 constats confirmés, corrigés ou déclarés par le lot 9f (plan : `plan/lots/9f.md`).
+
+Corrigés dans le code, chacun avec un test qui échoue sur le code d'avant :
+- **Fin de partie non enregistrée** (base injoignable au-delà des essais de `persistResult`) : la salle terminée
+  n'est plus évincée par le ménage tant que son résultat attend (`resultPending`) ; le ménage relance
+  l'enregistrement, un seul à la fois (`persisting`), un essai par ménage, sans rien noter tant qu'il échoue (une
+  ligne quand la base l'accepte). Avant, au bout de 10 minutes, la salle était relue en base
+  « en cours », reprise, et le perdant d'une partie classée pouvait réclamer la victoire et les points
+  (`test/server-fin-de-partie.test.ts`). Ce n'était pas une régression de la passe (un seul essai avant elle).
+- **Revanche d'une partie relayée de l'accueil** : revenue au comportement d'avant la passe (choix des cartes, sans
+  relais) ; pendule d'origine et règles du moment (Q3) gardées. Son refus éventuel suit la sorte de partie qu'elle
+  crée (amicale), plus celle de l'accueil.
+- **Configuration vérifiée avant le remplacement du site** : `node dist/server/index.js --check-config` (code 0, ou
+  1 avec les messages, sans ouvrir la base), lancé par `deploy/update.sh` dans la nouvelle image entre la construction
+  et `docker compose up`. Avant, une valeur refusée par la validation de la passe (par exemple `SMTP_PORT=587x` dans
+  `/opt/spellmate/local.env`, que personne n'a relu) arrêtait le nouveau conteneur après l'arrêt de l'ancien.
+  `test/deploiement.test.ts` passe la configuration de production du dépôt (`deploy/production.env`, secrets,
+  `docker-compose.yml`, Dockerfile) à `parseEnv` : aucune erreur. `deploy/README.md` dit comment revenir en arrière
+  (`deploy/VERSION` doit désigner un commit différent de celui noté comme déployé).
+- **Maintenance et invitations coupées** : une invitation déjà en attente (reprise au démarrage) ne s'ouvre plus à
+  un second joueur (`takeSeat` rend `'off'`, `game:join` relaie le refus). Identique au défaut.
+- **File** : un joueur qui quitte la file pendant la lecture des sièges (après l'appariement) n'est plus apparié ;
+  l'autre est apparié avec un joueur arrivé (ou revenu) entre-temps dans la même file, sinon il reprend sa place
+  (`matchOrQueue`). Les joueurs en cours d'appariement sont suivis par leur entrée, pas par leur clé : un joueur parti
+  puis apparié ailleurs par une nouvelle demande n'a plus deux parties. Identique au défaut sans départ.
+- **Version du protocole** : un client qui n'annonce pas de version compte comme la version 1 (identique tant que
+  `PROTOCOL_VERSION` vaut 1 ; `docs/REGLAGES.md`, section 2, dit ce qui change à la première montée). Les clients de
+  test (`test/lib/client.mjs`, `test/climats-serveur.mjs`, `test/perf/mesure.mjs`) annoncent déjà la version lue dans
+  `/api/me`.
+- **Déconnexion** : l'interface ne passe en invité qu'avec l'accord du serveur, comme avant la passe. En cas
+  d'échec : un message d'erreur (nouveau), toujours connecté, et l'erreur remonte comme avant la passe : le menu ne
+  ramène pas à l'accueil (rejet non traité dans `Layout.tsx`, comme avant).
+- **Rechargement quand un module manque** : l'échiquier des lieux de l'accueil recharge de nouveau le site (au plus
+  une fois par minute), comme avant la passe ; commentaires de `main.tsx` et `App.tsx` exacts.
+- `TRUST_PROXY` réglable dans `.env` sous Compose (`${TRUST_PROXY:-true}` : même valeur `"true"` au défaut, vérifié
+  avec `docker compose config` sur la configuration de production). Une ligne `TRUST_PROXY` de
+  `/opt/spellmate/local.env`, ignorée jusque-là, s'applique désormais : `deploy/README.md` demande de relire ce
+  fichier avant le premier déploiement (une valeur illisible arrête le déploiement à `--check-config`).
+
+Déclarés seulement (changements voulus, gardés) : HTML servi, incrément barré sous le Sablier fou, « L’IA joue pour
+X. », message d'expiration du choix au singulier, politique de rechargement, échecs réseau, libellés de promotion,
+champs JSON facultatifs et ligne de journal (tableau des défauts corrigés et « Écarts voulus au défaut » ci-dessus) ;
+documentation du déploiement corrigée (des règles impossibles arrêtent la construction ; un interrupteur changé en
+production passe par un déploiement, qui reconstruit l'image).
+
+Non vérifié : `--check-config` n'a pas été lancé dans un vrai conteneur ni sur le serveur de production (seulement
+`node` sur le code construit, et `docker compose config` sans démon) ; rien n'est déployé.
+
+Contrôles du lot 9f (départ 6182cb6 : 1 245 tests verts) : `tsc` sans erreur ; 1 263 tests verts (18 de plus ; 15 tests
+nouveaux ou modifiés échouent sur le code d'avant) ; `npm run temoins` vert ; build réussi ; `index.html` identique sauf l'empreinte du
+paquet principal (son code change : `store.tsx`, `importFailed.ts`), CSS et polices identiques, les autres morceaux ne
+changent que par les noms d'import ; poids (gzip -9, fermetures) : paquet principal 101 774 → 101 775 o, accueil
+232 979 → 233 015 o, partie 206 200 → 206 224 o. `npm run identite` et `npm run textes-pages` : seuls les écarts
+voulus déjà connus (« Partie sans cartes », « 1 étape »). Bout en bout au défaut sur serveur jetable :
+`integration.mjs`, `ranked.mjs`, `fonctions.mjs` verts ; scénario de revanche d'une partie de l'accueil du relecteur
+identique au serveur d'avant la passe (choix des cartes, mains vides, aucun relais, aucun coup joué 12 s plus tard).
+`npm run essai-reglage -- --essai=tous` : aucun échec hors des gardes (après découplage du test de `--check-config`).
+Aucune mesure de performance.
+
+Relecture du lot 9f (deux relecteurs adverses, 9 constats mineurs, tous confirmés) : file d'attente (le joueur resté
+après un départ pendant la lecture des sièges n'était que remis en file, à côté d'un joueur compatible arrivé ou revenu
+entre-temps : il est maintenant apparié avec lui ; et un joueur parti puis apparié ailleurs par une nouvelle demande
+était encore compté présent dans l'ancienne : les appariements en cours sont suivis par entrée) ; ménage (un essai
+d'enregistrement par ménage, sans journal tant qu'il échoue) ; déconnexion en échec (l'erreur remonte de nouveau : le
+menu ne ramène plus à l'accueil un utilisateur toujours connecté) ; `deploy/README.md` (`TRUST_PROXY` pris dans `.env`
+sous Compose, `local.env` à relire) ; clients de test qui annoncent leur version (dont `test/perf/mesure.mjs`) ; tests
+de l'arrêt « Règles impossibles » (`test/deploiement.test.ts`, `test/server-config.test.ts`) et du tirage
+(`test/climats.test.ts`) découplés de `DEAL.handLimits`. Contrôles : `tsc` sans erreur ; 1 268 tests verts (7 tests
+nouveaux ou modifiés échouent sur le code d'avant la relecture) ; `npm run temoins` vert ; build réussi, `index.html`
+identique sauf l'empreinte du paquet principal ; fermetures (gzip -9) depuis 6182cb6 : paquet principal 101 774 →
+101 784 o, accueil 232 979 → 233 025 o, partie 206 200 → 206 231 o ; `npm run textes-pages` : les mêmes écarts voulus
+qu'au premier passage ; bout en bout au défaut sur serveur jetable : `integration.mjs`, `ranked.mjs`,
+`fonctions.mjs`, `climats-serveur.mjs` verts, et la partie préparée par `test/perf/mesure.mjs` (fonction lancée seule,
+sans mesure) ; `npm run essai-reglage -- --essai=tous` et l'essai `--deal=handLimits=…climat 3` (exemple de
+l'outil, qui faisait échouer trois tests hors des gardes) : aucun échec hors des gardes. Aucune mesure de performance.

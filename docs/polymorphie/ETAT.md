@@ -281,7 +281,9 @@ défaut (`test/helpers/v1.ts`) : les 7 essais de `docs/REGLAGES.md`, section 2.1
 voulus (0 autre échec au lieu de 6 à 95), vérifié par le nouvel outil `npm run essai-reglage` ; `verifier-lot` calcule
 les gels d'après les vagues ; le commentaire de `BOT_TIMEOUT_MS` est corrigé ; `BRAND.pgnVariant` et
 `BRAND.storagePrefix` sont présentés comme des rappels (les relier changeait le site construit). Site construit
-identique (empreintes de `dist/`), 1 243 tests verts au défaut (1 236 avant, 7 tests des outils ajoutés).
+identique (empreintes de `dist/` : les 271 fichiers du client et le code du serveur ; seule la carte de source du
+serveur, `dist/server/index.js.map`, suit les commentaires de `brand.ts` et `timings.ts`), 1 243 tests verts au
+défaut (1 236 avant, 7 tests des outils ajoutés).
 
 - Changer une valeur par défaut fait échouer de 9 à 101 tests sur 1 108 (essai sur une copie jetable,
   `docs/REGLAGES.md`, section 2). Ce compte comprend les deux gardes (`defauts`, `protocole`) et 1 à 4 tests de

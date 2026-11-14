@@ -381,3 +381,14 @@ production passe par un déploiement, qui reconstruit l'image).
 
 Non vérifié : `--check-config` n'a pas été lancé dans un vrai conteneur ni sur le serveur de production (seulement
 `node` sur le code construit, et `docker compose config` sans démon) ; rien n'est déployé.
+
+Contrôles du lot 9f (départ 6182cb6 : 1 245 tests verts) : `tsc` sans erreur ; 1 263 tests verts (18 de plus ; 15 tests
+nouveaux ou modifiés échouent sur le code d'avant) ; `npm run temoins` vert ; build réussi ; `index.html` identique sauf l'empreinte du
+paquet principal (son code change : `store.tsx`, `importFailed.ts`), CSS et polices identiques, les autres morceaux ne
+changent que par les noms d'import ; poids (gzip -9, fermetures) : paquet principal 101 774 → 101 775 o, accueil
+232 979 → 233 015 o, partie 206 200 → 206 224 o. `npm run identite` et `npm run textes-pages` : seuls les écarts
+voulus déjà connus (« Partie sans cartes », « 1 étape »). Bout en bout au défaut sur serveur jetable :
+`integration.mjs`, `ranked.mjs`, `fonctions.mjs` verts ; scénario de revanche d'une partie de l'accueil du relecteur
+identique au serveur d'avant la passe (choix des cartes, mains vides, aucun relais, aucun coup joué 12 s plus tard).
+`npm run essai-reglage -- --essai=tous` : aucun échec hors des gardes (après découplage du test de `--check-config`).
+Aucune mesure de performance.

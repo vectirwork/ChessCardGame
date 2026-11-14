@@ -55,6 +55,21 @@ function featuresFromPage(): Readonly<Features> {
   }
 }
 
+/**
+ * Déconnexion : l'interface ne passe en invité qu'avec l'accord du serveur, comme avant la passe (sinon le cookie de
+ * session resterait valable et le serveur verrait toujours le compte) ; en cas d'échec, un message d'erreur. Exportée
+ * pour les tests.
+ */
+export async function logoutWith(setMe: AppState['setMe'], toast: AppState['toast']) {
+  try {
+    await api('/auth/logout', { method: 'POST', body: {} });
+    setMe(null);
+    toast('À bientôt !');
+  } catch (e) {
+    toast(errMsg(e), 'error');
+  }
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
   const [me, setMeState] = useState<MeUser | null>(null);
   const [ready, setReady] = useState(false);
@@ -101,17 +116,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4200);
   }, []);
 
-  /** Déconnexion : l'interface passe en invité même si la requête échoue (message d'erreur alors). */
-  const logout = useCallback(async () => {
-    try {
-      await api('/auth/logout', { method: 'POST', body: {} });
-      toast('À bientôt !');
-    } catch (e) {
-      toast(errMsg(e), 'error');
-    } finally {
-      setMe(null);
-    }
-  }, [setMe, toast]);
+  const logout = useCallback(() => logoutWith(setMe, toast), [setMe, toast]);
 
   const value = useMemo(
     () => ({ me, ready, payments, setMe, refresh, logout, toast }),

@@ -26,6 +26,8 @@ import { CollectionSeal } from '../components/CollectionSeal';
 import { crestUrl, kingUrl } from '../components/pieces';
 import { SpellCard } from '../components/SpellCard';
 import { readJson } from '../features/storage';
+import { importFailed } from '../importFailed';
+import { reloadForNewVersion } from '../socket';
 import { equippedId, isEquipped, owns } from '../skins';
 import { KEYS } from '../storageKeys';
 import { useApp, useFeature } from '../store';
@@ -167,12 +169,16 @@ const loadFriendSheet = () => import('./FriendSheet').then(m => (friendSheet = m
 /**
  * Limite d'erreur de l'échiquier de démonstration, décoratif : un échec de son chargement (morceau introuvable après une
  * mise en ligne, réseau coupé) ou de son rendu le retire, sans remplacer tout l'accueil par l'écran d'erreur de la page.
- * Aucun nœud de plus.
+ * Code introuvable : le site est aussi rechargé, au plus une fois par minute (reloadForNewVersion), comme avant la
+ * passe (vite:preloadError) et comme PageBoundary. Aucun nœud de plus. Exportée pour les tests.
  */
-class DecorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+export class DecorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+  componentDidCatch(e: unknown) {
+    if (importFailed(e)) reloadForNewVersion();
   }
   render() {
     return this.state.failed ? null : this.props.children;

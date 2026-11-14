@@ -2,6 +2,7 @@ import { Component, Suspense, createElement, lazy, useContext, useEffect, useSta
 import type { ComponentType, ReactNode } from 'react';
 import { Route, Routes, matchPath, useLocation } from 'react-router-dom';
 import { Footer, Header, PageLoader } from './components/Layout';
+import { importFailed } from './importFailed';
 import { reloadForNewVersion } from './socket';
 import { FeaturesContext } from './store';
 import { ROUTES, routeOpen } from '../shared/config/routes';
@@ -15,7 +16,7 @@ import type { PageModule, PropsOf } from '../shared/config/routes';
  *
  * Code de la page introuvable (onglet resté ouvert après une mise en ligne, réseau coupé) : un préchargement en échec
  * ne fait rien (survol d'un lien : aucun rechargement en pleine partie) ; à l'affichage, l'erreur va à PageBoundary,
- * qui recharge le site.
+ * qui recharge le site (importFailed, ./importFailed.ts).
  */
 type Page<P> = ComponentType<P> & { preload: () => Promise<unknown> };
 export function page<P extends object>(load: () => Promise<{ default: ComponentType<P> }>): Page<P> {
@@ -67,13 +68,6 @@ export function preloadRoute(pathname: string): Promise<unknown> {
   const hit = ROUTES.find(r => matchPath(r.path, pathname));
   return PAGES[hit ? hit.page : 'NotFound'].preload().catch(() => undefined);
 }
-
-/**
- * Échec du chargement d'un module (code d'une page, ou composant paresseux d'une page comme l'échiquier de l'accueil) :
- * « Failed to fetch dynamically imported module » (Chromium), « error loading dynamically imported module » (Firefox),
- * « Importing a module script failed. » (Safari), « Unable to preload CSS for … » (feuille du module, Vite).
- */
-export const importFailed = (e: unknown) => /dynamically imported|a module script|preload CSS/.test(String(e));
 
 /**
  * Limite d'erreur d'une page : code introuvable, ou exception pendant le rendu. Sans elle, React démonte tout le site

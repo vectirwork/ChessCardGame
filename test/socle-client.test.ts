@@ -14,6 +14,8 @@ import { emitAck, reloadForNewVersion } from '../src/client/socket';
 import type { AckEvent, AckPayload, AckReply } from '../src/client/socket';
 import { AppProvider, useFeature } from '../src/client/store';
 import type { FeatureKey } from '../src/shared/config/features';
+import { GAME_RULES, RULES_V1 } from '../src/shared/config/rules';
+import { cartesDePouvoir } from '../src/shared/text/regles';
 import type { Ack, JoinReply } from '../src/shared/protocol';
 
 afterEach(() => {
@@ -247,7 +249,9 @@ describe('en-tête et pied de page : marque et liens selon les interrupteurs', (
     const html = site(null);
     expect(html).toContain('aria-label="Spellmate, accueil"');
     expect(html).toContain('<span>SPELLMATE</span>');
-    expect(html).toContain('Les échecs que vous aimez, avec trois cartes de pouvoir pour renverser la partie.');
+    // Nombre de cartes de GAME_RULES : « trois cartes de pouvoir » au défaut, la phrase dérivée sinon.
+    const cartes = GAME_RULES.cardsPerPlayer === RULES_V1.cardsPerPlayer ? 'trois cartes de pouvoir' : cartesDePouvoir(GAME_RULES);
+    expect(html).toContain(`Les échecs que vous aimez, avec ${cartes} pour renverser la partie.`);
     expect(html).toContain(' Spellmate. Tous droits réservés.');
     expect(html).toContain('<span>Les échecs, avec un peu de magie.</span>');
     for (const l of ['/boutique', '/problemes', '/apprendre', '/analyse', '/direct', '/classement', '/jouer?mode=quick']) expect(liens(html)).toContain(l);

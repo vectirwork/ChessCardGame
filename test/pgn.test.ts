@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { sqIndex as q, toFen } from '../src/shared/chess';
 import type { CardId } from '../src/shared/cards';
-import { GameState, createGame, playCard, playMove } from '../src/shared/game';
+import { GameState, playCard, playMove } from '../src/shared/game';
 import { RULES_V1 } from '../src/shared/rules';
 import {
   START_FEN, TreeNode, findSanMove, initialStateOf, mainline, parsePgnText, readPgn, sanOf, stateFromFen,
   treeFromLog, validateFen, writePgn,
 } from '../src/shared/pgn';
+// Parties, tirages et choix scriptés aux règles V1 (RULES_V1, DEAL_V1), quel que soit le réglage du jour (lot 9e) :
+// test/helpers/v1.ts.
+import { createGame } from './helpers/v1';
 
 const OPERA = `[Event "Paris"]
 [Site "Paris FRA"]

@@ -18,8 +18,7 @@ vi.mock('../src/server/bot-pool', () => ({
 
 import { sqIndex as q } from '../src/shared/chess';
 import { CARDS, CardId, cardsOf } from '../src/shared/cards';
-import { chooseBotDraft } from '../src/shared/bot';
-import { cardPool, completeDraft, createGame, dealHands, draftRefusal, positionKey, withHands } from '../src/shared/game';
+import { cardPool, draftRefusal, positionKey, withHands } from '../src/shared/game';
 import { DEAL } from '../src/shared/config/rules';
 import { RULES_V1 } from '../src/shared/rules';
 import { TIMINGS } from '../src/server/settings';
@@ -27,6 +26,9 @@ import {
   Room, RoomData, abortRoom, applyDraft, applyMove, closeDraft, draftView, newRoom, resignRoom, resumeRoom, submitDraft,
 } from '../src/server/games';
 import { botPool } from '../src/server/bot-pool';
+// Parties, tirages et choix scriptés aux règles V1 (RULES_V1, DEAL_V1), quel que soit le réglage du jour (lot 9e) :
+// test/helpers/v1.ts.
+import { chooseBotDraft, completeDraft, createGame, dealHands } from './helpers/v1';
 
 const T0 = 1_800_000_000_000;
 const POUVOIRS = cardsOf('climats');
@@ -294,7 +296,8 @@ describe('choix des cartes : serveur', () => {
     const room = invite();
     applyDraft(room, 'w', ['blood_moon', 'ice_age', 'truce'], true);
     applyDraft(room, 'b', ['tide', 'rift'], false);
-    vi.advanceTimersByTime(30_000);
+    // Les deux tiers du choix (30 s sur 45 au défaut) : le choix est encore ouvert à l'arrêt du serveur.
+    vi.advanceTimersByTime((DRAFT_MS * 2) / 3);
     const saved: RoomData = JSON.parse(JSON.stringify(room.d));
     // Arrêt du serveur : ses minuteries disparaissent avec lui.
     vi.clearAllTimers();

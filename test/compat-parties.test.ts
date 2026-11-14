@@ -9,17 +9,17 @@
 // sauvegarde v1 de l'accueil, la partie locale, et les tirages (dealHands, completeDraft, chooseBotDraft) au défaut.
 import { readFileSync, readdirSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
-import { chooseBotDraft } from '../src/shared/bot';
 import type { BotLevel } from '../src/shared/bot';
 import type { CardId, Catalog } from '../src/shared/cards';
 import type { GameRulesSettings } from '../src/shared/config/rules';
-import {
-  completeDraft, createGame, dealHands, legalMovesOf, playCard, playMove, positionKey,
-} from '../src/shared/game';
+import { createGame, legalMovesOf, playCard, playMove, positionKey } from '../src/shared/game';
 import type { GameState, LogEntry } from '../src/shared/game';
 import { initialStateOf, mainline, treeFromLog } from '../src/shared/pgn';
 import { RULES_V1, rulesFor, sameRules, setRulesOverride } from '../src/shared/rules';
 import { mulberry32 } from './helpers/rng';
+// Témoins pris au défaut d'avant la passe : la partie locale (sans règles) se relit en RULES_V1, et les tirages se
+// refont avec les mains et la mise en place de V1 (test/helpers/v1.ts), quel que soit le réglage du jour (lot 9e).
+import * as v1 from './helpers/v1';
 
 const DOSSIER = new URL('./fixtures/v1/', import.meta.url);
 const lire = <T>(rel: string): T => JSON.parse(readFileSync(new URL(rel, DOSSIER), 'utf8')) as T;
@@ -139,7 +139,7 @@ describe.each(REGLAGES)('parties témoins v1, %s', (_nom, regles) => {
     const locale = lire<{ partie: { local: { log: LogEntry[]; hands: Record<'w' | 'b', CardId[]>; timed: boolean; catalog: Catalog } } }>(
       'partie-locale.json',
     ).partie.local;
-    const start = createGame(locale.hands, locale.timed, locale.catalog);
+    const start = v1.createGame(locale.hands, locale.timed, locale.catalog);
     const t = treeFromLog(start, locale.log);
     expect(t.complete).toBe(true);
     expect(mainline(t.root).at(-1)!.state.result).toEqual({ winner: 'w', reason: 'checkmate' });
@@ -155,16 +155,16 @@ describe('tirages témoins v1, au défaut', () => {
   const t = lire<Tirages>('tirages.json');
   it('dealHands : mêmes mains à graine égale', () => {
     for (const x of t.dealHands) {
-      const h = dealHands(x.timed, mulberry32(x.graine), x.catalog, { vsBot: x.vsBot });
+      const h = v1.dealHands(x.timed, mulberry32(x.graine), x.catalog, { vsBot: x.vsBot });
       // Mode miroir (retiré du moteur au lot 9) : la main des Blancs, tirée la première avec le même générateur, copiée.
       expect(x.mirror ? { w: h.w, b: h.w.slice() } : h, String(x.graine)).toEqual(x.mains);
     }
   });
   it('completeDraft : mêmes compléments à graine égale', () => {
-    for (const x of t.completeDraft) expect(completeDraft(x.pool, x.partial, mulberry32(x.graine)), String(x.graine)).toEqual(x.main);
+    for (const x of t.completeDraft) expect(v1.completeDraft(x.pool, x.partial, mulberry32(x.graine)), String(x.graine)).toEqual(x.main);
   });
   it('chooseBotDraft : mêmes choix de l’IA à graine égale', () => {
-    for (const x of t.chooseBotDraft) expect(chooseBotDraft(x.pool, x.niveau, mulberry32(x.graine)), String(x.graine)).toEqual(x.main);
+    for (const x of t.chooseBotDraft) expect(v1.chooseBotDraft(x.pool, x.niveau, mulberry32(x.graine)), String(x.graine)).toEqual(x.main);
   });
   it('au défaut, une nouvelle partie n’écrit ni rules ni cardsThisTurn', () => {
     const s = createGame({ w: ['truce'], b: ['rift'] }, true, 'climats');

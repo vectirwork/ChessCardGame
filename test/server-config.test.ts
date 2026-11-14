@@ -19,6 +19,7 @@ import { isLegalTemplate, parseEnv, rulesReport } from '../src/server/config';
 import { postgresDriver } from '../src/server/db';
 import { hashPassword, needsRehash, verifyPassword } from '../src/server/security';
 import { DATABASE, dealSettings, setDealOverride } from '../src/server/settings';
+import { DEAL_V1, reglerV1 } from './helpers/v1';
 
 const PROD = { NODE_ENV: 'production', SECRET_KEY: 'x'.repeat(64), PUBLIC_URL: 'https://chess-powers.com' };
 const LEGAL_OK = {
@@ -147,13 +148,21 @@ describe('SPELLMATE_TEST_RULES (serveur jetable)', () => {
 
 describe('règles des nouvelles parties au démarrage', () => {
   it('au défaut : une ligne de journal, aucune erreur', () => {
-    expect(rulesReport()).toEqual({
-      lines: [
-        'Règles des nouvelles parties : 3 cartes par joueur, 1 par tour, avant le coup, mains visibles, Présage en 2 demi-coups, '
-          + 'nulle après 50 coups sans prise ni coup de pion, répétition ×3, position standard, choix des cartes en 45 s.',
-      ],
-      errors: [],
-    });
+    // Règles et mise en place du défaut d'avant la passe (V1), quel que soit le réglage du jour (lot 9e).
+    reglerV1();
+    setDealOverride({ draft: DEAL_V1.draft, draftMs: DEAL_V1.draftMs, limitsInDraft: DEAL_V1.limitsInDraft });
+    try {
+      expect(rulesReport()).toEqual({
+        lines: [
+          'Règles des nouvelles parties : 3 cartes par joueur, 1 par tour, avant le coup, mains visibles, Présage en 2 demi-coups, '
+            + 'nulle après 50 coups sans prise ni coup de pion, répétition ×3, position standard, choix des cartes en 45 s.',
+        ],
+        errors: [],
+      });
+    } finally {
+      setRulesOverride(null);
+      setDealOverride(null);
+    }
   });
 
   it('la ligne suit la mise en place de ce serveur (surcharge de test), pas seulement DEAL', () => {

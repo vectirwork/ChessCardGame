@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { sqIndex as q, sqName } from '../src/shared/chess';
-import {
-  cardOptions, cardPlayable, createGame, createGameFromFen, GameState, legalMovesOf, playCard, playMove,
-} from '../src/shared/game';
+import { cardOptions, cardPlayable, GameState, legalMovesOf, playCard, playMove } from '../src/shared/game';
+// Parties scriptées aux règles V1 (RULES_V1), quel que soit le réglage du jour : createGame de test/helpers/v1.ts.
+import { createGame, createGameFromFen } from './helpers/v1';
 
 const moves = (s: GameState, from: string) => legalMovesOf(s).filter(m => m.from === q(from)).map(m => sqName(m.to)).sort();
 function mv(s: GameState, from: string, to: string): GameState {

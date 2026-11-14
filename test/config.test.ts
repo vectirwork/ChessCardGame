@@ -208,8 +208,11 @@ describe('rulesFor, stampRules, sameRules', () => {
   it('résumé pour le journal du serveur', () => {
     expect(rulesSummary(RULES_V1)).toMatch(/^3 cartes par joueur, 1 par tour, avant le coup, mains visibles/);
     expect(rulesSummary({ ...RULES_V1, cardsPerPlayer: 1 })).toMatch(/^1 carte par joueur, /);
-    // Mise en place : DEAL par défaut, celle du serveur sinon (dealSettings, surcharge de test comprise).
-    expect(rulesSummary(RULES_V1)).toMatch(/, choix des cartes en 45 s$/);
+    // Mise en place : DEAL par défaut, celle du serveur sinon (dealSettings, surcharge de test comprise). Au défaut,
+    // « en 45 s » ; sinon, la durée de DEAL (ou le tirage).
+    const choix = DEAL.draft && DEAL.draftMs === DEAL_V1.draftMs ? /, choix des cartes en 45 s$/
+      : DEAL.draft ? new RegExp(`, choix des cartes en ${DEAL.draftMs / 1000} s$`) : /, choix des cartes remplacé par le tirage$/;
+    expect(rulesSummary(RULES_V1)).toMatch(choix);
     expect(rulesSummary(RULES_V1, { ...DEAL, draftMs: 30_000 })).toMatch(/, choix des cartes en 30 s$/);
     expect(rulesSummary(RULES_V1, { ...DEAL, draft: false })).toMatch(/, choix des cartes remplacé par le tirage$/);
   });

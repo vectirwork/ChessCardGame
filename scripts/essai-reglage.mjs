@@ -206,11 +206,14 @@ function lireRapport(dossier, fichierJson) {
   if (!existsSync(fichierJson)) return null;
   const r = JSON.parse(readFileSync(fichierJson, 'utf8'));
   const echecs = [];
-  let sautes = 0;
+  const sautes = [];
   for (const f of r.testResults ?? []) {
     const fichier = path.relative(dossier, f.name).split(path.sep).join('/');
     const enEchec = (f.assertionResults ?? []).filter(a => a.status === 'failed');
-    sautes += (f.assertionResults ?? []).filter(a => ['skipped', 'pending', 'todo', 'disabled'].includes(a.status)).length;
+    // Aucun test n'est sauté au défaut : un test sauté vient d'un crochet (beforeAll…) en échec.
+    for (const a of (f.assertionResults ?? []).filter(x => ['skipped', 'pending', 'todo', 'disabled'].includes(x.status))) {
+      sautes.push({ fichier, test: a.fullName, message: 'sauté : un crochet (beforeAll, beforeEach…) a échoué' });
+    }
     for (const a of enEchec) echecs.push({ fichier, test: a.fullName, message: (a.failureMessages ?? []).join('\n') });
     // Fichier qui n'a pas pu se charger (erreur à l'import) : aucun test, mais un message.
     if (f.status === 'failed' && !enEchec.length) echecs.push({ fichier, test: '(fichier entier : erreur au chargement)', message: f.message ?? '' });
@@ -253,11 +256,14 @@ async function essayer(essai, parent) {
       console.log(`aucun rapport (code ${vt.code}) :\n${indenter(vt.sortie.trim().split('\n').slice(-20).join('\n'), '    ')}`);
     } else {
       const gardes = tests.echecs.filter(gardeDe);
-      const autres = tests.echecs.filter(e => !gardeDe(e));
-      res.tests = { total: tests.total, echoues: tests.echoues, sautes: tests.sautes, gardes: gardes.map(e => ({ fichier: e.fichier, test: e.test })), autres: autres.map(e => ({ fichier: e.fichier, test: e.test })) };
+      const autres = [...tests.echecs.filter(e => !gardeDe(e)), ...tests.sautes];
+      res.tests = {
+        total: tests.total, echoues: tests.echoues, sautes: tests.sautes.length,
+        gardes: gardes.map(e => ({ fichier: e.fichier, test: e.test })), autres: autres.map(e => ({ fichier: e.fichier, test: e.test })),
+      };
       res.gardes += gardes.length;
       res.autres += autres.length;
-      console.log(`${tests.total} tests, ${tests.echoues} en échec (gardes attendus : ${gardes.length} ; autres : ${autres.length})${tests.sautes ? `, ${tests.sautes} sautés` : ''}`);
+      console.log(`${tests.total} tests, ${tests.echoues} en échec (gardes attendus : ${gardes.length} ; autres : ${autres.length})${tests.sautes.length ? `, ${tests.sautes.length} sautés` : ''}`);
       afficherGardes(gardes);
       afficherAutres(autres, '  AUTRES ÉCHECS (à relire) :');
     }

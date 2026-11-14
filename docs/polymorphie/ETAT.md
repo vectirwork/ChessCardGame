@@ -243,9 +243,10 @@ nouvelles parties. Aucun effet visible (le client lit `totalMs` = 45 000, comme 
 Revenu au comportement d'avant la passe (lot 9f) : la revanche d'une partie en direct de l'accueil, demandée depuis
 la page de partie, est une partie amicale avec le choix des cartes, sans relais (la passe lui donnait des mains tirées
 et le relais de l'IA) ; la déconnexion ne fait passer l'interface en invité qu'avec l'accord du serveur (la passe le
-faisait aussi en cas d'échec, alors que le serveur voyait toujours le compte : maintenant, un message d'erreur, et le
-retour à l'accueil que fait déjà le menu). Le lot 9c n'a rien changé au site : le site construit est identique octet pour
-octet avant et après lui (empreintes de `dist/`).
+faisait aussi en cas d'échec, alors que le serveur voyait toujours le compte, et le menu ramenait à l'accueil :
+maintenant, comme avant la passe, l'utilisateur reste connecté sur sa page, avec en plus un message d'erreur). Le
+lot 9c n'a rien changé au site : le site construit est identique octet pour octet avant et après lui (empreintes de
+`dist/`).
 
 Contrôles du lot 9c après sa relecture (commit de départ 2a28d09) : `tsc` sans erreur ; 1 236 tests verts
 (54 fichiers, dont les 21 de `test/reglages-doc.test.ts`) ; `npm run temoins` vert ; build réussi, `dist/` identique
@@ -348,7 +349,8 @@ vérifié par un sceptique. 20 constats confirmés, corrigés ou déclarés par 
 Corrigés dans le code, chacun avec un test qui échoue sur le code d'avant :
 - **Fin de partie non enregistrée** (base injoignable au-delà des essais de `persistResult`) : la salle terminée
   n'est plus évincée par le ménage tant que son résultat attend (`resultPending`) ; le ménage relance
-  l'enregistrement, un seul à la fois (`persisting`). Avant, au bout de 10 minutes, la salle était relue en base
+  l'enregistrement, un seul à la fois (`persisting`), un essai par ménage, sans rien noter tant qu'il échoue (une
+  ligne quand la base l'accepte). Avant, au bout de 10 minutes, la salle était relue en base
   « en cours », reprise, et le perdant d'une partie classée pouvait réclamer la victoire et les points
   (`test/server-fin-de-partie.test.ts`). Ce n'était pas une régression de la passe (un seul essai avant elle).
 - **Revanche d'une partie relayée de l'accueil** : revenue au comportement d'avant la passe (choix des cartes, sans
@@ -364,14 +366,22 @@ Corrigés dans le code, chacun avec un test qui échoue sur le code d'avant :
 - **Maintenance et invitations coupées** : une invitation déjà en attente (reprise au démarrage) ne s'ouvre plus à
   un second joueur (`takeSeat` rend `'off'`, `game:join` relaie le refus). Identique au défaut.
 - **File** : un joueur qui quitte la file pendant la lecture des sièges (après l'appariement) n'est plus apparié ;
-  l'autre reprend sa place.
+  l'autre est apparié avec un joueur arrivé (ou revenu) entre-temps dans la même file, sinon il reprend sa place
+  (`matchOrQueue`). Les joueurs en cours d'appariement sont suivis par leur entrée, pas par leur clé : un joueur parti
+  puis apparié ailleurs par une nouvelle demande n'a plus deux parties. Identique au défaut sans départ.
 - **Version du protocole** : un client qui n'annonce pas de version compte comme la version 1 (identique tant que
-  `PROTOCOL_VERSION` vaut 1 ; `docs/REGLAGES.md`, section 2, dit quoi faire à la première montée).
-- **Déconnexion** : l'interface ne passe en invité qu'avec l'accord du serveur, comme avant la passe.
+  `PROTOCOL_VERSION` vaut 1 ; `docs/REGLAGES.md`, section 2, dit ce qui change à la première montée). Les clients de
+  test (`test/lib/client.mjs`, `test/climats-serveur.mjs`, `test/perf/mesure.mjs`) annoncent déjà la version lue dans
+  `/api/me`.
+- **Déconnexion** : l'interface ne passe en invité qu'avec l'accord du serveur, comme avant la passe. En cas
+  d'échec : un message d'erreur (nouveau), toujours connecté, et l'erreur remonte comme avant la passe : le menu ne
+  ramène pas à l'accueil (rejet non traité dans `Layout.tsx`, comme avant).
 - **Rechargement quand un module manque** : l'échiquier des lieux de l'accueil recharge de nouveau le site (au plus
   une fois par minute), comme avant la passe ; commentaires de `main.tsx` et `App.tsx` exacts.
 - `TRUST_PROXY` réglable dans `.env` sous Compose (`${TRUST_PROXY:-true}` : même valeur `"true"` au défaut, vérifié
-  avec `docker compose config` sur la configuration de production).
+  avec `docker compose config` sur la configuration de production). Une ligne `TRUST_PROXY` de
+  `/opt/spellmate/local.env`, ignorée jusque-là, s'applique désormais : `deploy/README.md` demande de relire ce
+  fichier avant le premier déploiement (une valeur illisible arrête le déploiement à `--check-config`).
 
 Déclarés seulement (changements voulus, gardés) : HTML servi, incrément barré sous le Sablier fou, « L’IA joue pour
 X. », message d'expiration du choix au singulier, politique de rechargement, échecs réseau, libellés de promotion,
@@ -392,3 +402,20 @@ voulus déjà connus (« Partie sans cartes », « 1 étape »). Bout en bout au
 identique au serveur d'avant la passe (choix des cartes, mains vides, aucun relais, aucun coup joué 12 s plus tard).
 `npm run essai-reglage -- --essai=tous` : aucun échec hors des gardes (après découplage du test de `--check-config`).
 Aucune mesure de performance.
+
+Relecture du lot 9f (deux relecteurs adverses, 9 constats mineurs, tous confirmés) : file d'attente (le joueur resté
+après un départ pendant la lecture des sièges n'était que remis en file, à côté d'un joueur compatible arrivé ou revenu
+entre-temps : il est maintenant apparié avec lui ; et un joueur parti puis apparié ailleurs par une nouvelle demande
+était encore compté présent dans l'ancienne : les appariements en cours sont suivis par entrée) ; ménage (un essai
+d'enregistrement par ménage, sans journal tant qu'il échoue) ; déconnexion en échec (l'erreur remonte de nouveau : le
+menu ne ramène plus à l'accueil un utilisateur toujours connecté) ; `deploy/README.md` (`TRUST_PROXY` pris dans `.env`
+sous Compose, `local.env` à relire) ; clients de test qui annoncent leur version (dont `test/perf/mesure.mjs`) ; tests
+de l'arrêt « Règles impossibles » (`test/deploiement.test.ts`, `test/server-config.test.ts`) et du tirage
+(`test/climats.test.ts`) découplés de `DEAL.handLimits`. Contrôles : `tsc` sans erreur ; 1 268 tests verts (7 tests
+nouveaux ou modifiés échouent sur le code d'avant la relecture) ; `npm run temoins` vert ; build réussi, `index.html`
+identique sauf l'empreinte du paquet principal ; fermetures (gzip -9) depuis 6182cb6 : paquet principal 101 774 →
+101 784 o, accueil 232 979 → 233 025 o, partie 206 200 → 206 231 o ; `npm run textes-pages` : les mêmes écarts voulus
+qu'au premier passage ; bout en bout au défaut sur serveur jetable : `integration.mjs`, `ranked.mjs`,
+`fonctions.mjs`, `climats-serveur.mjs` verts, et la partie préparée par `test/perf/mesure.mjs` (fonction lancée seule,
+sans mesure) ; `npm run essai-reglage -- --essai=tous` et l'essai `--deal=handLimits=…climat 3` (exemple de
+l'outil, qui faisait échouer trois tests hors des gardes) : aucun échec hors des gardes. Aucune mesure de performance.

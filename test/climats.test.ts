@@ -913,9 +913,10 @@ describe('textes des cartes produits par gabarits', () => {
 describe('tirage et choix selon les règles', () => {
   it('dealHands : taille de la main et contraintes des règles données', () => {
     let k = 1;
+    // Mise en place V1 donnée (au plus 2 Climats), quel que soit le DEAL du jour (relecture du lot 9f).
     for (const n of [1, 2, 4, 5]) {
       for (let i = 0; i < 200; i++) {
-        const { w, b } = dealHands(true, rngT(k++), 'climats', { rules: { cardsPerPlayer: n } });
+        const { w, b } = dealHands(true, rngT(k++), 'climats', { rules: { cardsPerPlayer: n }, deal: DEAL_V1 });
         for (const h of [w, b]) {
           expect(h).toHaveLength(n);
           expect(new Set(h).size).toBe(n);

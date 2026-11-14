@@ -753,13 +753,14 @@ function resumeCouvertureCSS(entrees) {
 // Préparation d'une partie en cours (contre l'IA, sans pendule) : choix des cartes s'il y en a un, un coup chacun
 // ---------------------------------------------------------------------------------------------------------------
 async function preparerPartie(ctx, base) {
-  await ctx.request.get(`${base}/api/me`);
+  // Version du protocole du serveur, annoncée à la connexion du socket comme le site (auth.v).
+  const { version } = await (await ctx.request.get(`${base}/api/me`)).json().catch(() => ({}));
   const r = await ctx.request.post(`${base}/api/games`, { data: { mode: 'bot', tc: 'none', color: 'w', level: 1, name: 'Banc' }, headers: { origin: base } });
   if (!r.ok()) throw new Error(`création de partie refusée : ${r.status()} ${await r.text()}`);
   const { id } = await r.json();
   const cookie = (await ctx.cookies(base)).map(c => `${c.name}=${c.value}`).join('; ');
   const { io } = await import('socket.io-client');
-  const s = io(base, { transports: ['websocket'], extraHeaders: { cookie }, forceNew: true, reconnection: false });
+  const s = io(base, { transports: ['websocket'], extraHeaders: { cookie }, forceNew: true, reconnection: false, auth: { v: version } });
   const maj = [];
   s.on('game:update', u => maj.push(u));
   await new Promise((ok, ko) => {

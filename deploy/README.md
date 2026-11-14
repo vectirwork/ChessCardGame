@@ -31,10 +31,14 @@ Le serveur (Hetzner Cloud, Ubuntu 24.04) est créé et piloté par API, sans SSH
 
 ## Configuration vérifiée avant la mise en ligne
 
-- Une valeur illisible (`PORT`, `PAYMENTS_MODE`, `SMTP_PORT`, `DATABASE_POOL_MAX`, et hors de Compose `PUBLIC_URL` et
-  `TRUST_PROXY`) arrête le serveur avec un message en français ; `SPELLMATE_TEST_RULES` (tests) est refusée en
-  production. Sous Compose, `PUBLIC_URL` est tirée de `DOMAIN` et `TRUST_PROXY` vaut `true` si `.env` ne le donne pas
-  (`docker-compose.yml`).
+- Une valeur illisible (`PORT`, `PAYMENTS_MODE`, `SMTP_PORT`, `DATABASE_POOL_MAX`, `TRUST_PROXY`, et hors de Compose
+  `PUBLIC_URL`) arrête le serveur avec un message en français ; `SPELLMATE_TEST_RULES` (tests) est refusée en
+  production. Sous Compose, `PUBLIC_URL` est tirée de `DOMAIN`, et `TRUST_PROXY` est pris dans `.env` (`true`, un
+  mandataire : Caddy, s'il n'y est pas ; `docker-compose.yml`). Jusqu'au lot 9f de la passe « polymorphe », Compose
+  imposait `true` : une ligne `TRUST_PROXY` de `/opt/spellmate/local.env` s'applique désormais. Relisez ce fichier
+  avant le premier déploiement qui suit ce changement : une valeur illisible arrête le déploiement (voir ci-dessous),
+  une valeur lisible mais différente (`false`, `2`) change sans bruit l'adresse et le protocole des visiteurs vus
+  derrière Caddy (limites de requêtes, adresse notée des sessions, vérification de l'origine).
 - `update.sh` vérifie la configuration dans la nouvelle image, avec le même `.env` et le même environnement que le
   service, avant `docker compose up` : `docker compose run --rm --no-deps -T app node dist/server/index.js
   --check-config` (rien d'autre n'est lancé, ni la base ni le serveur). Une configuration refusée arrête le

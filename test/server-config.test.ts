@@ -19,8 +19,9 @@ import { isLegalTemplate, parseEnv, rulesReport } from '../src/server/config';
 import { postgresDriver } from '../src/server/db';
 import { hashPassword, needsRehash, verifyPassword } from '../src/server/security';
 import { DATABASE, dealSettings, setDealOverride } from '../src/server/settings';
-import { DEAL_V1, REGLAGES_V1, configDuJourV1 } from './helpers/v1';
+import { REGLAGES_V1, configDuJourV1 } from './helpers/v1';
 import { reglerMiseEnPlaceV1 } from './helpers/v1-serveur';
+import { arretRegles, reglesImpossibles } from './helpers/regles-impossibles';
 
 const PROD = { NODE_ENV: 'production', SECRET_KEY: 'x'.repeat(64), PUBLIC_URL: 'https://chess-powers.com' };
 const LEGAL_OK = {
@@ -209,17 +210,18 @@ describe('règles des nouvelles parties au démarrage', () => {
       const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('FEATURE_') && k !== 'NODE_ENV'));
       // Port peu courant : si le serveur démarrait quand même (régression), il n'occuperait pas celui d'un autre.
       const port = String(40_000 + Math.floor(Math.random() * 20_000));
-      // Au défaut, la surcharge d'avant ; sinon, toutes les règles de V1 et la mise en place de V1 que
-      // SPELLMATE_TEST_RULES accepte, plus 6 cartes : le même refus, quel que soit le réglage du jour (lot 9e).
-      const surcharge = configDuJourV1()
-        ? { cardsPerPlayer: 6 }
-        : { ...REGLAGES_V1, cardsPerPlayer: 6, draft: DEAL_V1.draft, draftMs: DEAL_V1.draftMs, limitsInDraft: DEAL_V1.limitsInDraft };
+      // Au défaut, la surcharge d'avant (6 cartes) ; sinon, toutes les règles de V1 et la mise en place de V1 que
+      // SPELLMATE_TEST_RULES accepte, plus 6 cartes (lot 9e). L'attendu est calculé comme le serveur le calcule : un
+      // réglage du jour qui rend 6 cartes possibles (DEAL.handLimits) ne fait pas échouer ce test (relecture du lot 9f).
+      const { surcharge, erreurs } = reglesImpossibles();
+      expect(erreurs.length).toBeGreaterThan(0);
+      if (configDuJourV1()) expect(erreurs[0]).toMatch(/^6 cartes par joueur à l'accueil : impossible avec au plus 2 Climats/);
       const r = spawnSync(
         process.execPath, ['--import', path.join(root, 'node_modules/tsx/dist/esm/index.mjs'), path.join(root, 'src/server/index.ts')],
         { cwd: dir, encoding: 'utf8', timeout: 30_000, env: { ...env, PORT: port, SPELLMATE_TEST_RULES: JSON.stringify(surcharge), DATA_DIR: path.join(dir, 'base') } },
       );
       expect(r.status).toBe(1);
-      expect(r.stderr).toContain("Règles impossibles : arrêt.\n- 6 cartes par joueur à l'accueil : impossible avec au plus 2 Climats");
+      expect(r.stderr).toContain(arretRegles(erreurs));
       expect(r.stdout).toContain(`(surcharge de test : ${JSON.stringify(surcharge)})`);
       expect(r.stdout).not.toMatch(/prêt sur/);
       // Arrêté avant d'ouvrir la base : rien n'a été créé.

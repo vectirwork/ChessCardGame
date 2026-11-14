@@ -57,17 +57,19 @@ function featuresFromPage(): Readonly<Features> {
 
 /**
  * Déconnexion : l'interface ne passe en invité qu'avec l'accord du serveur, comme avant la passe (sinon le cookie de
- * session resterait valable et le serveur verrait toujours le compte) ; en cas d'échec, un message d'erreur. Exportée
- * pour les tests.
+ * session resterait valable et le serveur verrait toujours le compte). En cas d'échec, un message d'erreur, puis
+ * l'erreur remonte, comme avant la passe : le menu (Layout.tsx) ne ramène pas alors à l'accueil. Exportée pour les
+ * tests.
  */
 export async function logoutWith(setMe: AppState['setMe'], toast: AppState['toast']) {
   try {
     await api('/auth/logout', { method: 'POST', body: {} });
-    setMe(null);
-    toast('À bientôt !');
   } catch (e) {
     toast(errMsg(e), 'error');
+    throw e;
   }
+  setMe(null);
+  toast('À bientôt !');
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {

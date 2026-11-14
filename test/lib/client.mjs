@@ -27,6 +27,23 @@ export function baseUrl(arg) {
   return (arg ?? process.env.SPELLMATE_BASE ?? 'http://localhost:3000').replace(/\/$/, '');
 }
 
+const versions = new Map();
+
+/**
+ * Version du protocole d'un serveur (champ `version` de /api/me, lu une fois par adresse, sans garder de cookie), que
+ * les clients de test annoncent à la connexion du socket (`io({ auth: { v } })`) comme le site : ils restent acceptés
+ * quand PROTOCOL_VERSION monte (un client qui n'annonce rien compte pour la version 1). Serveur d'avant ce champ :
+ * undefined (rien n'est annoncé).
+ */
+export async function protocolVersion(base) {
+  const key = base.replace(/\/$/, '');
+  if (!versions.has(key)) {
+    const res = await fetch(`${key}/api/me`);
+    versions.set(key, (await res.json().catch(() => null))?.version);
+  }
+  return versions.get(key);
+}
+
 export class Client {
   /** @param {string} base adresse du serveur (sans / final) */
   constructor(base = baseUrl()) {
@@ -68,10 +85,14 @@ export class Client {
     return { status: res.status, data };
   }
 
-  /** Ouvre le socket avec les cookies reçus ; les mises à jour s'accumulent dans `updates`. */
-  connect() {
+  /**
+   * Ouvre le socket avec les cookies reçus, en annonçant la version du protocole du serveur (`auth.v`, comme le site) ;
+   * les mises à jour s'accumulent dans `updates`.
+   */
+  async connect() {
     this.updates = [];
-    this.socket = io(this.base, { transports: ['websocket'], extraHeaders: { cookie: this.cookieHeader() } });
+    const v = await protocolVersion(this.base);
+    this.socket = io(this.base, { transports: ['websocket'], extraHeaders: { cookie: this.cookieHeader() }, auth: { v } });
     this.socket.on('game:update', u => this.updates.push(u));
     return new Promise((resolve, reject) => {
       this.socket.once('connect', resolve);

@@ -13,7 +13,8 @@ import { describe, expect, it } from 'vitest';
 import { parseEnv } from '../src/server/config';
 import { dealSettings } from '../src/server/settings';
 import { checkRules } from '../src/shared/rules';
-import { DEAL_V1, REGLAGES_V1, configDuJourV1 } from './helpers/v1';
+import { arretRegles, reglesImpossibles } from './helpers/regles-impossibles';
+import { configDuJourV1 } from './helpers/v1';
 
 const ROOT = path.resolve(__dirname, '..');
 const read = (f: string) => readFileSync(path.join(ROOT, f), 'utf8');
@@ -135,14 +136,14 @@ describe('--check-config', () => {
   }, 60_000);
 
   it('règles impossibles : code 1 avec le message (comme au démarrage)', () => {
-    // Hors production (SPELLMATE_TEST_RULES y est refusée) : 6 cartes, au défaut ; sinon toutes les règles et la mise
-    // en place de V1 que SPELLMATE_TEST_RULES accepte, plus 6 cartes (comme test/server-config.test.ts).
-    const surcharge = configDuJourV1()
-      ? { cardsPerPlayer: 6 }
-      : { ...REGLAGES_V1, cardsPerPlayer: 6, draft: DEAL_V1.draft, draftMs: DEAL_V1.draftMs, limitsInDraft: DEAL_V1.limitsInDraft };
+    // Hors production (SPELLMATE_TEST_RULES y est refusée) : 6 cartes au défaut ; l'attendu est calculé comme le serveur
+    // le calcule, quel que soit le réglage du jour (test/helpers/regles-impossibles.ts).
+    const { surcharge, erreurs } = reglesImpossibles();
+    expect(erreurs.length).toBeGreaterThan(0);
+    if (configDuJourV1()) expect(erreurs[0]).toMatch(/^6 cartes par joueur à l'accueil : impossible avec au plus 2 Climats/);
     const r = run({ SPELLMATE_TEST_RULES: JSON.stringify(surcharge) }, ['--check-config']);
     expect(r.status).toBe(1);
-    expect(r.stderr).toContain("Règles impossibles : arrêt.\n- 6 cartes par joueur à l'accueil : impossible avec au plus 2 Climats");
+    expect(r.stderr).toContain(arretRegles(erreurs));
     expect(r.stdout).not.toContain('Configuration vérifiée');
     expect(r.created).toEqual([]);
   }, 60_000);

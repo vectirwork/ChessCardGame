@@ -25,7 +25,7 @@ import { legalMovesOf, cardOptions, cardPlayable } from '../src/shared/game.ts';
 import { CARDS } from '../src/shared/cards.ts';
 import { chooseBotMove } from '../src/shared/bot.ts';
 import { poolOf, rulesOf } from '../src/shared/rulesCore.ts';
-import { Client as BaseClient, baseUrl, sleep, sq } from './lib/client.mjs';
+import { Client as BaseClient, baseUrl, protocolVersion, sleep, sq } from './lib/client.mjs';
 
 const BASE = baseUrl(process.argv[2]?.startsWith('http') ? process.argv[2] : undefined);
 const WANT = new Set(process.argv.slice(process.argv[2]?.startsWith('http') ? 3 : 2));
@@ -42,9 +42,11 @@ const truth = new Map(); // gameId -> { w: string[], b: string[] }
 class Client extends BaseClient {
   constructor(label) { super(BASE); this.label = label; this.cursor = 0; }
   cookie() { return this.cookieHeader(); }
-  connect() {
+  async connect() {
     this.socket?.close();
-    this.socket = io(BASE, { transports: ['websocket'], reconnection: false, extraHeaders: { cookie: this.cookie() } });
+    // Version du protocole annoncée comme le site (voir protocolVersion, test/lib/client.mjs).
+    const v = await protocolVersion(BASE);
+    this.socket = io(BASE, { transports: ['websocket'], reconnection: false, extraHeaders: { cookie: this.cookie() }, auth: { v } });
     this.socket.on('game:update', u => {
       u.at = Date.now();
       audit(this, u.view, `update ${u.event.type}`);

@@ -59,11 +59,12 @@ Ce qu'il faut retenir sur les règles de partie :
      rechargera la page. Un client qui n'annonce aucune version (onglet ouvert avant la mise en ligne de la passe,
      client de test) compte comme la version 1 (`protocolMismatch`, `src/server/games.ts`) : à la première montée, il
      est refusé lui aussi (un onglet d'avant la passe ne recharge pas seul, mais affiche « Le site a été mis à jour :
-     rechargez la page. »). À cette première montée, faites aussi annoncer leur version aux clients de test :
-     `connect()` de `test/lib/client.mjs` (suites `test/integration.mjs`, `test/ranked.mjs`, `test/fonctions.mjs`)
-     et `test/climats-serveur.mjs` passent `auth: { v }` à `io(…)`, avec la version lue dans la réponse de `/api/me`
-     (champ `version`) ; sinon elles sont refusées. Le test « client sans version : ses actions passent » de
-     `test/server-features.test.ts` échoue alors, exprès : il rappelle ce point.
+     rechargez la page. »). Les clients de test annoncent déjà leur version, lue dans la réponse de `/api/me` (champ
+     `version`) : `connect()` de `test/lib/client.mjs` (suites `test/integration.mjs`, `test/ranked.mjs`,
+     `test/fonctions.mjs`, `test/textes-pages.mjs`), `test/climats-serveur.mjs` et la partie préparée par
+     `test/perf/mesure.mjs` passent `auth: { v }` à `io(…)` ; ils restent donc acceptés. Le test « client sans
+     version : ses actions passent » de `test/server-features.test.ts` échoue alors, exprès : il rappelle qu'un client
+     qui n'annonce rien est désormais refusé (ajoutez `auth: { v }` à tout nouveau client de test).
    - `test/reglages-doc.test.ts`, ses tests des valeurs par défaut (« valeurs par défaut écrites en code ») et des
      listes « Masqués » des sections 3.5 à 3.8 : ils comparent ce document au code. Reportez la nouvelle valeur dans
      la colonne « Défaut » de la section 4. Si `GAME_RULES` change, relisez aussi les listes « Masqués » : le test les
@@ -809,8 +810,8 @@ Les durées marquées « CSS » dans `src/client/vfx/config.ts` sont comparées 
 
 Une valeur illisible d'une variable contrôlée par zod arrête le serveur avec un message en français. En production, la configuration vient de
 `deploy/production.env`, puis des secrets du serveur (`/opt/spellmate/secrets.env`, `/opt/spellmate/local.env`), puis
-des valeurs que `docker-compose.yml` donne au service (`DATABASE_URL`, `PUBLIC_URL` tirée de `DOMAIN`, `TRUST_PROXY`),
-qui l'emportent. `node dist/server/index.js --check-config` vérifie la configuration et les règles sans ouvrir la base (code
+des valeurs que `docker-compose.yml` donne au service (`DATABASE_URL`, `PUBLIC_URL` tirée de `DOMAIN`, `TRUST_PROXY`
+pris dans ces fichiers, `true` s'il n'y est pas), qui l'emportent. `node dist/server/index.js --check-config` vérifie la configuration et les règles sans ouvrir la base (code
 0, ou 1 avec les messages) : `deploy/update.sh` le lance dans la nouvelle image avant de remplacer la version en ligne.
 
 ---

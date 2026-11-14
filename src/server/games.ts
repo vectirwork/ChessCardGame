@@ -837,20 +837,22 @@ const saveResult = (room: Room) =>
  * Fin de partie enregistrée (saveResult). Si la base ne répond pas, nouvel essai après PERSIST.retryMs,
  * PERSIST.attempts fois au plus. En attendant (resultPending), la partie reste en mémoire, terminée : le ménage ne
  * l'évince pas et relance l'enregistrement jusqu'au retour de la base, et un arrêt du serveur l'enregistre
- * (flushRooms). Un seul enregistrement à la fois par salle (persisting) : un appel pendant un autre rend faux tout de
- * suite. Exportée pour les tests.
+ * (flushRooms). Relancé par le ménage (`relance`) : un seul essai à chaque ménage, sans rien noter s'il échoue (le
+ * premier abandon a annoncé ces relances ; une ligne avec sa pile par minute et par partie remplirait le journal
+ * pendant une longue panne), et une ligne quand la base l'accepte enfin. Un seul enregistrement à la fois par salle
+ * (persisting) : un appel pendant un autre rend faux tout de suite. Exportée pour les tests.
  */
-export async function persistResult(room: Room): Promise<boolean> {
+export async function persistResult(room: Room, relance = false): Promise<boolean> {
   if (room.persisting) return false;
   room.persisting = true;
   try {
-    return await persistAttempts(room);
+    return await persistAttempts(room, relance);
   } finally {
     room.persisting = false;
   }
 }
 
-async function persistAttempts(room: Room): Promise<boolean> {
+async function persistAttempts(room: Room, relance: boolean): Promise<boolean> {
   const d = room.d;
   room.resultPending = true;
   for (let attempt = 1; ; attempt++) {
@@ -861,10 +863,12 @@ async function persistAttempts(room: Room): Promise<boolean> {
     try {
       await saveResult(room);
       room.resultPending = false;
+      if (relance) console.log(`Fin de partie ${d.id} enregistrée (nouvel essai du ménage).`);
       return true;
     } catch (e) {
+      if (relance) return false;
       if (attempt >= PERSIST.attempts) {
-        console.error(`Fin de partie ${d.id} non enregistrée après ${attempt} essais (nouvel essai au prochain ménage) :`, e);
+        console.error(`Fin de partie ${d.id} non enregistrée après ${attempt} essais (nouvel essai à chaque ménage, noté seulement quand il réussit) :`, e);
         return false;
       }
       console.error(`Fin de partie ${d.id} : enregistrement impossible (essai ${attempt} sur ${PERSIST.attempts}), nouvel essai :`, e);
@@ -1260,11 +1264,13 @@ const queues = new Map<string, QueueEntry[]>();
 const queueTickets = new Map<string, number>();
 let queueTicket = 0;
 /**
- * Joueurs appariés dont la partie est en cours de création (sièges relus en base) : les deux, celui qui attendait et
- * le demandeur. quitQueue les retire d'ici : un joueur parti pendant la lecture des sièges n'est pas apparié (l'autre
- * reste en file), et si la création échoue, celui qui attendait n'est remis en file que s'il est encore là.
+ * Entrées des joueurs appariés dont la partie est en cours de création (sièges relus en base) : les deux, celui qui
+ * attendait et le demandeur. quitQueue retire d'ici les entrées du joueur : un joueur parti pendant la lecture des
+ * sièges n'est pas apparié, et si la création échoue, celui qui attendait n'est remis en file que s'il est encore là.
+ * Des entrées, pas des clés : un joueur qui part puis redemande (nouvelle entrée) n'est pas compté présent dans
+ * l'appariement de son ancienne demande.
  */
-const queueMatching = new Set<string>();
+const queueMatching = new Set<QueueEntry>();
 
 function leaveQueues(key: string) {
   for (const [tc, list] of queues) {
@@ -1276,9 +1282,12 @@ function leaveQueues(key: string) {
 /** Le joueur quitte la file (queue:leave, déconnexion) : son entrée, et toute demande encore en cours. Exportée pour les tests. */
 export function quitQueue(key: string) {
   queueTickets.delete(key);
-  queueMatching.delete(key);
+  for (const e of queueMatching) if (e.key === key) queueMatching.delete(e);
   leaveQueues(key);
 }
+
+/** Ce joueur a-t-il une entrée dans une file (n'importe laquelle) ? */
+const queued = (key: string) => [...queues.values()].some(l => l.some(x => x.key === key));
 
 /**
  * File d'une demande : cadence, classée ou amicale, catalogue ; une seule file pour tous les catalogues (`*`) si
@@ -1304,11 +1313,12 @@ function queueSize() {
  * Amicale : ouverte aux invités (pseudo anonyme), non classée, premier arrivé premier servi.
  *
  * Concurrence : la première attente (le classement relu en base) a lieu AVANT de toucher à la file ; ensuite, la
- * sortie des autres files, la lecture de la file, le choix de l'adversaire et l'écriture se font sans aucun await.
- * Deux demandes simultanées ne lisent donc jamais la même liste périmée (double appariement, entrée perdue), et un
- * joueur parti pendant l'attente n'est ni apparié ni remis en file. La seconde attente (sièges relus en base, une fois
- * appariés) est surveillée par queueMatching : si l'un des deux part pendant elle, pas de partie, et l'autre reste en
- * file. Exportée pour les tests (`sock` : identité et emit).
+ * sortie des autres files, la lecture de la file, le choix de l'adversaire et l'écriture se font sans aucun await
+ * (matchOrQueue). Deux demandes simultanées ne lisent donc jamais la même liste périmée (double appariement, entrée
+ * perdue), et un joueur parti pendant l'attente n'est ni apparié ni remis en file. La seconde attente (sièges relus
+ * en base, une fois appariés) est surveillée par queueMatching : si l'un des deux part pendant elle, pas de partie, et
+ * l'autre est apparié avec un joueur arrivé entre-temps, ou reprend sa place. Exportée pour les tests (`sock` :
+ * identité et emit).
  */
 export async function joinQueue(sock: Pick<Sock, 'data' | 'emit'>, tc: string, rated: boolean, guestName?: string, catalog: Catalog = DEFAULT_CATALOG): Promise<Ack> {
   const identity = sock.data.identity;
@@ -1334,55 +1344,70 @@ export async function joinQueue(sock: Pick<Sock, 'data' | 'emit'>, tc: string, r
   if (queueTickets.get(key) !== ticket) return { ok: true };
   queueTickets.delete(key);
   leaveQueues(key);
-  const pool = queuePool(tc, rated, catalog);
+  return matchOrQueue({ key, identity, rating: me, since: now(), name, catalog }, queuePool(tc, rated, catalog), tc, rated, sock);
+}
+
+/**
+ * Étapes 2 et 3 de joinQueue pour un joueur dont le classement est lu (`entry`) : appariement avec le meilleur
+ * adversaire de sa file, sinon mise en file. `sock` : celui qui demande (mis en file au bout, avec queue:status ;
+ * l'erreur d'une création en échec remonte à sa demande). Sans `sock` : un joueur qui attendait déjà, et dont
+ * l'adversaire est parti pendant la lecture des sièges ; apparié avec un joueur arrivé entre-temps, sinon remis en tête
+ * de file (une création en échec est notée au journal, et il reprend sa place).
+ */
+async function matchOrQueue(entry: QueueEntry, pool: string, tc: string, rated: boolean, sock?: Pick<Sock, 'emit'>): Promise<Ack> {
+  const { key } = entry;
   const list = queues.get(pool) ?? [];
-  // Classée : adversaire le plus proche en classement, avec une tolérance qui s'élargit avec l'attente
+  // Classée : adversaire le plus proche en classement, avec une tolérance qui s'élargit avec l'attente (la plus longue
+  // des deux : celle de l'adversaire pour un demandeur, qui arrive ; la sienne, si elle est plus longue, pour un
+  // joueur qui attendait déjà)
   const candidates = list
     .filter(e => e.key !== key)
-    .filter(e => !rated || Math.abs(e.rating - me) <= matchTolerance(now() - e.since))
-    .sort((a, b) => (rated ? Math.abs(a.rating - me) - Math.abs(b.rating - me) : a.since - b.since));
+    .filter(e => !rated || Math.abs(e.rating - entry.rating) <= matchTolerance(now() - Math.min(e.since, entry.since)))
+    .sort((a, b) => (rated ? Math.abs(a.rating - entry.rating) - Math.abs(b.rating - entry.rating) : a.since - b.since));
   const opp = candidates[0];
   if (!opp) {
-    queues.set(pool, [...list, { key, identity, rating: me, since: now(), name, catalog }]);
+    if (!sock) {
+      queues.set(pool, [entry, ...list]);
+      return { ok: true };
+    }
+    queues.set(pool, [...list, entry]);
     sock.emit('queue:status', { waiting: true, tc, since: now(), players: queueSize() });
     return { ok: true };
   }
   queues.set(pool, list.filter(e => e !== opp));
-  queueMatching.add(opp.key);
-  queueMatching.add(key);
+  queueMatching.add(opp);
+  queueMatching.add(entry);
   // 3. Appariés (plus personne ne peut les prendre) : sièges relus en base, puis la partie, avec le catalogue de celui
   // qui attendait (le même que le sien si les files sont séparées par catalogue).
-  let room: Room;
+  let room: Room | null = null;
   try {
-    const [a, b] = await Promise.all([seatFor(identity, name), seatFor(opp.identity, opp.name)]);
-    // L'un des deux a quitté la file pendant la lecture des sièges (queue:leave, déconnexion) : pas de partie. Celui
-    // qui reste reprend sa place (en tête s'il attendait, au bout s'il demandait), sauf s'il est déjà de nouveau en file.
-    const oppHere = queueMatching.has(opp.key);
-    const meHere = queueMatching.has(key);
-    if (!oppHere || !meHere) {
-      queueMatching.delete(opp.key);
-      queueMatching.delete(key);
-      const queued = (k: string) => [...queues.values()].some(l => l.some(x => x.key === k));
-      if (oppHere && !queued(opp.key)) queues.set(pool, [opp, ...(queues.get(pool) ?? [])]);
-      if (meHere && !queued(key)) {
-        queues.set(pool, [...(queues.get(pool) ?? []), { key, identity, rating: me, since: now(), name, catalog }]);
-        sock.emit('queue:status', { waiting: true, tc, since: now(), players: queueSize() });
-      }
-      return { ok: true };
+    const [a, b] = await Promise.all([seatFor(entry.identity, entry.name), seatFor(opp.identity, opp.name)]);
+    // L'un des deux a quitté la file pendant la lecture des sièges (queue:leave, déconnexion) : pas de partie (suite
+    // après ce bloc).
+    if (queueMatching.has(opp) && queueMatching.has(entry)) {
+      const white = Math.random() < 0.5;
+      room = newRoom({ mode: 'quick', rated, tc, catalog: opp.catalog, creator: key, seats: white ? { w: a, b } : { w: b, b: a } });
     }
-    const white = Math.random() < 0.5;
-    room = newRoom({ mode: 'quick', rated, tc, catalog: opp.catalog, creator: key, seats: white ? { w: a, b } : { w: b, b: a } });
   } catch (e) {
     // Création impossible (base qui ne répond pas) : celui qui attendait reprend sa place en tête de file, s'il ne
-    // l'a pas quittée ni ne s'est remis en file entre-temps ; l'erreur remonte au demandeur.
-    queueMatching.delete(key);
-    if (queueMatching.delete(opp.key) && ![...queues.values()].some(l => l.some(x => x.key === opp.key))) {
-      queues.set(pool, [opp, ...(queues.get(pool) ?? [])]);
-    }
-    throw e;
+    // l'a pas quittée ni ne s'est remis en file entre-temps ; l'erreur remonte au demandeur. Sans demandeur (joueur
+    // qui attendait, apparié de nouveau après un départ), il reprend sa place lui aussi, et l'erreur va au journal.
+    const meHere = queueMatching.delete(entry);
+    if (queueMatching.delete(opp) && !queued(opp.key)) queues.set(pool, [opp, ...(queues.get(pool) ?? [])]);
+    if (sock) throw e;
+    if (meHere && !queued(key)) queues.set(pool, [entry, ...(queues.get(pool) ?? [])]);
+    console.error("File : partie impossible à créer après le départ d'un adversaire :", e);
+    return { ok: true };
   }
-  queueMatching.delete(opp.key);
-  queueMatching.delete(key);
+  const oppHere = queueMatching.delete(opp);
+  const meHere = queueMatching.delete(entry);
+  if (!room) {
+    // Celui qui reste est apparié avec un joueur arrivé entre-temps dans sa file, sinon reprend sa place (en tête s'il
+    // attendait, au bout s'il demandait), sauf s'il s'est déjà remis en file lui-même.
+    if (oppHere && !queued(opp.key)) await matchOrQueue(opp, pool, tc, rated);
+    if (meHere && !queued(key)) return matchOrQueue(entry, pool, tc, rated, sock);
+    return { ok: true };
+  }
   if (io) io.to(`id:${key}`).to(`id:${opp.key}`).emit('queue:matched', { gameId: room.d.id });
   return { ok: true };
 }
@@ -1794,11 +1819,11 @@ export function attachSockets(server: IO) {
 
   // Ménage : parties terminées sans spectateur, invitations jamais acceptées. Une fin de partie pas encore enregistrée
   // (base injoignable au-delà des essais de persistResult) n'est jamais évincée : relue en base, elle y serait encore
-  // en cours. Son enregistrement est relancé ici jusqu'au retour de la base.
+  // en cours. Son enregistrement est relancé ici (un essai par ménage) jusqu'au retour de la base.
   setInterval(() => {
     for (const [id, room] of rooms) {
       const d = room.d;
-      if (room.resultPending && !room.persisting) void persistResult(room);
+      if (room.resultPending && !room.persisting) void persistResult(room, true);
       if (d.status === 'ended' && !room.resultPending && !room.sockets.size && now() - room.endedAt > TIMINGS.endedRoomEvictMs) rooms.delete(id);
       if (d.status === 'waiting' && now() - d.createdAt > TIMINGS.inviteTtlMs) endGame(room, { winner: null, reason: 'aborted' });
       if (d.status !== 'active') continue;

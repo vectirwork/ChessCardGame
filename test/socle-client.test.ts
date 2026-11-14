@@ -225,7 +225,7 @@ describe('déconnexion (store.tsx, logout)', () => {
     expect(setMe).toHaveBeenCalledWith(null);
     expect(toast).toHaveBeenCalledWith('À bientôt !');
   });
-  it('échec (réseau coupé, erreur du serveur) : toujours connecté (le serveur l’est encore), message d’erreur', async () => {
+  it('échec (réseau coupé, erreur du serveur) : toujours connecté (le serveur l’est encore), message d’erreur, et l’erreur remonte (le menu ne ramène pas à l’accueil, comme avant la passe)', async () => {
     for (const [fetchImpl, message] of [
       [async () => { throw new TypeError('Failed to fetch'); }, NETWORK_ERROR],
       [async () => reponse(500, { error: 'Erreur interne, réessayez.' }), 'Erreur interne, réessayez.'],
@@ -233,7 +233,7 @@ describe('déconnexion (store.tsx, logout)', () => {
       vi.stubGlobal('fetch', vi.fn(fetchImpl));
       const setMe = vi.fn();
       const toast = vi.fn();
-      await expect(logoutWith(setMe, toast)).resolves.toBeUndefined();
+      await expect(logoutWith(setMe, toast)).rejects.toThrow(message);
       expect(setMe).not.toHaveBeenCalled();
       expect(toast).toHaveBeenCalledWith(message, 'error');
       expect(toast).toHaveBeenCalledTimes(1);

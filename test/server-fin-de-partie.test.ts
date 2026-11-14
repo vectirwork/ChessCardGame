@@ -3,7 +3,9 @@
 // au bout de TIMINGS.endedRoomEvictMs ; game:join la relisait alors en base, où elle était encore « active » : la
 // partie était reprise, et le perdant pouvait réclamer la victoire (game:claim), classement compris.
 // Maintenant : une salle terminée dont le résultat attend son enregistrement (resultPending) n'est jamais évincée, et le
-// ménage relance l'enregistrement (un seul à la fois : persisting) jusqu'au retour de la base.
+// ménage relance l'enregistrement (un seul à la fois : persisting) jusqu'au retour de la base : un essai par ménage,
+// sans rien noter tant qu'il échoue (relecture du lot 9f : cinq lignes avec leur pile par minute et par partie), puis
+// une ligne quand la base l'accepte.
 // Chemin complet du socket (doublures de socket.io), base simulée en mémoire.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -146,6 +148,7 @@ type View = { status: string; state: { result: unknown } };
 describe('fin de partie non enregistrée (base injoignable au-delà des essais)', () => {
   it('la salle terminée reste en mémoire, même au-delà du délai d’éviction ; le ménage l’enregistre au retour de la base', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const info = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     try {
       const io = new FakeIO();
       attachSockets(io as never);
@@ -168,12 +171,21 @@ describe('fin de partie non enregistrée (base injoignable au-delà des essais)'
       expect(room.d.state.result).toEqual(result);
       await vi.advanceTimersByTimeAsync(PERSIST.retryMs * PERSIST.attempts + 100);
       expect(room.resultPending).toBe(true);
+      const lignes = () => log.mock.calls.filter(([m]) => String(m).startsWith(`Fin de partie ${id}`)).map(([m]) => String(m));
+      expect(lignes()).toHaveLength(PERSIST.attempts);
+      expect(lignes().at(-1)).toMatch(/non enregistrée après \d+ essais \(nouvel essai à chaque ménage/);
 
-      // Les deux joueurs ferment l'onglet ; la base reste injoignable bien au-delà du délai d'éviction.
+      // Les deux joueurs ferment l'onglet ; la base reste injoignable bien au-delà du délai d'éviction. Le ménage relance
+      // l'enregistrement : un essai à chaque passage, sans rien noter.
       await A.fire('disconnect');
       await B.fire('disconnect');
+      vi.mocked(tx).mockClear();
+      const menages = Math.floor((TIMINGS.endedRoomEvictMs + 3 * TIMINGS.housekeepingMs) / TIMINGS.housekeepingMs);
       await vi.advanceTimersByTimeAsync(TIMINGS.endedRoomEvictMs + 3 * TIMINGS.housekeepingMs);
       expect(db.games.get(id)?.status).toBe('active');
+      expect(vi.mocked(tx).mock.calls.length).toBeGreaterThanOrEqual(menages - 1);
+      expect(vi.mocked(tx).mock.calls.length).toBeLessThanOrEqual(menages + 1);
+      expect(lignes()).toHaveLength(PERSIST.attempts);
 
       // Le perdant rouvre le lien : la salle est celle de la mémoire (aucune lecture en base), toujours terminée,
       // résultat inchangé ; réclamer la victoire est refusé.
@@ -197,6 +209,8 @@ describe('fin de partie non enregistrée (base injoignable au-delà des essais)'
       expect(row.ratingsApplied).toBe(true);
       expect(db.userUpdates).toEqual([[20, 'a'], [-20, 'b']]);
       expect(room.resultPending).toBe(false);
+      expect(info).toHaveBeenCalledWith(`Fin de partie ${id} enregistrée (nouvel essai du ménage).`);
+      expect(lignes()).toHaveLength(PERSIST.attempts);
 
       // Enregistrée, la salle est évincée au ménage suivant ; relue en base, elle est terminée, sans nouveau classement.
       await vi.advanceTimersByTimeAsync(TIMINGS.housekeepingMs + 10);
@@ -209,6 +223,7 @@ describe('fin de partie non enregistrée (base injoignable au-delà des essais)'
       expect(db.userUpdates).toHaveLength(2);
     } finally {
       log.mockRestore();
+      info.mockRestore();
     }
   });
 

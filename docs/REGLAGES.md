@@ -56,7 +56,14 @@ Ce qu'il faut retenir sur les règles de partie :
    - `test/garde-fous/protocole.test.ts` : il suit les cartes, les catalogues, les cadences, les niveaux de l'IA,
      `GAME_RULES` et `DEAL.draftMs`. Montez `PROTOCOL_VERSION` dans `src/shared/protocol.ts`, puis mettez à jour
      `test/fixtures/protocole.json`. Un onglet resté ouvert sur l'ancienne version recevra `server:outdated` et
-     rechargera la page.
+     rechargera la page. Un client qui n'annonce aucune version (onglet ouvert avant la mise en ligne de la passe,
+     client de test) compte comme la version 1 (`protocolMismatch`, `src/server/games.ts`) : à la première montée, il
+     est refusé lui aussi (un onglet d'avant la passe ne recharge pas seul, mais affiche « Le site a été mis à jour :
+     rechargez la page. »). À cette première montée, faites aussi annoncer leur version aux clients de test :
+     `connect()` de `test/lib/client.mjs` (suites `test/integration.mjs`, `test/ranked.mjs`, `test/fonctions.mjs`)
+     et `test/climats-serveur.mjs` passent `auth: { v }` à `io(…)`, avec la version lue dans la réponse de `/api/me`
+     (champ `version`) ; sinon elles sont refusées. Le test « client sans version : ses actions passent » de
+     `test/server-features.test.ts` échoue alors, exprès : il rappelle ce point.
    - `test/reglages-doc.test.ts`, ses tests des valeurs par défaut (« valeurs par défaut écrites en code ») et des
      listes « Masqués » des sections 3.5 à 3.8 : ils comparent ce document au code. Reportez la nouvelle valeur dans
      la colonne « Défaut » de la section 4. Si `GAME_RULES` change, relisez aussi les listes « Masqués » : le test les
@@ -386,7 +393,9 @@ par `npm test` et `npm run build` (section 2).
 ### 3.13 Couper une fonction, fermer la boutique, maintenance
 
 - Sans reconstruire : une variable d'environnement du serveur, puis un redémarrage. `FEATURE_<NOM>=0` coupe,
-  `=1` rouvre. Nom de la variable : `homeDuel` donne `FEATURE_HOME_DUEL`.
+  `=1` rouvre. Nom de la variable : `homeDuel` donne `FEATURE_HOME_DUEL`. En production (chess-powers.com), le
+  changement passe par un déploiement, qui reconstruit l'image (le site construit reste identique) : voir
+  `deploy/README.md`.
 - Le serveur refuse ce qui est coupé (code `feature-off`). Le site le cache, sans clignotement : le HTML porte
   `<meta name="sm-features">` seulement si une valeur diffère des défauts.
 - Exemples :
@@ -394,7 +403,9 @@ par `npm test` et `npm run build` (section 2).
     catalogue reste lisible (`GET /api/shop/catalog`) ;
   - `FEATURE_RANKED=0` : file classée refusée ; la page `/classement` devient introuvable (404), l'API du classement
     reste lisible ;
-  - `FEATURE_NEW_GAMES=0` : maintenance, plus aucune nouvelle partie ; celles en cours continuent.
+  - `FEATURE_NEW_GAMES=0` : maintenance, plus aucune nouvelle partie (file, invitations, accueil, revanche, et
+    second joueur d'une invitation déjà en attente) ; celles en cours continuent. De même pour une sorte de partie
+    coupée (`FEATURE_INVITES=0` : une invitation en attente ne s'ouvre plus à un second joueur).
 - Une variable `FEATURE_*` inconnue ou illisible est signalée au démarrage ; la valeur par défaut est gardée.
 - Fermer seulement les paiements : `PAYMENTS_MODE=off`. C'est la valeur de la production aujourd'hui
   (`deploy/production.env`).
@@ -792,12 +803,15 @@ Les durées marquées « CSS » dans `src/client/vfx/config.ts` sont comparées 
 | `LEGAL_COMPANY`, `LEGAL_ADDRESS`, `LEGAL_SIREN`, `LEGAL_VAT`, `LEGAL_DIRECTOR`, `LEGAL_CONTACT`, `LEGAL_HOST` | modèles entre crochets, `contact@example.com` | avertissement en production s'ils restent des modèles (décision Q1) |
 | `DATABASE_URL` | vide : base PGlite intégrée dans `DATA_DIR` | — |
 | `DATABASE_POOL_MAX` | `DATABASE.poolMax` (10) | zod : entier de 1 à 1000 |
-| `TRUST_PROXY` | 1 en production, 0 ailleurs | zod : `true`, `false` ou un nombre |
+| `TRUST_PROXY` | 1 en production, 0 ailleurs ; sous `docker compose`, `true` si `.env` ne le donne pas (`docker-compose.yml`) | zod : `true`, `false` ou un nombre |
 | `FEATURE_*` | absentes | avertissement pour un nom ou une valeur inconnus |
 | `SPELLMATE_TEST_RULES` | absente | refusée en production ; objet JSON aux clés connues |
 
 Une valeur illisible d'une variable contrôlée par zod arrête le serveur avec un message en français. En production, la configuration vient de
-`deploy/production.env`, puis des secrets du serveur (`/opt/spellmate/secrets.env`, `/opt/spellmate/local.env`).
+`deploy/production.env`, puis des secrets du serveur (`/opt/spellmate/secrets.env`, `/opt/spellmate/local.env`), puis
+des valeurs que `docker-compose.yml` donne au service (`DATABASE_URL`, `PUBLIC_URL` tirée de `DOMAIN`, `TRUST_PROXY`),
+qui l'emportent. `node dist/server/index.js --check-config` vérifie la configuration et les règles sans ouvrir la base (code
+0, ou 1 avec les messages) : `deploy/update.sh` le lance dans la nouvelle image avant de remplacer la version en ligne.
 
 ---
 
@@ -822,7 +836,9 @@ Cas particuliers :
 - Leçons, problèmes, démonstrations de l'accueil et cabine de la boutique : `RULES_V1`. Leur contenu a été écrit pour
   ces règles. Ce que les règles du jour contrediraient est masqué (`requires`, jugé sur `GAME_RULES`).
 - Revanche : nouvelle partie aux règles du moment de son contexte (décision Q3), avec la pendule de la partie
-  d'origine, même si sa cadence a été retirée depuis.
+  d'origine, même si sa cadence a été retirée depuis. Sa mise en place est ordinaire, comme avant la passe : la
+  revanche d'une partie en direct de l'accueil est une partie amicale (contexte `amicale`), avec le choix des cartes,
+  sans relais de l'IA.
 - Le journal du serveur résume au démarrage les règles des nouvelles parties : une ligne, plus une par contexte qui
   diffère.
 

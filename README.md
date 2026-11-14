@@ -82,6 +82,10 @@ C'est en ligne sur `https://votre-domaine.fr`. Les tables de la base sont créé
 Créez votre compte avec l'adresse indiquée dans `ADMIN_EMAILS` : vous aurez accès à `/admin`.
 
 Mettre à jour plus tard : `git pull && docker compose up -d --build` (les parties en cours reprennent après le redémarrage).
+Pour vérifier d'abord la configuration (`.env`) et les règles avec le nouveau code, sans arrêter la version en ligne :
+`docker compose build app && docker compose run --rm --no-deps -T app node dist/server/index.js --check-config` (code
+0 si tout est bon ; sinon le message dit quelle valeur corriger). Le déploiement de chess-powers.com le fait tout seul
+(`deploy/update.sh`).
 
 ### 5. Stripe (pour encaisser)
 

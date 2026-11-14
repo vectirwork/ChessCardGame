@@ -241,9 +241,11 @@ export const DEFAULT_CATALOG = 'climats'; export const LEGACY_CATALOG = 'duel'; 
    - `initialStateOf(final)` passe `rulesOf(final)`. L'Analyse des parties locales fait de même : `history.ts` garde `rules`.
    - L'export PGN ajoute `[SpellmateRules "…"]` seulement si les règles diffèrent. L'import relit cette balise.
 7. **Revanche.**
-   - Nouvelle partie, donc règles **du moment** (voir la décision Q3).
+   - Nouvelle partie, donc règles **du moment** de son contexte (voir la décision Q3).
    - Pendule reprise de `d.clock` (initial et incrément).
-   - Réglages de mise en place repris de `RoomData.setup = { deal, relay }`.
+   - Mise en place ordinaire, comme avant la passe : la revanche d'une partie relayée de l'accueil est une partie
+     amicale avec le choix des cartes, sans relais (lot 9f ; reprendre les mains tirées et le relais changeait le site
+     au défaut).
 8. **Sauvegarde de l'accueil.** Format v1 inchangé. `validState` rejette une sauvegarde si son catalogue diffère de `HOME.catalog`, si `sameRules(rulesOf(s), rulesFor('accueil'))` est faux, ou si les mains n'ont pas la bonne taille. La partie repart alors de zéro.
 9. **Onglet resté ouvert.** Le client envoie `PROTOCOL_VERSION` à la connexion. En cas d'écart, le serveur répond `server:outdated` et le client recharge, avec la garde d'une minute de `main.tsx`. Un test fige `{ version, ids des cartes, catalogues, cadences, GAME_RULES, DEAL.draftMs }` : si l'un change sans montée de version, il échoue.
 

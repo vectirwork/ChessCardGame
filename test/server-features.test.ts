@@ -31,6 +31,7 @@ vi.mock('../src/server/bot-pool', () => ({
 import { FEATURES as DEFAULTS, FEATURE_KEYS, featureEnvName } from '../src/shared/config/features';
 import { PROTOCOL_VERSION } from '../src/shared/protocol';
 import type { Identity, UserRow } from '../src/server/auth';
+import { REGLAGES_V1 } from './helpers/v1';
 
 type Games = typeof import('../src/server/games');
 type Settings = typeof import('../src/server/settings');
@@ -50,6 +51,9 @@ async function load(env: Record<string, string> = {}, patch?: (s: Settings) => P
       return { ...s, ...patch(s) };
     });
   }
+  // Règles des nouvelles parties fixées à celles de V1 dans ce graphe de modules (relu à chaque fois) : ce fichier
+  // teste les interrupteurs, quel que soit le réglage du jour (lot 9e).
+  (await import('../src/shared/rulesCore')).setRulesOverride(REGLAGES_V1);
   const settings = await import('../src/server/settings');
   const games = await import('../src/server/games');
   return { games, settings };

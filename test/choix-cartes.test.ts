@@ -6,6 +6,7 @@ import { CARDS, cardsOf } from '../src/shared/cards';
 import { RULES_V1 } from '../src/shared/config/rules';
 import type { Rules } from '../src/shared/config/rules';
 import * as T from '../src/client/game/draftText';
+import { equilibrageDuJour, equilibrageV1 } from './helpers/v1';
 
 const POUVOIRS = cardsOf('climats');
 const SANS_SABLIER = POUVOIRS.filter(id => id !== 'hourglass');
@@ -146,8 +147,10 @@ describe('choix des cartes : tuiles selon les règles de la partie (rulesOf(view
       rift: { ...now, meta: 'Terrain · 4 coups' },
       tide: { ...now, turn: 'Remplace votre coup', replace: true, meta: 'Événement · instantané' },
     });
-    // Sans règles : celles du jour (cardMeta d'avant, lue dans CARDS)
-    for (const id of POUVOIRS) expect(T.cardMeta(CARDS[id])).toBe(T.cardMeta(CARDS[id], RULES_V1));
+    // Sans règles : celles du jour (cardMeta d'avant, lue dans CARDS) ; au défaut, l'équilibrage de RULES_V1 (lot 9e :
+    // une carte rééquilibrée dans CARDS change aussi la durée lue sans règles).
+    const duJour: Rules = equilibrageV1() ? RULES_V1 : { ...RULES_V1, tuning: equilibrageDuJour() };
+    for (const id of POUVOIRS) expect(T.cardMeta(CARDS[id])).toBe(T.cardMeta(CARDS[id], duJour));
   });
   it('carte à la place du coup, Présages à 4 demi-coups, Trêve en 4 coups : la tuile suit la partie, pas le jour', () => {
     const r: Rules = { ...RULES_V1, cardEndsTurn: true, presageDelay: 4, tuning: { ...RULES_V1.tuning, truce: { coups: 4 } } };

@@ -5,9 +5,12 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { fromFen, sqIndex as q } from '../src/shared/chess';
-import { createGame, createGameFromFen, playMove } from '../src/shared/game';
+import { playMove } from '../src/shared/game';
 import type { GameState } from '../src/shared/game';
 import { MATE_FALL_MS, fallSide, matedKing } from '../src/client/components/mate';
+// Parties, tirages et choix scriptés aux règles V1 (RULES_V1, DEAL_V1), quel que soit le réglage du jour (lot 9e) :
+// test/helpers/v1.ts.
+import { createGame, createGameFromFen } from './helpers/v1';
 
 function mv(s: GameState, from: string, to: string): GameState {
   const r = playMove(s, q(from), q(to));

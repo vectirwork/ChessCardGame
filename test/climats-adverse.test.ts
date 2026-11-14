@@ -13,9 +13,12 @@ import {
   inCheck, legalMoves, makeMove, opposite, pseudoMoves, rankOf, sqIndex as q, sqName, toFen, unmakeMove,
 } from '../src/shared/chess';
 import {
-  Effect, GameState, canStillMate, cardOptions, cardPlayable, checkKind, createGame, createGameFromFen, dealHands,
-  evaluateEnd, legalMovesOf, modsFromEffects, playCard, playMove, positionKey, sideInCheck, tickEffects, viewState,
+  Effect, GameState, canStillMate, cardOptions, cardPlayable, checkKind, evaluateEnd, legalMovesOf, modsFromEffects,
+  playCard, playMove, positionKey, sideInCheck, tickEffects, viewState,
 } from '../src/shared/game';
+// Parties, tirages et choix scriptés aux règles V1 (RULES_V1, DEAL_V1), quel que soit le réglage du jour (lot 9e) :
+// test/helpers/v1.ts.
+import { createGame, createGameFromFen, dealHands } from './helpers/v1';
 
 // ---------------------------------------------------------------------------------------------
 // Aides

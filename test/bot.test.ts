@@ -3,10 +3,13 @@ import { CardId } from '../src/shared/cards';
 import { Color, F_RELAXED, Move, sqName } from '../src/shared/chess';
 import { BOT_PROFILES, BotLevel, analyse, chooseBotCard, chooseBotMove, decideTurn } from '../src/shared/bot';
 import { deepFreeze } from '../src/shared/config/rules';
-import { Effect, createGame, createGameFromFen, legalMovesOf, playCard, playMove } from '../src/shared/game';
+import { Effect, legalMovesOf, playCard, playMove } from '../src/shared/game';
 import { RULES_V1, castsLeft } from '../src/shared/rules';
 import { decide } from '../src/server/bot-worker';
 import { think } from '../src/client/ai/think';
+// Parties, tirages et choix scriptés aux règles V1 (RULES_V1, DEAL_V1), quel que soit le réglage du jour (lot 9e) :
+// test/helpers/v1.ts.
+import { createGame, createGameFromFen } from './helpers/v1';
 
 describe('IA et analyse', () => {
   it('trouve un mat en un coup et le signale', () => {
@@ -166,7 +169,7 @@ describe('decideTurn', () => {
         }
       }
     }
-  });
+  }, 30_000); // ≈ 4 s au repos : au-delà de 5 s sous la charge d'autres processus
 
   it('carte qui termine le tour : pas de coup après elle', () => {
     const place = deepFreeze({ ...RULES_V1, cardEndsTurn: true });

@@ -6,11 +6,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { CARDS, CARD_IDS } from '../src/shared/cards';
-import { RULES_V1 } from '../src/shared/config/rules';
+import { GAME_RULES, RULES_V1 } from '../src/shared/config/rules';
 import type { Rules } from '../src/shared/config/rules';
-import { createGame, legalMovesOf, playCard, playMove } from '../src/shared/game';
+import { legalMovesOf, playCard, playMove } from '../src/shared/game';
 import type { GameState } from '../src/shared/game';
-import { cardEndsTurn } from '../src/shared/rulesCore';
+import { CARD_TUNING, cardEndsTurn } from '../src/shared/rulesCore';
 import {
   CardBubble, SpellCard, cardAriaLabel, cardTexts, cardTiming, cardWhen, endsTurn, ruleBody, turnEffect,
 } from '../src/client/components/SpellCard';
@@ -21,8 +21,19 @@ import { firstMoveNumber, formatClock, moveLines, tcLabel, tcLong, turnEndingCar
 import { castMessage, castThisTurn, castsThisTurn, handNotes } from '../src/client/odyssee/shell/cards';
 import { PowersPanel, powerLeft, powerTiming } from '../src/client/odyssee/shell/powers';
 import { DESKTOP_OPP_ROOM, MOBILE_BOARD_TOP, desktopHandRight, gameLayout, oppCardWidth } from '../src/client/odyssee/shell/layout';
-import { LESSONS } from '../src/shared/lessons';
+import { ALL_LESSONS } from '../src/shared/lessons';
 import type { Effect } from '../src/shared/game';
+// Parties, tirages et choix scriptés aux règles V1 (RULES_V1, DEAL_V1), quel que soit le réglage du jour (lot 9e) :
+// test/helpers/v1.ts.
+import { createGame, equilibrageV1, reglagesV1 } from './helpers/v1';
+
+/**
+ * Règles des libellés « au défaut » : paramètre omis (règles du jour, le même appel qu'avant) si GAME_RULES et
+ * l'équilibrage des cartes sont ceux de V1, sinon RULES_V1 (la photographie reste celle d'avant la passe).
+ */
+const R = (): Rules | undefined => (reglagesV1() && equilibrageV1() ? undefined : RULES_V1);
+/** Règles du jour complètes (GAME_RULES, équilibrage de CARDS) : RULES_V1 au défaut. Les textes de CARDS les suivent. */
+const duJour = (): Rules => (reglagesV1() && equilibrageV1() ? RULES_V1 : { ...RULES_V1, ...GAME_RULES, tuning: CARD_TUNING });
 
 const CLIENT = path.resolve(__dirname, '../src/client');
 const css = (file: string) => readFileSync(path.join(CLIENT, file), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
@@ -87,7 +98,7 @@ describe('pouvoirs en cours', () => {
   it('règle d’un pouvoir selon l’équilibrage de la partie ; au défaut, celle de CARDS', () => {
     const truce = { ...base, card: 'truce', remaining: 4, total: 4 } as Effect;
     const panneau = (rules?: Rules) => renderToStaticMarkup(createElement(PowersPanel, { effects: [truce], you: 'w', mobile: false, rules }));
-    expect(panneau(RULES_V1)).toBe(panneau());
+    expect(panneau(duJour())).toBe(panneau());
     const r: Rules = { ...RULES_V1, tuning: { ...RULES_V1.tuning, truce: { coups: 4 } } };
     expect(panneau(r)).toContain('Pendant 4 coups');
     expect(panneau()).not.toContain('Pendant 4 coups');
@@ -126,7 +137,8 @@ describe('coque mobile : la bande des cartes adverses ne touche ni le nom ni l�
 
 describe('leçon « Jouer une carte » : le geste réel', () => {
   it('la consigne et l’indice passent par « Lancer ce sort »', () => {
-    const step = LESSONS.find(l => l.id === 'cartes')!.steps[1];
+    // Contenu écrit pour RULES_V1 : cherché parmi toutes les leçons (masquée par `requires` sous d'autres règles).
+    const step = ALL_LESSONS.find(l => l.id === 'cartes')!.steps[1];
     expect(step.text).toContain('« Lancer ce sort »');
     expect(step.hint).toContain('« Lancer ce sort »');
     expect(step.text).not.toMatch(/choisissez la carte, puis la case/);
@@ -191,36 +203,39 @@ describe('cartes : pastilles et moment selon les règles de la partie', () => {
     }
   });
   it('au défaut, les libellés d’avant', () => {
-    expect(turnEffect(CARDS.tide).label).toBe('Remplace votre coup');
-    expect(turnEffect(CARDS.blast, 'opponent').label).toBe('En plus de son coup');
-    expect(cardTiming(CARDS.blast)).toBe('Présage : annoncée maintenant, elle arrive au début de votre prochain tour. Vous jouez votre coup juste après l’annonce.');
-    expect(cardTiming(CARDS.blast, 'opponent')).toBe('Présage : annoncée, elle arrive au début du tour suivant de votre adversaire.');
-    expect(cardTiming(CARDS.tide)).toBe('Rituel : la carte remplace votre coup.');
-    expect(cardTiming(CARDS.ice_wall)).toBe('Effet immédiat sur la case choisie, puis vous jouez votre coup.');
+    const r = R();
+    expect(turnEffect(CARDS.tide, 'self', r).label).toBe('Remplace votre coup');
+    expect(turnEffect(CARDS.blast, 'opponent', r).label).toBe('En plus de son coup');
+    expect(cardTiming(CARDS.blast, 'self', r)).toBe('Présage : annoncée maintenant, elle arrive au début de votre prochain tour. Vous jouez votre coup juste après l’annonce.');
+    expect(cardTiming(CARDS.blast, 'opponent', r)).toBe('Présage : annoncée, elle arrive au début du tour suivant de votre adversaire.');
+    expect(cardTiming(CARDS.tide, 'self', r)).toBe('Rituel : la carte remplace votre coup.');
+    expect(cardTiming(CARDS.ice_wall, 'self', r)).toBe('Effet immédiat sur la case choisie, puis vous jouez votre coup.');
     expect(cardTiming(CARDS.ice_wall, 'opponent', RULES_V1)).toBe('Effet immédiat sur la case choisie, puis il joue son coup.');
-    expect(ruleBody(CARDS.blast)).toBe(CARDS.blast.description.replace(/^Annoncée?, (?:il|elle) arrive au début de votre prochain tour\.\s*/u, ''));
-    expect(ruleBody(CARDS.blast)).not.toMatch(/^Annonc/);
+    expect(ruleBody(CARDS.blast, r)).toBe(cardTexts(CARDS.blast, r).description.replace(/^Annoncée?, (?:il|elle) arrive au début de votre prochain tour\.\s*/u, ''));
+    expect(ruleBody(CARDS.blast, r)).not.toMatch(/^Annonc/);
   });
   it('moment d’action en deux mots : « Au prochain tour » au défaut, « Dans deux tours » si les Présages tardent', () => {
-    expect(cardWhen(CARDS.blast)).toEqual({ kind: 'next', label: 'Au prochain tour' });
+    expect(cardWhen(CARDS.blast, R())).toEqual({ kind: 'next', label: 'Au prochain tour' });
     expect(cardWhen(CARDS.blast, RULES_V1).label).toBe('Au prochain tour');
     expect(cardWhen(CARDS.ice_wall, { presageDelay: 4 })).toEqual({ kind: 'now', label: 'Immédiat' });
     expect(cardWhen(CARDS.blast, { presageDelay: 4 }).label).toBe('Dans deux tours');
     expect(cardWhen(CARDS.blast, { presageDelay: 6 }).label).toBe('Dans trois tours');
-    expect(cardAriaLabel(CARDS.blast)).toBe('Déflagration, au prochain tour, en plus de votre coup');
+    expect(cardAriaLabel(CARDS.blast, undefined, 'self', R())).toBe('Déflagration, au prochain tour, en plus de votre coup');
     expect(cardAriaLabel(CARDS.blast, false, 'self', { cardEndsTurn: false, presageDelay: 4 })).toBe('Déflagration, dans deux tours, en plus de votre coup');
     // Face de la carte (étiquette du haut) : la même chose que la bulle
     const face = renderToStaticMarkup(createElement(SpellCard, { id: 'blast', size: 'hand', rules: { cardEndsTurn: true, presageDelay: 4 } }));
     expect(face).toContain('Dans deux tours');
     expect(face).toContain('Remplace le coup');
-    expect(renderToStaticMarkup(createElement(SpellCard, { id: 'blast', size: 'hand' }))).toContain('Au prochain tour');
+    expect(renderToStaticMarkup(createElement(SpellCard, { id: 'blast', size: 'hand', rules: R() }))).toContain('Au prochain tour');
   });
   it('textes de la carte selon l’équilibrage de la partie (cardText) ; au défaut, ceux de CARDS', () => {
+    // Au défaut, les règles du jour sont RULES_V1 ; sinon, CARDS suit les règles du jour (GAME_RULES, équilibrage).
+    const jour = duJour();
     for (const id of CARD_IDS) {
       const { description, duration, prompts } = CARDS[id];
-      expect(cardTexts(CARDS[id], RULES_V1), id).toEqual({ description, duration, prompts });
+      expect(cardTexts(CARDS[id], jour), id).toEqual({ description, duration, prompts });
       expect(cardTexts(CARDS[id]), id).toBe(CARDS[id]);
-      expect(ruleBody(CARDS[id], RULES_V1), id).toBe(ruleBody(CARDS[id]));
+      expect(ruleBody(CARDS[id], jour), id).toBe(ruleBody(CARDS[id]));
     }
     const r: Rules = { ...RULES_V1, tuning: { ...RULES_V1.tuning, truce: { coups: 4 }, ice_wall: { ranks: [1, 2, 3, 4] } } };
     expect(cardTexts(CARDS.truce, r).duration).toBe('4 coups (2 chacun)');
@@ -228,7 +243,7 @@ describe('cartes : pastilles et moment selon les règles de la partie', () => {
     const bulle = (rules?: Rules) => renderToStaticMarkup(createElement(CardBubble, { id: 'truce', mode: 'read', rules }));
     expect(bulle(r)).toContain('4 coups (2 chacun)');
     expect(bulle(r)).not.toContain('3 coups (vous, lui, vous)');
-    expect(bulle(RULES_V1)).toBe(bulle());
+    expect(bulle(jour)).toBe(bulle());
   });
   it('carte à la place du coup, Présages à 4 demi-coups', () => {
     const r = { cardEndsTurn: true, presageDelay: 4 };
@@ -242,8 +257,8 @@ describe('cartes : pastilles et moment selon les règles de la partie', () => {
 describe('coque : main, refus et message après un lancement', () => {
   const s0 = createGame({ w: ['ice_wall', 'blast', 'tide'], b: ['truce', 'rift', 'blood_moon'] }, true, 'climats');
   it('message après un lancement : identique au défaut', () => {
-    expect(castMessage('ice_wall')).toBe('Sort lancé. Jouez maintenant votre coup.');
-    expect(castMessage('blast')).toBe('Annoncé : arrive au début de votre prochain tour. Jouez maintenant votre coup.');
+    expect(castMessage('ice_wall', R())).toBe('Sort lancé. Jouez maintenant votre coup.');
+    expect(castMessage('blast', R())).toBe('Annoncé : arrive au début de votre prochain tour. Jouez maintenant votre coup.');
     expect(castMessage('ice_wall', { cardEndsTurn: false, presageDelay: 2 }, 1)).toBe('Sort lancé. Un autre sort, ou jouez votre coup.');
   });
   it('carte lancée ce tour : castsThisTurn (liste) et castThisTurn (accueil) concordent', () => {

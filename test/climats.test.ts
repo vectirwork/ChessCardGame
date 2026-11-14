@@ -10,14 +10,17 @@ import {
 import {
   Color, F_BLAST, F_CASTLE_K, F_RELAXED, inCheck, legalMoves, sqIndex as q, sqName, toFen,
 } from '../src/shared/chess';
-import { deepFreeze } from '../src/shared/config/rules';
+import { GAME_RULES, deepFreeze } from '../src/shared/config/rules';
 import type { GameRulesSettings, Rules } from '../src/shared/config/rules';
 import {
   Effect, GameState, canStillMate, cardOptions, cardPlayable, cardRefusalInfo, castsThisTurn, checkKind, clockRate,
-  completeDraft, createGame, createGameFromFen, dealHands, draftRefusal, evaluateEnd, incrementSuspended, inferCatalog,
+  completeDraft, dealHands, draftRefusal, evaluateEnd, incrementSuspended, inferCatalog,
   legalMovesOf, modsFromEffects, playCard, playMove, positionKey, resultText, sideInCheck, viewState,
 } from '../src/shared/game';
-import { RULES_V1, canComplete, castsLeft, checkRules, parseRules, poolOf, validHand } from '../src/shared/rules';
+import { CARD_TUNING, RULES_V1, canComplete, castsLeft, checkRules, parseRules, poolOf, validHand } from '../src/shared/rules';
+// Parties scriptées aux règles V1 (RULES_V1), quel que soit le réglage du jour (lot 9e) : createGame de
+// test/helpers/v1.ts ; checkRules sur la configuration V1 (REGLAGES_V1, DEAL_V1) quand le test n'en donne pas d'autre.
+import { DEAL_V1, REGLAGES_V1, createGame, createGameFromFen, equilibrageV1 } from './helpers/v1';
 import { chooseBotDraft } from '../src/shared/bot';
 import type { Catalog } from '../src/shared/cards';
 
@@ -872,10 +875,20 @@ describe('codes de refus du moteur (messages inchangés)', () => {
 describe('textes des cartes produits par gabarits', () => {
   it('au réglage du jour : égaux au caractère près aux témoins v1 (cartes.json)', () => {
     const temoins = JSON.parse(readFileSync(new URL('./fixtures/v1/cartes.json', import.meta.url), 'utf8')) as Record<string, unknown>;
+    // Les textes de CARDS suivent le délai du Présage de GAME_RULES et l'équilibrage de CARDS. Au réglage par défaut
+    // (ceux de V1), ce sont les témoins ; sinon, les textes aux règles V1 (cardText) sont les témoins, et CARDS suit le
+    // réglage du jour.
+    const auDefaut = GAME_RULES.presageDelay === RULES_V1.presageDelay && equilibrageV1();
+    const duJour = { presageDelay: GAME_RULES.presageDelay, tuning: CARD_TUNING };
     for (const id of Object.keys(CARDS) as CardId[]) {
       const { name, tagline, description, duration, prompts } = CARDS[id];
-      expect({ name, tagline, description, duration, prompts }, id).toEqual(temoins[id]);
-      expect(cardText(id, RULES_V1), id).toEqual({ description, duration, prompts });
+      if (auDefaut) {
+        expect({ name, tagline, description, duration, prompts }, id).toEqual(temoins[id]);
+        expect(cardText(id, RULES_V1), id).toEqual({ description, duration, prompts });
+      } else {
+        expect({ name, tagline, ...cardText(id, RULES_V1) }, id).toEqual(temoins[id]);
+        expect(cardText(id, duJour), id).toEqual({ description, duration, prompts });
+      }
     }
   });
   it('selon les règles d’une partie : durée, parité, délai du Présage, rangées', () => {
@@ -950,14 +963,16 @@ describe('corrections de la relecture du lot 1', () => {
   });
 
   it('Grande Marée : rangées de 1 à 5 seulement (checkRules, parseRules) ; le moteur ne pousse jamais depuis la 7e', () => {
+    // Le reste de la configuration vérifiée : celle de V1 (un autre réglage du jour ne doit pas s'ajouter aux erreurs).
+    const V1 = { game: REGLAGES_V1, byContext: {}, deal: DEAL_V1, suspended: [] };
     for (const ranks of [[1, 2, 3, 4, 5, 6], [0, 1, 2, 3, 4, 5, 6, 7]]) {
       const tuning = { ...RULES_V1.tuning, tide: { ranks } };
-      expect(checkRules({ tuning })).toEqual([
+      expect(checkRules({ tuning, ...V1 })).toEqual([
         `CARDS.tide.ranks vaut ${JSON.stringify(ranks)} : de 1 à 5 seulement pour la Grande Marée (un pion poussé depuis la 7e rangée atteindrait la promotion sans être promu).`,
       ]);
       expect(parseRules(JSON.parse(JSON.stringify({ ...RULES_V1, tuning })))).toBeNull();
     }
-    expect(checkRules({ tuning: { ...RULES_V1.tuning, tide: { ranks: [1, 5] } } })).toEqual([]);
+    expect(checkRules({ tuning: { ...RULES_V1.tuning, tide: { ranks: [1, 5] } }, ...V1 })).toEqual([]);
     // Règles forgées sans passer par la vérification : le pion de la 7e rangée ne bouge pas.
     const r = regles({ tuning: { ...RULES_V1.tuning, tide: { ranks: [1, 2, 3, 4, 5, 6] } } });
     const s = avecRegles(r, '7k/P7/8/8/8/8/8/4K3 w - - 0 1', ['tide']);

@@ -11,8 +11,9 @@ export const CINEMATIC_MS = 1200;
 export const BOT_CARD_PAUSE_MS = 2300;
 
 /**
- * Délai maximal d'une décision de l'IA (fil de calcul du serveur ou Web Worker du navigateur) ; au-delà, la demande
- * échoue (serveur) ou se calcule sur le fil principal (navigateur). Doit rester au-dessus du plus long temps de
- * réflexion (BOT_PROFILES, 1500 ms pour l'Archimage).
+ * Délai maximal d'une décision de l'IA sur le serveur (fil de calcul, BOT_RUNTIME.timeoutMs de src/server/settings.ts) ;
+ * au-delà, la demande échoue. Seul le serveur le lit : le navigateur garde sa propre copie (WORKER_TIMEOUT de
+ * src/client/ai/index.ts, 20 000 ms aussi), au-delà de laquelle le Web Worker est abandonné et la décision se calcule
+ * sur le fil principal. Doit rester au-dessus du plus long temps de réflexion (BOT_PROFILES, 1500 ms pour l'Archimage).
  */
 export const BOT_TIMEOUT_MS = 20_000;

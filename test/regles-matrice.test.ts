@@ -20,7 +20,7 @@ import { CARDS } from '../src/shared/cards';
 import type { CardId } from '../src/shared/cards';
 import { opposite } from '../src/shared/chess';
 import type { Color } from '../src/shared/chess';
-import { DEAL, GAME_RULES } from '../src/shared/config/rules';
+import { DEAL } from '../src/shared/config/rules';
 import type { GameRulesSettings, Rules } from '../src/shared/config/rules';
 import {
   cardOptions, cardPlayable, cardPool, castsThisTurn, completeDraft, createGame, dealHands, draftRefusal, legalMovesOf,
@@ -29,20 +29,21 @@ import {
 import type { GameState } from '../src/shared/game';
 import { initialStateOf, mainline, treeFromLog } from '../src/shared/pgn';
 import {
-  RULES_V1, cardEndsTurn, castsLeft, checkRules, maxValidHand, poolOf, rulesFor, rulesOf, sameRules, setRulesOverride,
-  validHand,
+  CARD_TUNING, RULES_V1, cardEndsTurn, castsLeft, checkRules, maxValidHand, poolOf, rulesFor, rulesOf, sameRules,
+  setRulesOverride, validHand,
 } from '../src/shared/rules';
 import {
   MAIN_MAX_TIRAGE, MATRICE, combinaisons, combinaisonsRefusees, estDefaut, nomCombinaison,
 } from './helpers/matrice';
 import type { Combinaison } from './helpers/matrice';
 import { mulberry32, pick } from './helpers/rng';
+import { REGLAGES_V1, equilibrageV1 } from './helpers/v1';
 
 afterEach(() => setRulesOverride(null));
 
-/** Réglages d'une combinaison, sur ceux du jour. */
+/** Réglages d'une combinaison, sur ceux de V1 (REGLAGES_V1, pas ceux du jour : lot 9e). */
 const reglages = (c: Combinaison): GameRulesSettings => ({
-  ...GAME_RULES, cardsPerPlayer: c.cardsPerPlayer, cardsPerTurn: c.cardsPerTurn, cardEndsTurn: c.cardEndsTurn, presageDelay: c.presageDelay,
+  ...REGLAGES_V1, cardsPerPlayer: c.cardsPerPlayer, cardsPerTurn: c.cardsPerTurn, cardEndsTurn: c.cardEndsTurn, presageDelay: c.presageDelay,
 });
 
 /** Règles d'une nouvelle partie pour cette combinaison, par le chemin du serveur jetable (setRulesOverride). */
@@ -191,7 +192,9 @@ describe(`matrice des règles (moteur), cartes par joueur ${MATRICE.join(', ')}`
   it('la combinaison par défaut est RULES_V1 : rien n’est écrit dans la partie', () => {
     const defaut = combinaisons([3]).filter(estDefaut);
     expect(defaut).toHaveLength(1);
-    expect(reglesDe(defaut[0])).toBe(RULES_V1);
+    // Seul un équilibrage des cartes du jour changé (CARDS) la sépare alors de RULES_V1.
+    if (equilibrageV1()) expect(reglesDe(defaut[0])).toBe(RULES_V1);
+    else expect(reglesDe(defaut[0])).toEqual({ ...RULES_V1, tuning: CARD_TUNING });
   });
 
   describe.each(combinaisons().map(c => [nomCombinaison(c), c] as const))('%s', (_nom, c) => {
@@ -231,7 +234,7 @@ describe(`matrice des règles (moteur), cartes par joueur ${MATRICE.join(', ')}`
         vu.cartes += res.cartes;
         vu.doubles += res.doubles;
         vu.remplacent += res.remplacent;
-        relecture(res.s, { ...GAME_RULES, cardsPerPlayer: 2, presageDelay: c.presageDelay === 2 ? 4 : 2, fiftyHalfmoves: 20 });
+        relecture(res.s, { ...REGLAGES_V1, cardsPerPlayer: 2, presageDelay: c.presageDelay === 2 ? 4 : 2, fiftyHalfmoves: 20 });
       }
       // La combinaison a bien été exercée : des cartes, deux dans un tour, des cartes qui remplacent le coup.
       expect(vu.cartes).toBeGreaterThan(0);

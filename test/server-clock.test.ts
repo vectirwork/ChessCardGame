@@ -5,10 +5,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sqIndex as q } from '../src/shared/chess';
 import { CardId, Catalog } from '../src/shared/cards';
-import { GameState, clockRate, createGame, incrementSuspended, playCard, playMove } from '../src/shared/game';
+import { GameState, clockRate, incrementSuspended, playCard, playMove } from '../src/shared/game';
 import {
   CINEMATIC_MS, RoomData, commitCard, commitMove, hasRetiredCard, resumeClock, settleClock,
 } from '../src/server/games';
+// Parties, tirages et choix scriptés aux règles V1 (RULES_V1, DEAL_V1), quel que soit le réglage du jour (lot 9e) :
+// test/helpers/v1.ts.
+import { createGame } from './helpers/v1';
 
 const T0 = 1_800_000_000_000;
 

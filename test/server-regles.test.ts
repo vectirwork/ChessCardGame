@@ -27,10 +27,9 @@ vi.mock('../src/server/bot-pool', () => ({
 import type { BotReply } from '../src/shared/botProtocol';
 import type { CardId } from '../src/shared/cards';
 import type { Color } from '../src/shared/chess';
-import { DEAL } from '../src/shared/config/rules';
 import { cardOptions, createGame, legalMovesOf, playCard } from '../src/shared/game';
 import type { GameState } from '../src/shared/game';
-import { RULES_V1, rulesFor, rulesOf, setRulesOverride } from '../src/shared/rules';
+import { RULES_V1, rulesFor, rulesOf, sameRules, setRulesOverride, stampRules } from '../src/shared/rules';
 import type { Rules } from '../src/shared/rules';
 import { botPool } from '../src/server/bot-pool';
 import type { BotThread } from '../src/server/bot-pool';
@@ -41,10 +40,17 @@ import {
 import { BOT_RUNTIME, BOT_THREADS, setDealOverride } from '../src/server/settings';
 import { toSummary } from '../src/server/summary';
 import { bot, human } from './helpers/sieges';
+// Règles et mise en place de départ de chaque cas : celles de V1 (REGLAGES_V1, DEAL_V1), pas celles du jour ; withRules
+// et withDeal ne changent que ce qu'ils nomment (lot 9e, test/helpers/v1.ts). Les gardes d'identité « au défaut »
+// retirent ces surcharges et suivent le vrai chemin du défaut.
+import { DEAL_V1, REGLAGES_V1, createGame as createGameV1, reglerV1, reglesDuJourV1 } from './helpers/v1';
+import { reglerMiseEnPlaceV1 } from './helpers/v1-serveur';
 
 const T0 = 1_800_000_000_000;
 
 beforeEach(() => {
+  reglerV1();
+  reglerMiseEnPlaceV1();
   vi.useFakeTimers();
   vi.setSystemTime(T0);
   vi.mocked(botPool.decide).mockReset();
@@ -57,15 +63,28 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-/** Les règles du moment (comme SPELLMATE_TEST_RULES sur le serveur jetable). */
-const withRules = (p: Parameters<typeof setRulesOverride>[0]) => setRulesOverride(p);
+/** Les règles du moment (comme SPELLMATE_TEST_RULES sur le serveur jetable), à partir de celles de V1. */
+const withRules = (p: Parameters<typeof setRulesOverride>[0]) => setRulesOverride(p && { ...REGLAGES_V1, ...p });
+/** La mise en place du serveur (surcharge de test), à partir de celle de V1. */
+const withDeal = (p: Parameters<typeof setDealOverride>[0]) => setDealOverride({ ...DEAL_V1, ...p });
 const invite = (tc = '5+0') => newRoom({ mode: 'invite', rated: false, tc, catalog: 'climats', creator: 'g:1', seats: { w: human(1), b: human(2) } });
 
 describe('règles des nouvelles parties', () => {
   it('au défaut : aucune règle écrite dans l’état ; contexte d’après le mode', () => {
+    // Garde d'identité : le vrai chemin du défaut (GAME_RULES, RULES_BY_CONTEXT, rulesFor, stampRules), sans surcharge.
+    setRulesOverride(null);
+    setDealOverride(null);
     const room = invite();
-    expect('rules' in room.d.state).toBe(false);
-    expect(rulesOf(room.d.state)).toBe(RULES_V1);
+    if (reglesDuJourV1()) {
+      expect('rules' in room.d.state).toBe(false);
+      expect(rulesOf(room.d.state)).toBe(RULES_V1);
+    } else {
+      // Hors du défaut (configuration lue directement) : les règles du jour de l'invitation, écrites si elles
+      // diffèrent de V1.
+      const r = rulesFor('invitation');
+      if (sameRules(r, RULES_V1)) expect('rules' in room.d.state).toBe(false);
+      else expect(room.d.state.rules).toBe(stampRules(r));
+    }
     expect(contextOf({ mode: 'invite', rated: false })).toBe('invitation');
     expect(contextOf({ mode: 'bot', rated: false })).toBe('ia');
     expect(contextOf({ mode: 'quick', rated: true })).toBe('classee');
@@ -116,7 +135,7 @@ describe('choix des cartes à N cartes', () => {
       withRules({ cardsPerPlayer: n });
       const room = invite();
       const d = room.d;
-      expect(draftView(d, 'w')).toMatchObject({ count: n, totalMs: DEAL.draftMs, msLeft: DEAL.draftMs });
+      expect(draftView(d, 'w')).toMatchObject({ count: n, totalMs: DEAL_V1.draftMs, msLeft: DEAL_V1.draftMs });
       const pool = d.draft!.pool as CardId[];
       // Les Blancs valident n cartes ; n + 1 sont refusées.
       expect(submitDraft(d, 'w', pool.slice(0, n + 1), true).ok).toBe(false);
@@ -136,7 +155,7 @@ describe('choix des cartes à N cartes', () => {
     const updates: unknown[] = [];
     room.sockets.add({ data: { identity: { user: null, guestId: '1', sessionId: null } }, emit: (_e: string, u: unknown) => updates.push(u) } as never);
     applyDraft(room, 'b', ['tide', 'rift'], false);
-    vi.advanceTimersByTime(DEAL.draftMs);
+    vi.advanceTimersByTime(DEAL_V1.draftMs);
     expect(room.d.draft).toBeNull();
     expect(room.d.state.hands.b.map(h => h.card).slice(0, 2)).toEqual(['tide', 'rift']);
     expect(room.d.state.hands.b).toHaveLength(3);
@@ -146,7 +165,7 @@ describe('choix des cartes à N cartes', () => {
 
   it('tirage partout (DEAL.draft faux) : pas de choix, mains de N cartes tirées', () => {
     withRules({ cardsPerPlayer: 4 });
-    setDealOverride({ draft: false });
+    withDeal({ draft: false });
     const room = invite();
     expect(room.d.draft).toBeNull();
     expect(room.d.state.hands.w).toHaveLength(4);
@@ -158,7 +177,7 @@ describe('choix des cartes à N cartes', () => {
   });
 
   it('durée du choix : DEAL.draftMs du serveur (surcharge de test)', () => {
-    setDealOverride({ draftMs: 20_000 });
+    withDeal({ draftMs: 20_000 });
     const room = invite();
     expect(draftView(room.d, 'w')).toMatchObject({ totalMs: 20_000, msLeft: 20_000 });
     vi.advanceTimersByTime(20_000);
@@ -170,15 +189,15 @@ describe('choix des cartes à N cartes', () => {
     // Au défaut : aucune contrainte, rien d'écrit dans le choix (le choix enregistré est le même qu'avant).
     const free = invite();
     expect('limits' in free.d.draft!).toBe(false);
-    setDealOverride({ limitsInDraft: true });
+    withDeal({ limitsInDraft: true });
     const bound = invite();
-    expect(bound.d.draft!.limits).toEqual(DEAL.handLimits);
+    expect(bound.d.draft!.limits).toEqual(DEAL_V1.handLimits);
     // Le serveur redémarre avec DEAL.limitsInDraft faux : la partie créée avec R9 la garde, l'autre reste libre.
-    setDealOverride(null);
+    reglerMiseEnPlaceV1();
     expect(submitDraft(bound.d, 'w', climats, true)).toEqual({ ok: false, error: 'Au plus deux Climats par main.' });
     expect(submitDraft(free.d, 'w', climats, true).ok).toBe(true);
     // Et l'inverse : R9 activée après la création d'une partie libre ne la contraint pas.
-    setDealOverride({ limitsInDraft: true });
+    withDeal({ limitsInDraft: true });
     expect(submitDraft(free.d, 'b', climats, true).ok).toBe(true);
   });
 
@@ -247,7 +266,12 @@ describe('reprise des salles témoins v1 avec les règles du jour à 5 cartes', 
 
 describe('revanche', () => {
   it('pendule de la partie d’origine, cadence retirée comprise ; règles du moment', async () => {
+    // Partie d'origine créée au vrai défaut (sans surcharge de règles) : RULES_V1 elles-mêmes quand la configuration
+    // du jour est celle de V1.
+    setRulesOverride(null);
     const room = newRoom({ mode: 'invite', rated: false, tc: '1+0', catalog: 'climats', creator: 'g:1', seats: { w: human(1), b: human(2) } });
+    const origine = rulesOf(room.d.state);
+    if (reglesDuJourV1()) expect(origine).toBe(RULES_V1);
     room.d.status = 'ended';
     // La cadence de la partie a disparu de TIME_CONTROLS depuis : la revanche garde sa pendule.
     room.d.tc = 'retiree';
@@ -258,7 +282,7 @@ describe('revanche', () => {
     expect(next.d.clock).toMatchObject({ initial: 75, increment: 1, w: 75_000, b: 75_000 });
     expect(rulesOf(next.d.state).cardsPerPlayer).toBe(5);
     expect(draftView(next.d, 'w')?.count).toBe(5);
-    expect(rulesOf(room.d.state)).toBe(RULES_V1);
+    expect(rulesOf(room.d.state)).toBe(origine);
   });
 
   it('échéance (TIMINGS.rematchTtlMs) : aucune au défaut ; sinon, comptée depuis la fin de la partie', () => {
@@ -460,7 +484,7 @@ describe('fil de calcul de l’IA mort (bot-pool)', () => {
       }, () => 2);
       pool.start();
       expect(pool.threadCount).toBe(2);
-      const s = createGame({ w: [], b: [] }, false, 'aucune');
+      const s = createGameV1({ w: [], b: [] }, false, 'aucune');
       const p1 = pool.decide(s, 2);
       const p2 = pool.decide(s, 2);
       // Le premier fil meurt : sa demande échoue aussitôt (pas au bout de BOT_RUNTIME.timeoutMs), il est remplacé.

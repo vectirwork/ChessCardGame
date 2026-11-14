@@ -24,7 +24,8 @@
     "temoins": "vitest run -c test/fixtures/v1/vitest.config.ts",
     "identite": "node test/identite.mjs --comparer",
     "textes-pages": "node test/textes-pages.mjs --comparer",
-    "verifier-lot": "node scripts/verifier-lot.mjs"
+    "verifier-lot": "node scripts/verifier-lot.mjs",
+    "essai-reglage": "node scripts/essai-reglage.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.13",

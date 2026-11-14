@@ -8,7 +8,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cardsOf } from '../src/shared/cards';
 import type { CardId } from '../src/shared/cards';
-import { GAME_RULES, RULES_V1 } from '../src/shared/config/rules';
+import { DEAL, GAME_RULES, RULES_V1 } from '../src/shared/config/rules';
 import type { Rules as RuleSet } from '../src/shared/config/rules';
 import { F_RELAXED, fromFen, sqIndex, sqName } from '../src/shared/chess';
 import { GameState, createGame, legalMovesOf, playCard, playMove, sideInCheck } from '../src/shared/game';
@@ -29,6 +29,9 @@ import MyGames from '../src/client/pages/MyGames';
 import { HISTORY_KEY, localGame, rememberLocalGame } from '../src/client/features/history';
 import { AppProvider, FeaturesContext } from '../src/client/store';
 import { FEATURES } from '../src/shared/config/features';
+// Réglages V1 (lot 9e) : hors du défaut, les pages, leçons et problèmes « au défaut » sont relus avec les réglages V1
+// (configV1), et le contenu masqué par `requires` se cherche dans ALL_LESSONS (test/helpers/v1.ts).
+import { DEAL_V1, configDuJourV1, defaireConfig, equilibrageV1, reglagesV1, relireAvecConfigV1 } from './helpers/v1';
 
 /** Toutes les étoiles peuvent-elles être ramassées ? (parcours en largeur sur les coups libres) */
 function starsReachable(step: LessonStep, stars: string[]): boolean {
@@ -163,7 +166,8 @@ describe('leçons', () => {
   });
 
   it('lire la main adverse : la Faille noire pare Ff3+, pas le mat sur la 8e rangée', () => {
-    const l = lessonById('mains-visibles')!;
+    // Contenu écrit pour RULES_V1 : cherché parmi toutes les leçons (masquée par `requires` sous d'autres règles).
+    const l = ALL_LESSONS.find(x => x.id === 'mains-visibles')!;
     const s = stepStart(l.steps[0]);
     const fake = applyAction(s, stepOptions('d1f3')[0])!;
     expect(sideInCheck(fake)).toBe(true);
@@ -173,7 +177,8 @@ describe('leçons', () => {
   });
 
   it('la Trêve s’annonce puis arrive ; la Grande Marée remplace le coup', () => {
-    const l = lessonById('presage-rituel')!;
+    // Contenu écrit pour RULES_V1 : cherché parmi toutes les leçons (masquée par `requires` sous d'autres règles).
+    const l = ALL_LESSONS.find(x => x.id === 'presage-rituel')!;
     const truce = l.steps[1];
     let s = stepStart(truce);
     s = applyAction(s, stepOptions('@truce')[0])!;
@@ -223,13 +228,19 @@ const photo = (list: typeof LESSONS) => list.map(l => ({
 }));
 
 describe('leçons au réglage par défaut', () => {
-  it('textes, positions, mains et objectifs identiques à la photographie', () => {
+  afterEach(() => {
+    defaireConfig();
+  });
+
+  it('textes, positions, mains et objectifs identiques à la photographie', async () => {
+    const { ALL_LESSONS, LESSONS } = (await configV1()).lessons;
     expect(sha(photo(ALL_LESSONS))).toBe('d8b079be811b03f8');
     // Au défaut, toutes les leçons sont proposées.
     expect(LESSONS).toEqual(ALL_LESSONS);
   });
 
-  it('textes chiffrés des leçons (mains, tour, rangées, durées, coups permis)', () => {
+  it('textes chiffrés des leçons (mains, tour, rangées, durées, coups permis)', async () => {
+    const { lessonById } = (await configV1()).lessons;
     const step = (id: string, i: number) => lessonById(id)!.steps[i];
     expect(lessonById('cartes')!.summary).toBe('Trois cartes chacun, visibles des deux joueurs ; une par tour, avant le coup.');
     expect(step('cartes', 0).text).toBe(
@@ -287,8 +298,9 @@ describe('leçons : règles du contenu (lot 8)', () => {
   it('requires.tuning : une carte rééquilibrée dans CARDS masque le contenu qui cite ou exploite son équilibrage V1', () => {
     const ids = (r: Parameters<typeof lessonsFor>[0]) => lessonsFor(r).map(l => l.id);
     const retuned = (id: CardId, t: NonNullable<RuleSet['tuning'][CardId]>) => ({ ...RULES_V1, tuning: { ...RULES_V1.tuning, [id]: t } });
-    // Au défaut, l'équilibrage de CARDS est celui de RULES_V1 : rien n'est masqué (GAME_RULES sans tuning : CARDS)
-    expect(ids(GAME_RULES)).toEqual(ALL_LESSONS.map(l => l.id));
+    // Au défaut, l'équilibrage de CARDS est celui de RULES_V1 : rien n'est masqué (GAME_RULES sans tuning : CARDS).
+    // Hors du défaut, les règles V1 avec leur équilibrage ne masquent rien non plus.
+    expect(ids(reglagesV1() && equilibrageV1() ? GAME_RULES : RULES_V1)).toEqual(ALL_LESSONS.map(l => l.id));
     expect(ids(retuned('ice_wall', { ranks: [3, 4] }))).not.toContain('cartes');
     expect(ids(retuned('truce', { coups: 4 }))).not.toContain('presage-rituel');
     expect(ids(retuned('tide', { ranks: [1, 2, 3] }))).not.toContain('presage-rituel');
@@ -396,6 +408,10 @@ function pageText(url: string, path: string, el: ReactElement): string {
   const html = renderToStaticMarkup(
     createElement(AppProvider, null, createElement(MemoryRouter, { initialEntries: [url] }, createElement(Routes, null, createElement(Route, { path, element: el })))),
   );
+  return visible(html);
+}
+/** Texte visible d'un rendu : une ligne par nœud de texte. */
+function visible(html: string): string {
   return html
     .replace(/<[^>]+>/g, '\n')
     .replace(/&#x27;/g, "'")
@@ -411,16 +427,28 @@ function pageLabels(url: string, path: string, el: ReactElement): string[] {
   const html = renderToStaticMarkup(
     createElement(AppProvider, null, createElement(MemoryRouter, { initialEntries: [url] }, createElement(Routes, null, createElement(Route, { path, element: el })))),
   );
+  return labels(html);
+}
+/** aria-label d'un rendu. */
+function labels(html: string): string[] {
   return [...html.matchAll(/aria-label="([^"]*)"/g)].map(m => m[1].replace(/&#x27;/g, "'"));
 }
+
+/**
+ * Durée du choix des cartes dans les pages : figée au build (__SM__.dureeChoix, tirée de DEAL par vite.config.ts), elle
+ * ne se relit pas avec les modules. « 45 secondes » au défaut ; la durée de DEAL sinon.
+ */
+const choix = (texte: string) => (DEAL.draftMs === DEAL_V1.draftMs ? texte : texte.replace('45 secondes', __SM__.dureeChoix));
 
 describe('pages au réglage par défaut : textes chiffrés et libellés', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.useRealTimers();
+    defaireConfig(); // configV1 hors du défaut : modules relus avec une configuration remplacée
   });
 
-  it('Règles et cartes', () => {
+  it('Règles et cartes', async () => {
+    const { pageText, Rules } = await configV1();
     const t = pageText('/cartes', '/cartes', createElement(Rules));
     for (const s of [
       'et huit pouvoirs',
@@ -439,13 +467,14 @@ describe('pages au réglage par défaut : textes chiffrés et libellés', () => 
       'Entre humains, avec pendule',
       'Trois cartes chacun, choisies parmi les huit pouvoirs au début de la partie.\nLes deux mains visibles, du premier au dernier coup.\nUn sort par tour au plus, toujours facultatif.',
       'Le Sablier fou n’est proposé qu’entre humains, dans les parties avec pendule.',
-      'Le choix des cartes dure 45 secondes : trois cartes différentes parmi les huit pouvoirs, sans autre contrainte. Si le temps s’écoule, celles qui vous manquent sont tirées au hasard. Sur l’accueil, le tirage favorise les cartes les moins rares, avec au plus deux Climats par main.',
+      choix('Le choix des cartes dure 45 secondes : trois cartes différentes parmi les huit pouvoirs, sans autre contrainte. Si le temps s’écoule, celles qui vous manquent sont tirées au hasard. Sur l’accueil, le tirage favorise les cartes les moins rares, avec au plus deux Climats par main.'),
       'Pour choisir vos cartes et votre adversaire, passez par la page\nJouer',
     ]) expect(t).toContain(s);
     expect(t.match(/Entre humains, avec pendule/g)).toHaveLength(1);
   });
 
-  it('Jouer : portes, niveaux de l’IA, cadences, aide du choix des cartes', () => {
+  it('Jouer : portes, niveaux de l’IA, cadences, aide du choix des cartes', async () => {
+    const { pageText, Play } = await configV1();
     const bot = pageText('/jouer?mode=bot', '/jouer', createElement(Play));
     for (const s of [
       'Les échecs, plus trois cartes de pouvoir chacun, que vous choisissez au début de la partie. Une IA, un ami, ou le premier joueur venu : la partie s’ouvre en plein écran.',
@@ -453,7 +482,7 @@ describe('pages au réglage par défaut : textes chiffrés et libellés', () => 
       'II\nDéfier un ami\nSans compte', 'III\nPartie amicale\nOuverte à tous', 'IV\nPartie classée\nElo',
       'Porte I · contre l\'IA',
       'Apprenti\nJoue vite, lance ses sorts au hasard.\n≈ 800 Elo\nSorcier\nCalcule, protège ses pièces, garde une carte pour la fin.\n≈ 1300 Elo\nArchimage\nCalcule en profondeur et punit chaque sort gaspillé.\n≈ 1800 Elo',
-      'Vous choisirez vos trois cartes au début de la partie, en 45 secondes : votre choix reste secret jusqu’à ce que votre adversaire ait choisi aussi.',
+      choix('Vous choisirez vos trois cartes au début de la partie, en 45 secondes : votre choix reste secret jusqu’à ce que votre adversaire ait choisi aussi.'),
       '1 + 0\nBullet\n3 + 2\nBlitz\n5 + 0\nBlitz\n10 + 0\nRapide\n15 + 10\nRapide\nSans limite\nLibre',
       'Contre le Sorcier · 10 + 0',
     ]) expect(bot).toContain(s);
@@ -465,7 +494,8 @@ describe('pages au réglage par défaut : textes chiffrés et libellés', () => 
     expect(pageText('/jouer?mode=ranked', '/jouer', createElement(Play))).toContain('Porte IV · classement Elo');
   });
 
-  it('Apprendre : sommaire et encarts', () => {
+  it('Apprendre : sommaire et encarts', async () => {
+    const { pageText, pageLabels, Learn } = await configV1();
     const t = pageText('/apprendre', '/apprendre', createElement(Learn));
     expect(t).toContain('De la marche des pièces aux mats élémentaires, puis les cartes de Spellmate.');
     expect(t).toContain('0 / 22 leçons');
@@ -480,7 +510,8 @@ describe('pages au réglage par défaut : textes chiffrés et libellés', () => 
     expect(cat).toContain('Pouvoirs\n· 8 cartes');
   });
 
-  it('Apprendre : « 1 leçon terminée », « 2 leçons terminées »', () => {
+  it('Apprendre : « 1 leçon terminée », « 2 leçons terminées »', async () => {
+    const { pageLabels, Learn } = await configV1();
     for (const [ids, label] of [[['tour'], '1 leçon terminée sur 22'], [['tour', 'fou'], '2 leçons terminées sur 22']] as const) {
       const progress = Object.fromEntries(ids.map(id => [id, { step: 0, done: true }]));
       vi.stubGlobal('localStorage', { getItem: (k: string) => (k === 'sm:apprendre' ? JSON.stringify(progress) : null), setItem: () => undefined });
@@ -488,7 +519,8 @@ describe('pages au réglage par défaut : textes chiffrés et libellés', () => 
     }
   });
 
-  it('Problèmes : chapeau et filtres', () => {
+  it('Problèmes : chapeau et filtres', async () => {
+    const { pageText, Puzzles } = await configV1();
     vi.setSystemTime(new Date(2026, 10, 13, 12));
     const t = pageText('/problemes', '/problemes', createElement(Puzzles));
     vi.useRealTimers();
@@ -569,16 +601,14 @@ describe('pages au réglage par défaut : textes chiffrés et libellés', () => 
 
 // ---------------------------------------------------------------------------------------------
 // Autres réglages : les pages, les leçons et les problèmes suivent GAME_RULES et DEAL (modules relus avec une
-// configuration remplacée par vi.doMock ; React et le routeur, hors de src, restent les mêmes).
+// configuration remplacée par vi.doMock ; React et le routeur, hors de src, restent les mêmes). La configuration de
+// départ est celle de V1 (REGLAGES_V1, DEAL_V1, RULES_BY_CONTEXT vide, équilibrage des cartes de RULES_V1), pas celle
+// du jour : chaque cas ne change que ce qu'il nomme.
 
 type ConfigRules = typeof import('../src/shared/config/rules');
 
 async function withSettings(rules: Partial<ConfigRules['GAME_RULES']>, deal: Partial<ConfigRules['DEAL']> = {}) {
-  vi.resetModules();
-  vi.doMock('../src/shared/config/rules', async orig => {
-    const m = await orig<ConfigRules>();
-    return { ...m, GAME_RULES: Object.freeze({ ...m.GAME_RULES, ...rules }), DEAL: Object.freeze({ ...m.DEAL, ...deal }) };
-  });
+  relireAvecConfigV1(rules, deal);
   const store = await import('../src/client/store');
   const render = (url: string, path: string, el: ReactElement) =>
     renderToStaticMarkup(
@@ -595,23 +625,40 @@ async function withSettings(rules: Partial<ConfigRules['GAME_RULES']>, deal: Par
     rulesHtml: render('/cartes', '/cartes', createElement(Rules)),
     rules: text(render('/cartes', '/cartes', createElement(Rules))),
     play: text(render('/jouer?mode=bot', '/jouer', createElement(Play))),
+    Rules,
+    Play,
+    Learn: (await import('../src/client/pages/Learn')).default,
+    Puzzles: (await import('../src/client/pages/Puzzles')).default,
+    /** Texte visible d'une page de ces modules (comme pageText). */
+    pageText: (url: string, path: string, el: ReactElement) => visible(render(url, path, el)),
+    /** aria-label d'une page de ces modules (comme pageLabels). */
+    pageLabels: (url: string, path: string, el: ReactElement) => labels(render(url, path, el)),
   };
+}
+
+/**
+ * Pages, leçons et problèmes « au réglage par défaut » : ceux du jour (modules déjà chargés, comme avant) si la
+ * configuration du jour est celle de V1, sinon les mêmes modules relus avec la configuration V1 (withSettings({})).
+ * Les photographies du défaut d'avant la passe restent ainsi vérifiées à l'identique, quel que soit le réglage du jour.
+ */
+async function configV1() {
+  if (!configDuJourV1()) return withSettings({});
+  return { pageText, pageLabels, Rules, Play, Learn, Puzzles, lessons: { ALL_LESSONS, LESSONS, lessonById } };
 }
 
 describe('autres réglages : textes, grilles et contenu', () => {
   afterEach(() => {
-    vi.doUnmock('../src/shared/config/rules');
-    vi.resetModules();
+    defaireConfig();
   });
 
   it('une carte par joueur : « une carte », « votre carte », mains tronquées', async () => {
     const x = await withSettings({ cardsPerPlayer: 1 });
     expect(x.rules).toContain('Une carte chacun, à découvert\nAu début d’une partie, vous choisissez votre carte ; sur l’accueil, elle est tirée au hasard.');
     expect(x.rules).toContain('Une carte chacun, choisie parmi les huit pouvoirs au début de la partie.');
-    expect(x.rules).toContain('Le choix des cartes dure 45 secondes : une carte parmi les huit pouvoirs, sans autre contrainte. Si le temps s’écoule, elle est tirée au hasard.');
+    expect(x.rules).toContain(choix('Le choix des cartes dure 45 secondes : une carte parmi les huit pouvoirs, sans autre contrainte. Si le temps s’écoule, elle est tirée au hasard.'));
     expect(x.rules).toContain('plus une carte de pouvoir chacun.');
     expect(x.play).toContain('Les échecs, plus une carte de pouvoir chacun, que vous choisissez au début de la partie.');
-    expect(x.play).toContain('Vous choisirez votre carte au début de la partie, en 45 secondes');
+    expect(x.play).toContain(choix('Vous choisirez votre carte au début de la partie, en 45 secondes'));
     const cartes = x.lessons.lessonById('cartes')!;
     expect(cartes.summary).toBe('Une carte chacun, visibles des deux joueurs ; une par tour, avant le coup.');
     expect(cartes.steps[0].text).toContain('plus une carte de pouvoir par joueur. Au début d’une partie, vous choisissez votre carte ; sur l’accueil, elle est tirée au hasard.');

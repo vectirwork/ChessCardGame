@@ -11,14 +11,22 @@ import {
   principle,
 } from '../src/client/odyssee/data';
 import type { TextRules } from '../src/client/odyssee/data';
+import * as dataDuJour from '../src/client/odyssee/data';
 import { BOT, PLAYER, abortedEmpty, loadSaved, validState } from '../src/client/odyssee/useLiveGame';
 import { DEFAULT_PERSPECTIVE } from '../src/client/vfx/config';
 import { CARDS } from '../src/shared/cards';
-import { GAME_RULES, RULES_V1 } from '../src/shared/config/rules';
+import { GAME_RULES, RULES_BY_CONTEXT, RULES_V1 } from '../src/shared/config/rules';
 import { HOME } from '../src/shared/config/home';
-import { createGame, dealHands } from '../src/shared/game';
+import { cardPool, createGame, dealHands } from '../src/shared/game';
 import { DEFAULT_QUICK, TIME_CONTROLS } from '../src/shared/protocol';
-import { rulesFor, setRulesOverride } from '../src/shared/rulesCore';
+import { rulesFor, sameRules, setRulesOverride, stampRules } from '../src/shared/rulesCore';
+import { sortsEnMain } from '../src/shared/text/regles';
+// Règles V1 fixées (reglerV1, REGLAGES_V1), textes relus avec la configuration V1 (relireAvecConfigV1) ou attendus
+// dérivés hors du défaut : ce fichier vérifie la même chose quel que soit le réglage du jour (lot 9e ;
+// test/helpers/v1.ts). Les gardes d'identité (sauvegarde v1, partie neuve au défaut) suivent le vrai chemin du défaut.
+import {
+  REGLAGES_V1, defaireConfig, miseEnPlaceV1, reglagesV1, reglerV1, reglesDuJourV1, relireAvecConfigV1,
+} from './helpers/v1';
 
 const ROOT = path.resolve(__dirname, '..');
 const fixture = JSON.parse(readFileSync(path.join(ROOT, 'test/fixtures/v1/accueil-v1.json'), 'utf8')) as {
@@ -42,16 +50,25 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
   setRulesOverride(null);
+  defaireConfig();
 });
 
 describe('sauvegarde de la partie contre l’Oracle (format v1)', () => {
   it('le témoin v1 est accepté et repris tel quel', () => {
+    // Garde d'identité : règles du jour de l'accueil, sans surcharge. Au défaut (configuration lue directement :
+    // reglesDuJourV1), la sauvegarde v1 est acceptée et reprise. Hors du défaut, elle ne l'est que si les règles de
+    // l'accueil valent encore RULES_V1 ; sinon elle repart de zéro, comme prévu (docs/REGLAGES.md, section 1).
+    const accepte = reglesDuJourV1() || sameRules(rulesFor('accueil'), RULES_V1);
     expect(fixture.cle).toBe('sm:odyssee:partie');
-    expect(validState(clone(fixture.valeur.state))).toBe(true);
+    expect(validState(clone(fixture.valeur.state))).toBe(accepte);
     stubStorage({ [fixture.cle]: JSON.stringify(fixture.valeur) });
     vi.useFakeTimers();
     vi.setSystemTime(fixture.valeur.savedAt);
     const s = loadSaved();
+    if (!accepte) {
+      expect(s).toBeNull();
+      return;
+    }
     expect(s).not.toBeNull();
     expect(s!.ply).toBe(fixture.valeur.state.ply);
     expect(s!.hands).toEqual(fixture.valeur.state.hands);
@@ -80,6 +97,7 @@ describe('sauvegarde de la partie contre l’Oracle (format v1)', () => {
   });
 
   it('refusée si ses règles ne sont plus celles de l’accueil, ou si ses mains n’ont pas leur nombre de cartes', () => {
+    reglerV1();
     // Mains de 4 cartes avec les règles par défaut (3 cartes) : refusée
     const longue = clone(fixture.valeur.state);
     longue.hands.w.push({ card: 'truce', used: false });
@@ -89,7 +107,7 @@ describe('sauvegarde de la partie contre l’Oracle (format v1)', () => {
     (autres as Record<string, unknown>).rules = { ...RULES_V1, cardsPerTurn: 2 };
     expect(validState(autres)).toBe(false);
     // Accueil réglé à 5 cartes : l'ancienne sauvegarde v1 (3 cartes, règles V1) repart de zéro
-    setRulesOverride({ cardsPerPlayer: 5 });
+    setRulesOverride({ ...REGLAGES_V1, cardsPerPlayer: 5 });
     expect(validState(clone(fixture.valeur.state))).toBe(false);
     // … et une partie neuve de l'accueil à ces règles est acceptée
     const rules = rulesFor('accueil');
@@ -101,12 +119,25 @@ describe('sauvegarde de la partie contre l’Oracle (format v1)', () => {
   });
 
   it('format v1 conservé : rien de nouveau n’est écrit dans une partie neuve au défaut', () => {
+    // Garde d'identité : la partie neuve de l'accueil (newGame), aux règles du jour de l'accueil, sans surcharge.
     const rules = rulesFor('accueil');
-    expect(rules).toBe(RULES_V1);
-    const s = createGame(dealHands(HOME.timed, Math.random, HOME.catalog, { vsBot: HOME.vsBot, rules }), HOME.timed, HOME.catalog, { rules });
-    expect('rules' in s).toBe(false);
-    expect('cardsThisTurn' in s).toBe(false);
-    expect(validState(JSON.parse(JSON.stringify(s)))).toBe(true);
+    if (reglesDuJourV1()) {
+      const s = createGame(dealHands(HOME.timed, Math.random, HOME.catalog, { vsBot: HOME.vsBot, rules }), HOME.timed, HOME.catalog, { rules });
+      expect(rules).toBe(RULES_V1);
+      expect('rules' in s).toBe(false);
+      expect('cardsThisTurn' in s).toBe(false);
+      expect(validState(JSON.parse(JSON.stringify(s)))).toBe(true);
+    } else {
+      // Hors du défaut : les règles de l'accueil écrites si elles diffèrent de V1. Mains prises dans la réserve (sans
+      // tirage : une configuration impossible, refusée par checkRules, ne doit pas faire échouer ce garde).
+      const pool = cardPool(HOME.catalog, HOME.timed, { vsBot: HOME.vsBot });
+      const n = rules.cardsPerPlayer;
+      const s = createGame({ w: pool.slice(0, n), b: pool.slice(-n) }, HOME.timed, HOME.catalog, { rules });
+      if (stampRules(rules)) expect(s.rules).toBe(rules);
+      else expect('rules' in s).toBe(false);
+      expect('cardsThisTurn' in s).toBe(false);
+      expect(validState(JSON.parse(JSON.stringify(s)))).toBe(n <= pool.length);
+    }
     expect([PLAYER, BOT]).toEqual(['w', 'b']);
   });
 
@@ -191,12 +222,25 @@ describe('lieux de la descente', () => {
 });
 
 /** Règles de démonstration des textes, sans passer par checkRules (seuls les champs lus par les textes comptent). */
-const avec = (p: Partial<TextRules>): TextRules => ({ ...GAME_RULES, ...p });
+const avec = (p: Partial<TextRules>): TextRules => ({ ...REGLAGES_V1, ...p });
+type Data = typeof import('../src/client/odyssee/data');
+/**
+ * Textes de l'accueil (data.ts) à la configuration de V1 : le module du jour (le même appel qu'avant, valeurs par
+ * défaut des paramètres comprises) si GAME_RULES et DEAL valent ceux de V1, sinon data.ts relu avec la configuration
+ * V1 (relireAvecConfigV1 ; principle lit DEAL, la clause « vous choisissez » suit DEAL.draft). La photographie reste
+ * ainsi celle du défaut d'avant la passe, quel que soit le réglage du jour.
+ */
+async function dataV1(): Promise<Data> {
+  if (reglagesV1() && miseEnPlaceV1()) return dataDuJour;
+  relireAvecConfigV1();
+  return import('../src/client/odyssee/data');
+}
 
 describe('textes de l’accueil au réglage par défaut', () => {
-  it('principe (Forêt de givre)', () => {
+  it('principe (Forêt de givre)', async () => {
     expect(principle(GAME_RULES)).toEqual(principle());
-    expect(principle().map(p => [p.n, p.title, p.text])).toEqual([
+    const v1 = await dataV1();
+    expect(v1.principle().map(p => [p.n, p.title, p.text])).toEqual([
       ['01', 'Les échecs, intacts.', 'Roque, prise en passant, promotion, pendule : toutes les règles, sans exception. Votre jeu reste votre meilleure arme.'],
       [
         '02',
@@ -221,7 +265,7 @@ describe('textes de l’accueil au réglage par défaut', () => {
     expect(MODES.map((_, i) => doorNum(i))).toEqual(['I', 'II', 'III']);
     expect([doorKicker(0), doorKicker(1)]).toEqual(['Première porte', 'Deuxième porte']);
   });
-  it('partie ouverte : accroche, mini-main, consignes de la coque', () => {
+  it('partie ouverte : accroche, mini-main, consignes de la coque', async () => {
     const t = liveTexts(RULES_V1);
     expect(t.lede).toBe("Une vraie partie d'échecs, trois cartes de pouvoir, un sort par tour.");
     expect(t.hand).toBe('Vos trois sorts');
@@ -229,12 +273,16 @@ describe('textes de l’accueil au réglage par défaut', () => {
     expect(t.touch(true)).toBe('Touchez-en un pour le lire et le lancer ; les autres sorts s’ajoutent à votre coup.');
     expect(t.before).toBe('Lancez une carte avant votre coup, ou jouez directement.');
     expect(t.budget).toBe('Une seule carte par tour. Revenez à la page quand vous voulez : la partie vous attend.');
-    expect(PAGE_TEXTS.sortsEnMain).toBe('Trois sorts');
+    // Titre de la Forêt, calculé au chargement avec GAME_RULES : la phrase d'avant à la configuration de V1, et la
+    // phrase dérivée de GAME_RULES dans le module du jour.
+    expect((await dataV1()).PAGE_TEXTS.sortsEnMain).toBe('Trois sorts');
+    expect(PAGE_TEXTS.sortsEnMain).toBe(reglagesV1() ? 'Trois sorts' : sortsEnMain(GAME_RULES, true));
   });
 });
 
 describe('textes de l’accueil selon les règles (1 et 5 cartes, 2 par tour, carte à la place du coup)', () => {
-  it('une carte par joueur', () => {
+  it('une carte par joueur', async () => {
+    const { principle } = await dataV1();
     const r = avec({ cardsPerPlayer: 1 });
     const t = liveTexts(r);
     expect(t.lede).toBe("Une vraie partie d'échecs, une carte de pouvoir, un sort par tour.");
@@ -247,7 +295,8 @@ describe('textes de l’accueil selon les règles (1 et 5 cartes, 2 par tour, ca
       "Au début d'une partie, vous choisissez votre carte ; sur l'accueil, elle est tirée au hasard. Visible des deux joueurs, elle ne sert qu'une fois.",
     );
   });
-  it('cinq cartes par joueur', () => {
+  it('cinq cartes par joueur', async () => {
+    const { principle } = await dataV1();
     const r = avec({ cardsPerPlayer: 5 });
     expect(liveTexts(r).lede).toBe("Une vraie partie d'échecs, cinq cartes de pouvoir, un sort par tour.");
     expect(liveTexts(r).hand).toBe('Vos cinq sorts');
@@ -256,7 +305,8 @@ describe('textes de l’accueil selon les règles (1 et 5 cartes, 2 par tour, ca
       "Au début d'une partie, vous choisissez vos cinq cartes ; sur l'accueil, elles sont tirées au hasard. Visibles des deux joueurs, chacune ne sert qu'une fois.",
     );
   });
-  it('deux cartes par tour, carte à la place du coup, Présage à 4 demi-coups', () => {
+  it('deux cartes par tour, carte à la place du coup, Présage à 4 demi-coups', async () => {
+    const { principle } = await dataV1();
     const deux = avec({ cardsPerTurn: 2 });
     expect(liveTexts(deux).lede).toBe("Une vraie partie d'échecs, trois cartes de pouvoir, deux sorts par tour.");
     expect(liveTexts(deux).budget).toBe('Deux cartes par tour au plus. Revenez à la page quand vous voulez : la partie vous attend.');
@@ -272,27 +322,29 @@ describe('textes de l’accueil selon les règles (1 et 5 cartes, 2 par tour, ca
       text: 'À la place de votre coup, lancez une carte : elle change la partie pour les deux camps. Certaines s’annoncent deux tours à l’avance.',
     });
   });
-  it('Forêt : la clause « sur l’accueil » suit les règles de l’accueil (RULES_BY_CONTEXT.accueil), au défaut la phrase d’avant', () => {
-    // L'accueil passe rulesFor('accueil') : au défaut, les mêmes règles, la même phrase
-    expect(principle(GAME_RULES, rulesFor('accueil'))).toEqual(principle());
+  it('Forêt : la clause « sur l’accueil » suit les règles de l’accueil (RULES_BY_CONTEXT.accueil), au défaut la phrase d’avant', async () => {
+    // L'accueil passe rulesFor('accueil') : sans règles propres à l'accueil (au défaut), les mêmes règles, la même phrase
+    if (!RULES_BY_CONTEXT.accueil) expect(principle(GAME_RULES, rulesFor('accueil'))).toEqual(principle());
+    const { principle: principeV1 } = await dataV1();
     expect(readFileSync(path.join(__dirname, '../src/client/odyssee/OdysseeHome.tsx'), 'utf8')).toContain(
       "const PRINCIPLE = principle(GAME_RULES, rulesFor('accueil'));",
     );
-    expect(principle(GAME_RULES, avec({ cardsPerPlayer: 5 }))[1].text).toBe(
+    expect(principeV1(REGLAGES_V1, avec({ cardsPerPlayer: 5 }))[1].text).toBe(
       "Au début d'une partie, vous choisissez vos trois cartes ; sur l'accueil, vos cinq cartes sont tirées au hasard. Visibles des deux joueurs, chacune ne sert qu'une fois.",
     );
-    expect(principle(avec({ cardsPerPlayer: 5 }), GAME_RULES)[1].text).toBe(
+    expect(principeV1(avec({ cardsPerPlayer: 5 }), REGLAGES_V1)[1].text).toBe(
       "Au début d'une partie, vous choisissez vos cinq cartes ; sur l'accueil, vos trois cartes sont tirées au hasard. Visibles des deux joueurs, chacune ne sert qu'une fois.",
     );
   });
 });
 
 describe('relecture du lot 7', () => {
-  it('« En partie » d’un Présage : la phrase d’avant au défaut, l’arrivée et les coups de l’adversaire selon le délai', () => {
+  it('« En partie » d’un Présage : la phrase d’avant au défaut, l’arrivée et les coups de l’adversaire selon le délai', async () => {
+    const v1 = await dataV1();
     const presages = Object.values(CARDS).filter(c => c.presage && !c.ritual);
     expect(presages.length).toBeGreaterThan(0);
     for (const c of presages) {
-      expect(howToPlay(c)).toBe("Présage : annoncée maintenant, elle arrive à votre tour suivant. L'adversaire a un coup pour s'y préparer.");
+      expect(v1.howToPlay(c)).toBe("Présage : annoncée maintenant, elle arrive à votre tour suivant. L'adversaire a un coup pour s'y préparer.");
       expect(howToPlay(c, GAME_RULES)).toBe(howToPlay(c));
       expect(howToPlay(c, { presageDelay: 4 })).toBe(
         "Présage : annoncée maintenant, elle arrive au début de votre deuxième tour à venir. L'adversaire a deux coups pour s'y préparer.",

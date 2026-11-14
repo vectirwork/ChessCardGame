@@ -106,6 +106,15 @@ const DEFAUT = {
   limits: { maxPerRarity: { légendaire: 1 }, maxPerFamily: { climat: 2 } },
   attempts: 64,
 } as const;
+/**
+ * Le tirage observé reçoit ces règles et cette mise en place : il suit la même loi quel que soit le réglage du jour
+ * (identique au défaut, où DEAL et le nombre de cartes valent DEFAUT ; la photographie des défauts est dans
+ * test/garde-fous/defauts.test.ts).
+ */
+const TIRAGE_DEFAUT = {
+  rules: { cardsPerPlayer: DEFAUT.n },
+  deal: { handLimits: DEFAUT.limits, rarityWeight: DEFAUT.weights, redrawAttempts: DEFAUT.attempts },
+};
 
 /** Tirages observés : part des mains (des Blancs) qui contiennent chaque carte. */
 function observees(N: number, graine: number, tirer: (rand: () => number) => CardId[]): Map<CardId, number> {
@@ -149,7 +158,7 @@ describe('fréquences du tirage (énumération exacte)', () => {
     it(`dealHands suit la loi exacte : ${nom}`, () => {
       const N = 30_000;
       const exacte = frequences(loiExacte({ ...DEFAUT, pool: cardPool('climats', timed, { vsBot }) }));
-      const obs = observees(N, 17 + Number(timed) * 2 + Number(vsBot), rand => dealHands(timed, rand, 'climats', { vsBot }).w);
+      const obs = observees(N, 17 + Number(timed) * 2 + Number(vsBot), rand => dealHands(timed, rand, 'climats', { ...TIRAGE_DEFAUT, vsBot }).w);
       compare(exacte, obs, N);
     });
   }

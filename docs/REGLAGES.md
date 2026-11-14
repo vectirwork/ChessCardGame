@@ -41,30 +41,46 @@ Ce qu'il faut retenir sur les règles de partie :
 
 ## 2. Faire un changement, pas à pas
 
-1. Changez la valeur dans le fichier indiqué.
-2. Lancez `npx tsc --noEmit -p .`. Un nom de réglage mal écrit est refusé (les littéraux sont écrits avec
+1. Essayez d'abord le changement sur une copie jetable du dépôt, sans rien toucher :
+   `npm run essai-reglage -- --regle=cardsPerPlayer=4` pour une valeur de `GAME_RULES` (`--deal=draftMs=30000` pour
+   `DEAL`, `--carte=rift.coups=6` pour l'équilibrage d'une carte, `--remplacer='<fichier>::<texte avant>::<texte après>'`
+   pour tout autre fichier : section 2.1). L'outil dit quels gardes échoueront, ce qu'il faudra mettre à jour, et
+   s'il reste d'autres échecs.
+2. Changez la valeur dans le fichier indiqué.
+3. Lancez `npx tsc --noEmit -p .`. Un nom de réglage mal écrit est refusé (les littéraux sont écrits avec
    `satisfies`). Une table par carte ou par niveau incomplète l'est aussi.
-3. Lancez `npm test`. Quatre familles de tests échouent alors exprès :
+4. Lancez `npm test`. Pour les changements essayés à la section 2.1, seuls des gardes échouent, exprès, chacun avec
+   un message qui dit quoi mettre à jour :
    - `test/garde-fous/defauts.test.ts` : il photographie toutes les valeurs par défaut. Reportez la nouvelle valeur
      dans `test/garde-fous/defauts.json`.
    - `test/garde-fous/protocole.test.ts` : il suit les cartes, les catalogues, les cadences, les niveaux de l'IA,
      `GAME_RULES` et `DEAL.draftMs`. Montez `PROTOCOL_VERSION` dans `src/shared/protocol.ts`, puis mettez à jour
      `test/fixtures/protocole.json`. Un onglet resté ouvert sur l'ancienne version recevra `server:outdated` et
      rechargera la page.
-   - `test/reglages-doc.test.ts` : il compare ce document au code. Reportez la nouvelle valeur dans la colonne
-     « Défaut » de la section 4. Si `GAME_RULES` change, relisez aussi les listes « Masqués » des sections 3.5 à 3.8 :
-     le test les recalcule à partir des règles du jour, donc ce que la nouvelle valeur masque déjà s'y ajoute.
-   - Les tests « au défaut ». Beaucoup de tests photographient le jeu d'aujourd'hui : textes à trois cartes, tirages
-     à graine fixe, parties scriptées avec `createGame` sans règles explicites. Ils échouent aussi. Voir le tableau
-     ci-dessous. Relisez chaque échec : ce sont en principe des photographies à mettre à jour, pas des défauts du jeu.
-     Ceux de l'essai ci-dessous n'ont pas tous été relus un par un.
+   - `test/reglages-doc.test.ts`, ses tests des valeurs par défaut (« valeurs par défaut écrites en code ») et des
+     listes « Masqués » des sections 3.5 à 3.8 : ils comparent ce document au code. Reportez la nouvelle valeur dans
+     la colonne « Défaut » de la section 4. Si `GAME_RULES` change, relisez aussi les listes « Masqués » : le test les
+     recalcule à partir des règles du jour, donc ce que la nouvelle valeur masque déjà s'y ajoute.
+   - `checkRules`, si la configuration est impossible (6 cartes par exemple) : « configuration du jour » de
+     `test/config.test.ts` et « au défaut, la configuration est jouable » de `test/reglages-doc.test.ts`. Le message dit
+     quel réglage changer ; la construction s'arrête aussi (étape 5).
 
-   À part de `npm test`, `npm run temoins` compare le moteur aux témoins pris au défaut avant la passe (textes des
-   cartes, parties, tirages, salles). Attendez-vous à des écarts après un changement de valeur par défaut (non compté
-   dans l'essai ci-dessous). Un écart voulu se déclare dans `ECARTS_VOULUS` de `test/fixtures/v1/generer.ts`.
-4. Lancez `npm run build`. Des règles impossibles arrêtent la construction (`checkRules`), avec une phrase qui dit
+   Les autres tests fixent leurs règles et leur mise en place (`RULES_V1`, et `REGLAGES_V1`, `DEAL_V1` de
+   `test/helpers/v1.ts`) ou calculent l'attendu à partir du réglage (au défaut, la phrase exacte d'avant ; sinon, la
+   phrase dérivée). Les gardes d'identité « au défaut » (aucune règle écrite dans une partie neuve, sauvegarde v1 de
+   l'accueil acceptée, PGN sans en-tête, ligne de journal du serveur) suivent le vrai chemin du défaut et ne
+   choisissent leur attendu que d'après la configuration lue directement (`reglesDuJourV1`, `configDuJourV1`) : une
+   régression du code au défaut les fait échouer. Ce découplage n'a été vérifié que pour les changements de la
+   section 2.1. Pour un autre réglage, d'autres tests peuvent encore échouer : l'outil les liste à part (« AUTRES »).
+   Chacun est à relire : un mécanisme qui ne suit pas le réglage, ou un test qui le photographie encore.
+
+   À part de `npm test`, `npm run temoins` compare le moteur aux témoins pris au défaut avant la passe
+   (`test/fixtures/v1`). Il échoue après un changement de valeur par défaut, et c'est attendu (section 2.1) : ses
+   témoins sont des photographies du défaut d'alors, à ne jamais réécrire. Un écart voulu se déclare dans
+   `ECARTS_VOULUS` de `test/fixtures/v1/generer.ts`.
+5. Lancez `npm run build`. Des règles impossibles arrêtent la construction (`checkRules`), avec une phrase qui dit
    quel réglage changer. Le déploiement (`deploy/update.sh`) s'arrête alors avant de remplacer la version en ligne.
-5. Regardez le résultat :
+6. Regardez le résultat :
    - `npm run identite` et `npm run textes-pages` montrent ce qui change à l'écran et dans les textes. Leurs
      références ont été prises sur le code d'avant la passe : `npm run textes-pages` compare au dépôt
      (`test/fixtures/v1/textes`), `npm run identite` à un dossier hors du dépôt qui n'existe que sur la machine de la
@@ -80,25 +96,90 @@ Ce qu'il faut retenir sur les règles de partie :
    - `node scripts/serveur-jetable.mjs -- node test/integration.mjs {base}` joue une partie complète sur un serveur
      neuf.
 
-Échecs relevés par `npx vitest run --project rapide` sur une copie jetable du lot 9c (avec ce document et
-`test/reglages-doc.test.ts`), un réglage à la fois (1 108 tests, tous verts au défaut ; `tsc` reste sans erreur dans
-tous les cas). Les comptes comprennent les gardes et le test de ce document ; `reglages-doc` : nombre de ses tests en
-échec.
-
-| Changement essayé | Tests en échec | Gardes concernés |
-|---|---|---|
-| `GAME_RULES.cardsPerPlayer` 3 → 5 | 40 (15 fichiers) | `defauts`, `protocole`, `reglages-doc` (1) |
-| `GAME_RULES.cardsPerTurn` 1 → 2 | 32 (13 fichiers) | `defauts`, `protocole`, `reglages-doc` (4 : défaut, 3.6, 3.7, 3.8) |
-| `GAME_RULES.cardEndsTurn` false → true | 101 (17 fichiers) | `defauts`, `protocole`, `reglages-doc` (4 : défaut, 3.5, 3.7, 3.8) |
-| `GAME_RULES.presageDelay` 2 → 4 | 55 (16 fichiers) | `defauts`, `protocole`, `reglages-doc` (3 : défaut, 3.5, 3.8) |
-| `DEAL.draftMs` 45 000 → 30 000 | 9 (7 fichiers) | `defauts`, `protocole`, `reglages-doc` (1) |
-| rangées du Mur de glace `[2, 3, 4, 5]` → `[2, 3, 4]` | 34 (11 fichiers) | `defauts`, `reglages-doc` (1) ; pas `protocole` |
-| `GAME_RULES.cardsPerPlayer` 3 → 6 | 45 (18 fichiers) | `defauts`, `protocole`, `reglages-doc` (3 : défaut, 6.1, configuration jouable) ; `checkRules` : la construction s'arrête (section 3.4) |
-
 Essayer un réglage sans toucher au code, côté serveur seulement :
 `SPELLMATE_TEST_RULES='{"cardsPerPlayer":5}' node scripts/serveur-jetable.mjs`. Le serveur reste ouvert jusqu'à
 Ctrl+C. Les parties créées suivent ce réglage. Les textes des pages et la partie de l'accueil restent ceux du code :
 ils sont lus dans le code construit, pas sur le serveur.
+
+### 2.1 Essayer un réglage : `npm run essai-reglage`
+
+`scripts/essai-reglage.mjs` copie le dépôt (les fichiers suivis par git et les nouveaux) dans un dossier temporaire,
+y lie `node_modules`, y fait les changements demandés, puis lance `tsc` et les tests rapides
+(`vitest run --project rapide`). Il range les échecs en deux listes : les GARDES ATTENDUS (section précédente, étape
+4), chacun avec ce qu'il faut mettre à jour, et les AUTRES, à relire. Il rend le code 0 seulement s'il n'y a aucun
+autre échec (un test sauté compte comme un échec : il vient d'un `beforeAll` en échec). Le dépôt n'est jamais touché,
+et la copie est supprimée à la fin.
+
+```bash
+npm run essai-reglage -- --regle=cardsPerPlayer=4          # une valeur de GAME_RULES
+npm run essai-reglage -- --deal=draft=false                # une valeur de DEAL (tirage partout)
+npm run essai-reglage -- --carte=rift.coups=6              # l'équilibrage d'une carte (CARDS)
+npm run essai-reglage -- --essai=cinq                      # un essai prêt à l'emploi
+npm run essai-reglage -- --essai=tous --build --temoins    # tous les essais, avec la construction et les témoins v1
+npm run essai-reglage -- --essai=cinq+deuxParTour          # deux changements dans le même essai
+npm run essai-reglage -- --remplacer='src/shared/config/home.ts::  botLevel: 2,::  botLevel: 3,'
+```
+
+- `--regle=<clé>=<valeur>`, `--deal=<clé>=<valeur>`, `--carte=<id>.<clé>=<valeur>` (répétables) : la ligne de cette
+  clé dans le bloc de `GAME_RULES`, de `DEAL` ou de la carte reçoit la valeur, lue en JSON (`4`, `true`, `null`,
+  `[2,3,4]`, `'{"maxPerFamily":{"climat":3}}'` entre apostrophes dans le shell ; un texte sinon). Refusé si la clé
+  n'apparaît pas exactement une fois dans le bloc (réglage inconnu, ou clé absente de la carte).
+- `--remplacer=<fichier>::<texte avant>::<texte après>` (répétable) : remplacement exact dans n'importe quel fichier,
+  refusé si le texte avant n'apparaît pas exactement une fois (ajoutez du contexte ; un retour à la ligne s'écrit
+  `$'…\n…'` dans le shell).
+- `--essai=` : `cinq`, `deuxParTour`, `remplaceCoup`, `presage4`, `trente`, `mur`, `six` (les 7 essais du lot 9c),
+  `un`, `tirage`, `faille` (ajoutés par la relecture du lot 9e), ou `tous` (l'un après l'autre, chacun sur une copie
+  neuve). Ils visent le bloc de `GAME_RULES`, de `DEAL` ou d'une carte dans `CARDS`. Avec `--essai`, les changements
+  de `--regle`, `--deal`, `--carte` et `--remplacer` s'ajoutent à chaque essai.
+- `--build` : lance aussi `npm run build` ; `--temoins` : `npm run temoins` (affiché à part, hors du code de sortie) ;
+  `--tout` : tous les projets de Vitest (matrice des règles et IA lente comprises) ; `--details` : messages complets ;
+  `--garder` : garde la copie ; `--json=<fichier>` : résultat en JSON.
+
+Les essais prêts à l'emploi, avant et après le lot 9e (`--essai=tous --build --temoins`, projet rapide). « Avant » :
+sur le code d'avant le lot 9e, pour les 7 essais du lot 9c ; les 3 essais ajoutés par sa relecture n'y ont pas été
+mesurés (entre parenthèses, le résultat avant cette relecture) :
+
+| Changement essayé | Avant : en échec (hors gardes) | Après : en échec (hors gardes) | Gardes qui échouent après le lot | Construction | `npm run temoins` |
+|---|---|---|---|---|---|
+| `GAME_RULES.cardsPerPlayer` 3 → 5 (`cinq`) | 40 (37) | 3 (0) | `defauts`, `protocole`, `reglages-doc` (1) | réussie | arrêté : « Choix refusé : Choisissez 5 cartes. » |
+| `GAME_RULES.cardsPerTurn` 1 → 2 (`deuxParTour`) | 32 (26) | 6 (0) | `defauts`, `protocole`, `reglages-doc` (4 : défaut, 3.6, 3.7, 3.8) | réussie | 72 fichiers en écart |
+| `GAME_RULES.cardEndsTurn` false → true (`remplaceCoup`) | 101 (95) | 6 (0) | `defauts`, `protocole`, `reglages-doc` (4 : défaut, 3.5, 3.7, 3.8) | réussie | arrêté : « Coup g1-f3 refusé : Coup illégal. » |
+| `GAME_RULES.presageDelay` 2 → 4 (`presage4`) | 55 (50) | 5 (0) | `defauts`, `protocole`, `reglages-doc` (3 : défaut, 3.5, 3.8) | réussie | 73 fichiers en écart |
+| `DEAL.draftMs` 45 000 → 30 000 (`trente`) | 9 (6) | 3 (0) | `defauts`, `protocole`, `reglages-doc` (1) | réussie | 5 fichiers en écart |
+| rangées du Mur de glace `[2, 3, 4, 5]` → `[2, 3, 4]` (`mur`) | 34 (32) | 2 (0) | `defauts`, `reglages-doc` (1) ; pas `protocole` | réussie | arrêté : « ice_wall : cible a6 impossible. » |
+| `GAME_RULES.cardsPerPlayer` 3 → 6 (`six`) | 45 (39, et 3 tests sautés) | 5 (0) | `defauts`, `protocole`, `reglages-doc` (2 : défaut, configuration jouable), `checkRules` (`test/config.test.ts`) | arrêtée par `checkRules` (section 3.4) | arrêté : « Choix refusé : Choisissez 6 cartes. » |
+| `GAME_RULES.cardsPerPlayer` 3 → 1 (`un`) | non mesuré (3 (0)) | 3 (0) | `defauts`, `protocole`, `reglages-doc` (1) | réussie | arrêté : « Choix refusé : Choisissez 1 carte. » |
+| `DEAL.draft` true → false, tirage partout (`tirage`) | non mesuré (31 (28)) | 2 (0) | `defauts`, `reglages-doc` (1) ; pas `protocole` | réussie | arrêté : « Choix refusé : Aucun choix de cartes en cours. » |
+| Faille : `coups` 4 → 6 (`faille`) | non mesuré (4 (2)) | 2 (0) | `defauts`, `reglages-doc` (1) ; pas `protocole` | réussie | arrêté : « Partie locale : mat attendu, obtenu null » |
+
+Tests du projet rapide : 1 108 avant le lot, 1 117 après (9 tests des outils ajoutés), tous verts au défaut ; `tsc`
+reste sans erreur dans tous les cas. « (hors gardes) » : les échecs qui ne sont pas des gardes attendus ; « défaut » :
+le test des valeurs par défaut de ce document (section 4).
+
+Autres changements essayés une fois par la relecture du lot 9e (projet rapide, sans construction ni témoins) : aucun
+échec hors des gardes attendus.
+
+| Changement essayé | Option | En échec (hors gardes) | Gardes qui échouent |
+|---|---|---|---|
+| `GAME_RULES.cardsPerPlayer` 3 → 2, puis 3 → 4 | `--regle=cardsPerPlayer=2`, `--regle=cardsPerPlayer=4` | 3 (0) chacun | `defauts`, `protocole`, `reglages-doc` (1) |
+| `GAME_RULES.fiftyHalfmoves` 100 → 150 | `--regle=fiftyHalfmoves=150` | 3 (0) | `defauts`, `protocole`, `reglages-doc` (1) |
+| `GAME_RULES.handsVisible` true → false (impossible) | `--regle=handsVisible=false` | 9 (0) | `defauts`, `protocole`, `reglages-doc` (6 : défaut, 3.5 à 3.8, configuration jouable), `checkRules` |
+| `RULES_BY_CONTEXT.amicale = { cardsPerPlayer: 5 }` | `--remplacer=…` | 2 (0) | `defauts`, `reglages-doc` (1) ; pas `protocole` |
+| `DEAL.limitsInDraft` false → true | `--deal=limitsInDraft=true` | 2 (0) | `defauts`, `reglages-doc` (1) |
+| `BOT_CARD_PAUSE_MS` 2 300 → 2 000 | `--remplacer=…` | 3 (0) | `defauts` (2 : durées, serveur), `reglages-doc` (1) |
+| `HOME.botLevel` 2 → 3 | `--remplacer=…` | 2 (0) | `defauts`, `reglages-doc` (1) |
+| `FEATURES.puzzles` true → false | `--remplacer=…` | 1 (0) | `defauts` |
+
+Rien d'autre n'a été essayé ainsi : un autre réglage (autre équilibrage, cadences, IA, boutique, marque, pseudos,
+serveur…) peut encore faire échouer d'autres tests, que l'outil liste à part.
+
+`npm run temoins` rejoue les témoins v1 avec la configuration du jour (nombre de cartes, règles écrites dans les
+parties, textes des cartes) : après un changement de valeur par défaut, il s'arrête sur une partie ou une salle
+témoin devenue injouable (choix de 3 cartes, carte puis coup, Mur en a6), ou il signale des fichiers en écart
+(`deuxParTour` : les 40 parties, leur index, les salles, la sauvegarde de l'accueil, la partie locale et les PGN, où
+les règles sont désormais écrites ; `presage4` : les mêmes, plus les textes des cartes ; `trente` : les constantes et
+les deux salles en plein choix). C'est attendu : ses témoins décrivent le défaut d'avant la passe, et il ne sert qu'à
+vérifier le défaut. Ne les réécrivez jamais ; il n'entre pas dans le code de sortie de `npm run essai-reglage`.
 
 ---
 
@@ -160,7 +241,8 @@ par `npm test` et `npm run build` (section 2).
   - leçons et problèmes : ils se jouent avec `RULES_V1`. Leurs mains sont tronquées au nombre de cartes du jour
     (`hand()` de `src/shared/puzzles.ts`), donc rien ne change au-delà de 3. Aucun n'est masqué par ce réglage ;
   - l'image de partage `public/og.jpg`.
-- À faire en plus : `defauts.json`, `PROTOCOL_VERSION` et `protocole.json`, tests au défaut (section 2), captures.
+- À faire en plus : `defauts.json`, `PROTOCOL_VERSION` et `protocole.json`, ce document (gardes de la section 2),
+  captures.
 - À regarder : décision Q11 (petites cartes sur mobile). Captures déjà faites pendant la passe, hors du dépôt : voir
   `docs/polymorphie/ETAT.md`.
 
@@ -332,8 +414,8 @@ par `npm test` et `npm run build` (section 2).
   - les images : `public/favicon.svg`, `public/icon-192.png`, `public/icon-512.png`, `public/og.jpg` ;
   - le mot réservé `spellmate` de `USERNAME` (`src/shared/config/limits.ts`) : ajoutez le nouveau nom ;
   - les mentions légales (raison sociale, contact…), qui viennent des variables `LEGAL_*`.
-- Ne jamais changer les identifiants techniques : `BRAND.storagePrefix` (`sm:`), `BRAND.pgnVariant` (`Spellmate`),
-  les cookies `sm_session` et `sm_guest`, la base `spellmate`, le dossier `/opt/spellmate`, les clés de `KEYS`. Les
+- Ne jamais changer les identifiants techniques : `BRAND.storagePrefix` (`sm:`), `BRAND.pgnVariant` (`Spellmate`)
+  (deux rappels, lus nulle part : les changer ne change rien), les cookies `sm_session` et `sm_guest`, la base `spellmate`, le dossier `/opt/spellmate`, les clés de `KEYS`. Les
   changer déconnecterait tout le monde, effacerait les préférences ou rendrait les PGN exportés illisibles.
 
 ### 3.15 Ajouter un emplacement de skin
@@ -587,8 +669,8 @@ textes d'avant au caractère près.
 | `BRAND.titleSeparator` | `" · "` | — | Plateforme | serveur, construction | `test/marque.test.ts`, `defauts` |
 | `BRAND.themeColor` | `"#04050f"` | — | Plateforme | construction | `test/marque.test.ts`, `defauts` |
 | `BRAND.backgroundColor` | `"#04050f"` | — | Plateforme | construction | `test/marque.test.ts`, `defauts` |
-| `BRAND.pgnVariant` | `"Spellmate"` | identifiant technique : ne jamais changer | — | lu nulle part : la variante est écrite en dur dans `src/shared/pgn.ts` | `defauts` |
-| `BRAND.storagePrefix` | `"sm:"` | identifiant technique : ne jamais changer | — | lu nulle part : les clés sont écrites en dur dans `src/client/storageKeys.ts` | `defauts` |
+| `BRAND.pgnVariant` | `"Spellmate"` | identifiant technique : ne jamais changer | — | rappel, lu nulle part : la variante est écrite en dur dans `src/shared/pgn.ts` (la relier changerait le site construit) | `defauts` |
+| `BRAND.storagePrefix` | `"sm:"` | identifiant technique : ne jamais changer | — | rappel, lu nulle part : les clés sont écrites en entier dans `src/client/storageKeys.ts` | `defauts` |
 
 ### 4.9 Pages et interrupteurs : `src/shared/config/routes.ts` et `src/shared/config/features.ts`
 
@@ -797,11 +879,21 @@ Cas particuliers :
 | `test/garde-fous/protocole.test.ts` | cartes, catalogues, cadences, niveaux de l'IA, `GAME_RULES`, `DEAL.draftMs` (`test/fixtures/protocole.json`) | si l'un change sans montée de `PROTOCOL_VERSION` |
 | `test/garde-fous/textes-chiffres.test.ts` | aucun nombre de règle (« trois cartes », « un sort par tour », « 45 secondes »…) ni nom de marque écrit en dur dans `src`, `index.html` et le manifeste | à chaque nouvelle occurrence hors des exceptions (`test/garde-fous/exceptions.txt`) |
 | `test/coherence.test.ts` | registres par carte, cadences, niveaux de l'IA, durées JS et CSS, seuil mobile, paquet principal, dettes du garde-fou vides | si un registre oublie une carte, un niveau ou une cadence |
-| `test/config.test.ts` | `checkRules` au défaut et ses refus, `RULES_V1` gelé, `parseRules` | si la configuration devient impossible |
+| `test/config.test.ts` | `checkRules` au défaut et ses refus, `RULES_V1` gelé, `parseRules` | si la configuration devient impossible (« configuration du jour ») |
 | `test/socle.test.ts` | modules de configuration sans import à l'exécution, identifiants jamais recyclés, réglages couplés | si un module de configuration importe du code |
-| `test/marque.test.ts` | `index.html`, manifeste et `robots.txt` identiques au défaut ; construction arrêtée par des règles impossibles | à chaque changement de marque ou de texte dérivé |
+| `test/marque.test.ts` | `index.html`, manifeste et `robots.txt` identiques au défaut (phrases des règles dérivées de `GAME_RULES` hors du défaut) ; construction arrêtée par des règles impossibles | à chaque changement de marque (`BRAND`) |
 | `test/regles-matrice.test.ts` | parties au hasard menées au bout pour chaque combinaison de règles jouable | si une variante casse le moteur |
 | `test/reglages-doc.test.ts` | ce document et `README.md` : chemins, commandes, noms, valeurs par défaut et bornes des tables, contenus masqués, messages de `checkRules` | à chaque valeur par défaut changée (colonne « Défaut ») ; si `GAME_RULES` change, aussi pour les listes « Masqués » des sections 3.5 à 3.8 |
+
+Les autres tests fixent leurs règles et leur mise en place avec `RULES_V1`, `REGLAGES_V1` et `DEAL_V1`
+(`test/helpers/v1.ts`, et `reglerMiseEnPlaceV1` de `test/helpers/v1-serveur.ts` côté serveur), relisent les pages
+avec la configuration V1 (`relireAvecConfigV1`), ou dérivent l'attendu du réglage du jour (lot 9e). Les gardes
+d'identité « au défaut » (`test/server-regles.test.ts`, `test/server-config.test.ts`, `test/accueil.test.ts`,
+`test/pgn.test.ts`, `test/compat-parties.test.ts`, `test/config.test.ts`) suivent le vrai chemin du défaut, sans
+surcharge, et ne choisissent leur attendu que d'après la configuration lue directement (`reglesDuJourV1`,
+`configDuJourV1`, jamais `rulesFor`) : une régression du code au défaut (par exemple `rulesFor` qui rendrait un autre
+délai du Présage) les fait échouer. `npm run essai-reglage` (section 2.1) vérifie le découplage sur une copie
+jetable, pour les changements qu'on lui donne ; `test/essai-reglage.test.ts` garde ses essais et sa liste de gardes.
 
 Le garde-fou des textes chiffrés ne repère que ses motifs. Une tournure nouvelle peut lui échapper : relisez les
 textes après un changement de règle. Ses dettes par lot (`test/garde-fous/dette-<lot>.txt`) sont toutes vides.
@@ -811,7 +903,7 @@ textes après un changement de règle. Ses dettes par lot (`test/garde-fous/dett
 | Commande | Ce qu'elle fait | À ne jamais faire sans décision |
 |---|---|---|
 | `npm run temoins` | rejoue les témoins v1 (`test/fixtures/v1`) : textes des cartes, 40 parties, tirages, salles, sauvegarde de l'accueil, PGN | `TEMOINS_MODE=ecrire` ; un écart voulu se déclare dans `ECARTS_VOULUS` de `test/fixtures/v1/generer.ts` |
-| `npm run identite` | captures, boîtes, DOM et textes comparés à la référence hors du dépôt (`/home/user/spellmate-ref`, sur la machine de la passe seulement ; votre propre référence : section 2, étape 5) | `--ecrire` sans `--sortie` (il vise la référence de la passe) |
+| `npm run identite` | captures, boîtes, DOM et textes comparés à la référence hors du dépôt (`/home/user/spellmate-ref`, sur la machine de la passe seulement ; votre propre référence : section 2, étape 6) | `--ecrire` sans `--sortie` (il vise la référence de la passe) |
 | `npm run textes-pages` | texte des pages et d'une partie comparé à `test/fixtures/v1/textes` | `--ecrire` sans `--sortie` (il vise la référence du dépôt) |
 | `SPELLMATE_MATRICE=1,2,3,4,5 npm run test:matrice` | matrice complète des règles (défaut : 1, 3 et 5 cartes) | — |
 | `node scripts/serveur-jetable.mjs -- node test/integration.mjs {base}` | parcours complet sur un serveur neuf (comptes, choix, parties, IA, boutique) | — |
@@ -847,8 +939,12 @@ Q10 : pas d'intégration continue.
 - La position de départ n'accepte que le roque standard : pas de Chess960.
 - L'accueil tire toujours ses mains : il n'a pas d'écran de choix des cartes.
 - Le seuil de conservation des cartes de l'IA est calibré pour 3 cartes.
-- Changer une valeur par défaut fait échouer de nombreux tests « au défaut » (section 2), en plus des deux gardes et
-  du test de ce document.
+- Changer une valeur par défaut ne fait échouer que les gardes de la section 2 pour les changements essayés à la
+  section 2.1 : les 10 essais prêts à l'emploi (5, 1 et 6 cartes, 2 cartes par tour, carte à la place du coup, Présage
+  en 4 demi-coups, choix en 30 s, tirage partout, rangées du Mur, Faille en 6 coups) et les 9 autres changements de
+  sa seconde table. Les autres réglages (autres équilibrages, cadences, IA, boutique, marque, pseudos, serveur) n'ont
+  pas été essayés ainsi : des tests peuvent encore les photographier (`npm run essai-reglage` le dira).
+  `npm run temoins` échoue après tout changement de règle ou de mise en place par défaut (section 2.1).
 - Le garde de protocole ne suit ni `RULES_BY_CONTEXT`, ni l'équilibrage des cartes, ni `DEAL.draft`.
 - `SPELLMATE_TEST_RULES` ne change que le serveur.
 - Aucun de ces réglages n'a été essayé en production, sur un vrai téléphone, ni dans des parties jouées par des

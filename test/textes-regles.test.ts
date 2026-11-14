@@ -6,8 +6,8 @@
 // échouer ce fichier. Que les réglages du jour valent encore ceux-là, c'est test/garde-fous/defauts.test.ts qui le dit.
 // Chaque référence indique sa source (fichier:ligne au commit 7148547, avant la passe « polymorphe »).
 import { describe, expect, it } from 'vitest';
-import { CARDS, cardsOf } from '../src/shared/cards';
-import { RULES_V1 } from '../src/shared/config/rules';
+import { CARDS, cardText, cardsOf } from '../src/shared/cards';
+import { GAME_RULES, RULES_V1 } from '../src/shared/config/rules';
 import type { DealSettings, GameRulesSettings } from '../src/shared/config/rules';
 import { apostrophes, cap, enLettres } from '../src/shared/text/fr';
 import {
@@ -122,7 +122,11 @@ describe('textes des cartes : gabarits égaux aux textes actuels (cards.ts)', ()
   it('arrivée des Présages, selon le genre de la carte', () => {
     for (const id of cardsOf('climats')) {
       const d = CARDS[id];
-      if (d.presage) expect(d.description.startsWith(`${arriveePresage(RULES_V1.presageDelay, d.genre)}. `), id).toBe(true);
+      if (!d.presage) continue;
+      // Les textes de CARDS suivent le délai du Présage du jour (GAME_RULES : celui de RULES_V1 au défaut) ; ceux des
+      // règles V1 (cardText) gardent le délai de RULES_V1.
+      expect(d.description.startsWith(`${arriveePresage(GAME_RULES.presageDelay, d.genre)}. `), id).toBe(true);
+      expect(cardText(id, RULES_V1).description.startsWith(`${arriveePresage(RULES_V1.presageDelay, d.genre)}. `), id).toBe(true);
     }
   });
   it('qui reprend le premier (parité de la durée)', () => {

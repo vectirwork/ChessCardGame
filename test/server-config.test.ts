@@ -13,12 +13,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { BRAND } from '../src/shared/config/brand';
-import { DEAL } from '../src/shared/config/rules';
-import { setRulesOverride } from '../src/shared/rules';
+import { DEAL, RULES_CONTEXTS } from '../src/shared/config/rules';
+import { checkRules, rulesFor, rulesSummary, sameRules, setRulesOverride } from '../src/shared/rules';
 import { isLegalTemplate, parseEnv, rulesReport } from '../src/server/config';
 import { postgresDriver } from '../src/server/db';
 import { hashPassword, needsRehash, verifyPassword } from '../src/server/security';
 import { DATABASE, dealSettings, setDealOverride } from '../src/server/settings';
+import { DEAL_V1, REGLAGES_V1, configDuJourV1 } from './helpers/v1';
+import { reglerMiseEnPlaceV1 } from './helpers/v1-serveur';
 
 const PROD = { NODE_ENV: 'production', SECRET_KEY: 'x'.repeat(64), PUBLIC_URL: 'https://chess-powers.com' };
 const LEGAL_OK = {
@@ -147,13 +149,29 @@ describe('SPELLMATE_TEST_RULES (serveur jetable)', () => {
 
 describe('règles des nouvelles parties au démarrage', () => {
   it('au défaut : une ligne de journal, aucune erreur', () => {
-    expect(rulesReport()).toEqual({
-      lines: [
-        'Règles des nouvelles parties : 3 cartes par joueur, 1 par tour, avant le coup, mains visibles, Présage en 2 demi-coups, '
-          + 'nulle après 50 coups sans prise ni coup de pion, répétition ×3, position standard, choix des cartes en 45 s.',
-      ],
-      errors: [],
-    });
+    // Garde d'identité : la configuration du jour, sans surcharge de test. Quand elle est celle de V1 (lue directement
+    // dans GAME_RULES, RULES_BY_CONTEXT, CARDS et DEAL : configDuJourV1), la ligne exacte d'avant ; sinon, la forme
+    // dérivée de la configuration du jour (lot 9e).
+    setRulesOverride(null);
+    setDealOverride(null);
+    if (configDuJourV1()) {
+      expect(rulesReport()).toEqual({
+        lines: [
+          'Règles des nouvelles parties : 3 cartes par joueur, 1 par tour, avant le coup, mains visibles, Présage en 2 demi-coups, '
+            + 'nulle après 50 coups sans prise ni coup de pion, répétition ×3, position standard, choix des cartes en 45 s.',
+        ],
+        errors: [],
+      });
+    } else {
+      const base = rulesFor('classee');
+      expect(rulesReport()).toEqual({
+        lines: [
+          `Règles des nouvelles parties : ${rulesSummary(base, DEAL)}.`,
+          ...RULES_CONTEXTS.filter(ctx => !sameRules(rulesFor(ctx), base)).map(ctx => `Règles des nouvelles parties (${ctx}) : ${rulesSummary(rulesFor(ctx), DEAL)}.`),
+        ],
+        errors: checkRules(),
+      });
+    }
   });
 
   it('la ligne suit la mise en place de ce serveur (surcharge de test), pas seulement DEAL', () => {
@@ -166,8 +184,11 @@ describe('règles des nouvelles parties au démarrage', () => {
   });
 
   it('règles impossibles ou illisibles : erreurs (le serveur s’arrête)', () => {
+    // Toutes les règles et la mise en place de V1, plus 6 cartes : seule l'erreur des 6 cartes, quel que soit le
+    // réglage du jour (lot 9e).
+    reglerMiseEnPlaceV1();
     try {
-      setRulesOverride({ cardsPerPlayer: 6 });
+      setRulesOverride({ ...REGLAGES_V1, cardsPerPlayer: 6 });
       expect(rulesReport().errors).toEqual([
         "6 cartes par joueur à l'accueil : impossible avec au plus 2 Climats, la réserve n'a que 3 cartes qui ne sont pas des Climats "
           + '(main valide maximale : 5). Relevez DEAL.handLimits.maxPerFamily.climat.',
@@ -177,6 +198,7 @@ describe('règles des nouvelles parties au démarrage', () => {
       expect(rulesReport().errors).toContain('SPELLMATE_TEST_RULES.cardsPerPlayer vaut "cinq" : un nombre entier est attendu (de 1 à 6, BOUNDS).');
     } finally {
       setRulesOverride(null);
+      setDealOverride(null);
     }
   });
 
@@ -187,13 +209,18 @@ describe('règles des nouvelles parties au démarrage', () => {
       const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('FEATURE_') && k !== 'NODE_ENV'));
       // Port peu courant : si le serveur démarrait quand même (régression), il n'occuperait pas celui d'un autre.
       const port = String(40_000 + Math.floor(Math.random() * 20_000));
+      // Au défaut, la surcharge d'avant ; sinon, toutes les règles de V1 et la mise en place de V1 que
+      // SPELLMATE_TEST_RULES accepte, plus 6 cartes : le même refus, quel que soit le réglage du jour (lot 9e).
+      const surcharge = configDuJourV1()
+        ? { cardsPerPlayer: 6 }
+        : { ...REGLAGES_V1, cardsPerPlayer: 6, draft: DEAL_V1.draft, draftMs: DEAL_V1.draftMs, limitsInDraft: DEAL_V1.limitsInDraft };
       const r = spawnSync(
         process.execPath, ['--import', path.join(root, 'node_modules/tsx/dist/esm/index.mjs'), path.join(root, 'src/server/index.ts')],
-        { cwd: dir, encoding: 'utf8', timeout: 30_000, env: { ...env, PORT: port, SPELLMATE_TEST_RULES: '{"cardsPerPlayer":6}', DATA_DIR: path.join(dir, 'base') } },
+        { cwd: dir, encoding: 'utf8', timeout: 30_000, env: { ...env, PORT: port, SPELLMATE_TEST_RULES: JSON.stringify(surcharge), DATA_DIR: path.join(dir, 'base') } },
       );
       expect(r.status).toBe(1);
       expect(r.stderr).toContain("Règles impossibles : arrêt.\n- 6 cartes par joueur à l'accueil : impossible avec au plus 2 Climats");
-      expect(r.stdout).toContain('(surcharge de test : {"cardsPerPlayer":6})');
+      expect(r.stdout).toContain(`(surcharge de test : ${JSON.stringify(surcharge)})`);
       expect(r.stdout).not.toMatch(/prêt sur/);
       // Arrêté avant d'ouvrir la base : rien n'a été créé.
       expect(readdirSync(dir)).toEqual([]);

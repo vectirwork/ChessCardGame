@@ -171,6 +171,7 @@ npm run test:rapide            # la suite sans l'IA à pleine profondeur ni la m
 SPELLMATE_MATRICE=1,2,3,4,5 npm run test:matrice   # matrice complète des règles (défaut : 1, 3 et 5 cartes)
 npm run typecheck              # et npm run typecheck:concepts pour les maquettes de concepts/
 npm run temoins                # témoins v1 du moteur : textes des cartes, parties, tirages, salles, PGN
+npm run essai-reglage -- --regle=cardsPerPlayer=4   # essai d'un réglage sur une copie jetable (gardes et autres échecs)
 npm run build && npm start     # version de production (avec NODE_ENV=production et SECRET_KEY)
 ```
 
@@ -225,8 +226,11 @@ instances (adaptateur Redis de Socket.IO et affinité de session par partie).
   dans un navigateur sans écran, avec un rendu 3D logiciel. Le vrai paiement Stripe et l'envoi réel d'e-mails n'ont
   pas été testés avec de vrais comptes.
 - Les réglages autres que le défaut (5 cartes, 2 cartes par tour, carte à la place du coup…) n'ont été essayés que par
-  les tests, les suites de bout en bout et des captures, jamais en production ni par des joueurs. Changer une valeur
-  par défaut fait aussi échouer des tests qui photographient le jeu d'aujourd'hui (docs/REGLAGES.md, section 2).
+  les tests, les suites de bout en bout et des captures, jamais en production ni par des joueurs. Pour les
+  changements essayés (nombre de cartes, cartes par tour, carte à la place du coup, délai du Présage, durée du choix,
+  tirage partout, rangées du Mur, durée de la Faille…), seuls des gardes échouent, qui disent quoi mettre à jour ; un
+  autre réglage peut encore faire échouer d'autres tests. `npm run essai-reglage` le dit avant tout changement
+  (docs/REGLAGES.md, section 2).
 - Le moteur d'analyse est un moteur maison : il approfondit jusqu'à 6 secondes par position (profondeur 12 au plus) ;
   sur la machine des tests automatiques, il atteint la profondeur 5 ou 6. La relecture d'une partie évalue chaque
   position à la profondeur 3. Suffisant pour signaler les gaffes, loin de Stockfish.

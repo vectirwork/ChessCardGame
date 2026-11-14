@@ -14,8 +14,10 @@ import path from 'node:path';
 import { build, createServer } from 'vite';
 import type { ViteDevServer } from 'vite';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { GAME_RULES } from '../src/shared/config/rules';
+import { GAME_RULES, RULES_V1 } from '../src/shared/config/rules';
 import { checkRules } from '../src/shared/rules';
+import { pluriel } from '../src/shared/text/fr';
+import { cartesDePouvoir, sortParTour } from '../src/shared/text/regles';
 import { brand, fillMarkers, precompress } from '../vite.config';
 
 const ROOT = path.resolve(__dirname, '..');
@@ -76,6 +78,22 @@ const MANIFESTE = `{
 }
 `;
 
+/**
+ * Fichiers attendus au nombre de cartes et aux cartes par tour du jour (GAME_RULES) : ceux d'avant la passe au défaut
+ * (mêmes valeurs que RULES_V1), sinon les mêmes avec les phrases dérivées (« cinq cartes de pouvoir », « deux sorts
+ * par tour »), comme les marqueurs %SM_CARTES_DE_POUVOIR%, %SM_VISIBLES% et %SM_SORT_PAR_TOUR% (vite.config.ts).
+ */
+function auJour(fichier: string): string {
+  const r = GAME_RULES;
+  if (r.cardsPerPlayer === RULES_V1.cardsPerPlayer && r.cardsPerTurn === RULES_V1.cardsPerTurn && r.cardEndsTurn === RULES_V1.cardEndsTurn) {
+    return fichier;
+  }
+  return fichier
+    .replace('trois cartes de pouvoir visibles des deux', `${cartesDePouvoir(r)} ${pluriel(r.cardsPerPlayer, 'visible')} des deux`)
+    .replaceAll('trois cartes de pouvoir', cartesDePouvoir(r))
+    .replace('un sort par tour.', `${sortParTour(r)}.`);
+}
+
 /** dist/client/robots.txt au commit 7274072. */
 const ROBOTS = `User-agent: *
 Allow: /
@@ -86,11 +104,17 @@ Disallow: /admin
 
 describe('construction au réglage par défaut : fichiers identiques', () => {
   let out = '';
+  // Configuration du jour impossible (checkRules, par exemple 6 cartes) : la construction doit s'arrêter avec ses
+  // messages, et il n'y a pas de fichier à comparer. C'est le garde voulu (test/config.test.ts le signale aussi).
+  const erreurs = checkRules();
+  let refus: unknown = null;
   beforeAll(async () => {
     out = mkdtempSync(path.join(os.tmpdir(), 'spellmate-marque-'));
     vi.stubEnv('NODE_ENV', 'production');
     try {
-      await build({ root: ROOT, configFile: path.join(ROOT, 'vite.config.ts'), mode: 'production', logLevel: 'silent', build: { outDir: out, emptyOutDir: true } });
+      const fait = build({ root: ROOT, configFile: path.join(ROOT, 'vite.config.ts'), mode: 'production', logLevel: 'silent', build: { outDir: out, emptyOutDir: true } });
+      if (erreurs.length) refus = await fait.catch((e: unknown) => e);
+      else await fait;
     } finally {
       vi.unstubAllEnvs();
     }
@@ -99,14 +123,24 @@ describe('construction au réglage par défaut : fichiers identiques', () => {
     if (out) rmSync(out, { recursive: true, force: true });
   });
   const lire = (f: string) => readFileSync(path.join(out, f), 'utf8');
+  /** Règles du jour impossibles : la construction s'est arrêtée sur les messages de checkRules (rien à comparer). */
+  const arretee = () => {
+    if (!erreurs.length) return false;
+    expect(String((refus as Error | null)?.message)).toContain('Règles impossibles : construction arrêtée.');
+    for (const m of erreurs) expect(String((refus as Error).message)).toContain(m);
+    return true;
+  };
 
   it('index.html (empreintes normalisées), modulepreload du paquet principal compris', () => {
-    expect(normaliser(lire('index.html'))).toBe(INDEX_HTML);
+    if (arretee()) return;
+    expect(normaliser(lire('index.html'))).toBe(auJour(INDEX_HTML));
   });
   it('manifeste', () => {
-    expect(lire('manifest.webmanifest')).toBe(MANIFESTE);
+    if (arretee()) return;
+    expect(lire('manifest.webmanifest')).toBe(auJour(MANIFESTE));
   });
   it('robots.txt', () => {
+    if (arretee()) return;
     expect(lire('robots.txt')).toBe(ROBOTS);
   });
 });
@@ -128,12 +162,12 @@ describe('développement : mêmes fichiers servis par le serveur de Vite', () =>
     expect(html).not.toContain('%SM_');
     // Chaque ligne de l'en-tête construit (titre, description, couleur, partage), à l'identique ; les balises du paquet
     // principal n'existent qu'à la construction, et Vite ajoute les siennes en développement.
-    const lignes = INDEX_HTML.split('\n').filter(l => /<(title|meta|link rel="(icon|apple-touch-icon|manifest)")/.test(l));
+    const lignes = auJour(INDEX_HTML).split('\n').filter(l => /<(title|meta|link rel="(icon|apple-touch-icon|manifest)")/.test(l));
     expect(lignes.length).toBe(13);
     for (const l of lignes) expect(html, l).toContain(l);
   });
   it('manifeste et robots.txt', async () => {
-    expect(await (await fetch(`${base}/manifest.webmanifest`)).text()).toBe(MANIFESTE);
+    expect(await (await fetch(`${base}/manifest.webmanifest`)).text()).toBe(auJour(MANIFESTE));
     expect(await (await fetch(`${base}/robots.txt`)).text()).toBe(ROBOTS);
   });
 });

@@ -4,10 +4,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { handNotes } from '../src/client/odyssee/shell/cards';
 import { cardsOf } from '../src/shared/cards';
 import type { CardId } from '../src/shared/cards';
-import { cardRefusalInfo, createGame, legalMovesOf, playMove } from '../src/shared/game';
+import { cardRefusalInfo, legalMovesOf, playMove } from '../src/shared/game';
 import type { GameState } from '../src/shared/game';
 import { setRulesOverride } from '../src/shared/rulesCore';
 import { mulberry32 } from './helpers/rng';
+// Parties, tirages et choix scriptés aux règles V1 (RULES_V1, DEAL_V1), quel que soit le réglage du jour (lot 9e) :
+// test/helpers/v1.ts.
+import { createGame } from './helpers/v1';
 
 const src = (f: string) => readFileSync(f, 'utf8');
 

@@ -7,9 +7,12 @@ import {
   Color, F_BLAST, F_RELAXED, NO_MODS, fromFen, inCheck, legalMoves, opposite,
 } from '../src/shared/chess';
 import {
-  DealOptions, Effect, GameState, cardOptions, cardPlayable, catalogOf, createGame, createGameFromFen, dealHands,
-  legalMovesOf, modsFromEffects, playCard, playMove, positionKey, sideInCheck, viewState,
+  DealOptions, Effect, GameState, cardOptions, cardPlayable, catalogOf, legalMovesOf, modsFromEffects, playCard,
+  playMove, positionKey, sideInCheck, viewState,
 } from '../src/shared/game';
+// Parties, tirages et choix scriptés aux règles V1 (RULES_V1, DEAL_V1), quel que soit le réglage du jour (lot 9e) :
+// test/helpers/v1.ts.
+import { createGame, createGameFromFen, dealHands } from './helpers/v1';
 
 /** Générateur pseudo-aléatoire reproductible (mulberry32). */
 function rng(seed: number) {

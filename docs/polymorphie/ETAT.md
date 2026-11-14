@@ -276,6 +276,21 @@ pas d'intégration continue.
 
 ### Points ouverts relevés par le lot 9c
 
+Lot 9e (après ce rapport) : les quatre points ci-dessous sont traités. Les tests fixent leurs règles et leur mise en
+place (`test/helpers/v1.ts`, `test/helpers/v1-serveur.ts`) ou dérivent l'attendu du réglage : les 10 essais prêts à
+l'emploi de `docs/REGLAGES.md`, section 2.1 (les 7 du lot 9c, plus 1 carte, tirage partout et Faille en 6 coups), et
+9 autres changements essayés une fois ne font plus échouer que les gardes voulus (0 autre échec au lieu de 6 à 95
+pour les 7 du lot 9c), vérifié par le nouvel outil `npm run essai-reglage` (`--essai`, `--regle`, `--deal`, `--carte`,
+`--remplacer`). Rien d'autre n'a été essayé : un autre réglage peut encore faire échouer d'autres tests. Les gardes
+d'identité au défaut (aucune règle écrite, sauvegarde v1 de l'accueil, PGN, ligne de journal du serveur) suivent le
+vrai chemin du défaut : une régression de `rulesFor` au défaut (Présage à 4 demi-coups hors de l'accueil, ou à
+l'accueil seulement, ou équilibrage sans `clockRate`) fait échouer 7, 4 et 10 tests. `verifier-lot` calcule les gels
+d'après les vagues ; le commentaire de `BOT_TIMEOUT_MS` est corrigé ; `BRAND.pgnVariant` et `BRAND.storagePrefix`
+sont présentés comme des rappels (les relier changeait le site construit). Site construit identique (empreintes de
+`dist/` : les 271 fichiers du client et le code du serveur ; seule la carte de source du serveur,
+`dist/server/index.js.map`, non servie, suit les commentaires de `brand.ts` et `timings.ts`), 1 245 tests verts au
+défaut (1 236 avant, 9 tests des outils ajoutés).
+
 - Changer une valeur par défaut fait échouer de 9 à 101 tests sur 1 108 (essai sur une copie jetable,
   `docs/REGLAGES.md`, section 2). Ce compte comprend les deux gardes (`defauts`, `protocole`) et 1 à 4 tests de
   `test/reglages-doc.test.ts` ; les autres photographient le jeu d'aujourd'hui. Le commentaire de

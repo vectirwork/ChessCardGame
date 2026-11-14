@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { analyse } from '../src/shared/bot';
 import { CARDS, CardId, cardsOf } from '../src/shared/cards';
 import type { CardTuning } from '../src/shared/config/rules';
@@ -11,9 +11,14 @@ import {
   ALL_PUZZLES, PUZZLES, Puzzle, PuzzleAction, THEME_LABEL, THEME_PLURAL, applyAction, dailyPuzzle, dayNumber, goalOf, hand, parseAction,
   puzzleById, puzzleStart, puzzlesFor, sameAction, solverOf, stepOptions,
 } from '../src/shared/puzzles';
+// Réglages V1 (lot 9e) : hors du défaut, les problèmes « au défaut » sont relus avec la configuration V1, et le contenu
+// masqué par `requires` se cherche dans ALL_PUZZLES (test/helpers/v1.ts).
+import { configDuJourV1, defaireConfig, equilibrageV1, reglagesV1, relireAvecConfigV1 } from './helpers/v1';
 
 /** Tout le contenu est vérifié, même ce que les règles du moment masquent. */
 const cardPuzzles = ALL_PUZZLES.filter(p => p.themes.includes('cartes'));
+/** Un problème, même masqué par les règles du moment (écrit pour RULES_V1, il se joue avec elles). */
+const probleme = (id: string) => ALL_PUZZLES.find(p => p.id === id);
 
 /** Toutes les cartes jouables par `c`, avec toutes leurs cibles. */
 function allCardPlays(s: GameState, c: Color): (PuzzleAction & { kind: 'card' })[] {
@@ -214,7 +219,7 @@ describe('problèmes à cartes', () => {
   }, 120_000);
 
   it('le Mur qui sauve : en échec sans coup, la partie continue ; le Mur rend un coup', () => {
-    const p = puzzleById('carte-mur-sauve')!;
+    const p = probleme('carte-mur-sauve')!;
     const start = puzzleStart(p);
     expect(sideInCheck(start)).toBe(true);
     expect(legalMovesOf(start)).toHaveLength(0);
@@ -229,7 +234,7 @@ describe('problèmes à cartes', () => {
   });
 
   it('la Lune retournée : les deux camps doivent prendre', () => {
-    const p = puzzleById('carte-lune')!;
+    const p = probleme('carte-lune')!;
     const start = puzzleStart(p);
     expect(legalMovesOf(start).every(isCapture)).toBe(true);
     const s = applyAction(start, stepOptions('b3d5')[0])!;
@@ -237,7 +242,7 @@ describe('problèmes à cartes', () => {
   });
 
   it('la Déflagration : prendre avec le pion gagne du matériel, Dxa4 perd la dame', () => {
-    const p = puzzleById('carte-deflagration')!;
+    const p = probleme('carte-deflagration')!;
     const start = puzzleStart(p);
     const gain = (s: GameState) => { const m = material(s); return m.w - m.b; };
     const good = applyAction(start, stepOptions('e4d5')[0])!;
@@ -249,7 +254,7 @@ describe('problèmes à cartes', () => {
   });
 
   it('lisez sa main : le Mur noir pare Fc3+, pas Df8#', () => {
-    const p = puzzleById('carte-main-visible')!;
+    const p = probleme('carte-main-visible')!;
     const start = puzzleStart(p);
     const fake = applyAction(start, stepOptions('e1c3')[0])!;
     expect(sideInCheck(fake)).toBe(true);
@@ -310,8 +315,9 @@ describe('problème du jour et notation', () => {
 
   it('requires.tuning : une carte rééquilibrée dans CARDS masque les problèmes qui citent ou exploitent son équilibrage V1', () => {
     const ids = (id: CardId, t: CardTuning) => puzzlesFor({ ...RULES_V1, tuning: { ...RULES_V1.tuning, [id]: t } }).map(p => p.id);
-    // Au défaut, l'équilibrage de CARDS est celui de RULES_V1 (GAME_RULES n'a pas de tuning : celui de CARDS)
-    expect(puzzlesFor(GAME_RULES)).toEqual(ALL_PUZZLES);
+    // Au défaut, l'équilibrage de CARDS est celui de RULES_V1 (GAME_RULES n'a pas de tuning : celui de CARDS).
+    // Hors du défaut, les règles V1 avec leur équilibrage ne masquent rien non plus.
+    expect(puzzlesFor(reglagesV1() && equilibrageV1() ? GAME_RULES : RULES_V1)).toEqual(ALL_PUZZLES);
     const wall = ids('ice_wall', { ranks: [3, 4] });
     for (const id of ['carte-mur-sauve', 'carte-mur-enferme', 'carte-main-visible']) expect(wall).not.toContain(id);
     expect(wall).toContain('carte-faille');
@@ -384,18 +390,34 @@ const photo = (list: Puzzle[]) => list.map(p => ({
   hint: p.hint, moral: p.moral, hands: p.hands, effects: p.effects,
 }));
 
+/**
+ * Problèmes « au réglage par défaut » : ceux du jour si la configuration du jour est celle de V1 (modules déjà
+ * chargés, comme avant), sinon le module relu avec la configuration V1. Les photographies du défaut d'avant la passe
+ * restent ainsi vérifiées à l'identique, quel que soit le réglage du jour.
+ */
+async function problemesV1() {
+  if (configDuJourV1()) return { ALL_PUZZLES, PUZZLES, puzzleById, dailyPuzzle };
+  relireAvecConfigV1();
+  return import('../src/shared/puzzles');
+}
+
 describe('problèmes au réglage par défaut', () => {
-  it('textes, positions, solutions et mains identiques à la photographie', () => {
+  afterEach(() => defaireConfig());
+
+  it('textes, positions, solutions et mains identiques à la photographie', async () => {
+    const { ALL_PUZZLES, PUZZLES } = await problemesV1();
     expect(sha(photo(ALL_PUZZLES))).toBe('b98dd400d90d3790');
     expect(PUZZLES).toEqual(ALL_PUZZLES);
   });
 
-  it('textes chiffrés des problèmes à cartes (rangées du Mur)', () => {
+  it('textes chiffrés des problèmes à cartes (rangées du Mur)', async () => {
+    const { puzzleById } = await problemesV1();
     expect(puzzleById('carte-mur-sauve')!.hint).toBe('Un Mur se pose entre la 3e et la 6e rangée : une seule case de la diagonale convient.');
     expect(puzzleById('carte-main-visible')!.moral).toBe('Les mains sont visibles : un échec à distance qui traverse les rangées 3 à 6 se pare d’un Mur. Sur la 8e rangée, aucun Mur ne peut se poser.');
   });
 
-  it('problème du jour : même calendrier qu’avant le lot 8', () => {
+  it('problème du jour : même calendrier qu’avant le lot 8', async () => {
+    const { dailyPuzzle } = await problemesV1();
     const days: string[] = [];
     for (let i = 0; i < 120; i++) days.push(dailyPuzzle(new Date(2026, 0, 1 + i, 12)).id);
     expect(days.slice(0, 6)).toEqual(['philidor-3', 'fourchette-f6', 'enfilade-colonne', 'carte-maree', 'epaulettes', 'legs-de-philidor']);

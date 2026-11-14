@@ -143,10 +143,154 @@ coupée et classé coupé.
 Poids final (gzip -9, fermeture des imports statiques, face à 6ae7064) : accueil 222 036 → 232 979 o (+4,9 %),
 paquet principal 100 989 → 101 774 o (+0,8 %), page de partie 197 449 → 206 200 o (+4,4 %).
 
-## Reste à faire
-1. Mesure de performance par l'orchestrateur, seul sur la machine (accueil, accueil mobile, Forêt, partie, Jouer,
-   Apprendre ; banc de l'IA).
-2. Lot 9c : `docs/REGLAGES.md` (« ce qu'on change demain » et table des réglages), README, rapport au fondateur.
+## Reste à faire (après la vague 5)
+1. Mesure de performance par l'orchestrateur, seul sur la machine : faite (résultats dans le rapport final).
+2. Lot 9c : `docs/REGLAGES.md`, README, tableau des modules de `plan/CONCEPTION.md`, rapport final : fait.
 
 Le script de vague (réaliser, deux relectures adverses, corriger) est réutilisable : une copie de travail par lot,
 hors de `.claude`, branche `polymorphie/<lot>`.
+
+## Rapport final
+
+### Ce qui a été fait
+
+La passe rend le site modifiable par quelques constantes, sans changer le site au réglage par défaut (hors les
+corrections listées plus bas). Treize lots (0a, 0b, 1 à 8, 9a, 9b, 9c) en sept vagues ; chaque lot de code a été relu
+deux fois avant sa fusion.
+
+- **Tableau de bord des réglages** : `src/shared/config/` (règles, mise en place, accueil, marque, interrupteurs,
+  pages, bornes, durées) et `src/server/settings.ts` (délais, classement, file, relais, IA, limites, comptes). Une
+  ligne de commentaire par réglage dans `src/shared/config/index.ts`.
+- **Règles par partie** : nombre de cartes, cartes par tour, carte à la place du coup, délai du Présage, règles des
+  50 coups et de la répétition, position de départ, équilibrage des cartes. Elles sont photographiées dans la partie
+  si elles diffèrent des règles d'avant (`RULES_V1`) : au défaut, aucune partie, vue ou sauvegarde ne change d'un
+  octet. Variantes par contexte (`RULES_BY_CONTEXT`).
+- **Textes dérivés des réglages** (`src/shared/text/`) : identiques au caractère près au défaut ; « une carte »,
+  « cinq cartes », « deux sorts par tour »… ailleurs.
+- **Mises en page de 1 à 6 cartes** sans rien changer à 3 cartes (aucun attribut, variable, classe ni nœud nouveau).
+- **Interrupteurs** (`FEATURE_*`), **marque** (`BRAND`), **pages** (`ROUTES`), **boutique en données** (`SLOT_DEFS`,
+  `TRESOR`, packs), **cadences** et **niveaux de l'IA** en registres.
+- **Garde-fous** : `checkRules` (construction, démarrage, tests), garde des valeurs par défaut, garde de protocole,
+  garde-fou des textes chiffrés, test de cohérence, témoins v1, bancs d'identité, matrice des règles, suites de bout
+  en bout sur serveur jetable.
+- **Documentation** (lot 9c) : `docs/REGLAGES.md` (ce qu'on change demain, table des réglages, contextes, garde-fous,
+  limites), README (section « Réglages », offre, commandes), tableau des modules de `plan/CONCEPTION.md`, et
+  `test/reglages-doc.test.ts`, qui compare la documentation au code (chemins, noms, valeurs par défaut et bornes des
+  tables, contenus masqués, messages de `checkRules`).
+
+### Défauts corrigés
+
+| Défaut | Lot |
+|---|---|
+| File d'attente sous concurrence : double appariement, entrée perdue, joueur parti apparié | 3 |
+| Assise d'une invitation écrasée par un second joueur | 3 |
+| Pool PostgreSQL sans écouteur d'erreur ni délai de connexion (un redémarrage de la base faisait tomber le serveur) | 3 |
+| Spectateurs de `/live` mal comptés | 3 |
+| Fil de calcul de l'IA mort gardé dans la rotation | 3 |
+| Fin de partie perdue si la base ne répond pas (nouveaux essais, classement rattrapé au démarrage) | 3 |
+| Échec de création d'une partie appariée qui faisait perdre sa place à celui qui attendait | 3 |
+| Fichier `.env` lu trop tard pour les interrupteurs | 3 |
+| Cadence inconnue transformée en partie sans pendule ; relance sans fin de l'IA | 3 |
+| Objet retiré par l'administrateur resté équipé et encore vendu | 2 |
+| PGN avec une prise qui explose (Déflagration) ou avec le Sablier fou d'une partie à pendule : illisibles | 1 |
+| « Partie sans cartes » affiché à tort dans l'attente et le choix des cartes, et entrevu pendant l'appariement | 5, 7 |
+| Fin du choix : « tirées au hasard » alors que la sélection était complète ; carte tirée sans message | 3, 5 |
+| Minuterie d'émote commune aux deux camps | 5 |
+| Numérotation des coups après une Grande Marée des Noirs | 5 |
+| Page blanche quand le code d'une page manque ; « Failed to fetch » en anglais | 6 |
+| Accueil aux Noirs : halo et curseur sur la pièce adverse ; position d'une partie précédente montrée en attendant l'adversaire ; socket ouvert avant `/api/me` | 7 |
+| « 1 étapes », « 1 leçon terminées », « 1 coups » | 8 |
+
+Mentions légales de production : non corrigé. En production, le serveur avertit au démarrage tant qu'elles sont des
+modèles ; les valeurs attendent le fondateur (Q1).
+
+### Écarts voulus au défaut
+
+Les bancs d'identité (`npm run identite`) et de textes (`npm run textes-pages`) ne montrent que ces écarts avec la
+référence d'avant la passe :
+
+- « Partie sans cartes » retiré de l'écran d'attente et de l'écran du choix des cartes (défaut corrigé) ;
+- « 1 étape » au lieu de « 1 étapes » sur la page Apprendre (de même « 1 leçon terminée » et, dans Mes parties,
+  « 1 coup »).
+
+Autres changements visibles seulement dans des cas précis : numérotation des coups après une Grande Marée des Noirs ;
+PGN refusés avant, relus maintenant. Le lot 9c n'a rien changé au site : le site construit est identique octet pour
+octet avant et après lui (empreintes de `dist/`).
+
+Contrôles du lot 9c après sa relecture (commit de départ 2a28d09) : `tsc` sans erreur ; 1 236 tests verts
+(54 fichiers, dont les 21 de `test/reglages-doc.test.ts`) ; `npm run temoins` vert ; build réussi, `dist/` identique
+(275 fichiers, mêmes empreintes SHA-256), avec et sans le commentaire ajouté à `src/shared/config/index.ts` (ce module
+n'est importé que par `test/socle.test.ts`). `node scripts/verifier-lot.mjs 9c` accepte la documentation et le test,
+et refuse `src/shared/config/index.ts` à cause du défaut de l'outil décrit plus bas. Aucune mesure de performance dans
+ce lot.
+
+### Mesures de performance
+
+Mesures de l'orchestrateur, machine au repos, aucun autre agent (notes de la vague 5). Site construit en production ;
+référence : le code d'avant la passe (7148547). Banc `test/perf/mesure.mjs`.
+
+- Campagne de 3 passages, tous scénarios : au repos, tout est identique (processeur, images, peintures, animations,
+  rAF). Au chargement, accueil sur ordinateur, Forêt, Jouer, partie et Apprendre : dans le bruit.
+- Accueil sur mobile : 7 passages laissaient voir +40 ms de premier affichage. Une mesure de la même version contre
+  elle-même donne 8 ms d'écart. Une campagne de 11 passages, référence contre version finale : premier affichage 488
+  et 484 ms, script 243 et 246 ms, fil principal 845 et 840 ms, temps de blocage 181 et 182 ms. Identique.
+- Poids (gzip -9, fermeture des imports statiques) : accueil 222 036 → 232 979 o (+4,9 %), paquet principal 100 989 →
+  101 774 o, partie 197 449 → 206 200 o ; 3 requêtes de plus sur l'accueil. Sans effet mesurable sur la machine de
+  mesure (réseau local) ; sur un réseau mobile lent, environ 14 ko de plus à télécharger.
+- IA (`scripts/banc-ia.mjs`) : décisions identiques partout. Exécutions séparées trop bruitées ; en mode entrelacé
+  (`--entrelacer`), position de milieu de partie −0,4 % (profondeur 3) et −0,5 % (profondeur 5), presque tout dans
+  ±3 %, les rares écarts dans les deux sens. Code de la recherche identique à l'octet près, allocations identiques.
+- Non mesuré : banc des effets (`compositeFailed`, images par sort) au-delà des captures identiques de
+  `test/sorts.mjs` ; vrais téléphones ; production.
+
+### Ce qui n'a pas été vérifié
+
+- **Production** : rien n'est déployé. Aucune vérification sur chess-powers.com.
+- **Vrais téléphones et vraies cartes graphiques** : les mesures et les captures tournent dans Chromium sans écran,
+  avec un rendu 3D logiciel.
+- **Parties réelles jouées par des humains avec les variantes** (5 ou 6 cartes, 2 cartes par tour, carte à la place
+  du coup, Présage à 4) : seulement les tests, la matrice des règles, les suites de bout en bout et des captures.
+- **Stripe réel** et envoi réel d'e-mails : aucun paiement réel, aucun e-mail réel ; la boutique de production est
+  fermée (`PAYMENTS_MODE=off`).
+- **Changement d'une valeur par défaut** : essayé sur une copie jetable (lot 9c) pour compter les tests qui échouent
+  (`docs/REGLAGES.md`, section 2), pas mené jusqu'au bout (tests mis à jour, captures, mise en ligne).
+
+Captures de revue des variantes, faites pendant la passe et gardées hors du dépôt, dans le dossier de travail de la
+session (`scratchpad/poly/lots/5/captures-variantes` : 1, 5 cartes, 5 cartes et 2 par tour, carte à la place du coup,
+Présage à 4 ; `scratchpad/poly/lots/9a/captures-variantes` : 1 et 5 cartes après les retouches, banc de la coque de 1
+à 6 cartes). Elles se refont avec `node test/identite.mjs --seulement=bancs --n=1,2,4,5,6 --sortie=<dossier>`.
+
+### Décisions qui restent au fondateur
+
+| Question | Aujourd'hui |
+|---|---|
+| Q1. Mentions légales de production : raison sociale, adresse, SIREN, TVA, directeur, contact, médiateur | `/api/legal` sert les modèles ; avertissement au démarrage. Valeurs à mettre dans `LEGAL_*` (`/opt/spellmate/local.env` ou `deploy/production.env`) |
+| Q2. Prix « compléter » du Trésor du Bazar | non fait ; prix fixe ; `TRESOR` permet déjà de figer la liste ou de promettre les prochains objets |
+| Q5. Textes de marketing qui changeraient au défaut : vouvoiement de 3 messages, « 10+0 » ou « 10 + 0 », « Paiement sécurisé par Stripe » quand la vente est fermée, CGV sans rois ni collections, image de partage `og.jpg` (cartes du Duel), indication « Rois, échiquiers et sorts » du menu et exemples de cartes de la description d'`index.html` | rien n'a changé |
+| Q11. Petites cartes à 5 ou 6 cartes, surtout sur mobile | à 6 cartes, noms d'environ 3 px en 360 × 640 ; la carte s'ouvre en grand au toucher. Accepter, ou masquer le nom sous un seuil |
+| Formulation du Présage à délai 4 : « Annoncé : arrive au début de votre deuxième tour à venir » | inactive au défaut (délai 2) |
+
+Décisions prises par défaut pendant la passe : Q3 (revanche aux règles du moment), Q4 (pas de contrainte du tirage au
+choix des cartes), Q6 (une carte à la place du coup compte pour les 50 coups) ; Q7, Q8 et Q9 : rien ne change ; Q10 :
+pas d'intégration continue.
+
+### Points ouverts relevés par le lot 9c
+
+- Changer une valeur par défaut fait échouer de 9 à 101 tests sur 1 108 (essai sur une copie jetable,
+  `docs/REGLAGES.md`, section 2). Ce compte comprend les deux gardes (`defauts`, `protocole`) et 1 à 4 tests de
+  `test/reglages-doc.test.ts` ; les autres photographient le jeu d'aujourd'hui. Le commentaire de
+  `test/garde-fous/defauts.test.ts` dit le contraire (« les autres tests […] continuent de passer quand un réglage
+  change »). Piste : passer `RULES_V1` explicitement aux parties scriptées des tests du moteur, et conditionner les
+  photographies du défaut à `sameRules(rulesFor(ctx), RULES_V1)`.
+- `BOT_TIMEOUT_MS` (`src/shared/config/timings.ts`) n'est lu que par le serveur ; le navigateur garde sa propre copie
+  (`WORKER_TIMEOUT` de `src/client/ai/index.ts`), contrairement à ce que dit le commentaire du réglage.
+- `scripts/verifier-lot.mjs` compare la fin d'un gel par égalité (`lotId !== gele.jusqua`) : `src/shared/config/**` et
+  `src/shared/protocol.ts`, gelés « jusqu'au lot 9b », restent refusés aux lots 9c et 9, qui viennent après 9b dans
+  `vagues` (de même pour `text/regles.ts`, gelé jusqu'au lot 9a). La conception (`plan/CONCEPTION.md`, §7.1)
+  renvoie pourtant au lot 9 les besoins sur ces fichiers. Correctif : comparer les rangs des lots dans `vagues`
+  (refus seulement si rang(apres) < rang(lot) < rang(jusqua)). Tant qu'il n'est pas fait,
+  `node scripts/verifier-lot.mjs 9c` refuse le renvoi vers `docs/REGLAGES.md` ajouté en commentaire dans
+  `src/shared/config/index.ts` (fichier possédé par 9c, « commentaires seulement »).
+- `BRAND.pgnVariant` et `BRAND.storagePrefix` ne sont lus nulle part : la variante PGN et le préfixe des clés sont
+  écrits en dur (`src/shared/pgn.ts`, `src/client/storageKeys.ts`). Sans effet au défaut ; à relier ou à présenter
+  comme de simples rappels.

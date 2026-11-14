@@ -72,27 +72,41 @@
 
 ### 2.1 Modules
 
+*Tableau mis à jour au lot 9c, tel que le code est construit (le plan d'origine prévoyait un seul `rules.ts`, sans
+`rulesCore.ts`, `skins/texts.ts`, `vfx/boardMarks.ts` ni `FriendSheet.tsx`). Le guide des réglages est
+`docs/REGLAGES.md`.*
+
 | Module | Contenu | Imports à l'exécution | Lot |
 |---|---|---|---|
-| `src/shared/config/index.ts` | **Tableau de bord** : réexporte tout, une ligne de commentaire par réglage | config seulement | 0b |
-| `src/shared/config/rules.ts` | `Rules`, `RULES_V1` (gelé), `GAME_RULES`, `RULES_BY_CONTEXT`, `DEAL`, `SUSPENDED_CARDS`, `BOUNDS` | aucun (`import type`) | 0b |
-| `src/shared/config/features.ts` | `Features`, `FEATURES` (défauts) | aucun | 0b |
-| `src/shared/config/brand.ts` | `BRAND` : nom, capitales, accroches, couleur de thème, variante PGN, préfixe de stockage | aucun | 0b |
+| `src/shared/config/index.ts` | **Tableau de bord** : réexporte `rules`, `features`, `brand`, `limits`, `timings`, `home` (pas `routes`) ; une ligne de commentaire par réglage, y compris ceux des autres fichiers | config seulement | 0b, complété au 9b |
+| `src/shared/config/rules.ts` | `Rules`, `RULES_V1` (gelé), `GAME_RULES`, `RULES_BY_CONTEXT`, `RULES_CONTEXTS`, `DEAL`, `SUSPENDED_CARDS`, `BOUNDS`, `deepFreeze` | aucun (`import type`) | 0b |
+| `src/shared/config/features.ts` | `Features`, `FEATURES` (défauts), `FEATURE_KEYS`, `featureEnvName`, `mergeFeatures`, `featuresDiff` | aucun | 0b |
+| `src/shared/config/brand.ts` | `BRAND` : nom, capitales, accroches, couleurs, variante PGN et préfixe de stockage (ces deux derniers ne sont lus nulle part : rappel des identifiants techniques) ; `pageTitle` | aucun | 0b |
 | `src/shared/config/limits.ts` | `GUEST_NAME`, `USERNAME`, `PASSWORD` : bornes, expression, mots réservés, phrases | aucun | 0b |
-| `src/shared/config/timings.ts` | `CINEMATIC_MS` 1200, `BOT_CARD_PAUSE_MS` 2300, `BOT_TIMEOUT_MS` 20 000 (valeurs couplées entre client et serveur) | aucun | 0b |
-| `src/shared/config/home.ts` | `HOME` : catalogue, pendule, `vsBot`, couleur, niveau, fenêtre d'appariement, seuil de 4 demi-coups, « Visiteur », sauvegarde, rythme de l'Oracle, repos | aucun | 0b |
-| `src/shared/config/routes.ts` | `ROUTES` : chemin, clé de module, titre, description, interrupteur, indexation | aucun | 6 |
-| `src/shared/rules.ts` | `rulesFor(ctx)`, `rulesOf(s)`, `stampRules`, `sameRules`, `tuneOf`, `castsLeft`, `cardEndsTurn`, `validHand`, `maxValidHand`, `checkRules`, `setRulesOverride` (tests de bout en bout) | `cards.ts`, config | 0b puis 1 |
-| `src/shared/text/fr.ts` | `enLettres(n, genre)`, `cap`, `pluriel`, `compte`, `possessif`, `duree`, `mmss`, `ordinal`, `romain`, `liste`, `prix`, `LOCALE` | aucun | 0b |
-| `src/shared/text/regles.ts` | phrases de règles partagées par au moins deux domaines (§4.2) | `fr.ts`, config | 0b, puis gelé jusqu'au lot 9 |
-| `src/shared/text/libelles.ts` | `colorName`, `catalogLabel` (un seul repli), `modeLabel`, `cardName` | config, types | 0b |
+| `src/shared/config/timings.ts` | `CINEMATIC_MS` 1200, `BOT_CARD_PAUSE_MS` 2300, `BOT_TIMEOUT_MS` 20 000 (lus par le serveur ; le navigateur a sa propre copie du délai de l'IA) | aucun | 0b |
+| `src/shared/config/home.ts` | `HOME` : catalogue, pendule, `vsBot`, couleur, niveau, fenêtre d'appariement, seuil de 4 demi-coups, « Visiteur », sauvegarde, rythme de l'Oracle, repos | aucun (`import type`) | 0b |
+| `src/shared/config/routes.ts` | `ROUTES` (chemin, module, propriétés, interrupteur), `PAGE_MODULES`, `PageProps`, `ROUTE_TITLES`, `NOT_INDEXED`, `routeOpen` | aucun (`import type`) | 6 |
+| `src/shared/rulesCore.ts` | **noyau** des règles, lu par le moteur, l'IA et le client : `rulesFor(ctx)`, `rulesOf(s)`, `stampRules`, `sameRules`, `tuneOf`, `castsLeft`, `cardEndsTurn`, `poolOf`, `validHand`, `maxValidHand`, `canComplete`, `completionTarget`, `basicFenError`, `setRulesOverride` (tests de bout en bout) | `cards.ts`, `chess.ts`, config | 1 |
+| `src/shared/rules.ts` | réexporte le noyau ; **validation** : `checkRules`, `parseRules`, `settingsErrors`, `tuningErrors`, `rulesSummary`. Importé par le serveur, `pgn.ts` et les tests, jamais par le code de l'accueil | `rulesCore.ts`, `cards.ts`, `chess.ts`, `protocol.ts`, `text/fr.ts`, config | 0b puis 1 |
+| `src/shared/text/fr.ts` | `enLettres(n, genre)`, `cap`, `pluriel`, `compte`, `possessif`, `duree`, `mmss`, `ordinal`, `ordinalLettres`, `romain`, `liste`, `prix`, `nombre`, `apostrophes`, `LOCALE` | aucun | 0b |
+| `src/shared/text/regles.ts` | phrases de règles partagées par au moins deux domaines (§4.2) | `fr.ts`, `config/rules.ts` | 0b, puis 9a |
+| `src/shared/text/libelles.ts` | `colorName`, `catalogLabel` (un seul repli), `modeLabel`, `cardName` | aucun (`import type`) | 0b |
 | `src/shared/botProtocol.ts` | `BotRequest`, `BotReply { card, cards[], move, error? }` (types) | aucun | 0b |
-| `src/server/settings.ts` | `TIMINGS`, `RATING`, `MATCHMAKING`, `RELAY`, `BOT_RUNTIME`, `LIMITS`, `ACCOUNT`, `FEATURES` (défauts fusionnés avec `FEATURE_*`) | config | 0b puis 3 |
-| `src/client/storageKeys.ts` | `KEYS` : valeurs actuelles **inchangées** | aucun | 0b |
+| `src/server/settings.ts` | `TIMINGS`, `RATING`, `MATCHMAKING`, `RELAY`, `BOT_RUNTIME`, `DATABASE`, `BOT_THREADS`, `PERSIST`, `LIMITS`, `ACCOUNT`, `FEATURES` (défauts fusionnés avec `FEATURE_*`), `FEATURE_ERRORS`, `dealSettings` | config, `node:fs` | 0b puis 3 |
+| `src/server/config.ts` | variables d'environnement validées par zod, `SPELLMATE_TEST_RULES`, avertissements, `rulesReport` (règles vérifiées au démarrage) | zod, config, `rules.ts`, `protocol.ts`, `settings.ts` | 3 |
+| `src/client/storageKeys.ts` | `KEYS`, `KEY_STORE` : valeurs actuelles **inchangées** | aucun | 0b, 9a |
 | `src/client/components/boardGeometry.ts` | `squareAt(x, y, orientation)`, `cellOf(sq, orientation)` | aucun | 0b |
-| `src/shared/skins/slots.ts` | `SLOT_DEFS` : libellés, accords, rayon, visible par l'adversaire, objet par défaut, colonne SQL | aucun | 2 |
-| `src/client/vfx/cardFx.ts`, `vfx/config.ts` | `CARD_FX` exhaustif, `CARD_SOUND`, constantes des effets | — | 4 |
-| `src/client/motion.ts` | mouvement réduit : une seule `MediaQueryList`, abonnable | — | 4 |
+| `src/shared/skins/slots.ts` | `SLOT_DEFS` : libellés, accords, rayon, vue de la cabine, visible par l'adversaire, objet par défaut, colonne SQL | aucun | 2 |
+| `src/shared/skins/texts.ts` | phrases de la boutique, du compte et des e-mails : `SLOT_TEXTS`, `itemWithArticle`, `equippedMessage`, `whoSees`, `selectionLabel`, `sealsIn` (hors du morceau du catalogue que charge l'accueil) | `slots.ts`, `catalog.ts`, `text/fr.ts` | 9a |
+| `src/client/vfx/cardFx.ts` | `CARD_FX` exhaustif : mise en scène de chaque carte | `vfx/config.ts` | 4 |
+| `src/client/vfx/boardMarks.ts` | `BOARD_MARKS` exhaustif : marques d'un effet actif sur l'échiquier | aucun (`import type`) | 4 |
+| `src/client/vfx/config.ts`, `vfx/sharing.ts` | constantes des effets (rendu, particules, durées couplées au CSS) ; délais du partage des scènes | aucun | 4 |
+| `src/client/sound.ts` | `CARD_SOUND` exhaustif | `storageKeys.ts` | 4 |
+| `src/client/motion.ts` | mouvement réduit : une seule `MediaQueryList`, abonnable | aucun | 4 |
+| `src/client/odyssee/FriendSheet.tsx` | feuille « Défier un ami », chargée à la demande (les cadences et le pseudo d'invité hors du premier affichage de l'accueil) | React, `cards.ts`, `protocol.ts`, `api.ts`, `store.tsx`, `parts` | 9a |
+| `test/coherence.test.ts` | registres par carte, cadences, niveaux de l'IA, durées JS = CSS, seuil mobile, paquet principal, dettes vides | — | 9b |
+| `test/fonctions.mjs` | interrupteurs sur un vrai serveur (boutique et classé coupés, cadences archivées) | — | 9b |
+| `test/reglages-doc.test.ts` | `docs/REGLAGES.md` comparé au code : chemins, noms, valeurs par défaut, contenus masqués, messages | — | 9c |
 
 **Registres enrichis :**
 - `CARDS` : `ranks`, `clockRate`, `genre`, `retired` ;

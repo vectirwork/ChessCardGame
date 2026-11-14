@@ -74,7 +74,12 @@ function tuningDeCards(): Partial<Record<CardId, CardTuning>> {
 
 describe('configuration du jour', () => {
   it('checkRules : aucune erreur (la configuration livrée est jouable)', () => {
-    expect(checkRules()).toEqual([]);
+    // Garde voulu (scripts/essai-reglage.mjs) : seul ce test, avec la construction et le démarrage du serveur, refuse
+    // une configuration du jour impossible.
+    expect(
+      checkRules(),
+      'Configuration du jour impossible : changez le réglage nommé par chaque message (docs/REGLAGES.md, section 6.1). La construction et le démarrage du serveur s’arrêtent aussi.',
+    ).toEqual([]);
   });
   it('base figée de ce fichier = RULES_V1', () => {
     const { schema, tuning, ...reglages } = RULES_V1;

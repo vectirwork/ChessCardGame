@@ -35,6 +35,7 @@ import type { ContentRules } from '../src/shared/puzzles';
 import { checkRules, maxValidHand, poolOf } from '../src/shared/rules';
 import * as fr from '../src/shared/text/fr';
 import * as settings from '../src/server/settings';
+import { DEAL_V1, REGLAGES_V1 } from './helpers/v1';
 import * as engine from '../src/client/features/engine';
 import { PLACES } from '../src/client/odyssee/data';
 import * as storage from '../src/client/storageKeys';
@@ -381,11 +382,13 @@ describe('docs/REGLAGES.md : affirmations vérifiées dans le code', () => {
   });
 
   it('6.1 : exemples de messages de checkRules', () => {
+    // Chaque exemple part des règles de V1 (REGLAGES_V1, DEAL_V1) : seule son erreur s'affiche, quel que soit le
+    // réglage du jour (un réglage du jour impossible est signalé par « au défaut, la configuration est jouable »).
     const exemples = [
-      checkRules({ game: { ...R, cardEndsTurn: true, cardsPerTurn: 2 } }),
-      checkRules({ game: { ...R, presageDelay: 3 } }),
-      checkRules({ byContext: { amical: { cardsPerPlayer: 5 } } as never }),
-      checkRules({ deal: { ...config.DEAL, draftMs: 500 } }),
+      checkRules({ game: { ...REGLAGES_V1, cardEndsTurn: true, cardsPerTurn: 2 } }),
+      checkRules({ game: { ...REGLAGES_V1, presageDelay: 3 } }),
+      checkRules({ game: REGLAGES_V1, byContext: { amical: { cardsPerPlayer: 5 } } as never }),
+      checkRules({ game: REGLAGES_V1, deal: { ...DEAL_V1, draftMs: 500 } }),
     ];
     const texte = plat(section('### 6.1'));
     for (const e of exemples) {
@@ -395,7 +398,7 @@ describe('docs/REGLAGES.md : affirmations vérifiées dans le code', () => {
   });
 
   it('au défaut, la configuration est jouable', () => {
-    expect(checkRules()).toEqual([]);
+    expect(checkRules(), 'Configuration du jour impossible (checkRules) : voir test/config.test.ts, « configuration du jour ».').toEqual([]);
   });
 });
 

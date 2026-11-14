@@ -46,29 +46,35 @@ const RULES = 'src/shared/config/rules.ts';
 const CARDS = 'src/shared/cards.ts';
 
 /**
- * Essais prêts à l'emploi : ceux du lot 9c (docs/REGLAGES.md, section 2). `dans` : le remplacement porte sur la
- * première occurrence qui suit ce repère (lui-même unique), pour viser GAME_RULES et non RULES_V1, qui a les mêmes
- * lignes.
+ * Essais prêts à l'emploi : ceux du lot 9c (docs/REGLAGES.md, section 2). `dans` et `fin` : le remplacement porte sur
+ * le bloc qui va du repère `dans` (unique) au premier `fin` qui le suit, pour viser GAME_RULES et non RULES_V1, qui a
+ * les mêmes lignes. Si la valeur par défaut a déjà changé, le texte avant manque : l'essai est refusé (code 2).
  */
+const BLOC_REGLES = { fichier: RULES, dans: 'export const GAME_RULES', fin: '} satisfies GameRulesSettings);' };
+const BLOC_DEAL = { fichier: RULES, dans: 'export const DEAL', fin: '} satisfies DealSettings);' };
+const BLOC_MUR = { fichier: CARDS, dans: "  ice_wall: {\n    id: 'ice_wall',", fin: '\n  },' };
 export const ESSAIS = {
-  cinq: { titre: 'GAME_RULES.cardsPerPlayer 3 → 5', changements: [{ fichier: RULES, dans: 'export const GAME_RULES', avant: '  cardsPerPlayer: 3,', apres: '  cardsPerPlayer: 5,' }] },
-  deuxParTour: { titre: 'GAME_RULES.cardsPerTurn 1 → 2', changements: [{ fichier: RULES, dans: 'export const GAME_RULES', avant: '  cardsPerTurn: 1,', apres: '  cardsPerTurn: 2,' }] },
-  remplaceCoup: { titre: 'GAME_RULES.cardEndsTurn false → true', changements: [{ fichier: RULES, dans: 'export const GAME_RULES', avant: '  cardEndsTurn: false,', apres: '  cardEndsTurn: true,' }] },
-  presage4: { titre: 'GAME_RULES.presageDelay 2 → 4', changements: [{ fichier: RULES, dans: 'export const GAME_RULES', avant: '  presageDelay: 2,', apres: '  presageDelay: 4,' }] },
-  trente: { titre: 'DEAL.draftMs 45 000 → 30 000', changements: [{ fichier: RULES, dans: 'export const DEAL', avant: '  draftMs: 45_000,', apres: '  draftMs: 30_000,' }] },
-  mur: { titre: 'rangées du Mur de glace [2, 3, 4, 5] → [2, 3, 4]', changements: [{ fichier: CARDS, dans: "  ice_wall: {\n    id: 'ice_wall',", avant: '    ranks: [2, 3, 4, 5],', apres: '    ranks: [2, 3, 4],' }] },
-  six: { titre: 'GAME_RULES.cardsPerPlayer 3 → 6 (impossible : checkRules)', changements: [{ fichier: RULES, dans: 'export const GAME_RULES', avant: '  cardsPerPlayer: 3,', apres: '  cardsPerPlayer: 6,' }] },
+  cinq: { titre: 'GAME_RULES.cardsPerPlayer 3 → 5', changements: [{ ...BLOC_REGLES, avant: '  cardsPerPlayer: 3,', apres: '  cardsPerPlayer: 5,' }] },
+  deuxParTour: { titre: 'GAME_RULES.cardsPerTurn 1 → 2', changements: [{ ...BLOC_REGLES, avant: '  cardsPerTurn: 1,', apres: '  cardsPerTurn: 2,' }] },
+  remplaceCoup: { titre: 'GAME_RULES.cardEndsTurn false → true', changements: [{ ...BLOC_REGLES, avant: '  cardEndsTurn: false,', apres: '  cardEndsTurn: true,' }] },
+  presage4: { titre: 'GAME_RULES.presageDelay 2 → 4', changements: [{ ...BLOC_REGLES, avant: '  presageDelay: 2,', apres: '  presageDelay: 4,' }] },
+  trente: { titre: 'DEAL.draftMs 45 000 → 30 000', changements: [{ ...BLOC_DEAL, avant: '  draftMs: 45_000,', apres: '  draftMs: 30_000,' }] },
+  mur: { titre: 'rangées du Mur de glace [2, 3, 4, 5] → [2, 3, 4]', changements: [{ ...BLOC_MUR, avant: '    ranks: [2, 3, 4, 5],', apres: '    ranks: [2, 3, 4],' }] },
+  six: { titre: 'GAME_RULES.cardsPerPlayer 3 → 6 (impossible : checkRules)', changements: [{ ...BLOC_REGLES, avant: '  cardsPerPlayer: 3,', apres: '  cardsPerPlayer: 6,' }] },
 };
+
+const CHECKRULES = 'checkRules refuse la configuration du jour (le message dit quel réglage changer) ; la construction et le démarrage du serveur s’arrêtent aussi';
 
 /**
  * Gardes attendus : ils échouent exprès quand une valeur par défaut change, et disent quoi mettre à jour. `test` :
- * seulement les tests dont le nom complet correspond (sinon tout le fichier).
+ * seulement les tests dont le nom complet correspond (sinon tout le fichier) ; le premier garde qui convient l'emporte.
  */
 export const GARDES = [
+  { fichier: 'test/config.test.ts', test: /checkRules : aucune erreur/, quoi: CHECKRULES },
+  { fichier: 'test/reglages-doc.test.ts', test: /au défaut, la configuration est jouable/, quoi: CHECKRULES },
   { fichier: 'test/garde-fous/defauts.test.ts', quoi: 'photographie des valeurs par défaut : reportez la nouvelle valeur dans test/garde-fous/defauts.json' },
   { fichier: 'test/garde-fous/protocole.test.ts', quoi: 'montez PROTOCOL_VERSION (src/shared/protocol.ts), puis mettez à jour test/fixtures/protocole.json' },
   { fichier: 'test/reglages-doc.test.ts', quoi: 'reportez la nouvelle valeur dans docs/REGLAGES.md (section 4, et listes « Masqués » des sections 3.5 à 3.8)' },
-  { fichier: 'test/config.test.ts', test: /checkRules : aucune erreur/, quoi: 'checkRules refuse la configuration (le message dit quel réglage changer) ; la construction s’arrête aussi' },
 ];
 
 const MESSAGE_CHECKRULES = 'Règles impossibles : construction arrêtée.';
@@ -146,8 +152,9 @@ function occurrences(texte, aiguille) {
 }
 
 /**
- * Applique un changement à un texte : remplace l'unique occurrence de `avant` (ou, avec `dans`, la première qui suit
- * ce repère unique). Lève ErreurUsage si le texte manque ou n'est pas unique. Rend { texte, ligne }.
+ * Applique un changement à un texte : remplace l'unique occurrence de `avant` ou, avec `dans` et `fin`, l'unique
+ * occurrence du bloc qui va du repère `dans` (unique) au premier `fin` qui le suit. Lève ErreurUsage si un texte
+ * manque ou n'est pas unique. Rend { texte, ligne }.
  */
 export function remplacer(texte, c) {
   let debut = 0;
@@ -155,7 +162,14 @@ export function remplacer(texte, c) {
     const n = occurrences(texte, c.dans);
     if (n !== 1) throw new ErreurUsage(`${c.fichier} : le repère « ${c.dans} » apparaît ${n} fois (1 attendue).`);
     debut = texte.indexOf(c.dans);
-    if (texte.indexOf(c.avant, debut) < 0) throw new ErreurUsage(`${c.fichier} : « ${c.avant} » n'apparaît pas après « ${c.dans} ».`);
+    const finBloc = c.fin ? texte.indexOf(c.fin, debut) : texte.length;
+    if (finBloc < 0) throw new ErreurUsage(`${c.fichier} : la fin « ${c.fin} » du bloc « ${c.dans} » manque.`);
+    const n2 = occurrences(texte.slice(debut, finBloc), c.avant);
+    if (n2 !== 1) {
+      throw new ErreurUsage(
+        `${c.fichier} : « ${c.avant} » apparaît ${n2} fois dans le bloc « ${c.dans} » (1 attendue)${n2 ? '' : ' : la valeur par défaut a-t-elle déjà changé ?'}`,
+      );
+    }
   } else {
     const n = occurrences(texte, c.avant);
     if (n !== 1) throw new ErreurUsage(`${c.fichier} : « ${c.avant} » apparaît ${n} fois (exactement 1 attendue ; ajoutez du contexte).`);

@@ -1,7 +1,8 @@
 // Marque du site. Aucun import.
 //
 // Lue par le greffon Vite (index.html et manifeste, identiques octet pour octet au défaut), Layout, le titre des
-// pages, le partage, l'export PGN et le nom d'application par défaut du serveur (APP_NAME l'emporte).
+// pages, le partage et le nom d'application par défaut du serveur (APP_NAME l'emporte). pgnVariant et storagePrefix
+// sont des rappels : lus nulle part, ils ne commandent rien (voir leur commentaire).
 //
 // Ne jamais renommer les identifiants techniques avec la marque : préfixe de stockage 'sm:', cookies sm_session et
 // sm_guest, base « spellmate », /opt/spellmate, variante PGN « Spellmate », noms des fils de calcul. Les changer
@@ -24,9 +25,16 @@ export interface Brand {
   themeColor: string;
   /** Couleur de fond du manifeste. */
   backgroundColor: string;
-  /** Variante écrite dans les PGN exportés ([Variant "Spellmate"]). Format d'échange : ne jamais changer. */
+  /**
+   * RAPPEL, lu nulle part : la variante des PGN exportés ([Variant "Spellmate"]) est écrite en dur dans
+   * src/shared/pgn.ts (writePgn). Format d'échange : ne jamais la changer. La relier à ce champ changerait le site
+   * construit (83 fichiers de dist/ sur 275, lot 9e) : elle ne l'est pas.
+   */
   pgnVariant: string;
-  /** Préfixe des clés de stockage local. Identifiant technique : ne jamais changer. */
+  /**
+   * RAPPEL, lu nulle part : les clés du stockage local sont écrites en entier dans src/client/storageKeys.ts (« sm:… »,
+   * et « spellmate:reload »). Identifiants techniques : ne jamais les changer. Changer ce champ ne change aucune clé.
+   */
   storagePrefix: string;
 }
 

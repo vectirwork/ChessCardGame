@@ -166,7 +166,8 @@ describe('leçons', () => {
   });
 
   it('lire la main adverse : la Faille noire pare Ff3+, pas le mat sur la 8e rangée', () => {
-    const l = lessonById('mains-visibles')!;
+    // Contenu écrit pour RULES_V1 : cherché parmi toutes les leçons (masquée par `requires` sous d'autres règles).
+    const l = ALL_LESSONS.find(x => x.id === 'mains-visibles')!;
     const s = stepStart(l.steps[0]);
     const fake = applyAction(s, stepOptions('d1f3')[0])!;
     expect(sideInCheck(fake)).toBe(true);

@@ -169,7 +169,7 @@ describe('decideTurn', () => {
         }
       }
     }
-  });
+  }, 30_000); // ≈ 4 s au repos : au-delà de 5 s sous la charge d'autres processus
 
   it('carte qui termine le tour : pas de coup après elle', () => {
     const place = deepFreeze({ ...RULES_V1, cardEndsTurn: true });

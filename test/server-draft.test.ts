@@ -1,9 +1,10 @@
 // Choix des cartes au début d'une vraie partie (décision D5, docs/PLAN-V2.md) : moteur (réserve, validation,
 // complément au hasard, mains données), IA (heuristique avec hasard) et serveur (src/server/games.ts : secret,
 // idempotence, échéance (DEAL.draftMs), IA, abandon, redémarrage, anciennes parties, sans cartes).
-// Les salles sont créées avec RULES_V1 (3 cartes) : ces tests décrivent le choix tel qu'il est au réglage historique,
-// et passent quel que soit GAME_RULES (les autres nombres de cartes : test/server-regles.test.ts). Délais lus dans
-// DEAL et TIMINGS, jamais recopiés.
+// Les salles sont créées avec RULES_V1 (3 cartes) et la mise en place de V1 (DEAL_V1 : choix des cartes en 45 s) :
+// ces tests décrivent le choix tel qu'il est au réglage historique, et passent quel que soit GAME_RULES ou DEAL (les
+// autres nombres de cartes, le tirage partout et les autres durées : test/server-regles.test.ts). Délais lus dans
+// DEAL_V1 et TIMINGS, jamais recopiés.
 // Le temps est simulé (horloge factice de vitest) ; la base et les threads de l'IA sont remplacés par des doublures.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -19,28 +20,30 @@ vi.mock('../src/server/bot-pool', () => ({
 import { sqIndex as q } from '../src/shared/chess';
 import { CARDS, CardId, cardsOf } from '../src/shared/cards';
 import { cardPool, draftRefusal, positionKey, withHands } from '../src/shared/game';
-import { DEAL } from '../src/shared/config/rules';
 import { RULES_V1 } from '../src/shared/rules';
-import { TIMINGS } from '../src/server/settings';
+import { TIMINGS, setDealOverride } from '../src/server/settings';
 import {
   Room, RoomData, abortRoom, applyDraft, applyMove, closeDraft, draftView, newRoom, resignRoom, resumeRoom, submitDraft,
 } from '../src/server/games';
 import { botPool } from '../src/server/bot-pool';
 // Parties, tirages et choix scriptés aux règles V1 (RULES_V1, DEAL_V1), quel que soit le réglage du jour (lot 9e) :
 // test/helpers/v1.ts.
-import { chooseBotDraft, completeDraft, createGame, dealHands } from './helpers/v1';
+import { DEAL_V1, chooseBotDraft, completeDraft, createGame, dealHands } from './helpers/v1';
+import { reglerMiseEnPlaceV1 } from './helpers/v1-serveur';
 
 const T0 = 1_800_000_000_000;
 const POUVOIRS = cardsOf('climats');
-const DRAFT_MS = DEAL.draftMs;
+const DRAFT_MS = DEAL_V1.draftMs;
 const FIRST_MOVE_MS = TIMINGS.firstMoveMs;
 const CARDS_PER_PLAYER = RULES_V1.cardsPerPlayer;
 
 beforeEach(() => {
+  reglerMiseEnPlaceV1();
   vi.useFakeTimers();
   vi.setSystemTime(T0);
 });
 afterEach(() => {
+  setDealOverride(null);
   vi.clearAllTimers();
   vi.useRealTimers();
 });

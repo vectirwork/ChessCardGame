@@ -18,8 +18,11 @@ vi.mock('../src/server/bot-pool', () => ({
 import type { Identity, UserRow } from '../src/server/auth';
 import { one } from '../src/server/db';
 import { Room, newRoom, spectatorCount, takeSeat } from '../src/server/games';
-import { DEAL } from '../src/shared/config/rules';
+import { setDealOverride } from '../src/server/settings';
 import { bot, human } from './helpers/sieges';
+// Mise en place de V1 (choix des cartes en 45 s), quel que soit le DEAL du jour (lot 9e).
+import { DEAL_V1 } from './helpers/v1';
+import { reglerMiseEnPlaceV1 } from './helpers/v1-serveur';
 
 const T0 = 1_800_000_000_000;
 
@@ -45,6 +48,7 @@ const flush = async () => {
 };
 
 beforeEach(() => {
+  reglerMiseEnPlaceV1();
   vi.useFakeTimers();
   vi.setSystemTime(T0);
   gates.clear();
@@ -56,6 +60,7 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  setDealOverride(null);
   vi.clearAllTimers();
   vi.useRealTimers();
 });
@@ -77,7 +82,7 @@ describe('assise sur une invitation', () => {
     expect(room.d.seats.b?.key).toBe('u:bob');
     expect(room.d.status).toBe('active');
     const deadline = room.d.draft?.deadline;
-    expect(deadline).toBe(T0 + DEAL.draftMs);
+    expect(deadline).toBe(T0 + DEAL_V1.draftMs);
     vi.advanceTimersByTime(3000);
     gates.get('alice')!.open();
     expect(await pa).toBeNull();

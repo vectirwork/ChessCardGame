@@ -369,16 +369,19 @@ describe('docs/REGLAGES.md : affirmations vérifiées dans le code', () => {
   });
 
   it('3.4 : six cartes refusées avec le message cité ; réserve de l’accueil et deux sorties acceptées', () => {
-    const six = checkRules({ game: { ...R, cardsPerPlayer: 6 } });
+    // Règles et mise en place de V1 (celles que décrit la section 3.4), plus 6 cartes : le message ne dépend pas du
+    // réglage du jour (lot 9e ; un réglage du jour impossible est signalé par « au défaut, la configuration est jouable »).
+    const V1 = { game: { ...REGLAGES_V1, cardsPerPlayer: 6 }, byContext: {}, deal: DEAL_V1 };
+    const six = checkRules(V1);
     expect(six).toHaveLength(1);
     expect(plat(section('### 3.4'))).toContain(`« ${six[0]} »`);
     const reserve = poolOf(home.HOME.catalog, { timed: home.HOME.timed, vsBot: home.HOME.vsBot });
     expect(reserve).toHaveLength(7);
     expect(reserve.filter(id => cards.CARDS[id].family === 'climat')).toHaveLength(4);
-    expect(maxValidHand(reserve, config.DEAL.handLimits)).toBe(5);
-    expect(checkRules({ game: { ...R, cardsPerPlayer: 6 }, byContext: { accueil: { cardsPerPlayer: 5 } } })).toEqual([]);
-    const climats3 = { ...config.DEAL, handLimits: { ...config.DEAL.handLimits, maxPerFamily: { climat: 3 } } };
-    expect(checkRules({ game: { ...R, cardsPerPlayer: 6 }, deal: climats3 })).toEqual([]);
+    expect(maxValidHand(reserve, DEAL_V1.handLimits)).toBe(5);
+    expect(checkRules({ ...V1, byContext: { accueil: { cardsPerPlayer: 5 } } })).toEqual([]);
+    const climats3 = { ...DEAL_V1, handLimits: { ...DEAL_V1.handLimits, maxPerFamily: { climat: 3 } } };
+    expect(checkRules({ ...V1, deal: climats3 })).toEqual([]);
   });
 
   it('6.1 : exemples de messages de checkRules', () => {

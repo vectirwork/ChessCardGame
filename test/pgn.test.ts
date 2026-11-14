@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { sqIndex as q, toFen } from '../src/shared/chess';
 import type { CardId } from '../src/shared/cards';
-import { GameState, playCard, playMove } from '../src/shared/game';
-import { RULES_V1 } from '../src/shared/rules';
+import { GameState, createGame as createGameDuJour, playCard, playMove } from '../src/shared/game';
+import { RULES_V1, rulesFor, stampRules } from '../src/shared/rules';
 import {
   START_FEN, TreeNode, findSanMove, initialStateOf, mainline, parsePgnText, readPgn, sanOf, stateFromFen,
   treeFromLog, validateFen, writePgn,
 } from '../src/shared/pgn';
 // Parties, tirages et choix scriptés aux règles V1 (RULES_V1, DEAL_V1), quel que soit le réglage du jour (lot 9e) :
 // test/helpers/v1.ts.
-import { createGame } from './helpers/v1';
+import { createGame, reglesDuJourV1 } from './helpers/v1';
 
 const OPERA = `[Event "Paris"]
 [Site "Paris FRA"]
@@ -275,6 +275,14 @@ describe('carte à la place du coup (cardEndsTurn) dans le PGN', () => {
 
 describe('règles de la partie dans le PGN (en-tête SpellmateRules)', () => {
   it('au défaut (RULES_V1) : aucun en-tête', () => {
+    // Garde d'identité : une partie neuve aux règles du jour (createGame du moteur, sans règles données). Au défaut
+    // (configuration lue directement : reglesDuJourV1), aucun en-tête ; hors du défaut, l'en-tête si les règles du jour
+    // diffèrent de RULES_V1.
+    const duJour = play(createGameDuJour({ w: [], b: [] }, true, 'aucune'), 'e2e4');
+    const texte = writePgn({}, treeFromLog(initialStateOf(duJour), duJour.log).root);
+    if (reglesDuJourV1() || !stampRules(rulesFor('classee'))) expect(texte).not.toContain('SpellmateRules');
+    else expect(texte).toContain('[SpellmateRules "');
+    // Règles RULES_V1 données : jamais d'en-tête.
     const s = play(createGame({ w: [], b: [] }, true, 'aucune'), 'e2e4');
     const { root } = treeFromLog(initialStateOf(s), s.log);
     expect(writePgn({}, root)).not.toContain('SpellmateRules');

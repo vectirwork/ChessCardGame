@@ -15,12 +15,13 @@ import express from 'express';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { NAV, SECTIONS } from '../src/client/components/Layout';
 import { BOT_LEVELS, BOT_PROFILES } from '../src/shared/bot';
-import { FEATURES } from '../src/shared/config/features';
+import { FEATURES, featuresDiff } from '../src/shared/config/features';
 import type { Features } from '../src/shared/config/features';
 import { NOT_INDEXED, PAGE_MODULES, ROUTES, ROUTE_TITLES } from '../src/shared/config/routes';
 import { routePattern, serveBuiltSite } from '../src/server/site';
 import type { SiteOptions } from '../src/server/site';
 import { identify } from '../src/server/auth';
+import { FEATURES as FEATURES_SERVEUR } from '../src/server/settings';
 import { sign } from '../src/server/security';
 
 const ROOT = path.resolve(__dirname, '..');
@@ -177,9 +178,12 @@ describe('site construit : HTML servi par site.ts', () => {
     for (const [chemin, module] of ATTENDU) {
       const ex = exemple(chemin);
       const variantes = ex === '/' ? [ex] : [ex, `${ex}/`, ex.toUpperCase()];
+      // Tout est ouvert au défaut ; une fonction coupée dans le code (FEATURES) : sa page est introuvable (lot 9e).
+      const f = ROUTES.find(r => r.path === chemin)?.feature;
+      const attendu = f && !FEATURES_SERVEUR[f] ? ['NotFound', 404] : [module, 200];
       for (const v of variantes) {
         const p = await page(v);
-        expect([p.module, p.status], v).toEqual([module, 200]);
+        expect([p.module, p.status], v).toEqual(attendu);
       }
     }
   });
@@ -211,7 +215,14 @@ describe('site construit : HTML servi par site.ts', () => {
     expect((await page('/problemes')).html).not.toContain('sm-features');
     const p = await page('/problemes/abc', coupe.base);
     expect([p.module, p.status]).toEqual(['NotFound', 404]);
-    expect(p.html).toContain(`<meta name="sm-features" content='{"puzzles":false,"shop":false}'>`);
+    // La meta porte ce qui diffère des défauts du code (FEATURES) : au défaut, les deux fonctions coupées (lot 9e :
+    // l'attendu suit FEATURES sinon).
+    const diff = featuresDiff(off);
+    const meta = FEATURES.puzzles && FEATURES.shop
+      ? `<meta name="sm-features" content='{"puzzles":false,"shop":false}'>`
+      : Object.keys(diff).length ? `<meta name="sm-features" content='${JSON.stringify(diff)}'>` : null;
+    if (meta) expect(p.html).toContain(meta);
+    else expect(p.html).not.toContain('sm-features');
     // La boutique coupée affiche sa propre page fermée (Shop.tsx) : servie normalement
     expect((await page('/boutique', coupe.base)).status).toBe(200);
   });

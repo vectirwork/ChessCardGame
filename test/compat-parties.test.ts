@@ -15,7 +15,7 @@ import type { GameRulesSettings } from '../src/shared/config/rules';
 import { createGame, legalMovesOf, playCard, playMove, positionKey } from '../src/shared/game';
 import type { GameState, LogEntry } from '../src/shared/game';
 import { initialStateOf, mainline, treeFromLog } from '../src/shared/pgn';
-import { RULES_V1, rulesFor, sameRules, setRulesOverride } from '../src/shared/rules';
+import { rulesFor, setRulesOverride, stampRules } from '../src/shared/rules';
 import { mulberry32 } from './helpers/rng';
 // Témoins pris au défaut d'avant la passe : la partie locale (sans règles) se relit en RULES_V1, et les tirages se
 // refont avec les mains et la mise en place de V1 (test/helpers/v1.ts), quel que soit le réglage du jour (lot 9e).
@@ -167,8 +167,12 @@ describe('tirages témoins v1, au défaut', () => {
     for (const x of t.chooseBotDraft) expect(v1.chooseBotDraft(x.pool, x.niveau, mulberry32(x.graine)), String(x.graine)).toEqual(x.main);
   });
   it('au défaut, une nouvelle partie n’écrit ni rules ni cardsThisTurn', () => {
+    // Garde d'identité : createGame du moteur aux règles du jour. Au défaut (configuration lue directement :
+    // reglesDuJourV1), rien d'écrit ; hors du défaut, les règles du jour si elles diffèrent de RULES_V1.
     const s = createGame({ w: ['truce'], b: ['rift'] }, true, 'climats');
-    if (sameRules(rulesFor('classee'), RULES_V1)) expect('rules' in s).toBe(false);
+    const r = stampRules(rulesFor('classee'));
+    if (v1.reglesDuJourV1() || !r) expect('rules' in s).toBe(false);
+    else expect(s.rules).toBe(r);
     expect('cardsThisTurn' in s).toBe(false);
   });
 });

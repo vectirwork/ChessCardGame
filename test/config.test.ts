@@ -19,6 +19,9 @@ import {
   sameRules, setRulesOverride, settingsErrors, stampRules, tuneOf, validHand,
 } from '../src/shared/rules';
 import type { RulesConfig } from '../src/shared/rules';
+// Prédicat lu directement dans la configuration (GAME_RULES, RULES_BY_CONTEXT, CARDS), sans passer par rulesFor : les
+// gardes d'identité au défaut ne choisissent jamais leur attendu d'après ce qu'ils vérifient (lot 9e).
+import { reglesDuJourV1 } from './helpers/v1';
 
 afterEach(() => setRulesOverride(null));
 
@@ -114,6 +117,13 @@ describe('RULES_V1, figé pour toujours', () => {
     expect(JSON.parse(JSON.stringify(RULES_V1))).toEqual(fixture);
   });
   it('rulesFor(ctx) : RULES_V1 lui-même si les règles du contexte valent V1, sinon des règles écrites dans la partie', () => {
+    // Garde d'identité : au défaut (configuration de V1), chaque contexte rend RULES_V1 lui-même et rien n'est écrit.
+    if (reglesDuJourV1()) {
+      for (const ctx of RULES_CONTEXTS) {
+        expect(rulesFor(ctx), ctx).toBe(RULES_V1);
+        expect(stampRules(rulesFor(ctx)), ctx).toBeUndefined();
+      }
+    }
     for (const ctx of RULES_CONTEXTS) {
       const r = rulesFor(ctx);
       if (sameRules(r, RULES_V1)) {
@@ -137,9 +147,13 @@ describe('RULES_V1, figé pour toujours', () => {
     const s = createGame({ w: ['truce'], b: ['rift'] }, true, 'climats');
     expect(rulesOf({ ...s, rules: undefined })).toBe(RULES_V1);
     expect(rulesOf(s)).toBe(s.rules ?? RULES_V1);
-    if (RULES_CONTEXTS.every(ctx => rulesFor(ctx) === RULES_V1)) {
+    if (reglesDuJourV1()) {
       expect('rules' in s).toBe(false);
       expect('cardsThisTurn' in s).toBe(false);
+    } else {
+      const r = stampRules(rulesFor('classee'));
+      if (r) expect(s.rules).toBe(r);
+      else expect('rules' in s).toBe(false);
     }
   });
 });
@@ -218,8 +232,8 @@ describe('rulesFor, stampRules, sameRules', () => {
     const choix = DEAL.draft && DEAL.draftMs === DEAL_V1.draftMs ? /, choix des cartes en 45 s$/
       : DEAL.draft ? new RegExp(`, choix des cartes en ${DEAL.draftMs / 1000} s$`) : /, choix des cartes remplacé par le tirage$/;
     expect(rulesSummary(RULES_V1)).toMatch(choix);
-    expect(rulesSummary(RULES_V1, { ...DEAL, draftMs: 30_000 })).toMatch(/, choix des cartes en 30 s$/);
-    expect(rulesSummary(RULES_V1, { ...DEAL, draft: false })).toMatch(/, choix des cartes remplacé par le tirage$/);
+    expect(rulesSummary(RULES_V1, { ...DEAL_V1, draftMs: 30_000 })).toMatch(/, choix des cartes en 30 s$/);
+    expect(rulesSummary(RULES_V1, { ...DEAL_V1, draft: false })).toMatch(/, choix des cartes remplacé par le tirage$/);
   });
 });
 

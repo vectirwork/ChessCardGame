@@ -20,6 +20,9 @@ vi.mock('../src/server/bot-pool', () => ({
 import type { Identity, UserRow } from '../src/server/auth';
 import { one } from '../src/server/db';
 import { setRulesOverride } from '../src/shared/rules';
+import { setDealOverride } from '../src/server/settings';
+// Mise en place de V1 (choix des cartes), quel que soit le DEAL du jour : la création en échec vient du choix (lot 9e).
+import { reglerMiseEnPlaceV1 } from './helpers/v1-serveur';
 import { activeRoomCount, joinQueue, queueKeys, queuePool, quitQueue } from '../src/server/games';
 import { MATCHMAKING } from '../src/server/settings';
 
@@ -58,6 +61,7 @@ const flush = async () => {
 const join = (s: ReturnType<typeof sock>) => joinQueue(s, '5+0', true);
 
 beforeEach(() => {
+  reglerMiseEnPlaceV1();
   vi.useFakeTimers();
   gates.clear();
   users.clear();
@@ -69,6 +73,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   setRulesOverride(null);
+  setDealOverride(null);
   for (const k of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) quitQueue(`u:${k}`);
   vi.clearAllTimers();
   vi.useRealTimers();

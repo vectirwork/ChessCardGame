@@ -13,6 +13,7 @@ import { Footer, Header } from '../src/client/components/Layout';
 import { emitAck, reloadForNewVersion } from '../src/client/socket';
 import type { AckEvent, AckPayload, AckReply } from '../src/client/socket';
 import { AppProvider, useFeature } from '../src/client/store';
+import { FEATURES } from '../src/shared/config/features';
 import type { FeatureKey } from '../src/shared/config/features';
 import { GAME_RULES, RULES_V1 } from '../src/shared/config/rules';
 import { cartesDePouvoir } from '../src/shared/text/regles';
@@ -244,6 +245,15 @@ describe('en-tête et pied de page : marque et liens selon les interrupteurs', (
     );
   };
   const liens = (html: string) => [...html.matchAll(/href="([^"]+)"/g)].map(m => m[1]);
+  /**
+   * Liens à interrupteur (`f` dans SECTIONS et NAV) et leur fonction. Ouverte par FEATURES (tout est ouvert au
+   * défaut) : le lien est là ; coupée dans le code : il disparaît (lot 9e : l'attendu suit FEATURES).
+   */
+  const INTERRUPTEUR: Record<string, FeatureKey> = {
+    '/boutique': 'shop', '/problemes': 'puzzles', '/apprendre': 'learn', '/analyse': 'analysis', '/direct': 'live',
+    '/classement': 'ranked', '/jouer?mode=quick': 'ranked',
+  };
+  const ouvert = (l: string) => !INTERRUPTEUR[l] || FEATURES[INTERRUPTEUR[l]];
 
   it('au défaut : marque, accroche et nombre de cartes tirés des réglages ; tous les liens ; aucun style de grille', () => {
     const html = site(null);
@@ -254,12 +264,15 @@ describe('en-tête et pied de page : marque et liens selon les interrupteurs', (
     expect(html).toContain(`Les échecs que vous aimez, avec ${cartes} pour renverser la partie.`);
     expect(html).toContain(' Spellmate. Tous droits réservés.');
     expect(html).toContain('<span>Les échecs, avec un peu de magie.</span>');
-    for (const l of ['/boutique', '/problemes', '/apprendre', '/analyse', '/direct', '/classement', '/jouer?mode=quick']) expect(liens(html)).toContain(l);
+    for (const l of ['/boutique', '/problemes', '/apprendre', '/analyse', '/direct', '/classement', '/jouer?mode=quick']) {
+      if (ouvert(l)) expect(liens(html)).toContain(l);
+      else expect(liens(html)).not.toContain(l);
+    }
     expect(html).not.toContain('--n');
   });
   it('fonctions coupées : leurs liens disparaissent (en-tête, pied de page)', () => {
     const html = site('{"shop":false,"puzzles":false,"ranked":false}');
     for (const l of ['/boutique', '/problemes', '/classement', '/jouer?mode=quick']) expect(liens(html)).not.toContain(l);
-    for (const l of ['/jouer', '/apprendre', '/analyse', '/parties', '/cartes']) expect(liens(html)).toContain(l);
+    for (const l of ['/jouer', '/apprendre', '/analyse', '/parties', '/cartes']) if (ouvert(l)) expect(liens(html)).toContain(l);
   });
 });

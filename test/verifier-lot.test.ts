@@ -44,10 +44,13 @@ describe('verifier-lot : gels calculés d’après les vagues', () => {
   it('carte du dépôt : config/ et protocol.ts gelés pour les lots 1 à 8, libres pour 9c, 9e et 9 ; regles.ts libre dès 9a', () => {
     const vraie = JSON.parse(readFileSync(new URL('../docs/polymorphie/LOTS.json', import.meta.url), 'utf8')) as Carte;
     const config = vraie.geles.find(g => g.motif === 'src/shared/config/**')!;
+    const protocole = vraie.geles.find(g => g.motif === 'src/shared/protocol.ts')!;
     const regles = vraie.geles.find(g => g.motif === 'src/shared/text/regles.ts')!;
     expect(motif(config.motif).test('src/shared/config/rules.ts')).toBe(true);
-    for (const lot of ['1', '3', '5', '8']) expect(gele(vraie, lot, config), lot).toBe(true);
-    for (const lot of ['9b', '9c', '9e', '9']) expect(gele(vraie, lot, config), lot).toBe(false);
+    for (const gel of [config, protocole]) {
+      for (const lot of ['1', '3', '5', '8']) expect(gele(vraie, lot, gel), `${gel.motif} ${lot}`).toBe(true);
+      for (const lot of ['9b', '9c', '9e', '9']) expect(gele(vraie, lot, gel), `${gel.motif} ${lot}`).toBe(false);
+    }
     for (const lot of ['8']) expect(gele(vraie, lot, regles), lot).toBe(true);
     for (const lot of ['9a', '9b', '9c', '9e', '9']) expect(gele(vraie, lot, regles), lot).toBe(false);
   });

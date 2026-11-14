@@ -641,15 +641,8 @@ async function withSettings(rules: Partial<ConfigRules['GAME_RULES']>, deal: Par
  * Les photographies du défaut d'avant la passe restent ainsi vérifiées à l'identique, quel que soit le réglage du jour.
  */
 async function configV1() {
-  if (!configDuJourV1()) {
-    const x = await withSettings({});
-    return { ...x, lessons: x.lessons, puzzles: x.puzzles };
-  }
-  return {
-    pageText, pageLabels, Rules, Play, Learn, Puzzles,
-    lessons: { ALL_LESSONS, LESSONS, lessonById },
-    puzzles: await import('../src/shared/puzzles'),
-  };
+  if (!configDuJourV1()) return withSettings({});
+  return { pageText, pageLabels, Rules, Play, Learn, Puzzles, lessons: { ALL_LESSONS, LESSONS, lessonById } };
 }
 
 describe('autres réglages : textes, grilles et contenu', () => {

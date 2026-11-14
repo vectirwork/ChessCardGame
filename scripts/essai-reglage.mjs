@@ -18,6 +18,7 @@
 //   --build               lance aussi `npm run build` (des règles impossibles arrêtent la construction : checkRules).
 //   --temoins             lance aussi `npm run temoins` (comparaison aux témoins v1 : voir plus bas).
 //   --tout                tous les projets de Vitest (rapide, matrice, lent) au lieu du seul projet rapide.
+//   --sans-tests          ni tsc ni Vitest (avec --build ou --temoins : seulement la construction ou les témoins).
 //   --details             message complet de chaque échec (sinon sa première ligne).
 //   --garder              garde la copie (dossier affiché) ; sinon elle est supprimée à la fin.
 //   --dossier=<d>         dossier où créer la copie (défaut : dossier temporaire du système).
@@ -87,7 +88,7 @@ const valeurs = name => args.filter(a => a.startsWith(`--${name}=`)).map(a => a.
 const opt = name => valeurs(name).at(-1);
 const has = name => args.includes(`--${name}`);
 const OPTIONS_VALEUR = ['essai', 'remplacer', 'dossier', 'json'];
-const OPTIONS_SEULES = ['build', 'temoins', 'tout', 'details', 'garder', 'aide'];
+const OPTIONS_SEULES = ['build', 'temoins', 'tout', 'sans-tests', 'details', 'garder', 'aide'];
 
 function usage(message) {
   if (message) console.error(`essai-reglage : ${message}`);
@@ -249,38 +250,7 @@ async function essayer(essai, parent) {
     res.changements = appliquer(dossier, essai.changements);
     for (const d of res.changements) console.log(`  changé : ${d}`);
 
-    process.stdout.write('  tsc… ');
-    const tsc = await lancer(dossier, 'tsc', bin(dossier, 'tsc'), ['--noEmit', '-p', '.']);
-    const erreursTsc = (tsc.sortie.match(/error TS\d+/g) ?? []).length;
-    res.tsc = { code: tsc.code, erreurs: erreursTsc };
-    console.log(tsc.code === 0 ? 'sans erreur' : `${erreursTsc} erreur(s)`);
-    if (tsc.code !== 0) {
-      res.autres++;
-      console.log(indenter(tsc.sortie.trim().split('\n').slice(0, 20).join('\n'), '    '));
-    }
-
-    const projets = has('tout') ? [] : ['--project', 'rapide'];
-    process.stdout.write(`  vitest${has('tout') ? '' : ' (projet rapide)'}… `);
-    const rapportTests = path.join(dossier, '.essai-vitest.json');
-    const vt = await lancer(dossier, 'vitest', bin(dossier, 'vitest'), ['run', ...projets, '--reporter=json', `--outputFile=${rapportTests}`]);
-    const tests = lireRapport(dossier, rapportTests);
-    if (!tests) {
-      res.tests = { code: vt.code, erreur: 'pas de rapport' };
-      res.autres++;
-      console.log(`aucun rapport (code ${vt.code}) :\n${indenter(vt.sortie.trim().split('\n').slice(-20).join('\n'), '    ')}`);
-    } else {
-      const gardes = tests.echecs.filter(gardeDe);
-      const autres = [...tests.echecs.filter(e => !gardeDe(e)), ...tests.sautes];
-      res.tests = {
-        total: tests.total, echoues: tests.echoues, sautes: tests.sautes.length,
-        gardes: gardes.map(e => ({ fichier: e.fichier, test: e.test })), autres: autres.map(e => ({ fichier: e.fichier, test: e.test })),
-      };
-      res.gardes += gardes.length;
-      res.autres += autres.length;
-      console.log(`${tests.total} tests, ${tests.echoues} en échec (gardes attendus : ${gardes.length} ; autres : ${autres.length})${tests.sautes.length ? `, ${tests.sautes.length} sautés` : ''}`);
-      afficherGardes(gardes);
-      afficherAutres(autres, '  AUTRES ÉCHECS (à relire) :');
-    }
+    if (!has('sans-tests')) await tscEtTests(dossier, res);
 
     if (has('build')) {
       process.stdout.write('  npm run build… ');
@@ -302,14 +272,21 @@ async function essayer(essai, parent) {
     if (has('temoins')) {
       process.stdout.write('  npm run temoins… ');
       const rapportTemoins = path.join(dossier, '.essai-temoins.json');
-      const t = await lancer(dossier, 'temoins', bin(dossier, 'vitest'), ['run', '-c', 'test/fixtures/v1/vitest.config.ts', '--reporter=json', `--outputFile=${rapportTemoins}`]);
+      // Rapporteur par défaut en plus du JSON : le générateur écrit la liste des fichiers en écart dans le journal.
+      const t = await lancer(dossier, 'temoins', bin(dossier, 'vitest'), [
+        'run', '-c', 'test/fixtures/v1/vitest.config.ts', '--reporter=default', '--reporter=json', `--outputFile.json=${rapportTemoins}`,
+      ]);
       const r = lireRapport(dossier, rapportTemoins);
       res.temoins = r ? { code: t.code, total: r.total, echoues: r.echoues, echecs: r.echecs.map(e => ({ test: e.test })) } : { code: t.code, erreur: 'pas de rapport' };
       if (!r) console.log(`aucun rapport (code ${t.code})`);
       else {
         const fichiers = fichiersEcartes(t.sortie, r.echecs.map(e => e.message));
+        // Sans liste de fichiers, le générateur s'est arrêté avant la comparaison (partie témoin injouable…) : sa cause.
+        const arret = fichiers.length ? null : r.echecs.map(e => premiereLigne(e.message)).join(' ; ');
         res.temoins.fichiers = fichiers;
-        console.log(r.echoues ? `écarts aux témoins v1 (photographies d'avant la passe, hors code de sortie) : ${fichiers.length ? fichiers.join(' ; ') : r.echecs.map(e => e.test).join(' ; ')}` : 'aucun écart');
+        res.temoins.arret = arret;
+        const quoi = fichiers.length ? `${fichiers.length} fichier(s) en écart : ${fichiers.join(' ; ')}` : `générateur arrêté : ${arret}`;
+        console.log(r.echoues ? `écarts aux témoins v1 (photographies d'avant la passe, hors code de sortie) : ${quoi}` : 'aucun écart');
         if (has('details')) for (const e of r.echecs) console.log(indenter(e.message, '    '));
       }
     }
@@ -341,6 +318,42 @@ function fichiersEcartes(sortie, messages) {
     if (!out.includes(e)) out.push(e);
   }
   return out;
+}
+
+/** tsc puis Vitest dans la copie ; échecs rangés dans `res` (gardes attendus, autres). */
+async function tscEtTests(dossier, res) {
+  process.stdout.write('  tsc… ');
+  const tsc = await lancer(dossier, 'tsc', bin(dossier, 'tsc'), ['--noEmit', '-p', '.']);
+  const erreursTsc = (tsc.sortie.match(/error TS\d+/g) ?? []).length;
+  res.tsc = { code: tsc.code, erreurs: erreursTsc };
+  console.log(tsc.code === 0 ? 'sans erreur' : `${erreursTsc} erreur(s)`);
+  if (tsc.code !== 0) {
+    res.autres++;
+    console.log(indenter(tsc.sortie.trim().split('\n').slice(0, 20).join('\n'), '    '));
+  }
+
+  const projets = has('tout') ? [] : ['--project', 'rapide'];
+  process.stdout.write(`  vitest${has('tout') ? '' : ' (projet rapide)'}… `);
+  const rapportTests = path.join(dossier, '.essai-vitest.json');
+  const vt = await lancer(dossier, 'vitest', bin(dossier, 'vitest'), ['run', ...projets, '--reporter=json', `--outputFile=${rapportTests}`]);
+  const tests = lireRapport(dossier, rapportTests);
+  if (!tests) {
+    res.tests = { code: vt.code, erreur: 'pas de rapport' };
+    res.autres++;
+    console.log(`aucun rapport (code ${vt.code}) :\n${indenter(vt.sortie.trim().split('\n').slice(-20).join('\n'), '    ')}`);
+  } else {
+    const gardes = tests.echecs.filter(gardeDe);
+    const autres = [...tests.echecs.filter(e => !gardeDe(e)), ...tests.sautes];
+    res.tests = {
+      total: tests.total, echoues: tests.echoues, sautes: tests.sautes.length,
+      gardes: gardes.map(e => ({ fichier: e.fichier, test: e.test })), autres: autres.map(e => ({ fichier: e.fichier, test: e.test })),
+    };
+    res.gardes += gardes.length;
+    res.autres += autres.length;
+    console.log(`${tests.total} tests, ${tests.echoues} en échec (gardes attendus : ${gardes.length} ; autres : ${autres.length})${tests.sautes.length ? `, ${tests.sautes.length} sautés` : ''}`);
+    afficherGardes(gardes);
+    afficherAutres(autres, '  AUTRES ÉCHECS (à relire) :');
+  }
 }
 
 function indenter(texte, pref) {
@@ -411,11 +424,13 @@ async function main() {
   console.log('| Essai | tsc | Tests | Gardes attendus | Autres échecs | Construction | Témoins v1 |');
   console.log('|---|---|---|---|---|---|---|');
   for (const r of resultats) {
-    const t = r.tests && !r.tests.erreur ? `${r.tests.total} (${r.tests.echoues} en échec)` : 'sans rapport';
+    const t = !r.tsc ? 'non lancés' : r.tests && !r.tests.erreur ? `${r.tests.total} (${r.tests.echoues} en échec)` : 'sans rapport';
     const g = r.tests?.gardes ? [...new Set(r.tests.gardes.map(x => x.fichier.replace(/^test\/(garde-fous\/)?/, '').replace(/\.test\.ts$/, '')))].join(', ') || '—' : '—';
     const b = !r.build ? 'non lancée' : r.build.code === 0 ? 'réussie' : r.build.checkRules ? 'arrêtée (checkRules)' : 'ÉCHEC';
-    const tm = !r.temoins ? 'non lancés' : r.temoins.erreur ? 'sans rapport' : r.temoins.echoues ? `${r.temoins.echoues} écart(s)` : 'aucun écart';
-    console.log(`| ${r.nom} | ${r.tsc?.code === 0 ? 'ok' : `${r.tsc?.erreurs} erreur(s)`} | ${t} | ${r.tests?.gardes?.length ?? 0} (${g}) | ${r.autres} | ${b} | ${tm} |`);
+    const tm = !r.temoins ? 'non lancés' : r.temoins.erreur ? 'sans rapport' : !r.temoins.echoues ? 'aucun écart'
+      : r.temoins.fichiers.length ? `${r.temoins.fichiers.length} fichier(s) en écart` : 'générateur arrêté';
+    const tsc = !r.tsc ? 'non lancé' : r.tsc.code === 0 ? 'ok' : `${r.tsc.erreurs} erreur(s)`;
+    console.log(`| ${r.nom} | ${tsc} | ${t} | ${r.tests?.gardes?.length ?? 0} (${g}) | ${r.autres} | ${b} | ${tm} |`);
   }
   if (opt('json')) writeFileSync(path.resolve(opt('json')), `${JSON.stringify(resultats, null, 2)}\n`);
   const ok = resultats.every(r => r.autres === 0);

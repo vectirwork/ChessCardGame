@@ -3,7 +3,7 @@
   "brancheIntegration": "claude/peaceful-hamilton-qr9cmc",
   "base": "7148547",
   "brancheDuLot": "polymorphie/<lot>",
-  "vagues": [["0a", "0b"], ["1", "2"], ["3", "4"], ["5", "6"], ["7", "8"], ["9a", "9b"], ["9c"], ["9"]],
+  "vagues": [["0a", "0b"], ["1", "2"], ["3", "4"], ["5", "6"], ["7", "8"], ["9a", "9b"], ["9c"], ["9e"], ["9"]],
   "lots": [
     {
       "id": "0a",
@@ -391,6 +391,25 @@
         {"motif": "docs/polymorphie/plan/CONCEPTION.md", "note": "tableau des modules §2.1"},
         {"motif": "src/shared/config/index.ts", "note": "commentaires seulement"},
         {"motif": "test/*.test.ts", "note": "test de la documentation seulement"}
+      ],
+      "partage": []
+    },
+    {
+      "id": "9e",
+      "titre": "Changer un réglage ne casse que les gardes prévus (tests découplés des défauts, outil d'essai, reliquats)",
+      "vague": 7,
+      "dependances": ["9a", "9b", "9c"],
+      "possede": [
+        {"motif": "test/**", "note": "sauf test/fixtures/v1/** (témoins figés)"},
+        {"motif": "scripts/**"},
+        {"motif": "package.json"},
+        {"motif": "docs/REGLAGES.md"},
+        {"motif": "docs/polymorphie/ETAT.md"},
+        {"motif": "README.md"},
+        {"motif": "src/shared/config/brand.ts", "note": "commentaires ou raccord, identique au défaut"},
+        {"motif": "src/shared/config/timings.ts", "note": "commentaires seulement"},
+        {"motif": "src/shared/pgn.ts", "note": "lecture de BRAND.pgnVariant seulement"},
+        {"motif": "src/client/storageKeys.ts", "note": "lecture de BRAND.storagePrefix seulement"}
       ],
       "partage": []
     },

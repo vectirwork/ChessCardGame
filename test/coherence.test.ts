@@ -199,6 +199,8 @@ describe('paquet principal (src/client/main.tsx) : liste fermée', () => {
   const PERMIS = [
     'src/client/main.tsx',
     'src/client/App.tsx',
+    // importFailed, sorti d'App.tsx (lot 9f) pour la limite de l'échiquier de l'accueil : sans import, +1 o compressé.
+    'src/client/importFailed.ts',
     'src/client/api.ts',
     'src/client/socket.ts',
     'src/client/store.tsx',

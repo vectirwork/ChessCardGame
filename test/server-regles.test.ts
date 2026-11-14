@@ -4,8 +4,8 @@
 // - choix des cartes à N = 1, 3 et 5 : count, totalMs, mains de N cartes à la clôture, `filled` (camps complétés au
 //   hasard : sélection provisoire incomplète seulement) ; tirage partout (DEAL.draft faux) ;
 // - reprise des salles témoins v1 alors que les règles du jour sont à 5 cartes : le choix en cours garde 3 cartes ;
-// - revanche : pendule de la partie d'origine (cadence retirée comprise), mise en place reprise, règles du moment ;
-//   cadence inconnue refusée ;
+// - revanche : pendule de la partie d'origine (cadence retirée comprise), règles du moment ; revanche d'une partie de
+//   l'accueil : choix des cartes, sans relais (comme avant la passe) ; cadence inconnue refusée ;
 // - IA : cartes de la décision jouées une à une (pause entre elles), échecs répétés puis coup légal au hasard, niveau
 //   inconnu ; fil de calcul mort (bot-pool) ;
 // - carte à la place du coup (cardEndsTurn) : incrément et début de partie comme un coup ;
@@ -35,7 +35,7 @@ import { botPool } from '../src/server/bot-pool';
 import type { BotThread } from '../src/server/bot-pool';
 import {
   CINEMATIC_MS, Room, RoomData, applyDraft, closeDraft, commitCard, contextOf, createRematch, draftView, newDraft, newRoom,
-  rematchExpired, resignRoom, resumeRoom, setupOf, submitDraft, takeSeat,
+  rematchExpired, resignRoom, resumeRoom, submitDraft, takeSeat,
 } from '../src/server/games';
 import { BOT_RUNTIME, BOT_THREADS, setDealOverride } from '../src/server/settings';
 import { toSummary } from '../src/server/summary';
@@ -299,16 +299,23 @@ describe('revanche', () => {
     expect(rematchExpired(room, null)).toBe(false);
   });
 
-  it('partie de l’accueil (relais) : mains tirées et relais repris ; sans pendule reste sans pendule', async () => {
+  it('partie de l’accueil (relais) : la revanche est une partie amicale ordinaire, avec le choix des cartes et sans relais (comme avant la passe) ; sans pendule reste sans pendule', async () => {
     const home = newRoom({ mode: 'quick', rated: false, tc: 'none', catalog: 'climats', creator: 'g:1', seats: { w: human(1), b: human(2) }, deal: true, relay: true });
-    expect(setupOf(home.d)).toEqual({ deal: true, relay: true });
+    expect(home.d.relay).toBe(true);
+    expect(home.d.draft).toBeNull();
     home.d.status = 'ended';
     const next = (await createRematch(home))!;
-    expect(next.d.relay).toBe(true);
-    expect(next.d.draft).toBeNull();
-    expect(next.d.state.hands.w).toHaveLength(3);
+    expect(next.d.relay).toBeUndefined();
+    expect(next.d.standIn).toBeUndefined();
+    expect(next.d.draft).not.toBeNull();
+    expect(next.d.draft).toBeDefined();
+    expect(next.d.state.hands.w).toHaveLength(0);
+    expect(next.d.state.hands.b).toHaveLength(0);
+    expect(draftView(next.d, 'w')?.count).toBe(3);
     expect(next.d.clock).toBeNull();
-    expect(setupOf(invite().d)).toEqual({ deal: false, relay: false });
+    // Règles du moment de son contexte : celui d'une partie amicale (plus celui de l'accueil).
+    expect(contextOf(next.d)).toBe('amicale');
+    expect(sameRules(rulesOf(next.d.state), rulesFor('amicale'))).toBe(true);
   });
 });
 

@@ -26,6 +26,11 @@ import { serveBuiltSite } from './site';
  * les mentions légales), règles des nouvelles parties (une ligne, plus une par contexte qui diffère). Des règles
  * impossibles (checkRules, avec la mise en place de ce serveur) arrêtent le serveur avec leurs messages, comme une
  * configuration invalide (config.ts) : aucune partie ne doit être créée avec elles.
+ *
+ * `--check-config` : vérifie seulement la configuration (variables d'environnement, interrupteurs, règles), puis sort
+ * avec le code 0, sans toucher à la base. Une configuration invalide sort avec le code 1 (config.ts, au chargement),
+ * des règles impossibles aussi (ici). deploy/update.sh le lance dans la nouvelle image avant de remplacer la version en
+ * ligne : un refus arrête le déploiement, et la version en ligne continue de tourner.
  */
 function startupReport() {
   for (const w of configWarnings) console.warn(`Attention : ${w}`);
@@ -42,6 +47,10 @@ function startupReport() {
 
 async function main() {
   startupReport();
+  if (process.argv.includes('--check-config')) {
+    console.log('Configuration vérifiée (--check-config) : rien d’autre n’est lancé.');
+    process.exit(0);
+  }
   const dbLabel = await connectDb();
   await migrate();
   // Promesses des packs (« et les prochains offerts ») : livre aux acheteurs les objets ajoutés depuis leur achat.

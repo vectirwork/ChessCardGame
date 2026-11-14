@@ -113,7 +113,8 @@ export interface RoomData {
   lastActivity?: number;
   /**
    * Partie en direct de l'accueil : si un joueur ne joue pas, l'IA joue pour lui (`standIn`) jusqu'à ce qu'il reprenne
-   * la main (il joue un coup, ou game:takeover). Ses mains sont tirées au hasard (setupOf : la revanche les tire aussi).
+   * la main (il joue un coup, ou game:takeover). Ses mains sont tirées au hasard. Sa revanche (createRematch) est une
+   * partie amicale ordinaire : choix des cartes, sans relais, comme avant la passe « polymorphe ».
    */
   relay?: boolean;
   standIn?: Record<Color, boolean>;
@@ -143,10 +144,13 @@ export class Room {
   /** Échecs consécutifs de l'IA à jouer (décision en erreur, délai dépassé, coup refusé) : voir maybeBot. */
   botFailures = 0;
   /**
-   * Fin de partie pas encore enregistrée (persistResult en cours, en attente d'un nouvel essai, ou abandonné) :
-   * flushRooms l'enregistre à l'arrêt du serveur, classement compris.
+   * Fin de partie pas encore enregistrée (persistResult en cours, en attente d'un nouvel essai, ou à relancer) : la
+   * salle reste en mémoire (le ménage ne l'évince pas et relance l'enregistrement), et flushRooms l'enregistre à
+   * l'arrêt du serveur, classement compris.
    */
   resultPending = false;
+  /** persistResult en cours (essais compris) : jamais deux à la fois pour une même salle. */
+  persisting = false;
   constructor(public d: RoomData) {}
 }
 
@@ -831,10 +835,22 @@ const saveResult = (room: Room) =>
 
 /**
  * Fin de partie enregistrée (saveResult). Si la base ne répond pas, nouvel essai après PERSIST.retryMs,
- * PERSIST.attempts fois au plus ; la partie reste en mémoire en attendant (resultPending), et un arrêt du serveur
- * pendant ce temps l'enregistre (flushRooms). Exportée pour les tests.
+ * PERSIST.attempts fois au plus. En attendant (resultPending), la partie reste en mémoire, terminée : le ménage ne
+ * l'évince pas et relance l'enregistrement jusqu'au retour de la base, et un arrêt du serveur l'enregistre
+ * (flushRooms). Un seul enregistrement à la fois par salle (persisting) : un appel pendant un autre rend faux tout de
+ * suite. Exportée pour les tests.
  */
 export async function persistResult(room: Room): Promise<boolean> {
+  if (room.persisting) return false;
+  room.persisting = true;
+  try {
+    return await persistAttempts(room);
+  } finally {
+    room.persisting = false;
+  }
+}
+
+async function persistAttempts(room: Room): Promise<boolean> {
   const d = room.d;
   room.resultPending = true;
   for (let attempt = 1; ; attempt++) {
@@ -848,7 +864,7 @@ export async function persistResult(room: Room): Promise<boolean> {
       return true;
     } catch (e) {
       if (attempt >= PERSIST.attempts) {
-        console.error(`Fin de partie ${d.id} non enregistrée après ${attempt} essais :`, e);
+        console.error(`Fin de partie ${d.id} non enregistrée après ${attempt} essais (nouvel essai au prochain ménage) :`, e);
         return false;
       }
       console.error(`Fin de partie ${d.id} : enregistrement impossible (essai ${attempt} sur ${PERSIST.attempts}), nouvel essai :`, e);
@@ -1086,12 +1102,14 @@ export function creationRefusal(o: { mode: GameMode; rated: boolean; relay?: boo
 
 /**
  * Version du protocole annoncée par le client à la connexion (`io({ auth: { v } })`) différente de celle du serveur :
- * l'onglet date d'une autre version du site. Absente : client d'avant la version du protocole, accepté (il ne saurait
- * pas recharger).
+ * l'onglet date d'une autre version du site. Absente : client d'avant la version du protocole (ou client de test qui
+ * n'annonce rien), compté comme la version 1. Accepté tant que PROTOCOL_VERSION vaut 1 ; à la première montée, il est
+ * prévenu et refusé comme les autres (un ancien onglet affiche le refus, « rechargez la page »). Les clients de test
+ * devront alors annoncer leur version (docs/REGLAGES.md, section 2).
  */
 export function protocolMismatch(auth: unknown): boolean {
   const v = (auth as { v?: unknown } | null | undefined)?.v;
-  return v !== undefined && v !== null && v !== PROTOCOL_VERSION;
+  return (v ?? 1) !== PROTOCOL_VERSION;
 }
 
 /** Refus de toute action d'un client d'une autre version (code 'outdated') : il doit recharger la page. */
@@ -1159,12 +1177,6 @@ export function abortRoom(room: Room): Ack {
 }
 
 /**
- * Mise en place d'une salle, reprise par la revanche : mains tirées (`deal`) et relais de l'IA. Rien de plus n'est
- * écrit dans la salle : seules les parties de l'accueil tirent leurs mains, et elles sont toutes relayées.
- */
-export const setupOf = (d: Pick<RoomData, 'relay'>) => ({ deal: !!d.relay, relay: !!d.relay });
-
-/**
  * La proposition de revanche a-t-elle expiré (TIMINGS.rematchTtlMs après la fin de la partie) ? Jamais au défaut
  * (null : elle vit tant que la salle est en mémoire). Après un redémarrage, le délai repart du rechargement de la salle.
  * Exportée pour les tests.
@@ -1175,9 +1187,11 @@ export function rematchExpired(room: Room, ttl: number | null = TIMINGS.rematchT
 
 /**
  * Revanche : sièges copiés, couleurs inversées, classement et équipement (sorts, roi, sceau) relus en base. Pendule de
- * la partie d'origine (d.clock, même si sa cadence a été retirée depuis), sa mise en place (setupOf), et les règles
- * du moment (décision Q3 : c'est une nouvelle partie). Renvoie la nouvelle salle (null si la revanche existe déjà).
- * Exportée pour les tests.
+ * la partie d'origine (d.clock, même si sa cadence a été retirée depuis), et les règles du moment de son contexte
+ * (décision Q3 : c'est une nouvelle partie). Mise en place ordinaire, comme avant la passe : la revanche d'une partie
+ * de l'accueil (relayée, mains tirées) est une partie amicale avec le choix des cartes, sans relais (relecture finale :
+ * la reprendre changeait le site au défaut). Renvoie la nouvelle salle (null si la revanche existe déjà). Exportée
+ * pour les tests.
  */
 export async function createRematch(room: Room): Promise<Room | null> {
   const d = room.d;
@@ -1214,7 +1228,7 @@ export async function createRematch(room: Room): Promise<Room | null> {
   const clock = d.clock ? { initial: d.clock.initial, increment: d.clock.increment } : null;
   let next: Room;
   try {
-    next = newRoom({ mode: d.mode, rated: d.rated, tc: d.tc, catalog, creator: d.creator, seats, clock, ...setupOf(d) });
+    next = newRoom({ mode: d.mode, rated: d.rated, tc: d.tc, catalog, creator: d.creator, seats, clock });
   } catch (e) {
     room.rematchPending = false;
     throw e;
@@ -1246,8 +1260,9 @@ const queues = new Map<string, QueueEntry[]>();
 const queueTickets = new Map<string, number>();
 let queueTicket = 0;
 /**
- * Joueurs retirés de la file pour une partie en cours de création (sièges relus en base) : si la création échoue, ils
- * y sont remis, sauf s'ils l'ont quittée entre-temps (quitQueue les retire d'ici).
+ * Joueurs appariés dont la partie est en cours de création (sièges relus en base) : les deux, celui qui attendait et
+ * le demandeur. quitQueue les retire d'ici : un joueur parti pendant la lecture des sièges n'est pas apparié (l'autre
+ * reste en file), et si la création échoue, celui qui attendait n'est remis en file que s'il est encore là.
  */
 const queueMatching = new Set<string>();
 
@@ -1288,10 +1303,12 @@ function queueSize() {
  * File d'attente. Classée : comptes uniquement, appariement par classement Elo.
  * Amicale : ouverte aux invités (pseudo anonyme), non classée, premier arrivé premier servi.
  *
- * Concurrence : la seule attente (le classement relu en base) a lieu AVANT de toucher à la file ; ensuite, la sortie
- * des autres files, la lecture de la file, le choix de l'adversaire et l'écriture se font sans aucun await. Deux
- * demandes simultanées ne lisent donc jamais la même liste périmée (double appariement, entrée perdue), et un joueur
- * parti pendant l'attente n'est ni apparié ni remis en file. Exportée pour les tests (`sock` : identité et emit).
+ * Concurrence : la première attente (le classement relu en base) a lieu AVANT de toucher à la file ; ensuite, la
+ * sortie des autres files, la lecture de la file, le choix de l'adversaire et l'écriture se font sans aucun await.
+ * Deux demandes simultanées ne lisent donc jamais la même liste périmée (double appariement, entrée perdue), et un
+ * joueur parti pendant l'attente n'est ni apparié ni remis en file. La seconde attente (sièges relus en base, une fois
+ * appariés) est surveillée par queueMatching : si l'un des deux part pendant elle, pas de partie, et l'autre reste en
+ * file. Exportée pour les tests (`sock` : identité et emit).
  */
 export async function joinQueue(sock: Pick<Sock, 'data' | 'emit'>, tc: string, rated: boolean, guestName?: string, catalog: Catalog = DEFAULT_CATALOG): Promise<Ack> {
   const identity = sock.data.identity;
@@ -1332,22 +1349,40 @@ export async function joinQueue(sock: Pick<Sock, 'data' | 'emit'>, tc: string, r
   }
   queues.set(pool, list.filter(e => e !== opp));
   queueMatching.add(opp.key);
+  queueMatching.add(key);
   // 3. Appariés (plus personne ne peut les prendre) : sièges relus en base, puis la partie, avec le catalogue de celui
   // qui attendait (le même que le sien si les files sont séparées par catalogue).
   let room: Room;
   try {
     const [a, b] = await Promise.all([seatFor(identity, name), seatFor(opp.identity, opp.name)]);
+    // L'un des deux a quitté la file pendant la lecture des sièges (queue:leave, déconnexion) : pas de partie. Celui
+    // qui reste reprend sa place (en tête s'il attendait, au bout s'il demandait), sauf s'il est déjà de nouveau en file.
+    const oppHere = queueMatching.has(opp.key);
+    const meHere = queueMatching.has(key);
+    if (!oppHere || !meHere) {
+      queueMatching.delete(opp.key);
+      queueMatching.delete(key);
+      const queued = (k: string) => [...queues.values()].some(l => l.some(x => x.key === k));
+      if (oppHere && !queued(opp.key)) queues.set(pool, [opp, ...(queues.get(pool) ?? [])]);
+      if (meHere && !queued(key)) {
+        queues.set(pool, [...(queues.get(pool) ?? []), { key, identity, rating: me, since: now(), name, catalog }]);
+        sock.emit('queue:status', { waiting: true, tc, since: now(), players: queueSize() });
+      }
+      return { ok: true };
+    }
     const white = Math.random() < 0.5;
     room = newRoom({ mode: 'quick', rated, tc, catalog: opp.catalog, creator: key, seats: white ? { w: a, b } : { w: b, b: a } });
   } catch (e) {
     // Création impossible (base qui ne répond pas) : celui qui attendait reprend sa place en tête de file, s'il ne
     // l'a pas quittée ni ne s'est remis en file entre-temps ; l'erreur remonte au demandeur.
+    queueMatching.delete(key);
     if (queueMatching.delete(opp.key) && ![...queues.values()].some(l => l.some(x => x.key === opp.key))) {
       queues.set(pool, [opp, ...(queues.get(pool) ?? [])]);
     }
     throw e;
   }
   queueMatching.delete(opp.key);
+  queueMatching.delete(key);
   if (io) io.to(`id:${key}`).to(`id:${opp.key}`).emit('queue:matched', { gameId: room.d.id });
   return { ok: true };
 }
@@ -1438,15 +1473,19 @@ const freeSeat = (room: Room): Color | null => (!room.d.seats.w ? 'w' : !room.d.
  * Assise d'un visiteur qui rejoint une partie (game:join) : sa couleur s'il y joue déjà ; sinon, sur une invitation
  * en attente, le siège libre. Le siège est relu en base (seatFor) PUIS l'assise est revérifiée : si un autre visiteur
  * s'est assis entre-temps (ou ce même compte, depuis un autre onglet), ou si la partie a commencé, il la regarde en
- * spectateur au lieu d'écraser le siège. Renvoie sa couleur, null (spectateur) ou 'needName' (invité sans pseudo
- * valable). Exportée pour les tests.
+ * spectateur au lieu d'écraser le siège. Renvoie sa couleur, null (spectateur), 'needName' (invité sans pseudo
+ * valable), 'guestOff' (invité, jeu sans compte coupé) ou 'off' (s'asseoir lancerait une partie que creationRefusal
+ * refuse : maintenance, ou sorte de partie coupée). Exportée pour les tests.
  */
-export async function takeSeat(room: Room, identity: Identity, p: { name?: string; sit?: boolean }): Promise<Color | null | 'needName' | 'guestOff'> {
+export async function takeSeat(room: Room, identity: Identity, p: { name?: string; sit?: boolean }): Promise<Color | null | 'needName' | 'guestOff' | 'off'> {
   const color = colorOf(room, identity);
   if (color || room.d.status !== 'waiting' || p.sit === false || !freeSeat(room)) return color;
   let name: string | undefined;
   // Jeu sans compte coupé (FEATURE_GUEST_PLAY=0) : un invité ne s'assoit pas.
   if (!identity.user && !FEATURES.guestPlay) return 'guestOff';
+  // Maintenance (FEATURE_NEW_GAMES=0) ou sorte de partie coupée (FEATURE_INVITES=0…) : une invitation déjà en attente
+  // (reprise au démarrage) ne lance pas de nouvelle partie. Au défaut, tout est ouvert.
+  if (creationRefusal(room.d, identity)) return 'off';
   if (!identity.user) {
     const parsed = guestNameSchema.safeParse(p.name ?? '');
     if (!parsed.success) return 'needName';
@@ -1548,8 +1587,9 @@ export function attachSockets(server: IO) {
       void sock.join(`game:${room.d.id}`);
       const seated = await takeSeat(room, identity, p);
       if (seated === 'needName') return ack({ ok: true, needName: true, view: viewFor(room, null) });
-      // Invité qui ne peut pas s'asseoir (guestPlay coupé), ou spectateur alors que les parties en direct sont coupées
-      // (live) : refusé, il ne reste pas dans la salle.
+      // Invité qui ne peut pas s'asseoir (guestPlay coupé), assise qui lancerait une partie refusée (maintenance, sorte
+      // de partie coupée), ou spectateur alors que les parties en direct sont coupées (live) : refusé, il ne reste pas
+      // dans la salle.
       const refuse = (r: Ack) => {
         room.sockets.delete(sock);
         joined.delete(room);
@@ -1557,6 +1597,7 @@ export function attachSockets(server: IO) {
         ack(r);
       };
       if (seated === 'guestOff') return refuse(featureOff('guestPlay'));
+      if (seated === 'off') return refuse(creationRefusal(room.d, identity)!);
       if (!seated && !FEATURES.live) return refuse(featureOff('live'));
       updatePresence(room);
       ack({ ok: true, view: viewFor(room, seated) });
@@ -1674,8 +1715,10 @@ export function attachSockets(server: IO) {
           return { ok: true };
         }
         if (rematchExpired(room)) return { ok: false, error: 'La revanche n’est plus possible.' };
-        // Une revanche est une nouvelle partie : refusée si sa sorte (ou toute création) est coupée.
-        const off = creationRefusal(d, identity);
+        // Une revanche est une nouvelle partie : refusée si sa sorte (ou toute création) est coupée. Sa sorte est celle
+        // que crée createRematch : même mode, même classement, jamais relayée (revanche d'une partie de l'accueil :
+        // partie amicale).
+        const off = creationRefusal({ mode: d.mode, rated: d.rated }, identity);
         if (off) return off;
         d.rematch[color] = true;
         const opp = opposite(color);
@@ -1749,11 +1792,14 @@ export function attachSockets(server: IO) {
     });
   });
 
-  // Ménage : parties terminées sans spectateur, invitations jamais acceptées
+  // Ménage : parties terminées sans spectateur, invitations jamais acceptées. Une fin de partie pas encore enregistrée
+  // (base injoignable au-delà des essais de persistResult) n'est jamais évincée : relue en base, elle y serait encore
+  // en cours. Son enregistrement est relancé ici jusqu'au retour de la base.
   setInterval(() => {
     for (const [id, room] of rooms) {
       const d = room.d;
-      if (d.status === 'ended' && !room.sockets.size && now() - room.endedAt > TIMINGS.endedRoomEvictMs) rooms.delete(id);
+      if (room.resultPending && !room.persisting) void persistResult(room);
+      if (d.status === 'ended' && !room.resultPending && !room.sockets.size && now() - room.endedAt > TIMINGS.endedRoomEvictMs) rooms.delete(id);
       if (d.status === 'waiting' && now() - d.createdAt > TIMINGS.inviteTtlMs) endGame(room, { winner: null, reason: 'aborted' });
       if (d.status !== 'active') continue;
       const humans = COLORS.filter(c => d.seats[c] && d.seats[c]!.kind !== 'bot');

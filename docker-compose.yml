@@ -8,7 +8,8 @@ services:
     environment:
       DATABASE_URL: postgres://spellmate:${POSTGRES_PASSWORD}@db:5432/spellmate
       PUBLIC_URL: https://${DOMAIN}
-      TRUST_PROXY: "true"
+      # Réglable dans .env (TRUST_PROXY=…) ; sans valeur, "true" (1 mandataire : Caddy), comme avant.
+      TRUST_PROXY: ${TRUST_PROXY:-true}
     depends_on:
       db:
         condition: service_healthy

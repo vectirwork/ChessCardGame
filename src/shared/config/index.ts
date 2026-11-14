@@ -1,4 +1,5 @@
 // TABLEAU DE BORD DES RÉGLAGES DE SPELLMATE
+// Guide complet (ce qu'on change demain, table des réglages, garde-fous) : docs/REGLAGES.md.
 //
 // Une ligne par réglage : où il se règle, sa valeur par défaut, ce qui suit tout seul. Les valeurs vivent dans les
 // fichiers cités ; ce module les réexporte. Après tout changement : `npx tsc --noEmit -p .`, `npm test` et

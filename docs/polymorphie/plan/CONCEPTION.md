@@ -56,7 +56,7 @@
    - **Règles de partie** (elles touchent la légalité) : photographiées dans `GameState.rules`. Si le champ est absent, ce sont les règles historiques `RULES_V1`, gelées pour toujours.
    - **Mise en place** (choix ou tirage, durée, R9, poids, cadence, Elo) : lue à la création. Son résultat est déjà stocké.
    - **Plate-forme et contenu** (délais, file, fonctions, marque, registres) : globaux.
-2. **La photographie n'est écrite que si elle diffère de `RULES_V1`.** Au défaut, aucune partie, aucune vue, aucune sauvegarde ne change d'un octet.
+2. **La photographie n'est écrite que si elle diffère de `RULES_V1`.** Au défaut, aucune partie, aucune vue, aucune sauvegarde ne change d'un octet. (Réalisé : aucune règle n'est écrite, parties et sauvegardes identiques à l'octet ; les vues et `/api/me` gagnent des champs facultatifs, `DraftView.totalMs`, `reveal.filled`, `features`, `version` : voir `ETAT.md`.)
 3. **Relectures, reprises et sauvegardes** rejouent avec `state.rules ?? RULES_V1`, jamais avec les règles du jour.
 4. **`cardPlayed` signifie « plus de carte possible ce tour ».** `cardsThisTurn` n'est écrit que si la partie permet plus d'une carte par tour.
 5. **Un tableau de bord sans import à l'exécution** (`src/shared/config/*`). Le pied de page du paquet principal le lit sans tirer `game.ts`.

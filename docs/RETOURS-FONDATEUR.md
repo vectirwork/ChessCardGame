@@ -404,3 +404,11 @@ Plus tard : jeux de pièces complets, cadres et dos des cartes, particule « feu
   et rendre visible en partie le moment où chaque sort arrive et finit (par exemple « s'arrête après le coup des
   Noirs »). La passe « polymorphe » en cours regroupe les durées et les textes qui les décrivent ; ce chantier sera
   plus simple ensuite.
+
+## 14 novembre : réflexion sur les pouvoirs « méta »
+
+> « je voudrai qu'on ait une réflexion conceptuelle sur les pouvoirs […] des pouvoirs qui seraient 'meta' uniquement […]
+> pour le moment de code rien »
+
+Réflexion faite, sans code : `docs/IDEES-POUVOIRS-META.md` (82 idées sur six leviers, 15 retenues et mises à l'épreuve,
+principes de design, formats, questions). Clairvoyance et Second souffle, notées le 11 novembre, y sont reprises.

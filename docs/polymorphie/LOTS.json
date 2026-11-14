@@ -3,7 +3,7 @@
   "brancheIntegration": "claude/peaceful-hamilton-qr9cmc",
   "base": "7148547",
   "brancheDuLot": "polymorphie/<lot>",
-  "vagues": [["0a", "0b"], ["1", "2"], ["3", "4"], ["5", "6"], ["7", "8"], ["9a", "9b"], ["9c"], ["9e"], ["9"]],
+  "vagues": [["0a", "0b"], ["1", "2"], ["3", "4"], ["5", "6"], ["7", "8"], ["9a", "9b"], ["9c"], ["9e"], ["9f"], ["9"]],
   "lots": [
     {
       "id": "0a",
@@ -410,6 +410,27 @@
         {"motif": "src/shared/config/timings.ts", "note": "commentaires seulement"},
         {"motif": "src/shared/pgn.ts", "note": "lecture de BRAND.pgnVariant seulement"},
         {"motif": "src/client/storageKeys.ts", "note": "lecture de BRAND.storagePrefix seulement"}
+      ],
+      "partage": []
+    },
+    {
+      "id": "9f",
+      "titre": "Corrections de la relecture finale transversale (fin de partie non enregistrée, revanche, configuration avant déploiement, interrupteurs, file, protocole, déconnexion, rechargement, déclarations)",
+      "vague": 8,
+      "dependances": ["9a", "9b", "9c", "9e"],
+      "possede": [
+        {"motif": "src/server/**"},
+        {"motif": "src/client/main.tsx"},
+        {"motif": "src/client/App.tsx"},
+        {"motif": "src/client/store.tsx"},
+        {"motif": "src/client/odyssee/OdysseeHome.tsx", "note": "DecorBoundary seulement"},
+        {"motif": "src/client/*.ts", "note": "nouveau petit module pour importFailed seulement"},
+        {"motif": "deploy/**"},
+        {"motif": "docker-compose.yml"},
+        {"motif": ".env.example"},
+        {"motif": "docs/**"},
+        {"motif": "README.md"},
+        {"motif": "test/**", "note": "sauf test/fixtures/v1/**"}
       ],
       "partage": []
     },

@@ -134,8 +134,13 @@ function UserMenu() {
           <button
             role="menuitem"
             onClick={async () => {
-              await logout();
-              navigate('/');
+              // Échec : le message est déjà affiché (store.tsx, logoutWith) et l'on reste connecté sur la page.
+              try {
+                await logout();
+                navigate('/');
+              } catch {
+                /* rien de plus */
+              }
             }}
           >
             Se déconnecter
@@ -196,8 +201,13 @@ function SiteMenu({ onClose }: { onClose: () => void }) {
                 type="button"
                 onClick={async () => {
                   onClose();
-                  await logout();
-                  navigate('/');
+                  // Échec : le message est déjà affiché (store.tsx, logoutWith) et l'on reste connecté sur la page.
+                  try {
+                    await logout();
+                    navigate('/');
+                  } catch {
+                    /* rien de plus */
+                  }
                 }}
               >
                 <span>Se déconnecter</span>

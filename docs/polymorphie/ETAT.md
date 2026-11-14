@@ -146,9 +146,9 @@ coupée et classé coupé.
 Poids final (gzip -9, fermeture des imports statiques, face à 6ae7064) : accueil 222 036 → 232 979 o (+4,9 %),
 paquet principal 100 989 → 101 774 o (+0,8 %), page de partie 197 449 → 206 200 o (+4,4 %).
 
-## Reste à faire (après la vague 5)
-1. Mesure de performance par l'orchestrateur, seul sur la machine : faite (résultats dans le rapport final).
-2. Lot 9c : `docs/REGLAGES.md`, README, tableau des modules de `plan/CONCEPTION.md`, rapport final : fait.
+## Reste à faire
+Rien dans le code de la passe. Restent : les décisions du fondateur (rapport final, plus bas) et la mise en ligne, qui
+attend son accord explicite (`deploy/VERSION`).
 
 Le script de vague (réaliser, deux relectures adverses, corriger) est réutilisable : une copie de travail par lot,
 hors de `.claude`, branche `polymorphie/<lot>`.
@@ -271,6 +271,9 @@ référence : le code d'avant la passe (7148547). Banc `test/perf/mesure.mjs`.
 - IA (`scripts/banc-ia.mjs`) : décisions identiques partout. Exécutions séparées trop bruitées ; en mode entrelacé
   (`--entrelacer`), position de milieu de partie −0,4 % (profondeur 3) et −0,5 % (profondeur 5), presque tout dans
   ±3 %, les rares écarts dans les deux sens. Code de la recherche identique à l'octet près, allocations identiques.
+- Après la mesure, seuls des commentaires (lots 9c, 9e) et des chemins d'échec (lot 9f : déconnexion refusée,
+  module manquant, refus de configuration) ont changé côté client : accueil 232 979 → 233 027 o (+48 o), paquet
+  principal 101 774 → 101 787 o, partie 206 200 → 206 237 o. Pas de nouvelle campagne pour ces quelques octets.
 - Non mesuré : banc des effets (`compositeFailed`, images par sort) au-delà des captures identiques de
   `test/sorts.mjs` ; vrais téléphones ; production.
 
